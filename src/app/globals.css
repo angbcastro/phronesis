@@ -1,0 +1,179 @@
+:root {
+  --fundo: #0f0f10;
+  --fundo-alto: #1a1a1c;
+  --texto: #ececec;
+  --texto-fraco: #8a8a8f;
+  --linha: #2a2a2e;
+  --acento: #d8613c;
+  --ok: #6aa84f;
+  --raio: 14px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --fundo: #faf9f7;
+    --fundo-alto: #ffffff;
+    --texto: #17171a;
+    --texto-fraco: #6b6b72;
+    --linha: #e4e2dd;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; color: inherit; cursor: pointer; }
+
+.tela {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  padding: 2rem 1.25rem;
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+/* ---- gravar ---- */
+
+.botao-gravar {
+  width: min(72vw, 17rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: none;
+  background: var(--acento);
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.35;
+  padding: 1.5rem;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+.botao-gravar:active { transform: scale(0.97); }
+.botao-gravar:disabled { opacity: 0.5; cursor: default; }
+
+.timer {
+  font-size: clamp(3rem, 16vw, 5rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 300;
+  letter-spacing: 0.02em;
+}
+
+.ponto-salvo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--texto-fraco);
+  font-size: 0.8rem;
+}
+.ponto-salvo i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  transition: opacity 400ms ease;
+}
+.ponto-salvo.pendente i { background: var(--texto-fraco); opacity: 0.55; }
+
+.botao-parar {
+  border: 1px solid var(--linha);
+  background: transparent;
+  color: var(--texto);
+  border-radius: 999px;
+  padding: 0.85rem 2.5rem;
+  font-size: 1rem;
+}
+
+/* ---- chip de recuperação ---- */
+
+.chip {
+  width: 100%;
+  border: 1px solid var(--linha);
+  background: var(--fundo-alto);
+  border-radius: var(--raio);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  color: var(--texto-fraco);
+}
+.chip p { margin: 0; flex: 1 1 100%; }
+.chip button {
+  border: none;
+  background: transparent;
+  color: var(--texto);
+  padding: 0.25rem 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: 0.9rem;
+}
+.chip button.fraco { color: var(--texto-fraco); }
+
+/* ---- transcrição ---- */
+
+.leitura {
+  min-height: 100dvh;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 3.5rem 1.25rem 6rem;
+}
+.leitura h1 {
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: lowercase;
+  letter-spacing: 0.06em;
+  color: var(--texto-fraco);
+  margin: 0 0 1.75rem;
+}
+.leitura p {
+  font-size: 1.075rem;
+  line-height: 1.75;
+  margin: 0 0 1.25rem;
+  white-space: pre-wrap;
+}
+.leitura .aguardando { color: var(--texto-fraco); font-size: 0.95rem; }
+
+.voltar {
+  display: inline-block;
+  margin-top: 2rem;
+  color: var(--texto-fraco);
+  font-size: 0.9rem;
+  text-decoration: none;
+  border-bottom: 1px solid var(--linha);
+}
+
+.aviso { color: var(--texto-fraco); font-size: 0.9rem; text-align: center; }
+
+/* ---- entrar ---- */
+
+.entrar { width: 100%; display: flex; flex-direction: column; gap: 0.75rem; }
+.entrar input {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: var(--raio);
+  border: 1px solid var(--linha);
+  background: var(--fundo-alto);
+  color: var(--texto);
+  font-size: 1rem;
+}
+.entrar button {
+  padding: 0.85rem 1rem;
+  border-radius: var(--raio);
+  border: none;
+  background: var(--acento);
+  color: #fff;
+  font-size: 1rem;
+}

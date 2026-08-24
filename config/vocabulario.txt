@@ -1,0 +1,8 @@
+# Vocabulário injetado como prompt inicial em cada chamada de STT.
+# Uma entrada por linha. Linhas com # e linhas vazias são ignoradas.
+# Nomes próprios: pessoas, empresas, clientes, produtos, projetos.
+# Slice 1: mantido à mão. A partir da slice 3 é gerado das entidades do grafo.
+
+Rodozanco
+Exxmed
+Phronesis
