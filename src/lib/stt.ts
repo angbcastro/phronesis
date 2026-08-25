@@ -1,59 +1,96 @@
-/** Transcrição de um bloco: Whisper via API, com timestamps por palavra. */
-import { env } from "./env";
-import { promptVocabulario } from "./vocabulario";
-import type { Palavra } from "./tipos";
-
-const URL_STT = process.env.STT_URL ?? "https://api.openai.com/v1/audio/transcriptions";
-const MODELO_STT = process.env.STT_MODEL ?? "whisper-1";
-
-interface RespostaWhisper {
-  text: string;
-  words?: { word: string; start: number; end: number }[];
-}
+/**
+ * Transcrição de um bloco.
+ *
+ * Sai pelo Vercel AI Gateway como todo o resto que fala com modelo — o
+ * endereçamento e a regra estão em `modelos.ts`, este arquivo só pede a
+ * transcrição.
+ *
+ * Granularidade: o contrato de transcrição do AI SDK devolve `segments`
+ * (início e fim por trecho). Alguns provedores mandam também timestamps
+ * por palavra em `providerMetadata`; quando vierem, usamos. Quando não,
+ * caímos para segmento e registramos isso no bloco — procedência tem que
+ * dizer a verdade sobre a própria precisão.
+ */
+import { experimental_transcribe as transcribe } from "ai";
+import { garantirGateway, modeloStt, provedorDe } from "./modelos";
+import { vocabulario } from "./vocabulario";
+import type { Granularidade, Palavra } from "./tipos";
 
 export class SttError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
+  constructor(message: string) {
     super(message);
     this.name = "SttError";
   }
 }
 
-export function mapearPalavras(resp: RespostaWhisper): Palavra[] {
-  return (resp.words ?? []).map((w) => ({
-    palavra: w.word,
-    inicio: w.start,
-    fim: w.end,
-  }));
+interface PalavraCrua {
+  text?: string;
+  word?: string;
+  start?: number;
+  end?: number;
+}
+
+/** Timestamps por palavra, quando o provedor os expõe em providerMetadata. */
+export function palavrasDoMetadata(metadata: unknown): Palavra[] | null {
+  if (!metadata || typeof metadata !== "object") return null;
+
+  for (const valor of Object.values(metadata as Record<string, unknown>)) {
+    const cruas = (valor as { words?: unknown })?.words;
+    if (!Array.isArray(cruas) || cruas.length === 0) continue;
+
+    const palavras = (cruas as PalavraCrua[])
+      .map((p) => ({
+        palavra: p.text ?? p.word ?? "",
+        inicio: typeof p.start === "number" ? p.start : NaN,
+        fim: typeof p.end === "number" ? p.end : NaN,
+      }))
+      .filter((p) => p.palavra !== "" && Number.isFinite(p.inicio) && Number.isFinite(p.fim));
+
+    if (palavras.length > 0) return palavras;
+  }
+  return null;
+}
+
+type Segmento = { text: string; startSecond: number; endSecond: number };
+
+export function palavrasDosSegmentos(segments: readonly Segmento[]): Palavra[] {
+  return segments
+    .filter((s) => s.text.trim().length > 0)
+    .map((s) => ({ palavra: s.text.trim(), inicio: s.startSecond, fim: s.endSecond }));
+}
+
+export interface ResultadoStt {
+  texto: string;
+  palavras: Palavra[];
+  granularidade: Granularidade;
+  modelo: string;
 }
 
 /** Offsets voltam relativos ao início do bloco — a absolutização é na concatenação. */
-export async function transcrever(
-  audio: ArrayBuffer,
-  nomeArquivo: string,
-): Promise<{ texto: string; palavras: Palavra[] }> {
-  const form = new FormData();
-  form.append("file", new Blob([audio], { type: "audio/webm" }), nomeArquivo);
-  form.append("model", MODELO_STT);
-  form.append("language", "pt");
-  form.append("response_format", "verbose_json");
-  form.append("timestamp_granularities[]", "word");
+export async function transcrever(audio: ArrayBuffer): Promise<ResultadoStt> {
+  garantirGateway(); // falha cedo, antes de mandar os bytes
+  const modelo = modeloStt();
+  const termos = await vocabulario();
 
-  const prompt = await promptVocabulario();
-  if (prompt) form.append("prompt", prompt);
-
-  const resp = await fetch(URL_STT, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${env.sttApiKey}` },
-    body: form,
-  });
-
-  if (!resp.ok) {
-    throw new SttError(`STT respondeu ${resp.status}: ${(await resp.text()).slice(0, 300)}`, resp.status);
+  let resultado;
+  try {
+    // `model` é string de propósito: id em string sai pelo Gateway. Objeto de
+    // provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
+    resultado = await transcribe({
+      model: modelo,
+      audio: new Uint8Array(audio),
+      providerOptions: termos.length > 0 ? { [provedorDe(modelo)]: { keyterm: termos } } : undefined,
+    });
+  } catch (e) {
+    throw new SttError(e instanceof Error ? e.message : String(e));
   }
 
-  const corpo = (await resp.json()) as RespostaWhisper;
-  return { texto: corpo.text ?? "", palavras: mapearPalavras(corpo) };
+  const porPalavra = palavrasDoMetadata(resultado.providerMetadata);
+
+  return {
+    texto: resultado.text ?? "",
+    palavras: porPalavra ?? palavrasDosSegmentos(resultado.segments ?? []),
+    granularidade: porPalavra ? "palavra" : "segmento",
+    modelo: resultado.responses?.[0]?.modelId ?? modelo,
+  };
 }

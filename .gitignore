@@ -7,3 +7,10 @@ out/
 next-env.d.ts
 .vercel
 tsconfig.tsbuildinfo
+
+# Log do servidor de desenvolvimento (scripts/dev.ps1)
+logs/
+
+# Segredos soltos na raiz (credenciais do Aura, chaves baixadas)
+*credentials*.txt
+*credenciais*.txt

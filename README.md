@@ -1,7 +1,8 @@
 # Phronesis
 
-Diário falado, single-user. Ver `Specs/visao.md` para o produto e `Specs/CLAUDE.md`
-para as regras invioláveis.
+Diário falado, single-user. Ver `Specs/visao.md` para o produto, `ARCHITECTURE.md`
+para como o sistema funciona por dentro e `CLAUDE.md` para as regras
+invioláveis.
 
 **Estado: slice 1 — gravar, subir, transcrever.** Nada de átomos, entidades,
 extração, perguntas, revisão, busca ou grafo. No Neo4j existe um único label:
@@ -16,6 +17,13 @@ pnpm migrate                    # aplica db/migrations/*.cypher
 pnpm smoke                      # confere credencial, assinatura e CORS
 pnpm dev
 ```
+
+No Windows, o atalho **Phronesis** na área de trabalho faz o dia a dia:
+`scripts/dev.ps1` confere o `.env.local`, nunca sobe um segundo servidor (se a
+porta 3000 já responde, só abre o navegador — o Next escolheria outra porta, e o
+CORS do bucket, que libera só a 3000, barraria o upload sem a tela dizer nada),
+sobe o `pnpm dev` e abre o navegador quando a porta atende. Fechar a janela derruba o servidor. Recriar o atalho:
+`scripts/atalho.ps1`.
 
 ```bash
 pnpm test        # vitest — lógica pura, não precisa de credencial
@@ -34,8 +42,12 @@ Criar uma instância e guardar a senha na hora — ela não é mostrada de novo.
 `NEO4J_QUERY_URL` é a URL da Query API, não a de Bolt:
 
 ```
-https://<id>.databases.neo4j.io/db/neo4j/query/v2
+https://<id>.databases.neo4j.io/db/<banco>/query/v2
 ```
+
+`<id>` é o `AURA_INSTANCEID` e `<banco>` é o `NEO4J_DATABASE` do arquivo de
+credenciais — que na instância Free **não é `neo4j`**, é o próprio id. Se o
+`pnpm migrate` responder `Database does not exist`, é esse segmento.
 
 Depois: `pnpm migrate`. Instância Free pausa sozinha depois de alguns dias sem
 uso; se o smoke der timeout, é isso — despause no console.
@@ -55,10 +67,15 @@ porque a mecânica de upload é invisível. Aplicar `config/r2-cors.json` no buc
 { "AllowedOrigins": ["http://localhost:3000", "https://<seu-app>.vercel.app"] }
 ```
 
-### 3. STT
+### 3. Vercel AI Gateway
 
-`STT_API_KEY` com acesso a Whisper. `STT_URL` e `STT_MODEL` são opcionais e só
-servem para apontar para outro provedor.
+`AI_GATEWAY_API_KEY` é a **única chave de modelo** do sistema: todo tráfego de
+LLM sai por ela — STT agora, extração e deduplicação a partir da slice 2. Um
+lugar para ver custo e latência, e trocar de provedor sem tocar em código.
+
+`STT_MODEL` é opcional e aponta para outro modelo (padrão `xai/grok-stt`). Chave
+de provedor não entra aqui: ver a regra inviolável 8 em `CLAUDE.md` e a seção 4.2
+de `ARCHITECTURE.md`.
 
 Antes da primeira gravação de verdade, encher `config/vocabulario.txt` com os
 nomes próprios que você fala: clientes, colegas, produtos, projetos. É o que
@@ -127,12 +144,12 @@ Todo passo é chaveado por `sessao_id` (+ `chunk_index`):
 ## Mapa
 
 ```
-config/vocabulario.txt      nomes próprios injetados no prompt do STT
+config/vocabulario.txt      nomes próprios mandados como keyterm ao STT
 db/migrations/              definição canônica do schema
 scripts/migrate.ts          aplica as migrations pela HTTP Query API
 scripts/smoke.ts            confere as dependências externas
 config/r2-cors.json         política de CORS do bucket
-src/lib/                    neo4j, r2, manifest, transcrição, estados, stt, auth
+src/lib/                    neo4j, r2, manifest, transcrição, estados, modelos, stt, auth
 src/client/                 gravador, fila de upload, depósito IndexedDB
 src/app/api/                rotas da slice
 src/components/             gravação, chip de recuperação, leitura

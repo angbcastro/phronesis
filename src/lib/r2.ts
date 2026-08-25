@@ -94,21 +94,46 @@ export interface OpcoesPut {
   ifNoneMatch?: string;
 }
 
+/**
+ * `If-Match` exige validador **forte**. O R2 comprime a resposta de GET de
+ * objeto compressível (o manifest é um) e devolve o etag como `W/"…"`: mesmo
+ * digest, só o prefixo a mais. Repassado cru, o R2 compara estrito e recusa
+ * com 412 — o manifest nunca mais seria gravado depois de criado.
+ */
+export function etagForte(etag: string): string {
+  return etag.replace(/^W\//, "");
+}
+
 export async function put(
   key: string,
   corpo: string | ArrayBuffer | Uint8Array,
   opcoes: OpcoesPut = {},
 ): Promise<{ etag: string | null }> {
+  // Codifica uma vez só: o Content-Length tem de ser exatamente o que vai no
+  // corpo, e em UTF-8 texto tem mais bytes que caracteres.
+  const bytes =
+    typeof corpo === "string"
+      ? new TextEncoder().encode(corpo)
+      : corpo instanceof Uint8Array
+        ? corpo
+        : new Uint8Array(corpo);
+
   const headers: Record<string, string> = {
     "Content-Type": opcoes.contentType ?? "application/octet-stream",
+    // Obrigatório: quando o corpo chega ao undici como stream — é o que
+    // acontece no caminho do `waitUntil`, depois da resposta enviada — a
+    // requisição sai chunked e o R2 responde 411 MissingContentLength.
+    "Content-Length": String(bytes.byteLength),
   };
-  if (opcoes.ifMatch) headers["If-Match"] = opcoes.ifMatch;
+  if (opcoes.ifMatch) headers["If-Match"] = etagForte(opcoes.ifMatch);
   if (opcoes.ifNoneMatch) headers["If-None-Match"] = opcoes.ifNoneMatch;
 
   const resp = await cliente().fetch(urlObjeto(key), {
     method: "PUT",
     headers,
-    body: corpo as BodyInit,
+    // Uint8Array é BodyInit em tempo de execução; o TS só reclama da variância
+    // de ArrayBufferLike (SharedArrayBuffer), que não ocorre aqui.
+    body: bytes as BodyInit,
   });
 
   if (resp.status === 412 || resp.status === 409) throw new ConflitoR2Error(key);

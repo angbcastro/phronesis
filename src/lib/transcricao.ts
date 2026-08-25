@@ -5,7 +5,13 @@
  * próprio início. O offset absoluto na sessão é `relativo + 30 * i`
  * (aceite 6: clicar num trecho do minuto 9 toca o áudio no minuto 9).
  */
-import type { BlocoAbsoluto, Palavra, Transcricao, TranscricaoBloco } from "./tipos";
+import type {
+  BlocoAbsoluto,
+  Granularidade,
+  Palavra,
+  Transcricao,
+  TranscricaoBloco,
+} from "./tipos";
 import { DURACAO_CHUNK_S } from "./tipos";
 
 export const offsetDoBloco = (i: number): number => i * DURACAO_CHUNK_S;
@@ -40,6 +46,11 @@ export function prefixoContiguo<T extends { i: number }>(blocos: T[]): T[] {
   return saida;
 }
 
+/** A sessão inteira vale o elo mais fraco: um bloco por segmento derruba o resto. */
+export function granularidadeDaSessao(blocos: TranscricaoBloco[]): Granularidade {
+  return blocos.some((b) => b.granularidade === "segmento") ? "segmento" : "palavra";
+}
+
 export function concatenar(sessao_id: string, blocos: TranscricaoBloco[]): Transcricao {
   const ordenados = [...blocos].sort((a, b) => a.i - b.i);
 
@@ -51,5 +62,14 @@ export function concatenar(sessao_id: string, blocos: TranscricaoBloco[]): Trans
     mapa.push({ i: bloco.i, texto: bloco.texto.trim(), offset_s: offsetDoBloco(bloco.i) });
   }
 
-  return { sessao_id, texto: juntarTexto(ordenados), palavras, blocos: mapa };
+  const modelos = [...new Set(ordenados.map((b) => b.modelo).filter(Boolean))];
+
+  return {
+    sessao_id,
+    texto: juntarTexto(ordenados),
+    palavras,
+    blocos: mapa,
+    modelo: modelos.join(", "),
+    granularidade: granularidadeDaSessao(ordenados),
+  };
 }

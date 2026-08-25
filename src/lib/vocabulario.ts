@@ -1,7 +1,7 @@
 /**
- * Vocabulário injetado como prompt inicial do STT.
+ * Vocabulário injetado no STT como lista de termos (`keyterm`).
  *
- * Metade do que se fala são nomes próprios que o Whisper não conhece.
+ * Metade do que se fala são nomes próprios que o modelo não conhece.
  * Transcrição que precisa ser corrigida é transcrição que mata o sistema.
  *
  * Slice 1: lista escrita à mão em config/vocabulario.txt.
@@ -10,8 +10,9 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-/** Whisper corta o prompt em ~224 tokens; mantemos margem. */
-const LIMITE_CARACTERES = 850;
+/** Limites do `keyterm` da API de STT: 100 termos, 50 caracteres cada. */
+export const MAX_TERMOS = 100;
+export const MAX_CARACTERES = 50;
 
 export function termos(conteudo: string): string[] {
   return conteudo
@@ -20,22 +21,31 @@ export function termos(conteudo: string): string[] {
     .filter((l) => l.length > 0 && !l.startsWith("#"));
 }
 
-export function montarPrompt(lista: string[]): string {
-  if (lista.length === 0) return "";
-  let prompt = `Nomes próprios que aparecem nesta gravação: ${lista.join(", ")}.`;
-  if (prompt.length > LIMITE_CARACTERES) prompt = prompt.slice(0, LIMITE_CARACTERES - 1) + ".";
-  return prompt;
+/** Corta a lista no que a API aceita, sem mandar termo truncado pela metade. */
+export function keyterms(lista: string[]): string[] {
+  const vistos = new Set<string>();
+  const saida: string[] = [];
+
+  for (const termo of lista) {
+    if (termo.length > MAX_CARACTERES) continue;
+    const chave = termo.toLowerCase();
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    saida.push(termo);
+    if (saida.length === MAX_TERMOS) break;
+  }
+  return saida;
 }
 
-let cache: string | null = null;
+let cache: string[] | null = null;
 
-export async function promptVocabulario(): Promise<string> {
+export async function vocabulario(): Promise<string[]> {
   if (cache !== null) return cache;
   try {
     const conteudo = await readFile(join(process.cwd(), "config", "vocabulario.txt"), "utf8");
-    cache = montarPrompt(termos(conteudo));
+    cache = keyterms(termos(conteudo));
   } catch {
-    cache = "";
+    cache = [];
   }
   return cache;
 }

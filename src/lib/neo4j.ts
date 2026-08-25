@@ -3,7 +3,8 @@
  *
  * Nunca driver Bolt: serverless não sustenta pool de conexões (CLAUDE.md).
  * NEO4J_QUERY_URL aponta para o endpoint completo, ex.:
- *   https://<id>.databases.neo4j.io/db/neo4j/query/v2
+ *   https://<id>.databases.neo4j.io/db/<banco>/query/v2
+ * O <banco> vem do NEO4J_DATABASE das credenciais do Aura — não é sempre "neo4j".
  */
 import { env } from "./env";
 

@@ -31,8 +31,8 @@ export async function transcreverBloco(sessao_id: string, i: number): Promise<Tr
   const audio = await getBytes(chaveChunkAudio(sessao_id, i));
   if (!audio) throw new Error(`Bloco ${i} da sessão ${sessao_id} não está no R2`);
 
-  const { texto, palavras } = await transcrever(audio, `chunk_${i}.webm`);
-  const bloco: TranscricaoBloco = { i, texto, palavras };
+  const { texto, palavras, modelo, granularidade } = await transcrever(audio);
+  const bloco: TranscricaoBloco = { i, texto, palavras, modelo, granularidade };
 
   await putJson(keyTranscricao, bloco);
   await atualizarManifest(sessao_id, (m) => marcarTranscrito(m, i));
@@ -97,8 +97,11 @@ export async function finalizarSessao(sessao_id: string): Promise<{
     for (const c of pendentes(m)) {
       try {
         await transcreverBloco(sessao_id, c.i);
-      } catch {
-        // Outro worker pode estar no mesmo bloco; a próxima volta relê o manifest.
+      } catch (e) {
+        // Outro worker pode estar no mesmo bloco; a próxima volta relê o
+        // manifest. Mas o motivo vai para o log: a tela só sabe dizer que
+        // falhou, e sem esta linha a falha fica indiagnosticável depois.
+        console.error(`[pipeline] sessão ${sessao_id} bloco ${c.i} não transcreveu:`, e);
       }
     }
     m = await carregarManifest(sessao_id);
@@ -108,6 +111,10 @@ export async function finalizarSessao(sessao_id: string): Promise<{
 
   if (!tudoTranscrito(m)) {
     const faltando = pendentes(m).map((c) => c.i);
+    console.error(
+      `[pipeline] sessão ${sessao_id}: desistiu após ${ESPERA_MAX_MS / 1000}s com bloco(s) faltando: ${faltando.join(", ")}. ` +
+        `O motivo de cada um está nas linhas [pipeline] acima. Áudio intacto no R2.`,
+    );
     await atualizarSessao(sessao_id, { status: "erro" }); // áudio intacto, retry manual
     return { status: "erro", faltando };
   }

@@ -1,4 +1,5 @@
-# Vocabulário injetado como prompt inicial em cada chamada de STT.
+# Vocabulário injetado em cada chamada de STT como lista de termos (keyterm).
+# Limite do provedor: 100 termos, 50 caracteres cada — o excedente é descartado.
 # Uma entrada por linha. Linhas com # e linhas vazias são ignoradas.
 # Nomes próprios: pessoas, empresas, clientes, produtos, projetos.
 # Slice 1: mantido à mão. A partir da slice 3 é gerado das entidades do grafo.

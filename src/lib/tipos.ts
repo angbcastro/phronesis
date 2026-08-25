@@ -41,6 +41,9 @@ export interface Manifest {
   finalizado: boolean;
 }
 
+/** Precisão dos timestamps que o provedor devolveu para o bloco. */
+export type Granularidade = "palavra" | "segmento";
+
 export interface Palavra {
   palavra: string;
   inicio: number;
@@ -52,6 +55,9 @@ export interface TranscricaoBloco {
   i: number;
   texto: string;
   palavras: Palavra[];
+  /** Procedência: qual modelo transcreveu e com que precisão. */
+  modelo: string;
+  granularidade: Granularidade;
 }
 
 export interface BlocoAbsoluto {
@@ -66,4 +72,6 @@ export interface Transcricao {
   texto: string;
   palavras: Palavra[];
   blocos: BlocoAbsoluto[];
+  modelo: string;
+  granularidade: Granularidade;
 }

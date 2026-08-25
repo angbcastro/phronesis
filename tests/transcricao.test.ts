@@ -8,10 +8,17 @@ import {
 } from "@/lib/transcricao";
 import type { TranscricaoBloco } from "@/lib/tipos";
 
-const bloco = (i: number, texto: string, palavras: [string, number, number][]): TranscricaoBloco => ({
+const bloco = (
+  i: number,
+  texto: string,
+  palavras: [string, number, number][],
+  granularidade: "palavra" | "segmento" = "palavra",
+): TranscricaoBloco => ({
   i,
   texto,
   palavras: palavras.map(([palavra, inicio, fim]) => ({ palavra, inicio, fim })),
+  modelo: "xai/grok-stt",
+  granularidade,
 });
 
 describe("offsets absolutos", () => {
@@ -60,6 +67,22 @@ describe("concatenação", () => {
       bloco(1, "dois", [["dois", 2, 2.4]]),
     ]);
     expect(t.palavras.map((p) => p.inicio)).toEqual([1, 32]);
+  });
+});
+
+describe("procedência da sessão", () => {
+  it("guarda o modelo que transcreveu", () => {
+    expect(concatenar("s1", [bloco(0, "a", [])]).modelo).toBe("xai/grok-stt");
+  });
+
+  it("um bloco só por segmento derruba a precisão da sessão inteira", () => {
+    const t = concatenar("s1", [bloco(0, "a", []), bloco(1, "b", [], "segmento")]);
+    expect(t.granularidade).toBe("segmento");
+  });
+
+  it("só declara precisão por palavra quando todos os blocos têm", () => {
+    const t = concatenar("s1", [bloco(0, "a", []), bloco(1, "b", [])]);
+    expect(t.granularidade).toBe("palavra");
   });
 });
 

@@ -25,8 +25,12 @@ export const env = {
       bucket: req("R2_BUCKET"),
     };
   },
-  get sttApiKey() {
-    return req("STT_API_KEY");
+  /**
+   * Todo tráfego de modelo (STT agora, extração na slice 2) sai pelo
+   * Vercel AI Gateway — uma chave só, um lugar só para ver custo.
+   */
+  get aiGatewayKey() {
+    return req("AI_GATEWAY_API_KEY");
   },
   get auth() {
     return { secret: req("AUTH_SECRET"), allowedEmail: req("ALLOWED_EMAIL") };
