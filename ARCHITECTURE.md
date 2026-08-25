@@ -9,8 +9,9 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-1.md`.
 > arquivo no mesmo commit. Ver "Manutenção deste arquivo" no fim.
 
 **Estado: slice 1 — gravar, subir, transcrever.** Não existem átomos, entidades,
-extração, revisão, busca ou grafo de conteúdo. No Neo4j há um único label:
-`:Sessao`.
+extração, revisão, busca ou grafo de conteúdo: nenhum código escreve nada além
+de `:Sessao`. O **schema** da slice 2 já está aplicado no banco (migration 002,
+seção 8), vazio à espera do código que vai preenchê-lo.
 
 ---
 
@@ -339,7 +340,7 @@ o valor de `NEO4J_DATABASE` no arquivo de credenciais. Errar esse segmento dá
 `fields`/`values` da resposta em objetos e transforma `errors[0]` em
 `Neo4jError`.
 
-Nesta slice o grafo tem um label só:
+O único label que o código escreve hoje:
 
 ```
 (:Sessao { id, iniciada_em, duracao_s, status, audio_key,
@@ -348,7 +349,30 @@ Nesta slice o grafo tem um label só:
 
 `:Sessao` é infraestrutura de gravação, não conteúdo: gravar o nó sem
 confirmação não conflita com a regra 5 (nada entra no grafo sem aprovação) —
-essa regra vale para átomos e entidades, a partir da slice 2.
+essa regra vale para átomo e entidade.
+
+### 8.1 Schema da slice 2, aplicado e vazio
+
+A migration `002_atomo_entidade.cypher` já rodou: `:Atomo` e `:Entidade` têm
+constraint e índice no Aura, e **nenhum nó**. Nada nesta slice os escreve; quem
+vai escrever é o confirmar da revisão (`Specs/slice-2.md`).
+
+| Constraint | Alcance |
+|---|---|
+| `atomo_id` | id determinístico `<sessao_id>-<índice>` — é ele que faz o `MERGE` do confirmar ser idempotente |
+| `entidade_id` | |
+| `entidade_nome_normalizado` | único entre **todas** as entidades: `:Pessoa`, `:Projeto` e `:Objetivo` carregam `:Entidade`, então um projeto e uma pessoa não podem ter o mesmo nome. Deliberado — é a trava que impede duplicata em corrida, ao custo de recusar colisão legítima de nome entre tipos |
+
+Índices em `:Atomo(status)`, `:Atomo(tipo)` e `:Atomo(valido_em)`.
+
+Constraint de existência de propriedade (`IS NOT NULL`) não existe aqui: é
+recurso Enterprise e o Aura Free recusa. `prompt_version` e `modelo`
+obrigatórios em todo átomo (regra 7) são garantidos por código e teste, não pelo
+banco.
+
+Tipo de relação não se declara em Neo4j — `:GEROU`, `:SOBRE` e `:MENCIONA` só
+passam a existir com a primeira aresta. Ficam registrados em comentário no topo
+da migration, que é a definição canônica do schema.
 
 **Mudança de schema = nova migration numerada**, proposta e aprovada antes de
 rodar. `db/migrations/` é a definição canônica; `scripts/migrate.ts` aplica os
