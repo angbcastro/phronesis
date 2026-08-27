@@ -2,10 +2,12 @@
  * Layout do R2. Um lugar só monta chave — em toda rota, worker e teste.
  *
  *   sessoes/<id>/manifest.json
- *   sessoes/<id>/chunk_000.webm
+ *   sessoes/<id>/chunk_000.webm   (gravado no navegador)
+ *   sessoes/<id>/chunk_000.opus   (arquivo importado — a extensão é a de origem)
  *   sessoes/<id>/chunk_000.json
  *   sessoes/<id>/transcricao.json
  */
+import { EXT_GRAVACAO, extensaoAceita } from "./audio";
 
 export const prefixoSessao = (id: string) => `sessoes/${id}`;
 export const chaveManifest = (id: string) => `${prefixoSessao(id)}/manifest.json`;
@@ -18,8 +20,15 @@ export function indiceChunk(i: number): string {
   return String(i).padStart(3, "0");
 }
 
-export const chaveChunkAudio = (id: string, i: number) =>
-  `${prefixoSessao(id)}/chunk_${indiceChunk(i)}.webm`;
+/**
+ * A extensão vira caminho no R2, então é validada aqui e não só na rota:
+ * este é o único lugar que monta a chave, e quem confia no chamador
+ * escreve fora do prefixo da sessão mais cedo ou mais tarde.
+ */
+export const chaveChunkAudio = (id: string, i: number, ext: string = EXT_GRAVACAO) => {
+  if (!extensaoAceita(ext)) throw new Error(`Extensão de áudio inválida: ${ext}`);
+  return `${prefixoSessao(id)}/chunk_${indiceChunk(i)}.${ext}`;
+};
 
 export const chaveChunkTranscricao = (id: string, i: number) =>
   `${prefixoSessao(id)}/chunk_${indiceChunk(i)}.json`;

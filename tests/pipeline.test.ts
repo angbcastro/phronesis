@@ -33,6 +33,7 @@ vi.mock("@/lib/sessoes", () => ({
 
 vi.mock("@/lib/manifest", () => ({
   carregarManifest: vi.fn(async () => manifesto),
+  extensaoDoChunk: vi.fn(() => "webm"),
   atualizarManifest: vi.fn(async () => manifesto),
   marcarTranscrito: vi.fn((m) => m),
   pendentes: vi.fn((m) => m.chunks.filter((c: { transcrito: boolean }) => !c.transcrito)),

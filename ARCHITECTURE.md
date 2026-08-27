@@ -8,7 +8,7 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-1.md`.
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
 > arquivo no mesmo commit. Ver "Manutenção deste arquivo" no fim.
 
-**Estado: slice 1 — gravar, subir, transcrever.** Não existem átomos, entidades,
+**Estado: slice 1 — gravar (ou importar), subir, transcrever.** Não existem átomos, entidades,
 extração, revisão, busca ou grafo de conteúdo: nenhum código escreve nada além
 de `:Sessao`. O **schema** da slice 2 já está aplicado no banco (migration 002,
 seção 8), vazio à espera do código que vai preenchê-lo.
@@ -43,7 +43,8 @@ navegador pede uma URL presigned e faz `PUT` direto no bucket.
 ## 2. Mapa dos módulos
 
 ```
-src/lib/          servidor — nada aqui pode ser importado por componente client
+src/lib/          servidor — exceto os módulos puros marcados (client), que não
+                  leem credencial nem rede e por isso o navegador pode importar
   env.ts          leitura de variável de ambiente, falha cedo se faltar
   neo4j.ts        HTTP Query API (nunca driver Bolt)
   sessoes.ts      repositório de :Sessao (criar, buscar, atualizar com guarda)
@@ -57,7 +58,8 @@ src/lib/          servidor — nada aqui pode ser importado por componente clien
   transcricao.ts  offsets absolutos, prefixo contíguo, concatenação
   pipeline.ts     transcrever bloco / finalizar sessão (o orquestrador)
   auth.ts         magic link HMAC, cookie httpOnly
-  backoff.ts      backoff exponencial com jitter
+  backoff.ts      backoff exponencial com jitter                          (client)
+  audio.ts        formatos aceitos na importação, limites de arquivo       (client)
   rotas.ts        validação de parâmetro compartilhada pelas rotas
   tipos.ts        contratos do domínio + constantes (DURACAO_CHUNK_S = 30)
 
@@ -66,7 +68,8 @@ src/client/       navegador
   deposito.ts     IndexedDB: blocos pendentes + sessão em andamento
   fila.ts         upload serial com retry, observável pela UI
 
-src/components/   Gravacao (gravar), ChipRecuperacao (retomar), Leitura (ler)
+src/components/   Gravacao (gravar), Importacao (subir arquivo),
+                  ChipRecuperacao (retomar), Leitura (ler)
 src/app/api/      as 6 rotas da slice + 2 de auth
 src/middleware.ts porta única: sem cookie válido nada responde
 db/migrations/    definição canônica do schema
@@ -99,6 +102,43 @@ parar ──▶ /sessao/:id
                                       status = transcrito
   GET /api/sessoes/:id a cada 2 s ──▶ texto parcial → texto completo
 ```
+
+### 3.0 O caminho curto: arquivo importado
+
+Nota de voz do WhatsApp, gravador do celular, áudio antigo no disco. **Um
+arquivo é uma sessão inteira, num bloco só (`i = 0`).**
+
+```
+navegador                             Vercel                       R2 / Gateway
+─────────                             ──────                       ────────────
+<input type=file>
+  formatoDeArquivo(nome, mime)        (audio.ts — recusa antes de qualquer rede)
+  duração pelo <audio>                (NaN em container sem cabeçalho: passa)
+POST /api/sessoes ──────────────────▶ CREATE (:Sessao{gravando}) ─▶ Neo4j
+POST /chunks/0/url  {ext} ──────────▶ presigned PUT, 5 min
+PUT ──────────────────────────────────────────────────────────────▶ chunk_000.opus
+POST /chunks/0/pronto {ext,duracao} ▶ HEAD, manifest += bloco com ext
+                                      waitUntil(transcrever) ─────▶ STT
+sessionStorage duracao:<id>
+▶ /sessao/:id   (daqui em diante é o mesmo caminho da gravação: a `Leitura`
+                 chama /finalizar com a duração e faz o polling de 2 s)
+```
+
+**Por que um bloco só.** `offsetDoBloco(0)` é zero, então os timestamps que o STT
+devolve para o arquivo já são absolutos e a concatenação da seção 4.5 continua
+correta sem nenhum caso especial. Fatiar exigiria decodificar e reencodar Opus no
+navegador, e de quebra reintroduziria as emendas de 30 s que a gravação ao vivo
+tem e o arquivo importado não.
+
+**Sem IndexedDB.** A fila local (3.2) existe para não perder fala quando a aba
+fecha no meio da gravação. Um arquivo importado já está no disco de quem o
+escolheu: se o PUT falhar, `Importacao` tenta 3 vezes com o mesmo backoff e
+depois pede o arquivo de novo.
+
+**A duração vem do cliente.** `chunks.length * DURACAO_CHUNK_S` diria 30 s para um
+diário de 15 min, então `/pronto` e `/finalizar` aceitam `duracao_s` no corpo e
+ele vence a contagem. Duração desconhecida (`NaN`/`Infinity`, container sem
+cabeçalho) é omitida e o servidor cai na contagem de blocos.
 
 ### 3.1 Por que o recorder é recriado
 
@@ -382,22 +422,31 @@ console do Aura.
 ## 9. Layout do R2
 
 ```
-sessoes/<id>/manifest.json      { sessao_id, chunks: [{i, bytes, subido_em, transcrito}], finalizado }
-sessoes/<id>/chunk_000.webm     áudio do bloco
+sessoes/<id>/manifest.json      { sessao_id, chunks: [{i, bytes, subido_em, transcrito, ext?}], finalizado }
+sessoes/<id>/chunk_000.webm     áudio do bloco gravado no navegador
+sessoes/<id>/chunk_000.opus     áudio importado — a extensão é a do arquivo de origem
 sessoes/<id>/chunk_000.json     transcrição do bloco, offsets relativos, modelo, granularidade
 sessoes/<id>/transcricao.json   final, offsets absolutos
 _smoke/                         objetos temporários do `pnpm smoke`, apagados no fim
 ```
 
 `chaves.ts` é o único lugar que monta chave — rota, worker e teste passam por ele.
+Por isso é lá que a extensão é validada contra a lista de `audio.ts`, e não só na
+rota: extensão é parte de caminho, e quem confia no chamador escreve fora do
+prefixo da sessão mais cedo ou mais tarde.
+
+`ext` só aparece no manifest quando **não** é `webm`. Ausente significa gravação,
+o que mantém legível todo manifest escrito antes da importação existir
+(`extensaoDoChunk`). É esse campo que diz ao `transcreverBloco` onde o áudio
+está — procurar sempre em `.webm` mataria toda sessão importada.
 
 ## 10. Rotas
 
 | Rota | Faz | Notas |
 |---|---|---|
 | `POST /api/sessoes` | cria `:Sessao {status:'gravando'}` | devolve `id` |
-| `POST /api/sessoes/:id/chunks/:i/url` | presigned PUT de 5 min | o áudio não passa por aqui |
-| `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT)` | `maxDuration = 300` |
+| `POST /api/sessoes/:id/chunks/:i/url` | presigned PUT de 5 min | corpo `{ext?}`; 415 fora da lista; o áudio não passa por aqui |
+| `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT)` | corpo `{ext?, duracao_s?}`; `maxDuration = 300` |
 | `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha em `waitUntil` | `ja_finalizada` na segunda chamada |
 | `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s, `force-dynamic` |
 | `GET /api/sessoes/abertas` | sessões não finalizadas com pelo menos um bloco | alimenta o chip |
@@ -410,7 +459,7 @@ Todas com `runtime = "nodejs"`.
 
 | Rota | Componente | O que mostra |
 |---|---|---|
-| `/` | `Gravacao` + `ChipRecuperacao` | botão "Como foi seu dia?"; gravando: timer e um ponto de "salvo" — nada mais |
+| `/` | `Gravacao` + `Importacao` + `ChipRecuperacao` | botão "Como foi seu dia?", link "ou subir um áudio que já gravei"; gravando: timer e um ponto de "salvo" — nada mais |
 | `/sessao/:id` | `Leitura` | processamento com texto aparecendo em pedaços, depois a transcrição inteira |
 | `/entrar` | página de login | pede o e-mail permitido |
 
@@ -437,7 +486,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 ## 13. Verificação
 
 - `pnpm test` — vitest sobre a lógica pura (chaves, manifest, estados, offsets,
-  vocabulário, backoff, migrate). Nenhuma credencial, nenhuma rede.
+  vocabulário, backoff, migrate, formatos de importação). Nenhuma credencial,
+  nenhuma rede.
+- `tests/audio.test.ts` — resolução de formato, incluindo o `.opus` do WhatsApp
+  que chega com `File.type` vazio, e os limites de tamanho e duração.
+- `tests/importacao.test.ts` — `transcreverBloco` busca o áudio na extensão que o
+  manifest registrou, e continua caindo em `.webm` quando o campo não existe.
 - `tests/gateway.test.ts` — guarda da porta única de modelo (seção 4.2): varre
   `src/` e `scripts/` atrás de import de pacote de provedor, endpoint de
   provedor escrito à mão e leitura de chave de provedor, e confere as
@@ -466,6 +520,16 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   disso a sessão vai para `erro` com a lista do que faltou. O áudio fica intacto
   e o retry é manual.
 - **`config/vocabulario.txt`** ainda tem só os três nomes de exemplo.
+- **A importação aceita `opus`, `ogg`, `m4a`, `mp3`, `wav` e `webm`** — a lista
+  está em `audio.ts`. `.mp4` ficou de fora de propósito: quase sempre é vídeo, e
+  o pipeline manda os bytes crus para o STT. Teto de 25 MB e 30 min.
+- **Não foi conferido se o `xai/grok-stt` aceita Ogg/Opus, M4A, MP3 e WAV.** Até
+  agora ele só recebeu `audio/webm`. Se recusar algum, a saída seria converter, e
+  conversão de áudio não cabe em function serverless — a alternativa real é
+  estreitar a lista. Descobre-se no primeiro arquivo de cada tipo.
+- **Sessão importada não se distingue de gravada no grafo.** `:Sessao` não tem
+  `origem`; quem sabe é o `ext` no manifest, no R2. Acrescentar o campo é
+  migration nova, e nada hoje lê essa distinção.
 - **`fixtures/`** não existe: gravar 3 sessões reais e rotular à mão é o próximo
   passo, e é o que a slice 2 vai usar.
 - A troca do Whisper direto pelo AI Gateway **ainda não foi validada contra o

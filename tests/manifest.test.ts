@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   bytesTotais,
   duracaoEstimadaS,
+  extensaoDoChunk,
   manifestVazio,
   marcarFinalizado,
   marcarTranscrito,
@@ -80,5 +81,40 @@ describe("números do chip", () => {
 
   it("soma os bytes subidos", () => {
     expect(bytesTotais(comChunks(0, 1))).toBe(180_000);
+  });
+});
+
+describe("extensão do bloco no manifest", () => {
+  it("bloco gravado não carrega extensão — webm é o padrão", () => {
+    const m = registrarChunk(manifestVazio("s1"), { i: 0, bytes: 10, subido_em: "2026-08-27T12:00:00Z" });
+    expect(m.chunks[0].ext).toBeUndefined();
+    expect(extensaoDoChunk(m, 0)).toBe("webm");
+  });
+
+  it("guarda a extensão do arquivo importado", () => {
+    const m = registrarChunk(manifestVazio("s1"), {
+      i: 0,
+      bytes: 10,
+      subido_em: "2026-08-27T12:00:00Z",
+      ext: "opus",
+    });
+    expect(extensaoDoChunk(m, 0)).toBe("opus");
+  });
+
+  // Regra 4: o /pronto pode ser reenviado, e não pode apagar o que já sabe.
+  it("reenviar o mesmo bloco preserva a extensão", () => {
+    const um = registrarChunk(manifestVazio("s1"), {
+      i: 0,
+      bytes: 10,
+      subido_em: "2026-08-27T12:00:00Z",
+      ext: "opus",
+    });
+    const dois = registrarChunk(um, { i: 0, bytes: 99, subido_em: "2026-08-27T12:01:00Z" });
+    expect(extensaoDoChunk(dois, 0)).toBe("opus");
+    expect(dois.chunks[0].bytes).toBe(99);
+  });
+
+  it("manifest antigo, sem o campo, continua legível", () => {
+    expect(extensaoDoChunk({ sessao_id: "s1", chunks: [], finalizado: false }, 0)).toBe("webm");
   });
 });

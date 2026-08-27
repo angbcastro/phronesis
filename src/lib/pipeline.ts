@@ -6,7 +6,14 @@
  * para, só falta o último bloco.
  */
 import { chaveChunkAudio, chaveChunkTranscricao, chaveTranscricao } from "./chaves";
-import { atualizarManifest, carregarManifest, marcarTranscrito, pendentes, tudoTranscrito } from "./manifest";
+import {
+  atualizarManifest,
+  carregarManifest,
+  extensaoDoChunk,
+  marcarTranscrito,
+  pendentes,
+  tudoTranscrito,
+} from "./manifest";
 import { getBytes, getJson, putJson } from "./r2";
 import { atualizarSessao, buscarSessao } from "./sessoes";
 import { transcrever } from "./stt";
@@ -28,8 +35,13 @@ export async function transcreverBloco(sessao_id: string, i: number): Promise<Tr
     return pronto.valor;
   }
 
-  const audio = await getBytes(chaveChunkAudio(sessao_id, i));
-  if (!audio) throw new Error(`Bloco ${i} da sessão ${sessao_id} não está no R2`);
+  // A extensão sai do manifest: bloco gravado é `.webm`, arquivo importado
+  // guarda o formato de origem. Chutar `.webm` mataria toda sessão importada.
+  const manifest = await carregarManifest(sessao_id);
+  const key = chaveChunkAudio(sessao_id, i, extensaoDoChunk(manifest, i));
+
+  const audio = await getBytes(key);
+  if (!audio) throw new Error(`Bloco ${i} da sessão ${sessao_id} não está no R2 (${key})`);
 
   const { texto, palavras, modelo, granularidade } = await transcrever(audio);
   const bloco: TranscricaoBloco = { i, texto, palavras, modelo, granularidade };

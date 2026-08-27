@@ -59,3 +59,20 @@ describe("id de sessão", () => {
     expect(depois > antes).toBe(true);
   });
 });
+
+describe("chave do bloco com extensão — áudio importado", () => {
+  it("mantém webm quando ninguém passa extensão: a gravação não muda", () => {
+    expect(chaveChunkAudio("abc123xy", 0)).toBe("sessoes/abc123xy/chunk_000.webm");
+  });
+
+  it("usa a extensão do arquivo importado", () => {
+    expect(chaveChunkAudio("abc123xy", 0, "opus")).toBe("sessoes/abc123xy/chunk_000.opus");
+    expect(chaveChunkAudio("abc123xy", 0, "m4a")).toBe("sessoes/abc123xy/chunk_000.m4a");
+  });
+
+  // A extensão vira caminho no R2; cliente adulterado não pode escrever fora.
+  it("recusa extensão fora da lista em vez de montar chave torta", () => {
+    expect(() => chaveChunkAudio("abc123xy", 0, "exe")).toThrow();
+    expect(() => chaveChunkAudio("abc123xy", 0, "../../segredo")).toThrow();
+  });
+});

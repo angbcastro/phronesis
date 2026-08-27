@@ -3,6 +3,7 @@
  * transcritos. Vive no R2 (regra 2). Toda escrita é read-modify-write
  * condicional por etag: dois `/pronto` simultâneos não se sobrescrevem.
  */
+import { EXT_GRAVACAO } from "./audio";
 import { chaveManifest } from "./chaves";
 import type { ChunkManifest, Manifest } from "./tipos";
 import { DURACAO_CHUNK_S } from "./tipos";
@@ -24,11 +25,13 @@ function ordenado(chunks: ChunkManifest[]): ChunkManifest[] {
  */
 export function registrarChunk(
   m: Manifest,
-  entrada: { i: number; bytes: number; subido_em: string },
+  entrada: { i: number; bytes: number; subido_em: string; ext?: string },
 ): Manifest {
   const existente = m.chunks.find((c) => c.i === entrada.i);
   if (existente) {
-    // Só atualiza o tamanho; `transcrito` e `subido_em` são preservados.
+    // Só atualiza o tamanho; `transcrito`, `subido_em` e `ext` são
+    // preservados — o reenvio pode vir sem a extensão, e esquecê-la
+    // deixaria o pipeline procurando o áudio na chave errada.
     if (existente.bytes === entrada.bytes) return m;
     return {
       ...m,
@@ -41,6 +44,14 @@ export function registrarChunk(
     ...m,
     chunks: ordenado([...m.chunks, { ...entrada, transcrito: false }]),
   };
+}
+
+/**
+ * Onde está o áudio deste bloco. Manifest sem o campo é de gravação, de
+ * antes da importação existir — o padrão preserva essas sessões.
+ */
+export function extensaoDoChunk(m: Manifest, i: number): string {
+  return m.chunks.find((c) => c.i === i)?.ext ?? EXT_GRAVACAO;
 }
 
 export function marcarTranscrito(m: Manifest, i: number): Manifest {

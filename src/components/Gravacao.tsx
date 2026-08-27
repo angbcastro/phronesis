@@ -13,6 +13,7 @@ import { Gravador, suportado } from "@/client/gravador";
 import { acordar, enfileirar, observarFila, type EstadoFila } from "@/client/fila";
 import { guardarSessaoAtual, limparSessaoAtual } from "@/client/deposito";
 import { ChipRecuperacao } from "./ChipRecuperacao";
+import { Importacao } from "./Importacao";
 
 type Fase = "parado" | "abrindo" | "gravando" | "encerrando";
 
@@ -120,6 +121,7 @@ export function Gravacao() {
       <button className="botao-gravar" onClick={() => comecar()} disabled={fase === "abrindo"}>
         Como foi seu dia?
       </button>
+      <Importacao />
       <ChipRecuperacao aoRetomar={comecar} />
       {problema && <p className="aviso">{problema}</p>}
     </main>

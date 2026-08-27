@@ -32,6 +32,11 @@ export interface ChunkManifest {
   bytes: number;
   subido_em: string;
   transcrito: boolean;
+  /**
+   * Extensão do áudio no R2. Ausente = `webm`, o que a gravação produz —
+   * é o que mantém legível todo manifest escrito antes da importação.
+   */
+  ext?: string;
 }
 
 /** sessoes/<id>/manifest.json */
