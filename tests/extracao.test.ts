@@ -5,7 +5,7 @@ import {
   isolarJson,
   montarPrompt,
   normalizarTipo,
-  parsearAtomos,
+  parsearResposta,
 } from "@/lib/extracao";
 import type { AtomoCru, Palavra, Transcricao } from "@/lib/tipos";
 
@@ -74,19 +74,19 @@ describe("tipo do átomo", () => {
 
 describe("parse", () => {
   it("aceita a lista solta, sem o envelope", () => {
-    expect(parsearAtomos(JSON.stringify([item()])).atomos).toHaveLength(1);
+    expect(parsearResposta(JSON.stringify([item()])).atomos).toHaveLength(1);
   });
 
   it("JSON quebrado estoura — não devolve lista vazia como se estivesse tudo bem", () => {
-    expect(() => parsearAtomos("{isso não é json")).toThrow(/JSON/);
+    expect(() => parsearResposta("{isso não é json")).toThrow(/JSON/);
   });
 
   it("resposta sem a lista estoura", () => {
-    expect(() => parsearAtomos('{"resultado":"nenhum"}')).toThrow(/atomos/);
+    expect(() => parsearResposta('{"resultado":"nenhum"}')).toThrow(/atomos/);
   });
 
   it("item ruim é descartado com motivo, sem derrubar os bons", () => {
-    const { atomos, descartados } = parsearAtomos(
+    const { atomos, descartados } = parsearResposta(
       resposta([
         item(),
         item({ tipo: "REFLEXAO" }),
@@ -107,9 +107,9 @@ describe("parse", () => {
   });
 
   it("menciona ausente ou malformado vira lista vazia, não quebra", () => {
-    expect(parsearAtomos(resposta([item({ menciona: undefined })])).atomos[0].menciona).toEqual([]);
-    expect(parsearAtomos(resposta([item({ menciona: "Exxmed" })])).atomos[0].menciona).toEqual([]);
-    expect(parsearAtomos(resposta([item({ menciona: ["Exxmed", "", 7] })])).atomos[0].menciona).toEqual([
+    expect(parsearResposta(resposta([item({ menciona: undefined })])).atomos[0].menciona).toEqual([]);
+    expect(parsearResposta(resposta([item({ menciona: "Exxmed" })])).atomos[0].menciona).toEqual([]);
+    expect(parsearResposta(resposta([item({ menciona: ["Exxmed", "", 7] })])).atomos[0].menciona).toEqual([
       "Exxmed",
     ]);
   });

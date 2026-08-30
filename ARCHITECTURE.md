@@ -13,9 +13,10 @@ código escreve no grafo nada além de `:Sessao`: não existem revisão, confirm
 busca nem grafo de conteúdo. O **schema** da slice 2 está aplicado e vazio
 (migration 002, seção 8).
 
-Da slice 2 já existe a **primeira peça: extração de átomos e casamento de
-offsets** (seção 4.6) — módulos testados que **ainda não estão ligados a nada**.
-Nenhuma rota, nenhum gatilho, nenhum estado novo de sessão.
+Da slice 2 já existem **extração de átomos, casamento de offsets e resolução de
+entidade** (seção 4.6) — módulos testados que **ainda não estão ligados a nada**.
+Nenhuma rota, nenhum gatilho, nenhum estado novo de sessão. A resolução lê
+`:Entidade` no grafo; nada escreve nele.
 
 ---
 
@@ -60,8 +61,10 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   stt.ts          transcrição — pede o modelo a modelos.ts
   vocabulario.ts  nomes próprios → keyterms do STT
   transcricao.ts  offsets absolutos, prefixo contíguo, concatenação
+  texto.ts        normalização em um lugar só: offsets e nome_normalizado
   extracao.ts     átomos a partir da transcrição: prompt, JSON estrito, procedência
   offsets.ts      trecho do modelo → segundo do áudio (modelo não dá timestamp)
+  entidades.ts    resolve entidade citada contra o grafo — só leitura
   pipeline.ts     transcrever bloco / finalizar sessão (o orquestrador)
   auth.ts         magic link HMAC, cookie httpOnly
   backoff.ts      backoff exponencial com jitter                          (client)
@@ -317,6 +320,36 @@ Na granularidade `segmento` (4.3) o offset é o da frase inteira: o casamento
 devolve a entrada de `palavras[]` de onde o token veio, com a precisão que o
 provedor deu — nem mais, nem menos.
 
+#### Resolução de entidade
+
+"Rodozanco" na segunda sessão tem que achar o nó da primeira. `entidades.ts`
+casa por `nome_normalizado` contra as `:Entidade` existentes, numa consulta só
+para a sessão inteira, e devolve candidatas — cada uma dizendo se já existe
+(`conhecida`, com o `id` do nó) ou se seria criada no confirmar.
+
+É **resolução, não deduplicação**: juntar "Exxmed" com "Exx Med" exige semântica
+e é slice 3. E é **só leitura** — quem cria nó é o confirmar, depois da revisão
+(regra 5). A trava contra duplicata em corrida não é este código: é a constraint
+de `nome_normalizado` único (8.1), que vale entre todas as entidades.
+
+A normalização é a mesma que o casamento de offsets usa, e por isso mora sozinha
+em `texto.ts`. Se as duas divergissem, um nome acharia o áudio certo e ainda
+assim criaria um segundo nó no grafo.
+
+Quando a entidade já existe, **o grafo vence**: a grafia gravada e o tipo dos
+labels do nó. O extrator propor `:Pessoa` para o que já é `:Projeto` não muda
+nada — trocar o tipo de uma entidade existente é edição na revisão, não efeito
+colateral de uma extração.
+
+O tipo (`:Pessoa` / `:Projeto` / `:Objetivo`) é proposto pelo extrator numa
+lista `entidades` à parte, e cai em `:Pessoa` quando falta ou vem inválido — num
+diário falado, quase sempre acerta. A contagem de ocorrências sai dos átomos, não
+dessa lista: entidade que o modelo listou e nenhum átomo cita não entra, seria nó
+órfão.
+
+**`"eu"` é uma `:Pessoa` como qualquer outra** — decisão tomada, não acidente.
+Um átomo sobre quem fala aponta `sobre: "eu"`, e o confirmar criará o nó.
+
 ## 5. Estados da sessão
 
 ```
@@ -430,7 +463,8 @@ o valor de `NEO4J_DATABASE` no arquivo de credenciais. Errar esse segmento dá
 `fields`/`values` da resposta em objetos e transforma `errors[0]` em
 `Neo4jError`.
 
-O único label que o código escreve hoje:
+A resolução de entidade (4.6) **lê** `:Entidade`, e é a única coisa que consulta
+o schema da slice 2. O único label que o código escreve hoje:
 
 ```
 (:Sessao { id, iniciada_em, duracao_s, status, audio_key,
@@ -444,8 +478,9 @@ essa regra vale para átomo e entidade.
 ### 8.1 Schema da slice 2, aplicado e vazio
 
 A migration `002_atomo_entidade.cypher` já rodou: `:Atomo` e `:Entidade` têm
-constraint e índice no Aura, e **nenhum nó**. Nada nesta slice os escreve; quem
-vai escrever é o confirmar da revisão (`Specs/slice-2.md`).
+constraint e índice no Aura, e **nenhum nó**. Nada escreve neles ainda; quem vai
+escrever é o confirmar da revisão (`Specs/slice-2.md`). O que já existe é a
+leitura: `entidades.ts` consulta `:Entidade` por `nome_normalizado`.
 
 | Constraint | Alcance |
 |---|---|
@@ -581,10 +616,13 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Sessão importada não se distingue de gravada no grafo.** `:Sessao` não tem
   `origem`; quem sabe é o `ext` no manifest, no R2. Acrescentar o campo é
   migration nova, e nada hoje lê essa distinção.
-- **A extração não está ligada.** `extracao.ts` e `offsets.ts` existem e são
-  testados, mas nada os chama. Ligar é: gatilho no `finalizarSessao`, estados
-  `extraindo`/`em_revisao`/`confirmada`, `extracao.json` no R2, resolução de
-  entidade, tela de revisão e confirmar.
+- **A extração não está ligada.** `extracao.ts`, `offsets.ts` e `entidades.ts`
+  existem e são testados, mas nada os chama. Ligar é: gatilho no
+  `finalizarSessao`, estados `extraindo`/`em_revisao`/`confirmada`,
+  `extracao.json` no R2, tela de revisão e confirmar.
+- **A resolução nunca rodou contra um grafo com entidades.** O banco tem zero
+  `:Entidade`, então todo caminho de "já conhecida" só foi exercitado em teste
+  com o Neo4j mockado.
 - **`zai/glm-5.3-flash` nunca foi chamado de verdade.** O id passa na validação
   de formato, mas se o Gateway não o conhecer a extração falha na primeira
   chamada real — o conserto é `EXTRACAO_MODEL`, sem tocar em código.

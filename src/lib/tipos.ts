@@ -88,6 +88,14 @@ export const TIPOS_ATOMO = ["FATO", "OPINIAO", "SENTIMENTO", "APRENDIZADO", "CON
 export type TipoAtomo = (typeof TIPOS_ATOMO)[number];
 
 /**
+ * Label da entidade no grafo. Os três carregam sempre também `:Entidade` — a
+ * constraint de `nome_normalizado` é por lá, e vale para os três de uma vez.
+ */
+export const TIPOS_ENTIDADE = ["Pessoa", "Projeto", "Objetivo"] as const;
+
+export type TipoEntidade = (typeof TIPOS_ENTIDADE)[number];
+
+/**
  * Como o offset do átomo foi obtido. Vai gravado junto: a tela não promete
  * mais precisão do que tem, e átomo sem âncora é o primeiro candidato a ser
  * rejeitado na revisão — trecho que não existe na transcrição costuma ser
@@ -124,15 +132,32 @@ export interface Descarte {
 }
 
 /**
+ * Entidade citada na sessão, já confrontada com o grafo.
+ *
+ * `conhecida` é o que a revisão mostra: nó que já existe versus nó que seria
+ * criado. Criar entidade é decisão de quem revisa, na mesma tela.
+ */
+export interface EntidadeCandidata {
+  /** Como aparece na sessão — ou como já está no grafo, quando conhecida. */
+  nome: string;
+  /** Chave única entre TODAS as entidades. É ela que impede o grafo duplicado. */
+  nome_normalizado: string;
+  tipo: TipoEntidade;
+  conhecida: boolean;
+  /** Id do nó existente; `null` quando seria criada no confirmar. */
+  id: string | null;
+  /** Quantos átomos desta proposta apontam para ela, como sujeito ou menção. */
+  ocorrencias: number;
+}
+
+/**
  * A proposta de extração. Vive no R2 e não no grafo: nada é gravado antes da
  * confirmação na revisão (regra 5).
- *
- * `entidades` (as candidatas resolvidas contra o que já existe) entra quando a
- * resolução de entidade for escrita — ainda não existe.
  */
 export interface Extracao {
   sessao_id: string;
   atomos: AtomoProposto[];
+  entidades: EntidadeCandidata[];
   descartados: Descarte[];
   prompt_version: string;
   modelo: string;

@@ -5,27 +5,14 @@ import {
   criarLocalizador,
   indexar,
   melhorJanela,
-  normalizar,
-  tokenizar,
 } from "@/lib/offsets";
+import { tokenizar } from "@/lib/texto";
 import type { Palavra } from "@/lib/tipos";
 
 /** Uma palavra por segundo a partir de `de` — offsets fáceis de conferir a olho. */
 function fala(texto: string, de = 0): Palavra[] {
   return texto.split(" ").map((palavra, i) => ({ palavra, inicio: de + i, fim: de + i + 0.5 }));
 }
-
-describe("normalização", () => {
-  it("tira acento, caixa e pontuação — o modelo pontua do jeito dele", () => {
-    expect(normalizar("Reunião, difícil!")).toBe("reuniao  dificil");
-    expect(tokenizar("Reunião, difícil!")).toEqual(["reuniao", "dificil"]);
-  });
-
-  it("texto sem letra nenhuma vira lista vazia, não [''] ", () => {
-    expect(tokenizar("… — !")).toEqual([]);
-    expect(tokenizar("")).toEqual([]);
-  });
-});
 
 describe("índice de tokens", () => {
   it("mapeia cada token para a entrada de palavras[] que o produziu", () => {

@@ -2,17 +2,21 @@
  * Extração de átomos a partir da transcrição.
  *
  * Sai pelo Vercel AI Gateway como todo o resto que fala com modelo — o
- * endereçamento está em `modelos.ts` (regra 8). Este arquivo faz três coisas e
- * mais nada: monta o prompt, valida a resposta e casa cada trecho com o áudio.
+ * endereçamento está em `modelos.ts` (regra 8). Este arquivo monta o prompt,
+ * valida a resposta, casa cada trecho com o áudio (`offsets.ts`) e confronta as
+ * entidades citadas com o grafo (`entidades.ts`).
  *
  * **Os offsets não saem do modelo.** Ele devolve o trecho; `offsets.ts` acha o
  * segundo. Ver o cabeçalho de lá para o porquê.
  *
- * Nada aqui escreve no R2 nem no grafo: a função devolve a proposta e quem a
- * chamar decide o que fazer com ela. Antes da sua confirmação na revisão, o
- * grafo não recebe nada (regra 5).
+ * O grafo é **lido** (para saber que entidade já existe) e nunca escrito. Nada
+ * vai para o R2 tampouco: a função devolve a proposta e quem a chamar decide o
+ * que fazer com ela. Antes da confirmação na revisão o grafo não recebe nada
+ * (regra 5).
  */
 import { generateText } from "ai";
+import { resolverEntidades } from "./entidades";
+import type { EntidadePropostaFrase } from "./entidades";
 import { garantirGateway, modeloExtracao } from "./modelos";
 import { criarLocalizador } from "./offsets";
 import { TIPOS_ATOMO } from "./tipos";
@@ -22,7 +26,7 @@ import type { AtomoCru, AtomoProposto, Descarte, Extracao, TipoAtomo, Transcrica
  * Muda sempre que o prompt mudar. Vai gravado em todo átomo (regra 7): sem
  * isso, daqui a três meses não há como saber qual versão produziu o quê.
  */
-export const PROMPT_VERSION = "extracao-1";
+export const PROMPT_VERSION = "extracao-2";
 
 export class ExtracaoError extends Error {
   constructor(message: string) {
@@ -40,12 +44,15 @@ Regras:
 - Uma afirmação por item. Frase com duas afirmações vira dois itens.
 - Descarte o que não afirma nada: hesitação, teste de microfone, pensamento interrompido, "então", "né".
 - "trecho" é obrigatório e tem que ser COPIADO LITERALMENTE da transcrição, sem corrigir nada. É o que liga a afirmação ao áudio. Não junte pedaços distantes num trecho só.
-- "sobre": exatamente uma entidade — pessoa, projeto ou objetivo. Quando a afirmação é sobre quem está falando, use "eu".
+- "sobre": exatamente uma entidade — pessoa, projeto ou objetivo. Quando a afirmação é sobre quem está falando, use "eu", que é uma entidade como qualquer outra.
 - "menciona": as outras entidades citadas na afirmação, ou [].
 - "tipo": FATO (aconteceu), OPINIAO (o que eu acho), SENTIMENTO (como eu me senti), APRENDIZADO (o que eu concluí), CONQUISTA (o que eu consegui).
 
+Devolva também "entidades": cada entidade citada uma vez só, com o tipo proposto — PESSOA, PROJETO ou OBJETIVO. "eu" é PESSOA.
+
 Responda somente com JSON, sem texto antes ou depois, neste formato:
-{"atomos":[{"texto":"...","tipo":"FATO","sobre":"...","menciona":[],"trecho":"..."}]}
+{"atomos":[{"texto":"...","tipo":"FATO","sobre":"...","menciona":[],"trecho":"..."}],
+ "entidades":[{"nome":"...","tipo":"PESSOA"}]}
 
 Transcrição:
 `;
@@ -84,12 +91,19 @@ export function normalizarTipo(valor: unknown): TipoAtomo | null {
 
 const texto = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
+export interface RespostaExtrator {
+  atomos: AtomoCru[];
+  /** Só uma dica de tipo: quem decide o que vira nó é `entidades.ts`. */
+  entidades: EntidadePropostaFrase[];
+  descartados: Descarte[];
+}
+
 /**
  * Valida item por item. O que não passa vai para `descartados` com o motivo —
  * item malformado não derruba a extração inteira, e não some em silêncio: a
  * lista de descarte é o que diz se o prompt está piorando.
  */
-export function parsearAtomos(bruto: string): { atomos: AtomoCru[]; descartados: Descarte[] } {
+export function parsearResposta(bruto: string): RespostaExtrator {
   let cru: unknown;
   try {
     cru = JSON.parse(isolarJson(bruto));
@@ -131,7 +145,23 @@ export function parsearAtomos(bruto: string): { atomos: AtomoCru[]; descartados:
     }
   }
 
-  return { atomos, descartados };
+  return { atomos, entidades: propostasDeEntidade(cru), descartados };
+}
+
+/**
+ * As entidades que o modelo listou, com o tipo proposto. Item malformado é
+ * ignorado em silêncio, e não descartado: isto é palpite de tipo, não conteúdo
+ * — `entidades.ts` cai no padrão quando falta, e a contagem de verdade sai dos
+ * átomos.
+ */
+function propostasDeEntidade(cru: unknown): EntidadePropostaFrase[] {
+  const lista = (cru as { entidades?: unknown })?.entidades;
+  if (!Array.isArray(lista)) return [];
+
+  return lista.flatMap((e) => {
+    const nome = texto((e as { nome?: unknown })?.nome);
+    return nome === "" ? [] : [{ nome, tipo: (e as { tipo?: unknown })?.tipo }];
+  });
 }
 
 /**
@@ -179,12 +209,14 @@ export async function extrair(transcricao: Transcricao): Promise<Extracao> {
     throw new ExtracaoError(e instanceof Error ? e.message : String(e));
   }
 
-  const { atomos, descartados } = parsearAtomos(resposta.text ?? "");
+  const { atomos, entidades, descartados } = parsearResposta(resposta.text ?? "");
   const modeloReal = resposta.response?.modelId ?? modelo;
 
   return {
     sessao_id: transcricao.sessao_id,
     atomos: ancorar(transcricao.sessao_id, atomos, transcricao, modeloReal),
+    // Lê o grafo; não escreve nada nele (regra 5).
+    entidades: await resolverEntidades(atomos, entidades),
     descartados,
     prompt_version: PROMPT_VERSION,
     modelo: modeloReal,

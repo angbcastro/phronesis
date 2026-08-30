@@ -17,6 +17,7 @@
  *
  * Módulo puro: não fala com rede nem com modelo.
  */
+import { tokenizar } from "./texto";
 import type { Ancora, Palavra } from "./tipos";
 
 /** Fração dos tokens do trecho que uma janela precisa ter para valer. */
@@ -27,25 +28,6 @@ export type Trecho =
   | { ancora: "nenhuma"; inicio_s: null; fim_s: null };
 
 const SEM_ANCORA: Trecho = { ancora: "nenhuma", inicio_s: null, fim_s: null };
-
-/**
- * Minúsculas, sem acento, sem pontuação. É o que faz "Rodozanco," casar com
- * "rodozanco" e "reunião" com "reuniao": o modelo devolve o trecho com a
- * pontuação dele, não com a que o STT escreveu.
- */
-export function normalizar(s: string): string {
-  return s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // marcas de acento, soltas pelo NFD
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .trim();
-}
-
-export function tokenizar(s: string): string[] {
-  const limpo = normalizar(s);
-  return limpo === "" ? [] : limpo.split(/\s+/);
-}
 
 interface TokenIndexado {
   token: string;
