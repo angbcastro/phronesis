@@ -15,7 +15,14 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { MODELO_STT_PADRAO, modeloStt, provedorDe, validarIdDeModelo } from "@/lib/modelos";
+import {
+  MODELO_EXTRACAO_PADRAO,
+  MODELO_STT_PADRAO,
+  modeloExtracao,
+  modeloStt,
+  provedorDe,
+  validarIdDeModelo,
+} from "@/lib/modelos";
 
 /** Pacotes que falam direto com provedor, sem passar pelo Gateway. */
 const IMPORT_PROIBIDO =
@@ -140,6 +147,28 @@ describe("endereçamento de modelo", () => {
       if (antes === undefined) delete process.env.STT_MODEL;
       else process.env.STT_MODEL = antes;
     }
+  });
+
+  it("EXTRACAO_MODEL troca de provedor sem tocar em código", () => {
+    const antes = process.env.EXTRACAO_MODEL;
+    try {
+      delete process.env.EXTRACAO_MODEL;
+      expect(modeloExtracao()).toBe(MODELO_EXTRACAO_PADRAO);
+
+      process.env.EXTRACAO_MODEL = "openai/gpt-4o-mini";
+      expect(modeloExtracao()).toBe("openai/gpt-4o-mini");
+
+      process.env.EXTRACAO_MODEL = "";
+      expect(modeloExtracao()).toBe(MODELO_EXTRACAO_PADRAO); // vazio é ausente
+    } finally {
+      if (antes === undefined) delete process.env.EXTRACAO_MODEL;
+      else process.env.EXTRACAO_MODEL = antes;
+    }
+  });
+
+  it("os dois modelos padrão são endereçáveis pelo Gateway", () => {
+    expect(validarIdDeModelo(MODELO_STT_PADRAO)).toBe(MODELO_STT_PADRAO);
+    expect(validarIdDeModelo(MODELO_EXTRACAO_PADRAO)).toBe(MODELO_EXTRACAO_PADRAO);
   });
 
   it("STT_MODEL mal escrito estoura antes de qualquer byte sair", () => {

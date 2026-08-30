@@ -72,3 +72,16 @@ export function garantirGateway(): void {
 export function modeloStt(): string {
   return validarIdDeModelo(process.env.STT_MODEL || MODELO_STT_PADRAO);
 }
+
+/**
+ * Modelo de extração de átomos. `EXTRACAO_MODEL` troca de provedor sem tocar
+ * em código — se o Gateway não conhecer o id padrão, o conserto é uma
+ * variável de ambiente, não um deploy.
+ *
+ * `||` e não `??`: string vazia no `.env.local` é ausência, não escolha.
+ */
+export const MODELO_EXTRACAO_PADRAO = "zai/glm-5.3-flash";
+
+export function modeloExtracao(): string {
+  return validarIdDeModelo(process.env.EXTRACAO_MODEL || MODELO_EXTRACAO_PADRAO);
+}

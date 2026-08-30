@@ -96,8 +96,8 @@ Bucket privado, sem acesso público. Presigned URLs com validade de 5 minutos, e
 7. Nenhuma requisição de áudio passa por rota da Vercel (conferir no Network).
 8. Uma sessão de 20 min gera no máximo ~4 MB no R2.
 9. Chamar `finalizar` duas vezes, ou subir o mesmo bloco duas vezes, não duplica nada nem reprocessa em cima do resultado pronto.
-10. Nas 3 sessões de fixture, todo nome próprio do `vocabulario.txt` sai grafado certo, e eu leio a transcrição inteira sem vontade de corrigir nada.
+10. Numa sessão real de diário, todo nome próprio do `vocabulario.txt` sai grafado certo, e eu leio a transcrição inteira sem vontade de corrigir nada.
 
 ## Depois desta slice
 
-Gravar 3 sessões reais e rotular à mão os átomos esperados em `fixtures/`. É o que a slice 2 vai usar para medir se a extração presta.
+Gravar (ou importar) sessões reais de diário. A slice 2 extrai átomos delas, e a qualidade da extração eu avalio à mão, na tela de revisão.

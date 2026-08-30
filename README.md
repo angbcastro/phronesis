@@ -4,9 +4,9 @@ Diário falado, single-user. Ver `Specs/visao.md` para o produto, `ARCHITECTURE.
 para como o sistema funciona por dentro e `CLAUDE.md` para as regras
 invioláveis.
 
-**Estado: slice 1 — gravar, subir, transcrever.** Nada de átomos, entidades,
-extração, perguntas, revisão, busca ou grafo. No Neo4j existe um único label:
-`:Sessao`.
+**Estado: slice 1 — gravar (ou importar), subir, transcrever.** Nada de átomos,
+entidades, extração, perguntas, revisão, busca ou grafo. No Neo4j existe um único
+label: `:Sessao`.
 
 ## Rodar
 
@@ -73,7 +73,8 @@ porque a mecânica de upload é invisível. Aplicar `config/r2-cors.json` no buc
 LLM sai por ela — STT agora, extração e deduplicação a partir da slice 2. Um
 lugar para ver custo e latência, e trocar de provedor sem tocar em código.
 
-`STT_MODEL` é opcional e aponta para outro modelo (padrão `xai/grok-stt`). Chave
+`STT_MODEL` e `EXTRACAO_MODEL` são opcionais e apontam para outro modelo
+(padrões `xai/grok-stt` e `zai/glm-5.3-flash`). Chave
 de provedor não entra aqui: ver a regra inviolável 8 em `CLAUDE.md` e a seção 4.2
 de `ARCHITECTURE.md`.
 
@@ -163,5 +164,6 @@ tests/                      vitest sobre a lógica pura
   Trocar a função `entregar` em `src/app/api/auth/link/route.ts` resolve.
 - **`config/vocabulario.txt`** está com três nomes de exemplo. Encher à mão antes
   de gravar de verdade — é o que decide o critério de aceite 10.
-- **`fixtures/`** ainda não existe: as 3 sessões reais rotuladas à mão são o
-  próximo passo, e é o que a slice 2 vai usar.
+- **Sessão real de diário.** As duas que estão no banco são teste de microfone. A
+  extração da slice 2 é avaliada à mão, na tela de revisão, contra sessão de
+  diário de verdade — não há gabarito rotulado nem percentual de recall.

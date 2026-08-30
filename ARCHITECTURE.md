@@ -8,10 +8,14 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-1.md`.
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
 > arquivo no mesmo commit. Ver "Manutenção deste arquivo" no fim.
 
-**Estado: slice 1 — gravar (ou importar), subir, transcrever.** Não existem átomos, entidades,
-extração, revisão, busca ou grafo de conteúdo: nenhum código escreve nada além
-de `:Sessao`. O **schema** da slice 2 já está aplicado no banco (migration 002,
-seção 8), vazio à espera do código que vai preenchê-lo.
+**Estado: slice 1 no ar — gravar (ou importar), subir, transcrever.** Nenhum
+código escreve no grafo nada além de `:Sessao`: não existem revisão, confirmação,
+busca nem grafo de conteúdo. O **schema** da slice 2 está aplicado e vazio
+(migration 002, seção 8).
+
+Da slice 2 já existe a **primeira peça: extração de átomos e casamento de
+offsets** (seção 4.6) — módulos testados que **ainda não estão ligados a nada**.
+Nenhuma rota, nenhum gatilho, nenhum estado novo de sessão.
 
 ---
 
@@ -56,6 +60,8 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   stt.ts          transcrição — pede o modelo a modelos.ts
   vocabulario.ts  nomes próprios → keyterms do STT
   transcricao.ts  offsets absolutos, prefixo contíguo, concatenação
+  extracao.ts     átomos a partir da transcrição: prompt, JSON estrito, procedência
+  offsets.ts      trecho do modelo → segundo do áudio (modelo não dá timestamp)
   pipeline.ts     transcrever bloco / finalizar sessão (o orquestrador)
   auth.ts         magic link HMAC, cookie httpOnly
   backoff.ts      backoff exponencial com jitter                          (client)
@@ -209,17 +215,19 @@ Daí a forma da regra, que é verificável em vez de aspiracional:
 
 `src/lib/modelos.ts` é o único lugar que resolve id de modelo: valida o formato
 (`STT_MODEL` mal escrito estoura antes de qualquer byte sair), extrai o provedor
-para `providerOptions` e confere a chave do Gateway antes da chamada. Slice 2
-acrescenta `modeloExtracao()` ao lado de `modeloStt()`, no mesmo formato — não
-espalha id literal pelo código.
+para `providerOptions` e confere a chave do Gateway antes da chamada.
+`modeloExtracao()` está ao lado de `modeloStt()`, no mesmo formato — id literal
+não se espalha pelo código.
 
 `tests/gateway.test.ts` varre `src/` e `scripts/` a cada `pnpm test` e falha se
 algum dos quatro pontos da tabela for furado. É o que sustenta a promessa de
 "uma chave, um lugar para ver custo" quando a extração chegar.
 
-**Hoje só o STT usa modelo.** Extração e deduplicação não existem — a slice 1 não
-as inclui e construir adiantado o que a slice não usa é proibido. O que existe é
-a porta por onde elas vão passar, e a guarda que impede que passem por fora.
+**Hoje passam por aqui o STT e a extração** — `modeloStt()` (padrão
+`xai/grok-stt`, trocável por `STT_MODEL`) e `modeloExtracao()` (padrão
+`zai/glm-5.3-flash`, trocável por `EXTRACAO_MODEL`). Deduplicação é slice 3 e não
+existe: o que existe é a porta por onde ela vai passar, e a guarda que impede que
+passe por fora.
 
 ### 4.3 Granularidade e procedência
 
@@ -266,6 +274,48 @@ offsets, junta o texto e registra o mapa `{ i, texto, offset_s }`.
 Enquanto processa, a tela mostra só o **prefixo contíguo** dos blocos prontos
 (`prefixoContiguo`): se o bloco 2 ainda está no STT, o 3 não aparece — texto
 parcial nunca é lido fora de ordem.
+
+### 4.6 Extração de átomos
+
+Primeira peça da slice 2. **Existe como módulo e não está ligada a nada:** ninguém
+chama `extrair()` — falta o gatilho no pipeline, os estados novos da sessão, a
+proposta gravada no R2, a resolução de entidade, a revisão e o confirmar. O que
+existe é a lógica, testada.
+
+`extracao.ts` faz três coisas e mais nada: monta o prompt, valida a resposta item
+por item e carimba a procedência. Sai pelo Gateway como o STT, por
+`modeloExtracao()`. Devolve uma `Extracao` — a proposta, que pertence ao R2 e não
+ao grafo (regra 5). Cada átomo leva `id` determinístico (`<sessao_id>-<índice>`,
+que é o que fará o `MERGE` do confirmar ser idempotente), `prompt_version` e
+`modelo` (regra 7).
+
+Item malformado não derruba a extração inteira: vai para `descartados` com o
+motivo. Lista de descarte crescendo é sinal de prompt piorando — e é o único
+sinal automático que existe, já que a qualidade é avaliada à mão na revisão.
+
+**Os offsets não saem do modelo.** `offsets.ts` casa o `trecho` que o modelo
+devolveu contra as `palavras[]` da transcrição e registra como conseguiu:
+
+| Âncora | O que significa |
+|---|---|
+| `exata` | os tokens do trecho aparecem em sequência na transcrição |
+| `aproximada` | uma janela do mesmo tamanho tem ao menos 60% deles — o modelo reescreveu de leve |
+| `nenhuma` | o trecho não está lá; o átomo fica **sem** `inicio_s`/`fim_s` |
+
+A comparação é por token normalizado (minúsculas, sem acento, sem pontuação),
+com um cursor que avança a cada acerto. Sem o cursor, "eu acho que" casaria
+sempre com a primeira ocorrência e a sessão inteira apontaria para o mesmo
+segundo do áudio.
+
+`ancora: "nenhuma"` é deliberado e **diverge do critério 3 da spec**, que pede
+offset em todo átomo. Trecho que não existe na transcrição é quase sempre
+afirmação que o modelo inventou, e dar a ela um offset plausível seria a mesma
+procedência falsa que a regra dos timestamps existe para impedir. A revisão
+mostra o átomo sem player, e ele é o primeiro a ser olhado com desconfiança.
+
+Na granularidade `segmento` (4.3) o offset é o da frase inteira: o casamento
+devolve a entrada de `palavras[]` de onde o token veio, com a precisão que o
+provedor deu — nem mais, nem menos.
 
 ## 5. Estados da sessão
 
@@ -473,6 +523,7 @@ NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
 AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, deduplicação
 STT_MODEL                 opcional; padrão xai/grok-stt
+EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 AUTH_SECRET, ALLOWED_EMAIL
 ```
 
@@ -508,8 +559,8 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   CORS e uma transcrição de verdade (usa um `.webm` já gravado do bucket, ou
   `SMOKE_AUDIO=<caminho>`). É o script que responde se o Gateway aceita
   webm/opus, se vêm timestamps por palavra e se o `keyterm` passa adiante.
-- A partir da slice 2, os testes de extração rodam contra as sessões rotuladas à
-  mão em `fixtures/` (ainda não existe).
+- Qualidade de extração (slice 2) não tem teste automático: a avaliação é à mão,
+  na tela de revisão, sessão real por sessão real. Ver `Specs/slice-2.md`.
 
 ## 14. Limites conhecidos
 
@@ -530,8 +581,19 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Sessão importada não se distingue de gravada no grafo.** `:Sessao` não tem
   `origem`; quem sabe é o `ext` no manifest, no R2. Acrescentar o campo é
   migration nova, e nada hoje lê essa distinção.
-- **`fixtures/`** não existe: gravar 3 sessões reais e rotular à mão é o próximo
-  passo, e é o que a slice 2 vai usar.
+- **A extração não está ligada.** `extracao.ts` e `offsets.ts` existem e são
+  testados, mas nada os chama. Ligar é: gatilho no `finalizarSessao`, estados
+  `extraindo`/`em_revisao`/`confirmada`, `extracao.json` no R2, resolução de
+  entidade, tela de revisão e confirmar.
+- **`zai/glm-5.3-flash` nunca foi chamado de verdade.** O id passa na validação
+  de formato, mas se o Gateway não o conhecer a extração falha na primeira
+  chamada real — o conserto é `EXTRACAO_MODEL`, sem tocar em código.
+- **Transcrição longa pode truncar a resposta da extração.** Não há corte em
+  pedaços nem limite de saída declarado; JSON truncado vira `ExtracaoError` na
+  primeira sessão em que acontecer.
+- **Não haverá medida automática da qualidade da extração.** A avaliação é à mão,
+  na tela de revisão; sem gabarito rotulado nem percentual de recall, regressão de
+  prompt não aparece em teste — só na revisão seguinte.
 - A troca do Whisper direto pelo AI Gateway **ainda não foi validada contra o
   serviço** — falta rodar `pnpm smoke` com `.env.local` preenchido. A porta e a
   guarda estão de pé e testadas; o que não foi conferido de verdade é se

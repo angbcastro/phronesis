@@ -80,3 +80,62 @@ export interface Transcricao {
   modelo: string;
   granularidade: Granularidade;
 }
+
+// ─────────────────────────── Slice 2: extração ───────────────────────────
+
+export const TIPOS_ATOMO = ["FATO", "OPINIAO", "SENTIMENTO", "APRENDIZADO", "CONQUISTA"] as const;
+
+export type TipoAtomo = (typeof TIPOS_ATOMO)[number];
+
+/**
+ * Como o offset do átomo foi obtido. Vai gravado junto: a tela não promete
+ * mais precisão do que tem, e átomo sem âncora é o primeiro candidato a ser
+ * rejeitado na revisão — trecho que não existe na transcrição costuma ser
+ * afirmação que o modelo inventou.
+ */
+export type Ancora = "exata" | "aproximada" | "nenhuma";
+
+/** O que o modelo devolve, antes de qualquer casamento com o áudio. */
+export interface AtomoCru {
+  texto: string;
+  tipo: TipoAtomo;
+  sobre: string;
+  menciona: string[];
+  /** Pedaço literal da transcrição. É o que vira `inicio_s`/`fim_s` em código. */
+  trecho: string;
+}
+
+/** Átomo da proposta: já com offsets casados e procedência (regra 7). */
+export interface AtomoProposto extends AtomoCru {
+  /** `<sessao_id>-<índice>` — determinístico, é o que faz o MERGE ser idempotente. */
+  id: string;
+  indice: number;
+  inicio_s: number | null;
+  fim_s: number | null;
+  ancora: Ancora;
+  prompt_version: string;
+  modelo: string;
+}
+
+/** Item que o modelo devolveu e o parse recusou. Nada some em silêncio. */
+export interface Descarte {
+  motivo: string;
+  bruto: unknown;
+}
+
+/**
+ * A proposta de extração. Vive no R2 e não no grafo: nada é gravado antes da
+ * confirmação na revisão (regra 5).
+ *
+ * `entidades` (as candidatas resolvidas contra o que já existe) entra quando a
+ * resolução de entidade for escrita — ainda não existe.
+ */
+export interface Extracao {
+  sessao_id: string;
+  atomos: AtomoProposto[];
+  descartados: Descarte[];
+  prompt_version: string;
+  modelo: string;
+  granularidade: Granularidade;
+  criado_em: string;
+}

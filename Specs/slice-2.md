@@ -2,7 +2,7 @@
 
 **Objetivo:** a sessão termina de transcrever, o sistema me devolve uma lista do que entendeu, eu confirmo em menos de um minuto e aquilo vira nó no Neo4j.
 
-**Pronto quando:** nas 3 sessões de `fixtures/`, eu abro a revisão, escuto dois ou três trechos, aprovo quase tudo sem editar, e o que entrou no grafo eu reconheço como o que eu falei.
+**Pronto quando:** numa sessão real de diário, eu abro a revisão, escuto dois ou três trechos, aprovo quase tudo sem editar, e o que entrou no grafo eu reconheço como o que eu falei.
 
 ## Fora de escopo
 
@@ -12,14 +12,13 @@
 - Busca, tela Perguntar, `:Foco`, visualização de grafo.
 - **Vocabulário gerado das entidades** continua à mão em `config/vocabulario.txt`.
 
-## Pré-requisito: `fixtures/` antes do código
+## Como a qualidade da extração é avaliada
 
-Gravar 3 sessões reais e rotular à mão os átomos esperados. Sem isso, "a extração presta" não é uma frase verificável, e o prompt vira ajuste no escuro. `CLAUDE.md`: os rótulos não se alteram para o teste passar.
+À mão, na tela de revisão, sessão real de diário por sessão real de diário. Eu leio o que saiu, escuto os trechos de que duvido e decido. Não há gabarito rotulado à mão, arquivo de fixture nem percentual de recall.
 
-```
-fixtures/<nome>/transcricao.json     saída real do STT, copiada do R2
-fixtures/<nome>/atomos.json          rótulo à mão: o que eu espero que saia
-```
+O sinal está na própria revisão: se eu rejeito ou edito muita coisa, o prompt não está bom. Aprovar quase tudo sem editar é o que "a extração presta" quer dizer aqui.
+
+O custo, declarado: não existe número para comparar antes e depois de mexer no prompt — regressão só aparece se eu notar na revisão seguinte.
 
 ## Fluxo
 
@@ -114,7 +113,7 @@ Constraint de `id` único em `:Atomo` e `:Entidade`; constraint de `nome_normali
 ## Critérios de aceite
 
 1. Terminar uma sessão dispara a extração sozinha; eu não aperto nada entre parar de falar e ver a lista.
-2. Nas 3 fixtures, ≥ 80% dos átomos rotulados à mão aparecem na extração, e ≤ 20% do que sai é ruído que eu rejeitaria. *(Números da primeira medição; se saírem muito diferentes, o que se ajusta é o prompt — os rótulos não.)*
+2. Numa sessão real de diário, eu leio a lista e aprovo quase tudo sem editar: o que está lá é o que eu falei, e o que eu falei de relevante está lá. Julgamento meu, na tela — se a saída estiver ruim, o que se ajusta é o prompt.
 3. Todo átomo tem `inicio_s`/`fim_s` que caem dentro da sessão e batem com o que eu escuto ao clicar.
 4. Clicar em escutar toca o áudio no trecho certo (fecha o critério 6 da slice 1).
 5. Aprovar tudo é um toque. A revisão de uma sessão de 15 min leva menos de 60 s.

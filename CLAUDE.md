@@ -106,7 +106,7 @@ o documento — conserte-o e me avise.
 - A spec da slice atual está em `Specs/`. Se ela conflitar com este arquivo, este arquivo vence — e me avise do conflito.
 - Toda mudança de código passa por `ARCHITECTURE.md` — ver a seção acima. Trabalho entregue sem o documento acompanhando está incompleto.
 - Antes de refatorar algo fora do escopo da slice, perguntar.
-- Testes de extração rodam contra as sessões rotuladas à mão em `fixtures/`. Não alterar os rótulos para o teste passar.
+- Qualidade de extração eu avalio à mão, na tela de revisão, sessão real por sessão real. Não existe gabarito rotulado, arquivo de fixture nem percentual de recall — não inventar nenhum dos três. Quando a saída está ruim, o que se ajusta é o prompt, e quem diz que está ruim sou eu.
 
 ## Variáveis de ambiente
 
@@ -115,6 +115,7 @@ NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
 AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, deduplicação
 STT_MODEL                 opcional; padrão xai/grok-stt
+EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 AUTH_SECRET, ALLOWED_EMAIL
 ```
 

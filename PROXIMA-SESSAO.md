@@ -1,7 +1,7 @@
 # Checkpoint — 2026-08-25 (sessão 3)
 
-Documento de trabalho, não de arquitetura. **A slice 1 está validada; a slice 2
-está travada em uma coisa só, e ela é sua, não do código.** Apagar quando a
+Documento de trabalho, não de arquitetura. **A slice 1 está validada e a slice 2
+não tem bloqueio: o próximo passo é escrever a extração.** Apagar quando a
 slice 2 estiver validada.
 
 Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
@@ -10,29 +10,20 @@ arquivo só diz o que fazer a seguir.
 
 ---
 
-## 0. Bloqueio único: `fixtures/` não existe
+## 0. Antes de gravar: encher `config/vocabulario.txt`
 
-**É a única coisa entre aqui e escrever a extração.** Nenhum comando resolve —
-é gravar e rotular:
+Hoje tem três nomes (`Rodozanco`, `Exxmed`, `Phronesis`). O vocabulário entra em
+cada chamada de STT como `keyterm`; nome que não estiver lá sai grafado errado na
+transcrição, e transcrição errada envenena a extração que vem depois. Encher
+depois não conserta o que já foi transcrito.
 
-```
-fixtures/<nome>/transcricao.json     saída real do STT, copiada do R2
-fixtures/<nome>/atomos.json          rótulo à mão: o que eu espero que saia
-```
+A extração precisa de sessão de diário de verdade para ser avaliada. As duas que
+estão no banco (`mt7dl…` e `mt7yx…`) são teste de microfone: "vamos testar se a
+secretária está funcionando" não tem átomo nenhum para extrair. Gravar ou
+importar dá no mesmo — nota de voz entra pela tela inicial, até 25 MB e 30 min.
 
-Três sessões reais, de 10 a 20 min, de diário mesmo — não teste de microfone.
-As duas que estão no banco (`mt7dl…` e `mt7yx…`) são de teste: "vamos testar se
-a secretária está funcionando" não tem átomo nenhum para extrair.
-
-Sem os rótulos, "a extração presta" não é frase verificável, o critério 2 da
-slice 2 não existe e o prompt vira ajuste no escuro. `CLAUDE.md`: **os rótulos
-não se alteram para o teste passar.**
-
-**Antes de gravar**, encher `config/vocabulario.txt`. Hoje tem três nomes
-(`Rodozanco`, `Exxmed`, `Phronesis`). O vocabulário entra em cada chamada de STT
-como `keyterm`; nome que não estiver lá sai grafado errado na fixture, e fixture
-errada envenena tudo o que vem depois. Encher depois não conserta o que já foi
-transcrito.
+A qualidade da extração é avaliada à mão, na tela de revisão: não há gabarito
+rotulado nem percentual de recall. Ver `Specs/slice-2.md`.
 
 ---
 
@@ -41,11 +32,12 @@ transcrito.
 | | |
 |---|---|
 | Slice 1 | validada ponta a ponta: gravou, subiu, transcreveu, li o texto |
+| Importação | arquivo já gravado vira sessão de um bloco só — nunca testada com arquivo real |
 | R2 | CORS aplicado; PUT por presigned URL funcionando do navegador |
 | STT | `xai/grok-stt` pelo Gateway, aceita webm/opus, `keyterm` passa |
 | Neo4j | migration 002 aplicada: `:Atomo` e `:Entidade` com constraint e índice, **zero nó** |
-| Testes | `pnpm test` 91/91, `pnpm typecheck` limpo |
-| Commits | `0b8c1e4` (slice 1) e `76880de` (spec + schema da slice 2) |
+| Testes | `pnpm test` 114/114, `pnpm typecheck` limpo |
+| Commits | `0b8c1e4` (slice 1), `76880de` (spec + schema da slice 2), `a38491b` (importação) |
 
 ---
 
@@ -75,18 +67,17 @@ erro é mudança de schema.
 
 Critérios de aceite completos em `Specs/slice-2.md`.
 
-1. **`fixtures/`** — seção 0. É o pré-requisito de tudo o que vem abaixo.
-2. **Extração** — job pelo Gateway, JSON estrito, `prompt_version` e `modelo`
+1. **Extração** — job pelo Gateway, JSON estrito, `prompt_version` e `modelo`
    em todo átomo. Os offsets **não saem do LLM**: o modelo devolve o trecho, o
    casamento com as palavras da transcrição é em código.
-3. **Resolução de entidade** — casar por nome normalizado com o que já existe.
+2. **Resolução de entidade** — casar por nome normalizado com o que já existe.
    A constraint do banco é quem garante que não duplique em corrida.
-4. **Tela de revisão + player** — aprovar tudo em um toque, discordar em dois,
+3. **Tela de revisão + player** — aprovar tudo em um toque, discordar em dois,
    escutar o trecho antes de aprovar. Menos de 60 s numa sessão de 15 min.
-5. **Confirmar** — só aqui o grafo recebe alguma coisa. Idempotente por
+4. **Confirmar** — só aqui o grafo recebe alguma coisa. Idempotente por
    `<sessao_id>-<índice>`. Rejeitado não é gravado.
-6. **Medir contra as fixtures** — ≥ 80% de recall, ≤ 20% de ruído. Números de
-   primeira medição; o que se ajusta depois é o prompt, não o rótulo.
+5. **Avaliar na revisão** — ler o que saiu de uma sessão real e decidir. Muita
+   rejeição ou muita edição quer dizer prompt ruim; o que se mexe é o prompt.
 
 A máquina de estados muda: `transcrito → extraindo → em_revisao → confirmada`.
 `transcrito` deixa de ser terminal e `em_revisao` passa a aparecer no chip da
