@@ -84,6 +84,16 @@ export async function gravarEntidades(entidades: EntidadeParaGravar[]): Promise<
  *
  * As menções vão numa consulta à parte porque `UNWIND` de lista vazia mataria
  * a linha inteira, e átomo sem menção é o caso comum.
+ *
+ * **As arestas atravessam alias** (slice 3): se o nome resolvido for um nó já
+ * fundido, quem recebe a aresta é o vencedor da fusão. A trava está aqui, no
+ * servidor, e não só na tela — a mesma razão pela qual o confirmar recusa
+ * pronome de novo em vez de confiar na revisão. Sem isso, uma proposta montada
+ * antes de eu fundir duas entidades penduraria átomo num nó morto.
+ *
+ * A menção que colidir com o sujeito depois da travessia é descartada: dois
+ * nomes distintos podem virar o mesmo nó, e `:SOBRE` + `:MENCIONA` para a mesma
+ * entidade não é contrato que o schema admita.
  */
 export async function gravarAtomos(
   sessao_id: string,
@@ -110,7 +120,9 @@ export async function gravarAtomos(
      MERGE (s)-[:GEROU]->(at)
      WITH at, a
      MATCH (e:Entidade { nome_normalizado: a.sobre })
-     MERGE (at)-[:SOBRE]->(e)`,
+     OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
+     WITH at, coalesce(v, e) AS alvo
+     MERGE (at)-[:SOBRE]->(alvo)`,
     { sessao_id, atomos, agora, valido_em, status: STATUS_ATOMO_ATIVO },
   );
 
@@ -123,7 +135,10 @@ export async function gravarAtomos(
     `UNWIND $mencoes AS m
      MATCH (a:Atomo { id: m.atomo_id })
      MATCH (e:Entidade { nome_normalizado: m.entidade })
-     MERGE (a)-[:MENCIONA]->(e)`,
+     OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
+     WITH a, coalesce(v, e) AS alvo
+     WHERE NOT (a)-[:SOBRE]->(alvo)
+     MERGE (a)-[:MENCIONA]->(alvo)`,
     { mencoes },
   );
 }

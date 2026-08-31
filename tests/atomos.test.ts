@@ -111,7 +111,17 @@ describe("átomos", () => {
     await gravarAtomos("s1", [atomo()], "2026-08-31T00:00:00.000Z");
     const cypher = cypherDe(0);
     expect(cypher).toContain("MERGE (s)-[:GEROU]->(at)");
-    expect(cypher).toContain("MERGE (at)-[:SOBRE]->(e)");
+    expect(cypher).toContain("MERGE (at)-[:SOBRE]->(alvo)");
+  });
+
+  it("o :SOBRE atravessa alias — átomo não fica pendurado em nó fundido", async () => {
+    // A proposta pode ter sido montada antes de eu fundir duas entidades. A
+    // trava é no servidor, não na tela: mesma razão pela qual o confirmar
+    // recusa pronome de novo em vez de confiar na revisão.
+    await gravarAtomos("s1", [atomo()], "2026-08-31T00:00:00.000Z");
+    const cypher = cypherDe(0);
+    expect(cypher).toContain("OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)");
+    expect(cypher).toContain("coalesce(v, e) AS alvo");
   });
 
   it("sem menção, não roda a segunda consulta", async () => {
@@ -127,7 +137,10 @@ describe("átomos", () => {
       "2026-08-31T00:00:00.000Z",
     );
     expect(consulta).toHaveBeenCalledTimes(2);
-    expect(cypherDe(1)).toContain("MERGE (a)-[:MENCIONA]->(e)");
+    expect(cypherDe(1)).toContain("MERGE (a)-[:MENCIONA]->(alvo)");
+    // Depois de atravessar o alias, dois nomes distintos podem virar o mesmo
+    // nó — e :SOBRE + :MENCIONA para a mesma entidade não é contrato válido.
+    expect(cypherDe(1)).toContain("WHERE NOT (a)-[:SOBRE]->(alvo)");
     expect(paramsDe(1).mencoes).toEqual([
       { atomo_id: "s1-0", entidade: "rafa" },
       { atomo_id: "s1-0", entidade: "phronesis" },

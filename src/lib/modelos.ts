@@ -32,7 +32,13 @@ export const URL_GATEWAY = "https://ai-gateway.vercel.sh/v4/ai";
 /** O Gateway endereça modelo como `provedor/modelo`. */
 const PADRAO_ID = /^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9._-]*$/i;
 
-export const MODELO_STT_PADRAO = "google/gemini-3.5-transcribe";
+/**
+ * **Escolhido por medição, não por preferência** (2026-08-31). Dos modelos de
+ * transcrição que este Gateway atende, é o único que devolve tempo por palavra
+ * sem rate limit — e sem tempo não há procedência, que a visão §4 lista como
+ * necessidade. A medição inteira está em `ARCHITECTURE.md` §4.2.1.
+ */
+export const MODELO_STT_PADRAO = "xai/grok-stt";
 
 export class ModeloError extends Error {
   constructor(message: string) {
@@ -55,7 +61,7 @@ export function validarIdDeModelo(id: string): string {
   return limpo;
 }
 
-/** `google/gemini-3.5-transcribe` → `google`. É a chave de `providerOptions`. */
+/** `xai/grok-stt` → `xai`. É a chave de `providerOptions`. */
 export function provedorDe(id: string): string {
   return validarIdDeModelo(id).split("/")[0].toLowerCase();
 }
@@ -85,3 +91,53 @@ export const MODELO_EXTRACAO_PADRAO = "zai/glm-5.3-flash";
 export function modeloExtracao(): string {
   return validarIdDeModelo(process.env.EXTRACAO_MODEL || MODELO_EXTRACAO_PADRAO);
 }
+
+/**
+ * Modelo que julga se duas entidades parecidas são a mesma coisa (slice 3).
+ * Mesma família da extração: saída JSON curta, chamado sob demanda.
+ */
+export const MODELO_DUPLICATAS_PADRAO = "zai/glm-5.3-flash";
+
+export function modeloDuplicatas(): string {
+  return validarIdDeModelo(process.env.DUPLICATAS_MODEL || MODELO_DUPLICATAS_PADRAO);
+}
+
+/**
+ * Como cada provedor recebe o vocabulário.
+ *
+ * **A chave do `providerOptions` acompanha o provedor, mas o nome da opção
+ * não.** `keyterm` é parâmetro de xAI e Deepgram; mandá-lo para um provedor que
+ * não o conhece ou some em silêncio — e o vocabulário vira decoração — ou
+ * derruba a transcrição inteira. Antes desta tabela o nome estava escrito à mão
+ * em `stt.ts`, então trocar `STT_MODEL` quebrava o vocabulário sem avisar.
+ *
+ * Que o `keyterm` de fato muda a grafia está medido em `ARCHITECTURE.md` §4.4.
+ *
+ * Provedor fora da tabela **não recebe opção nenhuma**: silêncio é o padrão
+ * seguro, e uma transcrição sem vocabulário é muito melhor que nenhuma.
+ */
+const OPCAO_DE_VOCABULARIO: Record<string, string> = {
+  xai: "keyterm",
+  deepgram: "keyterm",
+};
+
+/**
+ * O `providerOptions` da chamada de transcrição, ou `undefined` quando não há
+ * o que mandar — lista vazia ou provedor sem mecanismo conhecido.
+ */
+export function opcoesDeVocabulario(
+  modelo: string,
+  termos: string[],
+): Record<string, Record<string, string[]>> | undefined {
+  if (termos.length === 0) return undefined;
+
+  const provedor = provedorDe(modelo);
+  const opcao = OPCAO_DE_VOCABULARIO[provedor];
+  if (!opcao) return undefined;
+
+  return { [provedor]: { [opcao]: termos } };
+}
+
+/** Para o smoke e a tela dizerem se o vocabulário chega a este provedor. */
+export const provedorAceitaVocabulario = (modelo: string): boolean =>
+  OPCAO_DE_VOCABULARIO[provedorDe(modelo)] !== undefined;

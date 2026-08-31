@@ -12,7 +12,7 @@
  * dizer a verdade sobre a própria precisão.
  */
 import { experimental_transcribe as transcribe } from "ai";
-import { garantirGateway, modeloStt, provedorDe } from "./modelos";
+import { garantirGateway, modeloStt, opcoesDeVocabulario } from "./modelos";
 import { vocabulario } from "./vocabulario";
 import type { Granularidade, Palavra } from "./tipos";
 
@@ -79,7 +79,8 @@ export async function transcrever(audio: ArrayBuffer): Promise<ResultadoStt> {
     resultado = await transcribe({
       model: modelo,
       audio: new Uint8Array(audio),
-      providerOptions: termos.length > 0 ? { [provedorDe(modelo)]: { keyterm: termos } } : undefined,
+      // O nome da opção é por provedor, não fixo — ver `opcoesDeVocabulario`.
+      providerOptions: opcoesDeVocabulario(modelo, termos),
     });
   } catch (e) {
     throw new SttError(e instanceof Error ? e.message : String(e));

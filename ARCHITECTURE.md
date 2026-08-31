@@ -8,12 +8,20 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-2.md`.
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
 > arquivo no mesmo commit. Ver "Manutenção deste arquivo" no fim.
 
-**Estado: a slice 2 está fechada e validada no grafo.** Gravar (ou importar),
-subir, transcrever, extrair, revisar, confirmar. Terminada a transcrição, a
-extração dispara sozinha, grava a proposta em `extracao.json` e deixa a sessão
-em `em_revisao` (seções 4.6 e 5); o confirmar da revisão grava `:Atomo` e
-`:Entidade` no Neo4j (seções 4.7 e 8). Sessões reais já foram confirmadas e os
-átomos conferidos no banco, com âncoras, `prompt_version` e `modelo`.
+**Estado: slice 2 fechada e validada; slice 3 (higiene do grafo) construída.**
+Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. Terminada
+a transcrição, a extração dispara sozinha, grava a proposta em `extracao.json` e
+deixa a sessão em `em_revisao` (seções 4.6 e 5); o confirmar da revisão grava
+`:Atomo` e `:Entidade` no Neo4j (seções 4.7 e 8). Sessões reais já foram
+confirmadas e os átomos conferidos no banco, com âncoras, `prompt_version` e
+`modelo`.
+
+**O grafo agora cuida do próprio nome** (seção 8.2). O vocabulário do STT é
+gerado das entidades do grafo, em união com `config/vocabulario.txt`; e
+`/entidades` é onde eu vejo o que entrou e conserto o que entrou torto —
+fundindo duas grafias da mesma coisa, ou dando nome a quem ficou como "meu pai".
+**Fundir não apaga: cria alias**, e é isso que faz a grafia morta resolver para
+o vencedor na sessão seguinte em vez de renascer como nó novo.
 
 **A jornada não passa pela transcrição.** Parar de falar leva à tela de
 processamento, e dela a revisão abre sozinha quando a proposta fica pronta. O
@@ -23,8 +31,9 @@ transcrição no meio do caminho é o atrito que mata o ritual — a transcriç�
 insumo do extrator, não coisa que eu leio todo dia.
 
 O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
-ritual e as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) —
-tudo slice 3.
+ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
+deduplicação de **átomo** — dizer a mesma coisa em duas sessões ainda cria dois.
+Tudo slice 4, e tudo dependente de material acumulado.
 
 ---
 
@@ -60,6 +69,8 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   leem credencial nem rede e por isso o navegador pode importar
   env.ts          leitura de variável de ambiente, falha cedo se faltar
   neo4j.ts        HTTP Query API (nunca driver Bolt)
+  fusao.ts        fundir, renomear, recusar — a escrita de higiene no grafo
+  duplicatas.ts   quem parece ser a mesma coisa: string + o modelo, só propõem
   sessoes.ts      repositório de :Sessao (criar, buscar, atualizar com guarda)
   r2.ts           S3 SigV4 via aws4fetch: get/put/head, presign, PUT condicional
   chaves.ts       layout do R2 num lugar só + validação de id (barra path traversal)
@@ -90,7 +101,8 @@ src/components/   Gravacao (gravar), Importacao (subir arquivo),
                   ChipRecuperacao (retomar ou revisar),
                   Processando (fechar a sessão e esperar; leva à revisão),
                   Revisao (aprovar, editar, escutar, confirmar),
-                  Leitura (a transcrição literal — porta de serviço)
+                  Leitura (a transcrição literal — porta de serviço),
+                  Sessoes (lista de áudios), Entidades (higiene do grafo)
 src/app/api/      as 6 rotas da slice + 2 de auth
 src/middleware.ts porta única: sem cookie válido nada responde
 db/migrations/    definição canônica do schema
@@ -243,10 +255,47 @@ algum dos quatro pontos da tabela for furado. É o que sustenta a promessa de
 "uma chave, um lugar para ver custo" quando a extração chegar.
 
 **Hoje passam por aqui o STT e a extração** — `modeloStt()` (padrão
-`google/gemini-3.5-transcribe`, trocável por `STT_MODEL`) e `modeloExtracao()` (padrão
+`xai/grok-stt`, trocável por `STT_MODEL`) e `modeloExtracao()` (padrão
 `zai/glm-5.3-flash`, trocável por `EXTRACAO_MODEL`). Deduplicação é slice 3 e não
 existe: o que existe é a porta por onde ela vai passar, e a guarda que impede que
 passe por fora.
+
+### 4.2.1 Por que o STT é o `xai/grok-stt`, e não um melhor de texto
+
+Medido em 2026-08-31, com o **mesmo bloco real** de 30 s para todos, pelo
+Gateway. A pergunta não é quem transcreve melhor: é quem devolve **tempo**.
+
+| Modelo | Tempo | Texto | Custo/30 s | Rate limit |
+|---|---|---|---|---|
+| `xai/grok-stt` | **palavra** — 64 segmentos de 1 palavra (`1.802–2.002 "Vamos"`) | pior dos cinco | $0,0008 | — |
+| `openai/whisper-1` | frase — 4 segmentos de ~8 s | bom | $0,0029 | **free tier bloqueia** |
+| `google/gemini-3.5-transcribe` | **nenhum** | melhor dos cinco | $0,0014 | — |
+| `openai/gpt-4o-transcribe` | **nenhum** | bom | $0,0015 | — |
+| `openai/gpt-4o-mini-transcribe` | **nenhum** | bom | $0,0008 | — |
+
+`deepgram/*`, `assemblyai/*`, `elevenlabs/*`, `groq/whisper-*`,
+`mistral/voxtral-*`, `fal/wizper`, `revai/*` e `azure/whisper`: `Model not
+found`. Não estão neste Gateway — e é de **Deepgram** que vem o nome `keyterm`
+usado em `stt.ts`, o que explica a opção estar lá e provavelmente nunca ter
+feito efeito em provedor nenhum.
+
+**Sem tempo não há procedência**, que a visão §4 lista como necessidade: sem
+ele todo átomo nasce com `inicios_s`, `fins_s` e `ancoras` vazios, o player da
+revisão some de todos os itens e "escuto antes de aprovar" deixa de existir.
+Isso elimina os três modelos sem timestamp por melhor que seja o texto deles.
+O `whisper-1` sairia por rate limit: uma sessão de 15 min são 30 blocos, e o
+free tier travou já na segunda chamada seguida.
+
+Sobra um. **A troca para `google/gemini-3.5-transcribe` foi tentada e revertida
+no mesmo dia** — fica registrada aqui para ninguém repetir o teste daqui a três
+meses achando que é ideia nova.
+
+O custo declarado: no bloco medido o grok escreveu "Vamos testar se **a
+secretária** está funcionando" onde os outros três ouviram "testar se **isso
+aqui tá** funcionando". O bloco é um teste de microfone de 24/08, e as sessões
+reais transcritas por ele produziram extração boa — mas transcrição estranha
+numa sessão de verdade tem aqui a primeira suspeita, e não há para onde correr
+dentro deste Gateway.
 
 ### 4.3 Granularidade e procedência
 
@@ -274,14 +323,11 @@ seguro do erro, e nada foi mudado: reclassificar depende de decidir se
 "um segmento de uma palavra" conta como timestamp por palavra, o que é escolha
 de produto, não de implementação.
 
-**Esta observação é sobre o padrão anterior.** Em 2026-08-31 o padrão passou a
-ser `google/gemini-3.5-transcribe`, e tudo o que o parágrafo acima afirma vale
-para `xai/grok-stt`, não para o que roda hoje: se o Google expõe
-`providerMetadata`, com que granularidade, e se os `segments` continuam vindo de
-uma palavra cada — nada disso foi medido. O código não muda por isso: `stt.ts`
-já tenta `palavrasDoMetadata()` e cai para `palavrasDosSegmentos()`, registrando
-qual dos dois usou. A primeira transcrição real com o modelo novo é que diz, e o
-campo `granularidade` do bloco é onde a resposta aparece.
+**Reconfirmado em 2026-08-31**, na medição de §4.2.1: mesmos 64 segmentos de uma
+palavra, mesma ausência de `providerMetadata`. É exatamente esse comportamento —
+`segments` densos o bastante para ancorar palavra por palavra — que faz este
+modelo ser o único do Gateway que serve, e é sobre ele que as âncoras dos átomos
+que já estão no grafo foram construídas.
 
 ### 4.4 Vocabulário
 
@@ -292,6 +338,19 @@ teto da API: 100 termos, 50 caracteres cada, sem repetir a mesma palavra em
 outra caixa. Termo longo demais é descartado inteiro, nunca truncado pela
 metade. Na slice 1 a lista é escrita à mão; a partir da slice 3 é gerada das
 entidades do grafo.
+
+**A lista de fato muda a transcrição** — medido em 2026-08-31, mesmo bloco,
+mesma chamada, só a lista variando:
+
+| Lista | Saída |
+|---|---|
+| sem lista | "Acordei em **Porto Alegre** hoje" |
+| `["Xhavier"]` (controle irrelevante) | "Acordei em **Porto Alegre** hoje" |
+| `["Portalegre"]` | "Acordei em **Portalegre** hoje" |
+
+A grafia segue a lista, e o controle mostra que um termo que não foi falado
+**não** se injeta na saída. É o que sustenta a metade A da slice 3: gerar a
+lista das entidades do grafo tem efeito real, não decorativo.
 
 ### 4.5 Concatenação
 
@@ -731,6 +790,55 @@ rodar. `db/migrations/` é a definição canônica; `scripts/migrate.ts` aplica 
 arquivos em ordem pela Query API. Nunca alterar schema direto no código ou no
 console do Aura.
 
+### 8.2 Higiene: fundir é criar alias (migration 004)
+
+Duas grafias da mesma coisa entram como dois nós — a constraint de
+`nome_normalizado` impede duplicata da **mesma** grafia, não de grafias
+parecidas: "Exxmed" e "Exx Med" normalizam para chaves diferentes.
+
+```
+(:Entidade { …, status })                status ∈ 'ativa' | 'fundida'
+(:Entidade)-[:FUNDIDA_EM]->(:Entidade)   do alias para o vencedor
+(:Entidade)-[:DISTINTA_DE]->(:Entidade)  recusa minha: não propor de novo
+```
+
+**Fundir não apaga** (regra 6). O perdedor fica com `status = 'fundida'` e uma
+aresta `:FUNDIDA_EM`; as arestas `:SOBRE` e `:MENCIONA` migram por `MERGE`, uma
+consulta por tipo — Neo4j não aceita tipo de relação vindo de parâmetro, e
+repetir duas linhas é bem menos frágil que uma subquery com `UNION`.
+
+O ponto do desenho: **como o perdedor mantém o `nome_normalizado`, a grafia
+morta nunca renasce como nó novo.** Dita outra vez, ela casa com o alias e a
+leitura segue até o vencedor. A fusão é o mecanismo de alias, não um efeito
+colateral dele — e é o que faz ela valer para amanhã, não só arrumar o ontem.
+
+Quem atravessa o alias:
+
+| Onde | Por quê |
+|---|---|
+| `buscarConhecidas` / `resolver` | "Exx Med" numa sessão nova volta como conhecida, com o nome do vencedor |
+| `gravarAtomos` (`:SOBRE` e `:MENCIONA`) | proposta montada antes da fusão penduraria átomo em nó morto — a trava é no servidor, não na tela |
+| `nomesParaVocabulario` | mandar a grafia rejeitada ensinaria o STT a reproduzi-la |
+| `listarEntidades` | o alias vira histórico do nome, não linha própria |
+
+Depois da travessia dois nomes distintos podem virar o mesmo nó, e `:SOBRE` +
+`:MENCIONA` para a mesma entidade não é contrato válido — a menção redundante é
+descartada, o sujeito vence.
+
+**Renomear é fundir consigo mesma sob outro nome:** o nó assume o nome novo e a
+grafia velha nasce como alias apontando para ele. É o que fecha o limite da
+slice 2 — renomear entidade existente criava um segundo nó.
+
+`status` ausente conta como ativa (`coalesce` em toda leitura). A 004 **não
+migra dado** de propósito: preencher agora arrumaria os nós de hoje e não o que
+um deploy antigo criasse amanhã. A defesa tem que estar na leitura.
+
+**Nada é automático.** `duplicatas.ts` só propõe — string primeiro (de graça),
+o modelo depois, sobre a lista curta e com os textos dos átomos como contexto.
+Fundir é um toque meu: "Marina" e "Mariana" são distância 1 e duas pessoas, e o
+custo do erro é assimétrico — duas entidades a mais é grafo um pouco sujo, uma
+fusão errada é grafo mentindo, sem desfazer.
+
 ## 9. Layout do R2
 
 ```
@@ -767,6 +875,11 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
 | `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo | `ja_confirmada` na segunda; procedência relida do R2, não do corpo |
 | `GET /api/sessoes/abertas` | sessões não finalizadas com pelo menos um bloco | alimenta o chip |
+| `GET /api/entidades` | o que está no grafo, com átomos, sessões e aliases | só leitura; nó fundido vira alias do vencedor |
+| `POST /api/entidades/duplicatas` | propõe pares que parecem a mesma coisa | **não escreve nada**; é `POST` porque gasta chamada de modelo |
+| `POST /api/entidades/fundir` | `{vencedora, perdedora}` — migra arestas, marca alias | idempotente pela guarda de `status` |
+| `POST /api/entidades/distintas` | `{a, b}` — a recusa que impede a pergunta de voltar | |
+| `POST /api/entidades/renomear` | `{chave, nome}` — grafia velha vira alias | recusa pronome, como o confirmar |
 | `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
 
@@ -781,7 +894,15 @@ Todas com `runtime = "nodejs"`.
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, editar, escutar cada trecho, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de áudios: abrir, ler a transcrição, forçar re-extração |
+| `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear |
 | `/entrar` | página de login | pede o e-mail permitido |
+
+`/entidades` é a única janela para dentro do grafo — até ela existir, saber o
+que tinha lá dentro exigia rodar Cypher por fora. Procurar duplicatas é um
+botão, não algo que acontece ao abrir: a camada de string é de graça, a que
+julga é uma chamada de modelo, e manutenção que cobra sozinha vira cobrança.
+Ela não é painel da revisão de propósito — a revisão só vê as entidades da
+sessão atual, e o orçamento dela é 60 s (visão §8).
 
 `Processando` é quem dispara `finalizar`, uma vez só (`useRef`), depois de
 garantir a fila vazia; faz o polling de 2 s e, ao ver `em_revisao`, troca a URL
@@ -802,8 +923,9 @@ transcrição se o texto já está inteiro, processamento no resto.
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
 AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, deduplicação
-STT_MODEL                 opcional; padrão google/gemini-3.5-transcribe
+STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
+DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
 AUTH_SECRET, ALLOWED_EMAIL
 ```
 
@@ -841,8 +963,16 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   webm/opus, se vêm timestamps por palavra e se o `keyterm` passa adiante.
 - Qualidade de extração (slice 2) não tem teste automático: a avaliação é à mão,
   na tela de revisão, sessão real por sessão real. Ver `Specs/slice-2.md`.
-- O que o confirmar de fato escreveu se confere por Cypher, à mão, no console do
-  Aura — não há tela de grafo nesta slice:
+- `tests/fusao.test.ts` — que fundir não apaga nó, que a grafia velha vira alias
+  e que fundir duas vezes não refaz nada.
+- `tests/duplicatas.test.ts` — o viés da camada de string: pega "Exxmed"/"Exx
+  Med" e não trata "Ana"/"Ane" como duplicata.
+- `tests/vocabulario-grafo.test.ts` — a união arquivo + grafo, e que grafo fora
+  do ar não derruba transcrição.
+- `tests/vocabulario-entrega.test.ts` — provedor sem mecanismo conhecido não
+  recebe opção nenhuma.
+- O que o confirmar escreveu agora se vê em `/entidades`. Para o detalhe do
+  átomo ainda é Cypher à mão no console do Aura:
 
   ```cypher
   MATCH (s:Sessao)-[:GEROU]->(a:Atomo)-[:SOBRE]->(e:Entidade)
@@ -857,17 +987,18 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **`finalizarSessao` espera no máximo 45 s** pelos blocos pendentes; passando
   disso a sessão vai para `erro` com a lista do que faltou. O áudio fica intacto
   e o retry é manual.
-- **`config/vocabulario.txt`** ainda tem só os três nomes de exemplo.
+- **`config/vocabulario.txt`** ainda tem só os três nomes de exemplo. Desde a
+  slice 3 ele não é mais a lista inteira — as entidades do grafo entram junto —
+  mas continua sendo o único jeito de ensinar um nome **antes** de falá-lo pela
+  primeira vez, que é justamente quando o STT mais erra.
 - **A importação aceita `opus`, `ogg`, `m4a`, `mp3`, `wav` e `webm`** — a lista
   está em `audio.ts`. `.mp4` ficou de fora de propósito: quase sempre é vídeo, e
   o pipeline manda os bytes crus para o STT. Teto de 25 MB e 30 min.
-- **Não foi conferido que formatos o modelo de STT aceita.** A lista de
-  importação promete Ogg/Opus, M4A, MP3 e WAV; o padrão anterior
-  (`xai/grok-stt`) só chegou a receber `audio/webm`, e o padrão novo
-  (`google/gemini-3.5-transcribe`) ainda não recebeu nada. Se recusar algum, a
-  saída seria converter, e conversão de áudio não cabe em function serverless —
-  a alternativa real é estreitar a lista. Descobre-se no primeiro arquivo de
-  cada tipo.
+- **Não foi conferido se o `xai/grok-stt` aceita Ogg/Opus, M4A, MP3 e WAV.** A
+  lista de importação promete os cinco; até agora ele só recebeu `audio/webm`.
+  Se recusar algum, a saída seria converter, e conversão de áudio não cabe em
+  function serverless — a alternativa real é estreitar a lista. Descobre-se no
+  primeiro arquivo de cada tipo.
 - **Sessão importada não se distingue de gravada no grafo.** `:Sessao` não tem
   `origem`; quem sabe é o `ext` no manifest, no R2. Acrescentar o campo é
   migration nova, e nada hoje lê essa distinção.
@@ -878,15 +1009,22 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   offsets do trecho original — é o certo, mas quer dizer que um texto muito
   editado aponta para um áudio que já não o sustenta palavra por palavra.
 - **Nome descritivo não é pronome.** "meu pai", "minha mãe" e "meu chefe" passam
-  pela lista e viram nó com esse nome. É defensável — o referente é estável —
-  mas quer dizer que o grafo pode ter "meu pai" e o nome dele como entidades
-  diferentes.
+  pela lista e viram nó com esse nome. É defensável — o referente é estável — e
+  desde a slice 3 tem conserto: renomear em `/entidades` deixa a grafia velha
+  como alias, então o nó vira o nome de verdade sem perder os átomos e sem "meu
+  pai" recriar um segundo nó depois.
 - **A lista de pronomes é fechada e em português.** Ela pega o que apareceu até
   agora; um placeholder que eu use e não esteja lá passa direto e vira nó. O
   conserto é acrescentar à lista em `texto.ts`.
-- **Renomear entidade só vale para entidade nova.** Trocar o nome de uma que já
-  está no grafo criaria um segundo nó em vez de renomear o primeiro, então a
-  revisão nem oferece. Renomear de verdade é trabalho de slice 3.
+- **Não há como desfazer uma fusão.** Migrar as arestas de volta exigiria saber
+  quais eram de quem, e isso não é gravado. O que protege é a fusão nunca ser
+  automática: o modelo propõe, eu confirmo. Recusar, sim, é reversível — a
+  aresta `:DISTINTA_DE` se apaga à mão no console.
+- **A qualidade da proposta de duplicata não foi medida.** O grafo tem duas
+  entidades e nenhuma duplicata real, então `duplicatas-1` nunca julgou um par
+  de verdade. A mecânica está validada (as consultas rodaram contra o Aura); o
+  julgamento só se avalia quando houver duplicata, e aí é à mão, na tela, como
+  toda qualidade de modelo neste sistema.
 - **Não há como desfazer um confirmar.** `confirmada` não tem transição de saída
   e nada apaga átomo (regra 6). Corrigir depois de confirmar depende de edição
   no grafo, que não existe nesta slice.
@@ -911,18 +1049,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Não haverá medida automática da qualidade da extração.** A avaliação é à mão,
   na tela de revisão; sem gabarito rotulado nem percentual de recall, regressão de
   prompt não aparece em teste — só na revisão seguinte.
-- **O `keyterm` provavelmente não existe no provedor novo.** `stt.ts` monta
-  `providerOptions: { [provedorDe(modelo)]: { keyterm: termos } }` — a chave do
-  mapa segue o provedor, mas o **nome da opção não**. `keyterm` é vocabulário de
-  xAI/Deepgram; com o padrão em `google/gemini-3.5-transcribe` o que sai é
-  `{ google: { keyterm: [...] } }`, e as duas saídas possíveis são ruins: ou o
-  provedor ignora em silêncio e o vocabulário deixa de ter efeito nenhum, ou
-  recusa a opção desconhecida e **derruba a transcrição**. Nada disso foi medido
-  — nem com o provedor anterior, onde a opção ao menos tinha o nome certo.
-  Sintoma do primeiro caso: nome próprio que continua saindo errado mesmo depois
-  de entrar em `config/vocabulario.txt`. Do segundo: `SttError` em todo bloco.
-  **É o primeiro a conferir**, e é o pré-requisito da metade A da slice 3 —
-  gerar a lista do grafo não vale nada se ela não chega ao modelo.
+- **O `keyterm` vale só para o provedor de hoje.** Medido em 2026-08-31 e
+  funciona no `xai/grok-stt` (§4.4), mas o nome da opção é escrito à mão em
+  `stt.ts` enquanto a chave do mapa acompanha o provedor: trocar `STT_MODEL` por
+  um provedor que use outro nome faz o vocabulário sumir em silêncio, ou pior,
+  derrubar a transcrição. A slice 3 troca isso por um mapa de opção por
+  provedor, com silêncio como padrão para provedor desconhecido.
 - **Deduplicação não existe** (slice 3). A extração já passa por `modelos.ts` e
   `tests/gateway.test.ts` impede que qualquer chamada nova fure a porta, mas nada
   compara um átomo novo com os que já estão no grafo: dizer a mesma coisa em duas

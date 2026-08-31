@@ -125,10 +125,16 @@ export function Gravacao() {
       <Importacao />
       <ChipRecuperacao aoRetomar={comecar} />
       {problema && <p className="aviso">{problema}</p>}
-      {/* Porta de serviço: some da tela de gravar, que é onde eu passo o tempo. */}
-      <Link className="link-sessoes" href="/sessoes">
-        áudios
-      </Link>
+      {/* Portas de serviço: discretas de propósito na tela de gravar, que é
+          onde eu passo o tempo e onde nada pode virar cobrança. */}
+      <span className="portas">
+        <Link className="link-sessoes" href="/sessoes">
+          áudios
+        </Link>
+        <Link className="link-sessoes" href="/entidades">
+          entidades
+        </Link>
+      </span>
     </main>
   );
 }

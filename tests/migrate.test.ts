@@ -30,3 +30,28 @@ describe("001_sessao.cypher", () => {
     expect(cypher).not.toMatch(/:Atomo|:Entidade|:Pessoa|:Projeto|:Objetivo|:Foco|:Pergunta/);
   });
 });
+
+describe("004_fusao_entidade.cypher", () => {
+  const m004 = readFileSync("db/migrations/004_fusao_entidade.cypher", "utf8");
+
+  it("declara o índice de status, que toda leitura de entidade usa", () => {
+    expect(m004).toMatch(/CREATE INDEX entidade_status IF NOT EXISTS/);
+    expect(m004).toMatch(/FOR \(e:Entidade\) ON \(e\.status\)/);
+  });
+
+  it("é segura reaplicar", () => {
+    expect(statements(m004).every((s) => /IF NOT EXISTS/.test(s))).toBe(true);
+  });
+
+  it("não migra dado — a defesa contra `status` ausente é na leitura", () => {
+    // Preencher agora arrumaria os nós de hoje e não o que um deploy antigo
+    // criasse amanhã. Por isso nenhum SET, MERGE ou CREATE de nó aqui.
+    const cypher = statements(m004).join(" ");
+    expect(cypher).not.toMatch(/\bSET\b|\bMERGE\b|\bMATCH\b/);
+  });
+
+  it("documenta as duas arestas novas, que Neo4j não declara", () => {
+    expect(m004).toMatch(/:FUNDIDA_EM/);
+    expect(m004).toMatch(/:DISTINTA_DE/);
+  });
+});

@@ -218,7 +218,7 @@ async function checarStt() {
   // `STT_MODEL=` vazio no `.env.local` tem de cair no padrão. (O script não
   // importa o módulo porque src/ usa import sem extensão, que node puro não
   // resolve; se divergir daqui, o teste da porta é quem manda.)
-  const modelo = process.env.STT_MODEL || "google/gemini-3.5-transcribe";
+  const modelo = process.env.STT_MODEL || "xai/grok-stt";
   const provedor = modelo.split("/")[0];
 
   const audio = await audioDeTeste();

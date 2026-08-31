@@ -17,7 +17,7 @@ Leitura obrigatória no começo de qualquer tarefa:
 - Neo4j AuraDB Free, acessado pela **HTTP Query API** — nunca o driver Bolt (serverless não sustenta pool de conexões)
 - Cloudflare R2 para áudio e transcrições
 - **Vercel AI Gateway: porta única de modelo.** Todo tráfego de LLM sai por ele — STT, extração, deduplicação, o que vier. Uma chave (`AI_GATEWAY_API_KEY`), um lugar para ver custo e latência, e trocar de provedor é mudar uma variável de ambiente
-- STT: modelo endereçado por `STT_MODEL` (padrão `google/gemini-3.5-transcribe`), com timestamps por palavra quando o provedor os expõe
+- STT: modelo endereçado por `STT_MODEL` (padrão `xai/grok-stt`), com timestamps por palavra. **Timestamp não é opcional:** sem ele não há procedência, e modelo de STT que não devolve tempo não serve a este sistema por melhor que transcreva — medido em `ARCHITECTURE.md` §4.2.1
 - Extração: LLM com saída JSON estrita, pelo mesmo Gateway
 - Auth: magic link com um único e-mail permitido. Sem signup, sem roles, sem reset de senha.
 
@@ -114,8 +114,9 @@ o documento — conserte-o e me avise.
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
 AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, deduplicação
-STT_MODEL                 opcional; padrão google/gemini-3.5-transcribe
+STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
+DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
 AUTH_SECRET, ALLOWED_EMAIL
 ```
 

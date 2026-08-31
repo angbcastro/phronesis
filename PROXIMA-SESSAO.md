@@ -1,12 +1,36 @@
-# Checkpoint — 2026-08-31 (sessão 5)
+# Checkpoint — 2026-08-31 (sessões 5 e 6)
 
-Documento de trabalho, não de arquitetura. **A slice 2 fechou: o caminho inteiro
-rodou contra o Aura e o grafo tem átomos de verdade.** Apagar quando a slice 3
-começar.
+Documento de trabalho, não de arquitetura. **A slice 2 fechou e a slice 3 está
+construída, faltando o uso.** Apagar quando a slice 4 começar.
 
 Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
-sistema funciona hoje) e `Specs/slice-2.md` (o que a slice 2 tem que ser). Este
+sistema funciona hoje) e `Specs/slice-3.md` (o que a slice 3 tem que ser). Este
 arquivo só diz o que fazer a seguir.
+
+---
+
+## -1. O que a sessão 6 descobriu sobre o STT
+
+Uma troca de modelo pedida, testada e **revertida no mesmo dia**. Fica aqui para
+ninguém repetir o teste daqui a três meses achando que é ideia nova.
+
+`google/gemini-3.5-transcribe` transcreve melhor que o `xai/grok-stt` e custa
+pouco — e **não devolve timestamp nenhum**. Sem tempo não há procedência: todo
+átomo nasceria com `inicios_s`, `fins_s` e `ancoras` vazios, e o player da
+revisão sumiria de todos os itens. A medição varreu 16 modelos do Gateway
+(§4.2.1 do `ARCHITECTURE.md`); sobrou um só com tempo por palavra e sem rate
+limit, e é o que já estava lá. Deepgram, AssemblyAI, ElevenLabs e Groq não estão
+neste Gateway.
+
+**O `keyterm` funciona** — isso era dúvida e virou medida. Mesmo bloco, mesma
+chamada, só a lista mudando: sem lista sai "Porto Alegre", com `["Portalegre"]`
+sai "Portalegre", e um termo irrelevante no controle não se injeta na saída.
+
+Custo declarado: no bloco de teste o grok escreveu "a secretária está
+funcionando" onde os outros ouviram "isso aqui tá funcionando". Era um teste de
+microfone de 24/08, e as sessões reais dele produziram extração boa — mas
+transcrição estranha numa sessão de verdade tem aqui a primeira suspeita, e não
+há para onde correr dentro deste Gateway.
 
 ---
 
@@ -85,6 +109,26 @@ inteiro, processamento no resto.
 `Processando` é quem chama `/finalizar` agora — a garantia de fila vazia veio
 junto, intacta. `Leitura` só lê.
 
+## 2.1 O que a sessão 6 construiu (slice 3)
+
+**Metade A — o vocabulário vem do grafo.** União com `config/vocabulario.txt`,
+arquivo primeiro, ordenado por número de sessões, cache de 5 min. Grafo fora do
+ar cai no arquivo em vez de derrubar a transcrição. `eu`, pronome e palavra
+comum não viram keyterm — ensinar o STT a ouvir "casa" com mais força piora tudo
+em troca de nada. O **nome da opção** virou mapa por provedor em `modelos.ts`:
+provedor desconhecido não recebe opção nenhuma, que é o padrão seguro.
+
+**Metade B — `/entidades`.** A primeira janela para dentro do grafo. Lista o que
+entrou, e conserta: fundir duas grafias, renomear. "Procurar duplicatas" é um
+botão, porque a camada de string é de graça e a que julga é chamada de modelo.
+
+**A ideia que carrega a slice: fundir é criar alias.** O perdedor fica com
+`status='fundida'` e `:FUNDIDA_EM`; as arestas migram; e como ele mantém o
+`nome_normalizado`, a grafia morta nunca renasce — dita de novo, resolve até o
+vencedor. Renomear é o mesmo mecanismo consigo mesma, o que fecha o limite do
+"meu pai". Migration 004 aplicada (um índice; sem migração de dado, de
+propósito).
+
 ---
 
 ## 3. O prompt está em `extracao-5`
@@ -143,19 +187,22 @@ automática e a resposta crua na mensagem de erro. Se voltar a falhar, o log
 
 ## 6. Próximos passos, em ordem
 
-**A slice 3 tem spec: `Specs/slice-3.md` — higiene do grafo.** Vocabulário do
-STT gerado das entidades, mais deduplicação semântica de entidade. Ela começa
-por um pré-requisito, e ele vale ler antes de qualquer coisa:
+**A slice 3 está construída** (`Specs/slice-3.md`). O que falta nela é uso: a
+mecânica foi validada contra o Aura, mas o grafo não tem duplicata nenhuma para
+o `duplicatas-1` julgar, então a qualidade da proposta é a única parte que
+continua sem medida.
 
-1. **Conferir se o vocabulário chega ao modelo** (critério zero da spec). O
-   padrão de STT virou `google/gemini-3.5-transcribe`, e `stt.ts` manda a opção
-   com o nome `keyterm`, que é vocabulário de xAI/Deepgram. Ou o Google ignora
-   em silêncio, ou recusa e derruba a transcrição. `pnpm smoke` tem a sonda.
+1. **Abrir `/entidades`** — link no rodapé da home, ao lado de "áudios". Hoje
+   ela lista `Isinha` (6 átomos, 2 sessões) e `eu` (7 átomos, 2 sessões). É a
+   primeira janela para dentro do grafo que este sistema tem.
 2. **Reextrair as duas sessões em `em_revisao`** com o `extracao-5` e julgar a
-   saída na revisão. É a única medida de qualidade que existe.
+   saída na revisão. É a única medida de qualidade que existe — e as sessões
+   nunca extraídas (`mtgeskkd`, `mtgeoq7a`) trazem entidade nova, que é o que
+   dá material para a busca de duplicatas ter o que fazer.
 3. **Encher o `config/vocabulario.txt`** com os nomes próprios que você fala.
-   ("rafa" saiu em minúscula por não estar lá.) Ele não deixa de existir na
-   slice 3 — vira o override manual por cima do que o grafo gera.
+   Ele não deixa de existir na slice 3 — continua sendo o único jeito de
+   ensinar um nome **antes** de falá-lo pela primeira vez, que é justamente
+   quando o STT mais erra. O que o grafo já conhece entra sozinho.
 4. **Bancada de comparação de modelos** (pedida e adiada duas vezes): rodar o
    **fluxo de extração** de uma mesma transcrição em até três modelos ao mesmo
    tempo, comparar e escolher. Só extração, não STT. O desenho discutido foi uma
@@ -172,5 +219,9 @@ por um pré-requisito, e ele vale ler antes de qualquer coisa:
 
 As 2-4 perguntas do ritual, `:ATUALIZA`/`:CONTRADIZ`/`:CONFIRMA` entre átomos,
 busca, tela Perguntar, `:Foco`, visualização de grafo e deduplicação de **átomo**
-(a de entidade é a slice 3). **Não existem e não devem ser construídos agora** —
-todos dependem de material acumulado que ainda não existe.
+(a de entidade ficou pronta na slice 3). **Não existem e não devem ser
+construídos agora** — todos dependem de material acumulado que ainda não existe.
+
+Também fora: **desfazer uma fusão.** Migrar as arestas de volta exigiria saber
+quais eram de quem, e isso não é gravado. O que protege é a fusão nunca ser
+automática.

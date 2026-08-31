@@ -57,24 +57,25 @@ ajusta é o prompt.
 providerOptions: { [provedorDe(modelo)]: { keyterm: termos } }
 ```
 
-A chave do mapa segue o provedor, mas **o nome da opção não**. `keyterm` é
-vocabulário de xAI/Deepgram; com o padrão em `google/gemini-3.5-transcribe` o
-que sai é `{ google: { keyterm: [...] } }`. Ou o provedor ignora em silêncio — e
-o vocabulário nunca teve efeito nenhum — ou recusa a opção desconhecida e
-derruba a transcrição.
+**Medido em 2026-08-31 — passa.** Mesmo bloco, mesma chamada, só a lista
+variando:
 
-Gerar a lista do grafo não vale nada se ela não chega ao modelo. Então a slice
-começa por medir isso: `pnpm smoke` já tem a sonda, e o teste real é uma frase
-com um nome próprio dentro e fora da lista.
+| Lista | Saída |
+|---|---|
+| sem lista | "Acordei em **Porto Alegre** hoje" |
+| `["Xhavier"]` (controle irrelevante) | "Acordei em **Porto Alegre** hoje" |
+| `["Portalegre"]` | "Acordei em **Portalegre** hoje" |
 
-**A correção que a slice assume:** o nome e o formato da opção viram um mapa por
-provedor, ao lado do endereçamento em `src/lib/modelos.ts`. Provedor que não
-estiver no mapa **não recebe opção nenhuma** — silêncio é o padrão seguro, e
-mandar uma opção que o provedor não conhece é como se derruba transcrição.
+A grafia segue a lista, e um termo não falado não se injeta na saída. Gerar a
+lista do grafo tem efeito real — a metade A vale a pena como está escrita.
 
-Se o provedor novo não tiver nada equivalente, a metade A muda de forma: em vez
-de injetar antes, corrigir depois — casar a transcrição contra a lista de
-entidades e trocar a grafia. É decisão a tomar com a medida na mão, não antes.
+**Mas a entrega é frágil, e a slice conserta.** A chave do mapa segue o provedor
+(`provedorDe(modelo)`), enquanto o nome da opção está escrito à mão. `keyterm` é
+parâmetro de Deepgram e xAI; trocar `STT_MODEL` por um provedor que use outro
+nome faz o vocabulário sumir em silêncio, ou derrubar a transcrição. Então o
+nome e o formato da opção viram **um mapa por provedor**, ao lado do
+endereçamento em `src/lib/modelos.ts`, e provedor fora do mapa **não recebe
+opção nenhuma** — silêncio é o padrão seguro.
 
 ---
 

@@ -349,6 +349,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .link-sessoes:hover { opacity: 1; text-decoration: underline; }
 
+.portas { display: flex; gap: 1.2rem; align-items: center; }
+
 .sessoes {
   width: 100%;
   max-width: 34rem;
@@ -383,6 +385,30 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* As ações da linha: ler a transcrição e forçar a re-extração, lado a lado. */
 .acoes-sessao { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+
+/* Um par candidato a fusão, na tela de entidades. */
+.par {
+  border: 1px solid var(--linha);
+  border-radius: 0.6rem;
+  padding: 0.8rem;
+  margin: 0.6rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.par p { margin: 0; }
+
+.campo-nome {
+  background: none;
+  border: 1px solid var(--linha);
+  border-radius: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--texto);
+  min-width: 0;
+  width: 9rem;
+}
 
 .reextrair {
   display: inline-block;

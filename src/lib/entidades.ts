@@ -118,17 +118,103 @@ export function tipoDosLabels(labels: string[]): TipoEntidade {
  * "conhecida (3 sessões)" contra "nova, citada 1x". `OPTIONAL MATCH` porque
  * entidade pode existir sem átomo apontando para ela — foi criada numa revisão
  * e os átomos dela foram todos rejeitados depois.
+ *
+ * **Atravessa alias** (slice 3): quem casa com um nó fundido volta como o
+ * vencedor da fusão — id, nome e labels dele —, mas mantendo em
+ * `nome_normalizado` a chave que eu procurei, porque é por ela que o chamador
+ * casa a candidata de volta. Dizer "Exx Med" numa sessão nova encontra
+ * "Exxmed", e é isso que faz a fusão valer para o futuro e não só para o
+ * passado. `sessoes` conta as sessões dos **dois** lados, que é o número certo
+ * depois de fundidas.
  */
 export async function buscarConhecidas(chaves: string[]): Promise<LinhaEntidade[]> {
   if (chaves.length === 0) return [];
   return query<LinhaEntidade>(
     `MATCH (e:Entidade)
      WHERE e.nome_normalizado IN $chaves
-     OPTIONAL MATCH (e)<-[:SOBRE|:MENCIONA]-(:Atomo)<-[:GEROU]-(s:Sessao)
-     RETURN e.id AS id, e.nome AS nome, e.nome_normalizado AS nome_normalizado,
-            labels(e) AS labels, count(DISTINCT s) AS sessoes`,
+     OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
+     WITH e, coalesce(v, e) AS alvo
+     OPTIONAL MATCH (alvo)<-[:SOBRE|:MENCIONA]-(:Atomo)<-[:GEROU]-(s:Sessao)
+     RETURN alvo.id AS id, alvo.nome AS nome,
+            e.nome_normalizado AS nome_normalizado,
+            labels(alvo) AS labels, count(DISTINCT s) AS sessoes`,
     { chaves },
   );
+}
+
+/** Uma entidade como a tela de manutenção a mostra. */
+export interface EntidadeDoGrafo {
+  id: string;
+  nome: string;
+  nome_normalizado: string;
+  tipo: TipoEntidade;
+  sessoes: number;
+  atomos: number;
+  /** Grafias que já foram fundidas nesta — o histórico do nome. */
+  aliases: string[];
+}
+
+interface LinhaGrafo extends Omit<EntidadeDoGrafo, "tipo"> {
+  labels: string[];
+}
+
+/**
+ * Tudo que está no grafo e continua valendo, para a tela `/entidades`.
+ *
+ * Nó fundido não aparece como linha própria: ele vira `aliases` do vencedor.
+ * `status` ausente conta como ativa — os nós criados antes da migration 004 não
+ * têm o campo, e a defesa fica na leitura em vez de numa migração de dado que
+ * não protegeria o nó que um deploy antigo criasse amanhã.
+ */
+export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
+  const linhas = await query<LinhaGrafo>(
+    `MATCH (e:Entidade)
+     WHERE coalesce(e.status, 'ativa') <> 'fundida'
+     OPTIONAL MATCH (e)<-[:SOBRE|:MENCIONA]-(a:Atomo)
+     OPTIONAL MATCH (e)<-[:SOBRE|:MENCIONA]-(:Atomo)<-[:GEROU]-(s:Sessao)
+     OPTIONAL MATCH (alias:Entidade)-[:FUNDIDA_EM]->(e)
+     RETURN e.id AS id, e.nome AS nome, e.nome_normalizado AS nome_normalizado,
+            labels(e) AS labels,
+            count(DISTINCT a) AS atomos,
+            count(DISTINCT s) AS sessoes,
+            collect(DISTINCT alias.nome) AS aliases
+     ORDER BY sessoes DESC, e.nome`,
+  );
+
+  return linhas.map((l) => ({
+    id: l.id,
+    nome: l.nome,
+    nome_normalizado: l.nome_normalizado,
+    tipo: tipoDosLabels(l.labels ?? []),
+    sessoes: l.sessoes ?? 0,
+    atomos: l.atomos ?? 0,
+    aliases: (l.aliases ?? []).filter((n) => typeof n === "string"),
+  }));
+}
+
+/**
+ * Os nomes que vão para o vocabulário do STT, do mais falado para o menos.
+ *
+ * Ordem por número de sessões: o nome que eu falo toda semana é o que o modelo
+ * mais precisa acertar, e o teto de 100 termos obriga a escolher. Desempate
+ * pelo nome, para a lista não dançar entre duas chamadas — cache com TTL não
+ * ajuda se a mesma consulta devolve ordens diferentes.
+ *
+ * Alias não entra: mandar a grafia que eu já rejeitei ensinaria o STT a
+ * reproduzi-la.
+ */
+export async function nomesParaVocabulario(limite: number): Promise<string[]> {
+  const linhas = await query<{ nome: string }>(
+    `MATCH (e:Entidade)
+     WHERE coalesce(e.status, 'ativa') <> 'fundida'
+     OPTIONAL MATCH (e)<-[:SOBRE|:MENCIONA]-(:Atomo)<-[:GEROU]-(s:Sessao)
+     WITH e, count(DISTINCT s) AS sessoes
+     RETURN e.nome AS nome
+     ORDER BY sessoes DESC, e.nome
+     LIMIT $limite`,
+    { limite },
+  );
+  return linhas.map((l) => l.nome).filter((n) => typeof n === "string" && n.trim() !== "");
 }
 
 /**

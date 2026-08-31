@@ -2,7 +2,12 @@
 # Limite do provedor: 100 termos, 50 caracteres cada — o excedente é descartado.
 # Uma entrada por linha. Linhas com # e linhas vazias são ignoradas.
 # Nomes próprios: pessoas, empresas, clientes, produtos, projetos.
-# Slice 1: mantido à mão. A partir da slice 3 é gerado das entidades do grafo.
+#
+# A partir da slice 3 este arquivo NÃO é mais a lista inteira: ele é a união com
+# as entidades do grafo, e vem primeiro — o que está aqui vence as 100 vagas.
+# Continua valendo a pena escrever à mão o que ainda não é entidade (o nome do
+# cliente que eu vou falar amanhã pela primeira vez), porque entidade só nasce
+# depois que eu falo e confirmo a revisão.
 
 Rodozanco
 Exxmed

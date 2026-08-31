@@ -75,7 +75,7 @@ LLM sai por ela — STT agora, extração e deduplicação a partir da slice 2. 
 lugar para ver custo e latência, e trocar de provedor sem tocar em código.
 
 `STT_MODEL` e `EXTRACAO_MODEL` são opcionais e apontam para outro modelo
-(padrões `google/gemini-3.5-transcribe` e `zai/glm-5.3-flash`). Chave
+(padrões `xai/grok-stt` e `zai/glm-5.3-flash`). Chave
 de provedor não entra aqui: ver a regra inviolável 8 em `CLAUDE.md` e a seção 4.2
 de `ARCHITECTURE.md`.
 
