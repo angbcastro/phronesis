@@ -7,7 +7,31 @@ import {
   normalizarTipo,
   parsearResposta,
 } from "@/lib/extracao";
+import type { Atribuicoes } from "@/lib/resolucao";
 import type { AtomoCru, Palavra, Transcricao } from "@/lib/tipos";
+
+/**
+ * As atribuições que um grafo vazio produz: toda menção vira entidade nova, sem
+ * nenhuma chamada de modelo. `ancorar` só costura o que o agente 2 decidiu — o
+ * que se testa aqui é a costura e a âncora, não a decisão.
+ */
+const novas = (crus: AtomoCru[]): Atribuicoes => {
+  const ref = (nome: string) => ({
+    citado: nome,
+    entidade: nome,
+    conhecida: false,
+    certo: true,
+    alternativas: [],
+    motivo: "",
+  });
+  return {
+    sobre: crus.map((a) => ref(a.sobre)),
+    menciona: crus.map((a) => a.menciona.map(ref)),
+    perfila: crus.map(() => []),
+    modelo: null,
+    prompt_version: null,
+  };
+};
 
 const item = (extra: Record<string, unknown> = {}) => ({
   texto: "O contrato da Exxmed vai atrasar",
@@ -157,21 +181,21 @@ describe("ancoragem", () => {
   ];
 
   it("id é determinístico — é o que fará o MERGE não duplicar", () => {
-    expect(ancorar("mt7dlh0q", crus, t, "zai/glm-5.3-flash").map((a) => a.id)).toEqual([
+    expect(ancorar("mt7dlh0q", crus, t, "zai/glm-5.3-flash", novas(crus)).map((a) => a.id)).toEqual([
       "mt7dlh0q-0",
       "mt7dlh0q-1",
     ]);
   });
 
   it("todo átomo carrega prompt_version e modelo (regra 7)", () => {
-    for (const a of ancorar("s1", crus, t, "zai/glm-5.3-flash")) {
+    for (const a of ancorar("s1", crus, t, "zai/glm-5.3-flash", novas(crus))) {
       expect(a.prompt_version).toBe(PROMPT_VERSION);
       expect(a.modelo).toBe("zai/glm-5.3-flash");
     }
   });
 
   it("os offsets vêm da transcrição, na ordem em que foram ditos", () => {
-    const [primeiro, segundo] = ancorar("s1", crus, t, "m");
+    const [primeiro, segundo] = ancorar("s1", crus, t, "m", novas(crus));
     expect(primeiro.trechos[0].inicio_s).toBe(1);
     expect(segundo.trechos[0].inicio_s!).toBeGreaterThan(primeiro.trechos[0].fim_s!);
     expect(primeiro.trechos[0].ancora).toBe("exata");
@@ -179,13 +203,13 @@ describe("ancoragem", () => {
 
   it("átomo que o modelo inventou fica sem offset, não com offset falso", () => {
     const inventado: AtomoCru[] = [{ ...crus[0], trechos: ["comprei um carro vermelho ontem"] }];
-    const [a] = ancorar("s1", inventado, t, "m");
+    const [a] = ancorar("s1", inventado, t, "m", novas(inventado));
     expect(a.trechos[0]).toMatchObject({ ancora: "nenhuma", inicio_s: null, fim_s: null });
   });
 
   it("preserva o texto do modelo, que não é o trecho do áudio", () => {
     // `texto` é a afirmação; `trechos` são a prova dela na transcrição.
-    const [a] = ancorar("s1", crus, t, "m");
+    const [a] = ancorar("s1", crus, t, "m", novas(crus));
     expect(a.texto).toBe("O contrato da Exxmed vai atrasar");
     expect(a.trechos[0].texto).toBe("o contrato da exxmed vai atrasar");
   });
@@ -205,7 +229,7 @@ describe("ancoragem", () => {
         trechos: ["fui treinar de manha", "treinar tem me segurado"],
       },
     ];
-    const [a] = ancorar("s1", junto, sessao, "m");
+    const [a] = ancorar("s1", junto, sessao, "m", novas(junto));
     expect(a.trechos).toHaveLength(2);
     expect(a.trechos.every((tr) => tr.ancora === "exata")).toBe(true);
     expect(a.trechos[1].inicio_s!).toBeGreaterThan(a.trechos[0].fim_s!);
@@ -231,7 +255,7 @@ describe("ancoragem", () => {
         trechos: ["um meio qualquer"],
       },
     ];
-    const [, segundo] = ancorar("s1", atomos, sessao, "m");
+    const [, segundo] = ancorar("s1", atomos, sessao, "m", novas(atomos));
     expect(segundo.trechos[0].ancora).toBe("exata");
     expect(segundo.trechos[0].inicio_s).toBe(3); // "um" é a 4a palavra (índice 3)
   });

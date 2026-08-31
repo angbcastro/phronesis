@@ -1,34 +1,43 @@
 /**
- * Resolução de entidade: achar no grafo o que já existe.
+ * O grafo de entidades como as outras camadas o enxergam: quem existe, com que
+ * nome, que tipo e que perfil — e como as menções de uma sessão se agregam numa
+ * lista para a revisão.
  *
- * "Rodozanco" na segunda sessão tem que encontrar o nó da primeira. O
- * casamento é por `nome_normalizado` (minúsculas, sem acento, sem pontuação —
- * `texto.ts`), contra as `:Entidade` que já estão lá.
+ * **Nada é escrito aqui.** Este módulo só lê: `:Entidade` nasce no confirmar
+ * (`atomos.ts`) ou quando eu semeio um nome à mão (`fusao.ts`). Antes da
+ * confirmação na revisão o grafo não recebe nada (regra 5).
  *
- * **Resolução, não deduplicação.** Juntar "Exxmed" com "Exx Med" exige
- * semântica e é slice 3. Aqui, nome diferente é entidade diferente.
+ * **A resolução mudou de lugar na slice 4.** Até a 3, `coletar()` colapsava
+ * todas as menções ao mesmo nome numa candidata só, válida para a sessão
+ * inteira, e o casamento era por `nome_normalizado`. Isso deixou de servir: dois
+ * átomos da mesma sessão dizendo "Rafa" podem ser duas pessoas, e uma candidata
+ * por nome não tem como expressar isso. Quem atribui agora é `resolucao.ts`,
+ * menção por menção; aqui ficou o catálogo que ele lê (`listarEntidades`) e a
+ * agregação que a revisão mostra (`agregarCandidatas`).
  *
- * **Nada é escrito.** Este módulo só lê: a criação dos nós acontece no
- * confirmar, depois da revisão (regra 5). O que ele devolve é uma lista de
- * candidatas, cada uma dizendo se já existe ou se seria nova.
- *
- * A trava contra o grafo apodrecido não é este código: é a constraint de
- * `nome_normalizado` único, que vale entre **todas** as entidades. Duas
- * menções à mesma pessoa não viram dois nós nem em corrida, porque quem
+ * A trava contra o grafo apodrecido continua não sendo este código: é a
+ * constraint de `nome_normalizado` único, que vale entre **todas** as entidades.
+ * Duas menções à mesma pessoa não viram dois nós nem em corrida, porque quem
  * garante é o banco (migration 002).
  */
 import { query } from "./neo4j";
 import { ehPronome, normalizarNome } from "./texto";
 import { TIPOS_ENTIDADE } from "./tipos";
-import type { AtomoCru, EntidadeCandidata, TipoEntidade } from "./tipos";
+import type {
+  EntidadeCandidata,
+  EntidadePropostaFrase,
+  Perfil,
+  ReferenciaResolvida,
+  TipoEntidade,
+} from "./tipos";
 
 /** Tipo de quem o extrator não classificou. Num diário falado, quase sempre acerta. */
 export const TIPO_PADRAO: TipoEntidade = "Pessoa";
 
-
 // A normalização e a lista de pronomes moram em `texto.ts`: a revisão, no
 // navegador, precisa das duas para montar o payload com as mesmas chaves.
 export { ehPronome, normalizarNome };
+export type { EntidadePropostaFrase };
 
 /** "PESSOA", "pessoa", "Pessoa" — tudo a mesma coisa. Fora da lista, `null`. */
 export function normalizarTipoEntidade(valor: unknown): TipoEntidade | null {
@@ -37,134 +46,54 @@ export function normalizarTipoEntidade(valor: unknown): TipoEntidade | null {
   return TIPOS_ENTIDADE.find((t) => normalizarNome(t) === alvo) ?? null;
 }
 
-/** O que o extrator propôs sobre uma entidade, antes de olhar o grafo. */
-export interface EntidadePropostaFrase {
-  nome: string;
-  tipo?: unknown;
-}
-
-interface Coletada {
-  nome: string;
-  nome_normalizado: string;
-  tipo: TipoEntidade;
-  ocorrencias: number;
-}
-
-/**
- * Junta as entidades citadas pelos átomos com os tipos que o extrator propôs.
- *
- * A contagem sai dos átomos, não da lista de tipos: é ela que diz o que a
- * sessão de fato menciona. Entidade que o modelo listou e nenhum átomo cita
- * não entra — seria um nó órfão no grafo.
- *
- * A primeira grafia vista vence como nome de exibição. `nome_normalizado` é
- * quem une as variações.
- */
-export function coletar(
-  atomos: AtomoCru[],
-  propostas: EntidadePropostaFrase[] = [],
-): Coletada[] {
-  const tipos = new Map<string, TipoEntidade>();
-  for (const p of propostas) {
-    const chave = normalizarNome(p.nome ?? "");
-    const tipo = normalizarTipoEntidade(p.tipo);
-    if (chave !== "" && tipo && !tipos.has(chave)) tipos.set(chave, tipo);
-  }
-
-  const porChave = new Map<string, Coletada>();
-
-  const contar = (nome: string) => {
-    const chave = normalizarNome(nome);
-    if (chave === "") return;
-    const existente = porChave.get(chave);
-    if (existente) {
-      existente.ocorrencias++;
-      return;
-    }
-    porChave.set(chave, {
-      nome: nome.trim(),
-      nome_normalizado: chave,
-      tipo: tipos.get(chave) ?? TIPO_PADRAO,
-      ocorrencias: 1,
-    });
-  };
-
-  for (const atomo of atomos) {
-    contar(atomo.sobre);
-    for (const m of atomo.menciona) contar(m);
-  }
-
-  return [...porChave.values()];
-}
-
-interface LinhaEntidade {
-  id: string;
-  nome: string;
-  nome_normalizado: string;
-  labels: string[];
-  /** Em quantas sessões passadas ela apareceu. */
-  sessoes: number;
-}
-
 /** O label que não é `:Entidade`. Nó sem tipo reconhecível cai no padrão. */
 export function tipoDosLabels(labels: string[]): TipoEntidade {
   return TIPOS_ENTIDADE.find((t) => labels.includes(t)) ?? TIPO_PADRAO;
 }
 
 /**
- * Uma consulta só para a sessão inteira, não uma por entidade.
- *
- * `sessoes` é o que a revisão mostra para eu decidir se a entidade vira nó:
- * "conhecida (3 sessões)" contra "nova, citada 1x". `OPTIONAL MATCH` porque
- * entidade pode existir sem átomo apontando para ela — foi criada numa revisão
- * e os átomos dela foram todos rejeitados depois.
- *
- * **Atravessa alias** (slice 3): quem casa com um nó fundido volta como o
- * vencedor da fusão — id, nome e labels dele —, mas mantendo em
- * `nome_normalizado` a chave que eu procurei, porque é por ela que o chamador
- * casa a candidata de volta. Dizer "Exx Med" numa sessão nova encontra
- * "Exxmed", e é isso que faz a fusão valer para o futuro e não só para o
- * passado. `sessoes` conta as sessões dos **dois** lados, que é o número certo
- * depois de fundidas.
+ * Uma entidade como a tela de manutenção a mostra — e como o agente de
+ * resolução a lê. É o mesmo objeto de propósito: duas consultas quase iguais
+ * divergiriam, e a que o agente lê é a que decide a quem o átomo pertence.
  */
-export async function buscarConhecidas(chaves: string[]): Promise<LinhaEntidade[]> {
-  if (chaves.length === 0) return [];
-  return query<LinhaEntidade>(
-    `MATCH (e:Entidade)
-     WHERE e.nome_normalizado IN $chaves
-     OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
-     WITH e, coalesce(v, e) AS alvo
-     OPTIONAL MATCH (alvo)<-[:SOBRE|:MENCIONA]-(:Atomo)<-[:GEROU]-(s:Sessao)
-     RETURN alvo.id AS id, alvo.nome AS nome,
-            e.nome_normalizado AS nome_normalizado,
-            labels(alvo) AS labels, count(DISTINCT s) AS sessoes`,
-    { chaves },
-  );
-}
-
-/** Uma entidade como a tela de manutenção a mostra. */
 export interface EntidadeDoGrafo {
   id: string;
   nome: string;
   nome_normalizado: string;
+  /**
+   * Todas as grafias que resolvem para este nó: a própria e as já fundidas
+   * nele. É por esta lista que o casamento exato atravessa alias sem uma
+   * segunda consulta.
+   */
+  chaves: string[];
   tipo: TipoEntidade;
   sessoes: number;
   atomos: number;
   /** Grafias que já foram fundidas nesta — o histórico do nome. */
   aliases: string[];
+  /** Os três campos da migration 005. Campo ausente no grafo é string vazia. */
+  perfil: Perfil;
 }
 
-interface LinhaGrafo extends Omit<EntidadeDoGrafo, "tipo"> {
+interface LinhaGrafo extends Omit<EntidadeDoGrafo, "tipo" | "perfil" | "chaves"> {
   labels: string[];
+  chaves_alias: string[];
+  contexto: string | null;
+  pode_ajudar_com: string | null;
+  fizemos_juntos: string | null;
 }
+
+const limpo = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
 /**
- * Tudo que está no grafo e continua valendo, para a tela `/entidades`.
+ * Tudo que está no grafo e continua valendo.
  *
- * Nó fundido não aparece como linha própria: ele vira `aliases` do vencedor.
- * `status` ausente conta como ativa — os nós criados antes da migration 004 não
- * têm o campo, e a defesa fica na leitura em vez de numa migração de dado que
- * não protegeria o nó que um deploy antigo criasse amanhã.
+ * Nó fundido não aparece como linha própria: ele vira `aliases` do vencedor (o
+ * nome, para eu ler) e entra em `chaves` (a grafia normalizada, para o
+ * casamento). `status` ausente conta como ativa — os nós criados antes da
+ * migration 004 não têm o campo, e a defesa fica na leitura em vez de numa
+ * migração de dado que não protegeria o nó que um deploy antigo criasse amanhã.
+ * Campo de perfil ausente segue a mesma regra (005).
  */
 export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
   const linhas = await query<LinhaGrafo>(
@@ -177,7 +106,11 @@ export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
             labels(e) AS labels,
             count(DISTINCT a) AS atomos,
             count(DISTINCT s) AS sessoes,
-            collect(DISTINCT alias.nome) AS aliases
+            collect(DISTINCT alias.nome) AS aliases,
+            collect(DISTINCT alias.nome_normalizado) AS chaves_alias,
+            coalesce(e.contexto, '') AS contexto,
+            coalesce(e.pode_ajudar_com, '') AS pode_ajudar_com,
+            coalesce(e.fizemos_juntos, '') AS fizemos_juntos
      ORDER BY sessoes DESC, e.nome`,
   );
 
@@ -185,10 +118,19 @@ export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
     id: l.id,
     nome: l.nome,
     nome_normalizado: l.nome_normalizado,
+    chaves: [
+      l.nome_normalizado,
+      ...(l.chaves_alias ?? []).filter((c) => typeof c === "string" && c !== ""),
+    ],
     tipo: tipoDosLabels(l.labels ?? []),
     sessoes: l.sessoes ?? 0,
     atomos: l.atomos ?? 0,
     aliases: (l.aliases ?? []).filter((n) => typeof n === "string"),
+    perfil: {
+      contexto: limpo(l.contexto),
+      pode_ajudar_com: limpo(l.pode_ajudar_com),
+      fizemos_juntos: limpo(l.fizemos_juntos),
+    },
   }));
 }
 
@@ -217,51 +159,81 @@ export async function nomesParaVocabulario(limite: number): Promise<string[]> {
   return linhas.map((l) => l.nome).filter((n) => typeof n === "string" && n.trim() !== "");
 }
 
-/**
- * Confronta as candidatas com o grafo.
- *
- * Quando a entidade já existe, o que está no grafo vence: o nome com a grafia
- * já gravada e o tipo dos labels do nó. O extrator propor `:Pessoa` para algo
- * que já é `:Projeto` não muda o nó — e mudar o tipo de uma entidade existente
- * é edição na revisão, não efeito colateral de uma extração.
- */
-export async function resolver(coletadas: Coletada[]): Promise<EntidadeCandidata[]> {
-  const conhecidas = new Map(
-    (await buscarConhecidas(coletadas.map((c) => c.nome_normalizado))).map((e) => [
-      e.nome_normalizado,
-      e,
-    ]),
-  );
-
-  return coletadas.map((c) => {
-    const no = conhecidas.get(c.nome_normalizado);
-    return no
-      ? {
-          nome: no.nome,
-          nome_normalizado: c.nome_normalizado,
-          tipo: tipoDosLabels(no.labels ?? []),
-          conhecida: true,
-          id: no.id,
-          ocorrencias: c.ocorrencias,
-          sessoes: no.sessoes ?? 0,
-          // Entidade que já está no grafo passou por uma revisão minha: se o
-          // nome dela é o que é, foi porque eu deixei.
-          precisa_nome: false,
-        }
-      : {
-          ...c,
-          conhecida: false,
-          id: null,
-          sessoes: 0,
-          precisa_nome: ehPronome(c.nome_normalizado),
-        };
-  });
+/** O nó cujo conjunto de grafias contém esta chave. Atravessa alias de graça. */
+export function acharPorChave(
+  chave: string,
+  catalogo: readonly EntidadeDoGrafo[],
+): EntidadeDoGrafo | undefined {
+  if (chave === "") return undefined;
+  return catalogo.find((e) => e.chaves.includes(chave));
 }
 
-/** Atalho do caminho inteiro: dos átomos crus às candidatas resolvidas. */
-export async function resolverEntidades(
-  atomos: AtomoCru[],
-  propostas: EntidadePropostaFrase[] = [],
-): Promise<EntidadeCandidata[]> {
-  return resolver(coletar(atomos, propostas));
+/**
+ * A visão agregada que a revisão mostra: uma linha por entidade, com quantas
+ * menções caíram nela.
+ *
+ * A atribuição de cada menção vive no átomo (`ReferenciaResolvida`); esta lista
+ * é onde eu ainda decido se uma entidade **nova** vira nó. Entidade que nenhuma
+ * referência aponta não entra — seria nó órfão no grafo.
+ *
+ * A primeira grafia vista vence como nome de exibição de uma entidade nova;
+ * quando ela já existe no grafo, o grafo vence: nome gravado e tipo dos labels.
+ * O extrator propor `:Pessoa` para algo que já é `:Projeto` não muda o nó.
+ */
+export function agregarCandidatas(
+  refs: readonly ReferenciaResolvida[],
+  catalogo: readonly EntidadeDoGrafo[],
+  propostas: readonly EntidadePropostaFrase[] = [],
+): EntidadeCandidata[] {
+  const tipos = new Map<string, TipoEntidade>();
+  for (const p of propostas) {
+    const chave = normalizarNome(p.nome ?? "");
+    const tipo = normalizarTipoEntidade(p.tipo);
+    if (chave !== "" && tipo && !tipos.has(chave)) tipos.set(chave, tipo);
+  }
+
+  const porChave = new Map<string, EntidadeCandidata>();
+
+  for (const ref of refs) {
+    const chaveCitada = normalizarNome(ref.entidade);
+    if (chaveCitada === "") continue;
+
+    const no = acharPorChave(chaveCitada, catalogo);
+    const chave = no?.nome_normalizado ?? chaveCitada;
+
+    const existente = porChave.get(chave);
+    if (existente) {
+      existente.ocorrencias++;
+      continue;
+    }
+
+    porChave.set(
+      chave,
+      no
+        ? {
+            nome: no.nome,
+            nome_normalizado: chave,
+            tipo: no.tipo,
+            conhecida: true,
+            id: no.id,
+            ocorrencias: 1,
+            sessoes: no.sessoes,
+            // Entidade que já está no grafo passou por uma revisão minha: se o
+            // nome dela é o que é, foi porque eu deixei.
+            precisa_nome: false,
+          }
+        : {
+            nome: ref.entidade.trim(),
+            nome_normalizado: chave,
+            tipo: tipos.get(chave) ?? tipos.get(normalizarNome(ref.citado)) ?? TIPO_PADRAO,
+            conhecida: false,
+            id: null,
+            ocorrencias: 1,
+            sessoes: 0,
+            precisa_nome: ehPronome(chave),
+          },
+    );
+  }
+
+  return [...porChave.values()];
 }

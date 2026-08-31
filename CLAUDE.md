@@ -16,7 +16,7 @@ Leitura obrigatória no começo de qualquer tarefa:
 - Next.js (App Router) + TypeScript, PWA, deploy na Vercel
 - Neo4j AuraDB Free, acessado pela **HTTP Query API** — nunca o driver Bolt (serverless não sustenta pool de conexões)
 - Cloudflare R2 para áudio e transcrições
-- **Vercel AI Gateway: porta única de modelo.** Todo tráfego de LLM sai por ele — STT, extração, deduplicação, o que vier. Uma chave (`AI_GATEWAY_API_KEY`), um lugar para ver custo e latência, e trocar de provedor é mudar uma variável de ambiente
+- **Vercel AI Gateway: porta única de modelo.** Todo tráfego de LLM sai por ele — STT, extração, resolução de identidade, perfil, deduplicação, o que vier. Uma chave (`AI_GATEWAY_API_KEY`), um lugar para ver custo e latência, e trocar de provedor é mudar uma variável de ambiente
 - STT: modelo endereçado por `STT_MODEL` (padrão `xai/grok-stt`), com timestamps por palavra. **Timestamp não é opcional:** sem ele não há procedência, e modelo de STT que não devolve tempo não serve a este sistema por melhor que transcreva — medido em `ARCHITECTURE.md` §4.2.1
 - Extração: LLM com saída JSON estrita, pelo mesmo Gateway
 - Auth: magic link com um único e-mail permitido. Sem signup, sem roles, sem reset de senha.
@@ -40,13 +40,18 @@ Contrato resumido (referência rápida, não substitui a leitura):
 
 ```
 :Pessoa, :Projeto, :Objetivo   — todos carregam também :Entidade
+                                — status ∈ ativa|fundida
+                                — perfil: contexto, pode_ajudar_com, fizemos_juntos
 :Atomo                          — tipo ∈ FATO|OPINIAO|SENTIMENTO|APRENDIZADO|CONQUISTA|DECISAO|ROTINA
 :Sessao, :Foco, :Pergunta
 
 (:Sessao)-[:GEROU]->(:Atomo)
 (:Atomo)-[:SOBRE]->(:Entidade)          // 1, sujeito principal
 (:Atomo)-[:MENCIONA]->(:Entidade)       // 0..n
+(:Atomo)-[:PERFILA { campo }]->(:Entidade)  // campo ∈ contexto|pode_ajudar_com|fizemos_juntos
 (:Atomo)-[:ATUALIZA|:CONTRADIZ|:CONFIRMA]->(:Atomo)
+(:Entidade)-[:FUNDIDA_EM]->(:Entidade)  // alias → vencedor da fusão
+(:Entidade)-[:DISTINTA_DE]->(:Entidade) // recusa minha: não propor de novo
 (:Projeto)-[:CONTRIBUI_PARA]->(:Objetivo)
 (:Pessoa)-[:ENVOLVIDA_EM]->(:Projeto)
 (:Foco)-[:APONTA_PARA]->(:Entidade)
@@ -113,10 +118,12 @@ o documento — conserte-o e me avise.
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, deduplicação
+AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, perfil, deduplicação
 STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
+RESOLUCAO_MODEL           opcional; padrão igual ao da extração
+PERFIL_MODEL              opcional; padrão igual ao da extração
 AUTH_SECRET, ALLOWED_EMAIL
 ```
 

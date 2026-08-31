@@ -3,11 +3,18 @@
  *
  * Sai pelo Vercel AI Gateway como todo o resto que fala com modelo — o
  * endereçamento está em `modelos.ts` (regra 8). Este arquivo monta o prompt,
- * valida a resposta, casa cada trecho com o áudio (`offsets.ts`) e confronta as
- * entidades citadas com o grafo (`entidades.ts`).
+ * valida a resposta, casa cada trecho com o áudio (`offsets.ts`) e chama o
+ * agente de resolução (`resolucao.ts`), que atribui cada menção a uma entidade.
  *
  * **Os offsets não saem do modelo.** Ele devolve o trecho; `offsets.ts` acha o
  * segundo. Ver o cabeçalho de lá para o porquê.
+ *
+ * **São dois agentes, não um** (slice 4). Este arquivo é o primeiro: extrai os
+ * átomos e devolve o nome cru que ouviu ("Rafa"). Quem decide **qual** Rafa é
+ * `resolucao.ts`, num segundo passo, sobre os átomos já extraídos. O prompt
+ * daqui não sabe que entidades existem no grafo, e é de propósito: cinco versões
+ * de calibração produziram uma extração que presta, e enfiar a desambiguação
+ * dentro dela arriscaria o que está bom por um problema que não é dela.
  *
  * O grafo é **lido** (para saber que entidade já existe) e nunca escrito. Nada
  * vai para o R2 tampouco: a função devolve a proposta e quem a chamar decide o
@@ -15,12 +22,21 @@
  * (regra 5).
  */
 import { generateText } from "ai";
-import { resolverEntidades } from "./entidades";
-import type { EntidadePropostaFrase } from "./entidades";
-import { garantirGateway, modeloExtracao } from "./modelos";
+import { agregarCandidatas, listarEntidades } from "./entidades";
+import { diagnostico, garantirGateway, modeloExtracao } from "./modelos";
 import { criarLocalizador } from "./offsets";
+import { resolverReferencias } from "./resolucao";
+import type { Atribuicoes } from "./resolucao";
 import { TIPOS_ATOMO } from "./tipos";
-import type { AtomoCru, AtomoProposto, Descarte, Extracao, TipoAtomo, Transcricao } from "./tipos";
+import type {
+  AtomoCru,
+  AtomoProposto,
+  Descarte,
+  EntidadePropostaFrase,
+  Extracao,
+  TipoAtomo,
+  Transcricao,
+} from "./tipos";
 
 /**
  * Muda sempre que o prompt mudar. Vai gravado em todo átomo (regra 7): sem
@@ -154,7 +170,7 @@ function listaDeTexto(v: unknown): string[] {
 
 export interface RespostaExtrator {
   atomos: AtomoCru[];
-  /** Só uma dica de tipo: quem decide o que vira nó é `entidades.ts`. */
+  /** Só uma dica de tipo: quem decide o que vira nó é a revisão. */
   entidades: EntidadePropostaFrase[];
   descartados: Descarte[];
 }
@@ -244,11 +260,18 @@ export function ancorar(
   crus: AtomoCru[],
   transcricao: Transcricao,
   modelo: string,
+  atribuicoes: Atribuicoes,
 ): AtomoProposto[] {
   const localizar = criarLocalizador(transcricao.palavras);
 
-  return crus.map(({ trechos, ...atomo }, indice) => ({
+  return crus.map(({ trechos, sobre, menciona, ...atomo }, indice) => ({
     ...atomo,
+    // O nome cru do extrator (`sobre`, `menciona`) foi substituído pela
+    // atribuição do agente 2. Ele continua guardado dentro da referência, em
+    // `citado`: é o que a revisão mostra quando eu quero ver o que foi ouvido.
+    sobre: atribuicoes.sobre[indice],
+    menciona: atribuicoes.menciona[indice] ?? [],
+    perfila: atribuicoes.perfila[indice] ?? [],
     trechos: trechos.map((texto, ordem) => ({
       texto,
       ...(ordem === 0 ? localizar(texto) : localizar.semAvancar(texto)),
@@ -293,26 +316,48 @@ export async function extrair(transcricao: Transcricao): Promise<Extracao> {
   } catch (primeira) {
     // Modelo de raciocínio às vezes gasta a saída inteira pensando e devolve
     // nada de texto. É intermitente, então uma segunda tentativa resolve o caso
-    // comum; a segunda falha sobe com a resposta crua junto.
+    // comum; a segunda falha sobe com a resposta crua e o diagnóstico junto.
     console.error(
       `[extracao] sessão ${transcricao.sessao_id}: primeira tentativa sem JSON, repetindo.`,
-      primeira instanceof Error ? primeira.message : primeira,
+      `${primeira instanceof Error ? primeira.message : primeira} — ${diagnostico(resposta)}`,
     );
     resposta = await chamar();
-    lido = parsearResposta(resposta.text ?? "");
+    try {
+      lido = parsearResposta(resposta.text ?? "");
+    } catch (segunda) {
+      // O diagnóstico da SEGUNDA resposta, que é a que de fato derrubou a
+      // sessão. Sobe junto com a mensagem porque quem loga o erro final é o
+      // `pipeline.ts`, e lá não há mais resposta nenhuma para consultar.
+      throw new ExtracaoError(
+        `${segunda instanceof Error ? segunda.message : segunda} — ${diagnostico(resposta)}`,
+      );
+    }
   }
 
   const { atomos, entidades, descartados } = lido;
   const modeloReal = resposta.response?.modelId ?? modelo;
 
+  // Lê o grafo; não escreve nada nele (regra 5). O catálogo é o mesmo objeto que
+  // a tela de manutenção mostra — inclusive os três campos de perfil, que são o
+  // que o agente 2 usa para desambiguar.
+  const catalogo = await listarEntidades();
+  const atribuicoes = await resolverReferencias(atomos, catalogo);
+
+  const ancorados = ancorar(transcricao.sessao_id, atomos, transcricao, modeloReal, atribuicoes);
+
   return {
     sessao_id: transcricao.sessao_id,
-    atomos: ancorar(transcricao.sessao_id, atomos, transcricao, modeloReal),
-    // Lê o grafo; não escreve nada nele (regra 5).
-    entidades: await resolverEntidades(atomos, entidades),
+    atomos: ancorados,
+    entidades: agregarCandidatas(
+      ancorados.flatMap((a) => [a.sobre, ...a.menciona]),
+      catalogo,
+      entidades,
+    ),
     descartados,
     prompt_version: PROMPT_VERSION,
     modelo: modeloReal,
+    prompt_version_resolucao: atribuicoes.prompt_version,
+    modelo_resolucao: atribuicoes.modelo,
     granularidade: transcricao.granularidade,
     criado_em: new Date().toISOString(),
   };

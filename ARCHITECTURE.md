@@ -2,13 +2,14 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-2.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
 > arquivo no mesmo commit. Ver "Manutenção deste arquivo" no fim.
 
-**Estado: slice 2 fechada e validada; slice 3 (higiene do grafo) construída.**
+**Estado: slice 2 fechada e validada; slices 3 (higiene do grafo) e 4
+(identidade por contexto) construídas.**
 Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. Terminada
 a transcrição, a extração dispara sozinha, grava a proposta em `extracao.json` e
 deixa a sessão em `em_revisao` (seções 4.6 e 5); o confirmar da revisão grava
@@ -23,6 +24,15 @@ fundindo duas grafias da mesma coisa, ou dando nome a quem ficou como "meu pai".
 **Fundir não apaga: cria alias**, e é isso que faz a grafia morta resolver para
 o vencedor na sessão seguinte em vez de renascer como nó novo.
 
+**O sistema descobre de quem eu estou falando pelo contexto, e não pela grafia
+do nome** (seções 4.8 e 8.3). "Raffa" e "Rapha" são o mesmo som: o STT escreve
+uma grafia só para os dois, e a grafia carrega **zero** sinal sobre quem é. Por
+isso são **dois agentes e não um** — o `extracao-5` extrai e devolve o nome cru,
+e o `resolucao-1` atribui cada menção a um nó, lendo os três campos de perfil da
+entidade. Dúvida **destaca, não trava**: a revisão marca o átomo, mostra o motivo
+e o confirmar continua liberado. Sessão em que nenhuma menção é ambígua não
+chama o agente 2 e não paga nada.
+
 **A jornada não passa pela transcrição.** Parar de falar leva à tela de
 processamento, e dela a revisão abre sozinha quando a proposta fica pronta. O
 texto literal é porta de serviço: mora em `/sessao/:id/transcricao` e se alcança
@@ -33,7 +43,8 @@ insumo do extrator, não coisa que eu leio todo dia.
 O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
 ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
 deduplicação de **átomo** — dizer a mesma coisa em duas sessões ainda cria dois.
-Tudo slice 4, e tudo dependente de material acumulado.
+Tudo slice 5, e tudo dependente de material acumulado: uma pergunta boa precisa
+saber de quem se está falando, que é o que a slice 4 entrega.
 
 ---
 
@@ -76,15 +87,19 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   chaves.ts       layout do R2 num lugar só + validação de id (barra path traversal)
   manifest.ts     verdade sobre quais blocos existem; read-modify-write por etag
   estados.ts      máquina de estados da sessão e regra de abandono
-  modelos.ts      porta única de modelo: todo LLM sai pelo Vercel AI Gateway
+  modelos.ts      porta única de modelo: todo LLM sai pelo Vercel AI Gateway,
+                  e o diagnóstico de resposta vazia que os três agentes usam
   stt.ts          transcrição — pede o modelo a modelos.ts
   vocabulario.ts  nomes próprios → keyterms do STT
   transcricao.ts  offsets absolutos, prefixo contíguo, concatenação
   texto.ts        normalização, nome_normalizado e lista de pronomes       (client)
   extracao.ts     átomos a partir da transcrição: prompt, JSON estrito, procedência
   offsets.ts      trecho do modelo → segundo do áudio (modelo não dá timestamp)
-  entidades.ts    resolve entidade citada contra o grafo — só leitura
-  atomos.ts       escreve :Atomo e :Entidade — só o confirmar chama
+  resolucao.ts    agente 2: de quem eu estava falando — atribui menção a menção
+  perfil.ts       os três campos de perfil: ler, gravar, e o agente 3 que rascunha
+  entidades.ts    catálogo do grafo + a visão agregada da revisão — só leitura
+  referencias.ts  lê os dois formatos de proposta (antes e depois da 4)  (client)
+  atomos.ts       escreve :Atomo, :Entidade e :PERFILA — só o confirmar chama
   pipeline.ts     transcrever bloco / finalizar sessão (o orquestrador)
   auth.ts         magic link HMAC, cookie httpOnly
   backoff.ts      backoff exponencial com jitter                          (client)
@@ -103,7 +118,7 @@ src/components/   Gravacao (gravar), Importacao (subir arquivo),
                   Revisao (aprovar, editar, escutar, confirmar),
                   Leitura (a transcrição literal — porta de serviço),
                   Sessoes (lista de áudios), Entidades (higiene do grafo)
-src/app/api/      as 6 rotas da slice + 2 de auth
+src/app/api/      as rotas de sessão e de entidade + 2 de auth (seção 10)
 src/middleware.ts porta única: sem cookie válido nada responde
 db/migrations/    definição canônica do schema
 scripts/          migrate.ts (aplica migrations), smoke.ts (confere externos)
@@ -388,17 +403,30 @@ consome o orçamento inteiro a resposta chega sem JSON nenhum. Foi assim que a
 sessão `mtgo3kaf5` falhou, de forma intermitente: a mesma transcrição às vezes
 passava.
 
-Três defesas, nenhuma dependente do provedor:
+Quatro defesas, nenhuma dependente do provedor:
 
 | | |
 |---|---|
 | `maxOutputTokens: 8000` | folga para o raciocínio caber sem espremer o JSON |
 | uma segunda tentativa | resposta sem JSON é refeita uma vez, com `[extracao]` no log; a segunda falha sobe |
 | a resposta crua no erro | os primeiros 400 caracteres vão na mensagem, e "resposta vazia" é dito com essas palavras |
+| `diagnostico(resposta)` | `finishReason`, tokens de entrada/saída/raciocínio e o tamanho do texto e do pensamento, nas duas tentativas. Mora em `modelos.ts`: os três agentes têm o mesmo modo de falha |
 
-A terceira é a que mais importa e foi a que faltou: sem ela, "não é JSON válido"
-é indiagnosticável depois do fato — a mesma lição que o STT já tinha ensinado
-uma vez (5.1).
+As duas últimas são as que mais importam, e as duas foram acrescentadas depois
+de uma falha real. Sem a resposta crua, "não é JSON válido" é indiagnosticável
+depois do fato — a mesma lição que o STT já tinha ensinado uma vez (5.1).
+
+**E sem o diagnóstico, "Vieram 0 caractere(s)" não distingue duas causas com
+consertos opostos** — a dúvida que a sessão `mthu6r1y5h` deixou aberta:
+
+| O que o diagnóstico mostra | O que aconteceu | Conserto |
+|---|---|---|
+| `finishReason=length`, `raciocinio` no teto | o raciocínio comeu o orçamento | subir `MAX_TOKENS_SAIDA`, ou trocar por `EXTRACAO_MODEL` |
+| `finishReason=stop`, saída sobrando, `pensamento` grande e `texto=0` | o modelo escreveu na parte de raciocínio, não na de texto | ler `reasoningText` quando o texto vier vazio — a segunda tentativa hoje só acerta por sorte |
+
+A segunda linha é a que dói: nela, a segunda tentativa **mascara** o problema em
+vez de resolvê-lo, e ele volta na sessão seguinte. Distinguir custa uma linha de
+log; adivinhar custa uma sessão por vez.
 
 O prompt também ganhou uma proibição explícita de **comentar a transcrição**. O
 modelo devolveu um átomo dizendo que o texto era confuso e circular; falar
@@ -458,19 +486,52 @@ Na granularidade `segmento` (4.3) o offset é o da frase inteira: o casamento
 devolve a entrada de `palavras[]` de onde o token veio, com a precisão que o
 provedor deu — nem mais, nem menos.
 
-#### Resolução de entidade
+#### Resolução de entidade — o que este passo faz, e o que não faz
 
-"Rodozanco" na segunda sessão tem que achar o nó da primeira. `entidades.ts`
-casa por `nome_normalizado` contra as `:Entidade` existentes, numa consulta só
-para a sessão inteira, e devolve candidatas — cada uma dizendo se já existe
-(`conhecida`, com o `id` do nó e em quantas `sessoes` apareceu) ou se seria
-criada no confirmar.
+O extrator devolve o **nome cru** que ouviu: "Rodozanco", "Rafa", "ela". Ele não
+sabe o que existe no grafo, e é de propósito — cinco versões de calibração
+produziram uma extração que presta, e enfiar o catálogo de entidades naquele
+prompt arriscaria o que está bom por um problema que não é dele.
+
+Quem confronta com o grafo é o passo seguinte (4.8), que atribui **cada menção**
+a um nó — não cada nome. A diferença é a slice 4 inteira: dois átomos da mesma
+sessão dizendo "Rafa" podem ser duas pessoas.
+
+`entidades.ts` ficou com as duas pontas disso:
+
+| Função | Faz |
+|---|---|
+| `listarEntidades` | o catálogo: tudo que está no grafo, com tipo, sessões, aliases e os três campos de perfil. Uma consulta só, e é o mesmo objeto que a tela `/entidades` mostra |
+| `acharPorChave` | casamento exato que **atravessa alias** de graça: `chaves` traz a grafia própria e as já fundidas no nó |
+| `agregarCandidatas` | a visão agregada da revisão: uma linha por entidade, com quantas menções caíram nela |
 
 **Só entidade recorrente deve virar nó, e quem filtra é quem revisa.** A
 proposta traz "conhecida (3 sessões)" contra "nova, citada 1x"; desmarcada na
 revisão, a entidade fica apenas dentro do texto do átomo. Não há regra
 automática de recorrência: ela exigiria guardar candidata fora do grafo, e o
 julgamento na revisão custa um toque.
+
+Quando a entidade já existe, **o grafo vence**: a grafia gravada e o tipo dos
+labels do nó. O extrator propor `:Pessoa` para o que já é `:Projeto` não muda
+nada — trocar o tipo de uma entidade existente é edição em `/entidades` (8.2),
+não efeito colateral de uma extração.
+
+O tipo é proposto pelo extrator numa lista `entidades` à parte, e cai em
+`:Pessoa` quando falta ou vem inválido — num diário falado, quase sempre acerta.
+A contagem de ocorrências sai das referências resolvidas, não dessa lista:
+entidade que o modelo listou e nenhuma referência aponta não entra, seria nó
+órfão.
+
+**`"eu"` é uma `:Pessoa` como qualquer outra** — decisão tomada, não acidente.
+Um átomo sobre quem fala aponta `sobre: "eu"`, e o confirmar cria o nó.
+
+E é **só leitura**: quem cria nó é o confirmar, depois da revisão (regra 5). A
+trava contra duplicata em corrida não é este código — é a constraint de
+`nome_normalizado` único (8.1), que vale entre todas as entidades.
+
+A normalização é a mesma que o casamento de offsets usa, e por isso mora sozinha
+em `texto.ts`. Se as duas divergissem, um nome acharia o áudio certo e ainda
+assim criaria um segundo nó no grafo.
 
 #### Pronome não vira nó
 
@@ -495,28 +556,10 @@ O prompt também tenta: manda procurar o nome na transcrição inteira antes de
 desistir, e proíbe inventar nome ou apelido. Mas o prompt é tentativa, não
 garantia — a trava é o código.
 
-É **resolução, não deduplicação**: juntar "Exxmed" com "Exx Med" exige semântica
-e é slice 3. E é **só leitura** — quem cria nó é o confirmar, depois da revisão
-(regra 5). A trava contra duplicata em corrida não é este código: é a constraint
-de `nome_normalizado` único (8.1), que vale entre todas as entidades.
-
-A normalização é a mesma que o casamento de offsets usa, e por isso mora sozinha
-em `texto.ts`. Se as duas divergissem, um nome acharia o áudio certo e ainda
-assim criaria um segundo nó no grafo.
-
-Quando a entidade já existe, **o grafo vence**: a grafia gravada e o tipo dos
-labels do nó. O extrator propor `:Pessoa` para o que já é `:Projeto` não muda
-nada — trocar o tipo de uma entidade existente é edição na revisão, não efeito
-colateral de uma extração.
-
-O tipo (`:Pessoa` / `:Projeto` / `:Objetivo`) é proposto pelo extrator numa
-lista `entidades` à parte, e cai em `:Pessoa` quando falta ou vem inválido — num
-diário falado, quase sempre acerta. A contagem de ocorrências sai dos átomos, não
-dessa lista: entidade que o modelo listou e nenhum átomo cita não entra, seria nó
-órfão.
-
-**`"eu"` é uma `:Pessoa` como qualquer outra** — decisão tomada, não acidente.
-Um átomo sobre quem fala aponta `sobre: "eu"`, e o confirmar criará o nó.
+**Pronome trava; dúvida de identidade não** (4.8). São coisas diferentes: um nó
+chamado "ela" é grafo apodrecido garantido, enquanto uma atribuição trocada é um
+erro que eu conserto depois. Travar a cada dúvida mataria os 60 s da revisão numa
+sessão que fale muito de duas pessoas de nome parecido.
 
 ### 4.7 Revisão e confirmação
 
@@ -543,9 +586,28 @@ desabilitado** enquanto sobrar pronome. Desmarcar deixa a entidade só no texto 
 átomo. **Entidade que é sujeito de um átomo aprovado fica travada**: sem ela o
 átomo ficaria sem `:SOBRE`, o que o contrato do schema não admite.
 
-O editor de um átomo abre por um botão **editar**. Antes ele abria clicando no
-texto, sem pista nenhuma — e o CSS ainda dava `cursor: text` ali, sinalizando o
-contrário. Menção igual ao sujeito não é exibida nem enviada.
+O editor de um átomo abre por um botão **editar** — que num átomo em dúvida
+(4.8) se chama **escolher**. Antes ele abria clicando no texto, sem pista nenhuma
+— e o CSS ainda dava `cursor: text` ali, sinalizando o contrário. Menção igual ao
+sujeito não é exibida nem enviada.
+
+**O seletor de sujeito é uma lista pesquisável, não um campo cego.** Um filtro de
+tipo mais um `<input list>` com `<datalist>`: busca conforme eu digito, sem
+biblioteca nenhuma e sem estado novo na tela, e o campo continua aceitando um
+nome que ainda não existe. As alternativas que o agente de resolução ofereceu vêm
+primeiro; o resto do grafo vem de `GET /api/entidades`, rota que já existia. Se
+ela falhar, o campo volta a ser texto livre — que era o comportamento anterior.
+
+**Átomo com atribuição incerta aparece marcado**, com a sugestão já preenchida, o
+motivo do agente e as alternativas ao lado. O confirmar **não** trava: ver 4.8.
+
+**As marcas de perfil aparecem, e não são editáveis.** Quando o agente 2 aponta
+que um átomo diz algo do perfil de alguém, a linha "vai para o perfil: Raffa ·
+fizemos juntos" fica visível no item — desmarcar o átomo, ou desmarcar a
+entidade, é o que tira a marca. Elas viajam no corpo do confirmar com o nome
+**final**, como `sobre` e `menciona`, porque são conteúdo e a revisão pode ter
+renomeado a entidade. O servidor recusa campo fora do schema e entidade fora da
+lista aprovada.
 
 #### O que o cliente pode mandar, e o que não pode
 
@@ -565,6 +627,131 @@ o corpo manda `entidades: [{ nome, tipo }]` com os nomes finais, e o cliente
 acrescenta qualquer sujeito que eu tenha escrito à mão. Duas guardas no servidor,
 porque a regra não pode depender da UI: nome que caia na lista de pronomes é
 recusado com 400, e `tipo` é validado contra `TIPOS_ENTIDADE`.
+
+### 4.8 Identidade por contexto (agente 2, `resolucao-1`)
+
+**"Raffa" e "Rapha" são o mesmo som.** O STT escreve uma grafia só para os dois,
+e ter os dois nomes no vocabulário não ajuda — só torna arbitrário qual sai. A
+grafia na transcrição carrega **zero** sinal sobre quem é.
+
+Isso mata qualquer solução baseada em nome, e é o que separa esta slice da 3. Lá
+o problema era duas grafias para a mesma coisa, e `nome_normalizado` resolvia
+(8.2). Aqui é o contrário — **uma grafia para duas coisas** — e a chave não pode
+resolver, por construção. Só o contexto resolve, e o contexto são os três campos
+de perfil da entidade (8.3).
+
+```
+transcrição ──▶ agente 1: extracao-5   devolve o nome cru: "Rafa"
+                      │
+                      ▼
+                agente 2: resolucao-1  vê os átomos + as entidades com perfil
+                      │                decide POR MENÇÃO: qual nó, ou nova
+                      ▼                marca o que é informação de perfil
+                revisão ──▶ confirmar ──▶ grafo
+```
+
+Dois agentes e não um, com `prompt_version` própria cada um (regra 7): calibram
+separado, e um erro de atribuição se conserta sem tocar na extração que está boa.
+De quebra o agente 2 roda **sem re-extrair** — calibrar a resolução não custa uma
+chamada de extração por tentativa.
+
+#### A atribuição é por menção, não por sessão
+
+`AtomoProposto.sobre` é uma `ReferenciaResolvida` e `.menciona` é uma lista
+delas:
+
+```ts
+{ citado, entidade, conhecida, certo, alternativas, motivo }
+```
+
+`citado` guarda o que o extrator escreveu; `entidade` é a quem foi atribuído.
+Até a slice 3 todas as menções ao mesmo nome colapsavam numa candidata só,
+válida para a sessão inteira — o que não tem como expressar que dois "Rafa" da
+mesma sessão são duas pessoas. O painel de entidades da revisão continua
+existindo, agora como **visão agregada** do que foi resolvido.
+
+**Compatibilidade:** proposta gravada antes da slice 4 tem `sobre` como string.
+`referencias.ts` lê os dois formatos — string vira referência com `certo: true`,
+porque o que o extrator disse era tudo o que havia e destacar dúvida ali seria
+inventar uma que ninguém teve. É o que impede a tela de quebrar numa sessão que
+já estava esperando em `em_revisao`.
+
+#### Só chama o modelo quando há o que decidir
+
+Uma passada determinística e de graça monta os candidatos de cada menção,
+reusando `proximidade` de `duplicatas.ts` — que pega o homófono de brinde, porque
+"Rafa" fica a uma ou duas letras de "Raffa" e de "Rapha".
+
+| Situação da menção | O que acontece |
+|---|---|
+| um candidato exato, nenhum parecido | resolve ali, `certo: true`, de graça |
+| nenhum candidato | entidade nova, `certo: true`, de graça |
+| qualquer outra coisa | vai ao agente |
+
+A última linha cobre o caso traiçoeiro, e é por isso que ela não é "dois ou mais
+candidatos": o STT escreve "Rapha" exatamente, o casamento de string acerta **por
+sorte**, e como "Raffa" é parecido a menção vai ao agente mesmo assim. Sem ela o
+sistema acertaria metade das vezes por acidente e erraria a outra metade em
+silêncio. Um parecido sozinho também vai — decidir entre "é o Raffa" e "é alguém
+novo chamado Rafa" é exatamente o julgamento desta slice.
+
+**Se nenhuma menção precisar de julgamento, o agente não é chamado** e a sessão
+não paga nada. `prompt_version_resolucao` e `modelo_resolucao` ficam `null` na
+proposta: registrar uma versão que não rodou seria mentira na procedência.
+
+Uma chamada só para a sessão inteira. O catálogo que vai no prompt é o das
+entidades que **esta sessão pode citar** — as já resolvidas e os candidatos —, e
+não o grafo inteiro: uma menção só resolve para um candidato dela, e mandar o
+resto seria pagar por texto que não muda resposta nenhuma.
+
+#### Dúvida destaca, não trava
+
+Átomo com `certo: false` aparece marcado na revisão, com a sugestão preenchida e
+o motivo ao lado. O confirmar continua liberado. Diferente do pronome, que trava:
+ali o resultado seria um nó chamado "ela", grafo apodrecido garantido. Aqui o
+pior caso é uma atribuição trocada, que eu conserto depois — e travar a cada
+dúvida mataria os 60 s da revisão. "Ignorar é sempre uma saída válida"
+(visão §5.3).
+
+#### Resposta ruim degrada para dúvida, nunca para atribuição errada
+
+| O que aconteceu | O que o sistema faz |
+|---|---|
+| o agente não respondeu por uma menção | `certo: false`, com o motivo dizendo isso |
+| respondeu uma entidade fora dos candidatos | idem, e a resposta é descartada |
+| o agente falhou ou veio sem JSON | todas as pendentes voltam `certo: false`, com `[resolucao]` no log — e o mesmo `diagnostico()` da extração junto, porque o modo de falha é o mesmo |
+
+Falha do agente **não derruba a extração**, que já foi paga: a proposta abre com
+as dúvidas destacadas e eu escolho na mão. E o fallback é sempre o casamento
+exato quando existe, ou entidade nova quando não — **nunca o parecido**. Duas
+entidades a mais eu conserto em `/entidades`; fundir duas pessoas por um palpite
+não tem desfazer.
+
+### 4.9 O perfil, e o agente 3 (`perfil-1`)
+
+Os três campos (`contexto`, `pode_ajudar_com`, `fizemos_juntos`) são texto livre,
+editáveis à mão em `/entidades`, com teto de 300 caracteres cada — teto que não é
+estética: os campos entram no prompt do agente 2, e sem ele o custo daquela
+chamada cresceria junto com o grafo.
+
+**Quem aponta o que é perfil é o agente 2**, que já está olhando átomo e entidade
+juntos — mais uma razão para o `extracao-5` não mudar. A marca vira
+`(:Atomo)-[:PERFILA { campo }]->(:Entidade)` no confirmar (8.3), e só ali
+(regra 5). A validação é dupla: o agente só pode marcar uma entidade que o
+**próprio átomo** cita, e o servidor só grava campo do schema e entidade
+aprovada.
+
+O agente 3 é **sob demanda**, num botão por campo, no mesmo padrão do "procurar
+duplicatas": juntar os átomos marcados é de graça, propor o texto não é. Ele lê
+os átomos ligados por `:PERFILA` àquele campo e devolve o texto novo — e **não
+grava nada**. O proposto aparece **ao lado** do atual, nunca por cima; eu aceito,
+edito ou ignoro.
+
+**O risco está declarado, e é ele que desenha o fluxo:** o perfil é exatamente o
+que o agente 2 lê para desambiguar. Perfil rascunhado errado contamina toda
+atribuição futura, e o erro se realimenta — átomo atribuído ao Rapha por engano
+vira evidência do perfil do Rapha. Por isso nada entra sem o meu toque, e por
+isso o texto atual nunca é sobrescrito sem eu ver os dois lado a lado.
 
 ## 5. Estados da sessão
 
@@ -645,7 +832,14 @@ Três travas independentes:
 | entrada no manifest por `i` | `manifest.registrarChunk` | reenviar o mesmo bloco não duplica nem reabre bloco transcrito |
 | `id` do átomo = `<sessao_id>-<índice>` | `atomos.gravarAtomos` (`MERGE`) | confirmar duas vezes não duplica átomo |
 | `nome_normalizado` único (constraint) | `atomos.gravarEntidades` (`MERGE`) | duas menções à mesma pessoa viram um nó, mesmo em corrida |
+| `campo` **dentro** do `MERGE` de `:PERFILA` | `atomos.gravarAtomos` | reconfirmar não dobra a aresta de perfil: a identidade dela é (átomo, campo, entidade) |
+| o rascunho de perfil não escreve | `perfil.rascunhar` | pedir o rascunho dez vezes não muda o grafo; só `POST /api/entidades/perfil` grava |
 | status na cláusula `WHERE` | `sessoes.atualizarSessao` | transição já feita não volta atrás; confirmar duas vezes não reprocessa |
+
+A trava de `extracao.json` vale para **os dois agentes**: proposta pronta não
+rechama nem a extração nem a resolução, e `forcar` refaz as duas. Calibrar o
+`resolucao-1` custa, sim, uma extração junto — o que a arquitetura de dois
+agentes barateia é o contrário: mexer no `resolucao-1` não mexe no `extracao-5`.
 
 **A única saída da trava é `extrairSessao(id, { forcar: true })`**, exposta por
 `POST /api/sessoes/:id/extrair` com `{"forcar": true}`. Ela existe para calibrar
@@ -729,8 +923,9 @@ Dois módulos escrevem conteúdo, e a divisão importa:
 
 | Módulo | Escreve | Quem chama |
 |---|---|---|
-| `atomos.ts` | `:Atomo` e `:Entidade` | **só o confirmar** — nenhum átomo entra antes da revisão (regra 5) |
+| `atomos.ts` | `:Atomo`, `:Entidade` e `:PERFILA` | **só o confirmar** — nenhum átomo entra antes da revisão (regra 5) |
 | `fusao.ts` | `:Entidade` — funde, renomeia, troca tipo, cria | só as rotas de `/entidades`, com um toque meu em cada uma |
+| `perfil.ts` | `:Entidade` — os três campos de perfil (8.3) | só `POST /api/entidades/perfil`, com um toque meu |
 
 A regra 5 é sobre o **pipeline** não gravar sozinho. `fusao.ts` é o contrário
 disso: é eu corrigindo à mão o que o pipeline deixou torto. A resolução de
@@ -860,6 +1055,59 @@ Fundir é um toque meu: "Marina" e "Mariana" são distância 1 e duas pessoas, e
 custo do erro é assimétrico — duas entidades a mais é grafo um pouco sujo, uma
 fusão errada é grafo mentindo, sem desfazer.
 
+### 8.3 Perfil e a aresta que o alimenta (migration 005)
+
+```
+(:Entidade { …, contexto, pode_ajudar_com, fizemos_juntos })
+(:Atomo)-[:PERFILA { campo }]->(:Entidade)
+campo ∈ contexto | pode_ajudar_com | fizemos_juntos
+```
+
+A 005, como a 003, **não tem statement nenhum**: propriedade de valor livre não
+se declara no Aura Free (constraint de existência é Enterprise) e tipo de relação
+não se declara em Neo4j nenhum. Ela existe porque `db/migrations/` é a definição
+canônica do schema, e quem for ler tem que ver o contrato inteiro.
+
+**Campo de perfil ausente conta como vazio, na leitura** (`coalesce` em toda
+consulta) — mesma decisão do `status` na 004 e pela mesma razão: a defesa tem que
+valer para o nó que um deploy antigo criar amanhã, não só para os que existem
+hoje. Sem índice: ninguém busca por perfil.
+
+**Por que aresta, e não propriedade do átomo.** Duas razões, e a primeira é a que
+manda: a marca precisa dizer **de quem** é a informação. "fui no parque andar de
+slackline com o Raffa" é `sobre: "eu"` pelas regras de tipo do `extracao-5`, e a
+informação de perfil é do Raffa. A segunda é que Neo4j não guarda array de mapa
+como propriedade — foi isso que forçou as listas paralelas da 003. Aresta com
+propriedade ele guarda bem, e fica consultável: "todo átomo que diz o que o Rapha
+sabe fazer".
+
+**Idempotente por construção**: o `campo` vai **dentro** do `MERGE`, então o par
+(átomo, campo, entidade) é a identidade da aresta e reconfirmar não a dobra
+(regra 4). Fora do `MERGE`, um `SET` depois criaria uma aresta nova a cada
+confirmação. Como `:SOBRE` e `:MENCIONA`, ela **atravessa alias** (8.2): proposta
+montada antes de uma fusão penduraria a marca num nó morto.
+
+Neo4j também não aceita **nome de propriedade** vindo de parâmetro, então
+`perfil.ts` monta o `SET alvo.<campo>` com o nome literal — mesmo padrão do label
+literal em `atomos.ts`, e seguro pela mesma razão: o valor sai de `CAMPOS_PERFIL`,
+constante fechada, e nunca do cliente.
+
+**Sem migração de dado.** Nenhum campo é preenchido: as entidades de hoje entram
+no catálogo do agente 2 só com nome e tipo, que é o comportamento anterior à
+slice. Perfil vazio é perfil válido.
+
+Contrato completo de `:Entidade` depois da 005:
+
+```
+(:Entidade { id, nome, nome_normalizado, criado_em, status,
+             contexto, pode_ajudar_com, fizemos_juntos })
+status ∈ 'ativa' | 'fundida'
+
+(:Entidade)-[:FUNDIDA_EM]->(:Entidade)      do alias para o vencedor     (004)
+(:Entidade)-[:DISTINTA_DE]->(:Entidade)     recusa minha                 (004)
+(:Atomo)-[:PERFILA { campo }]->(:Entidade)                               (005)
+```
+
 ## 9. Layout do R2
 
 ```
@@ -868,7 +1116,7 @@ sessoes/<id>/chunk_000.webm     áudio do bloco gravado no navegador
 sessoes/<id>/chunk_000.opus     áudio importado — a extensão é a do arquivo de origem
 sessoes/<id>/chunk_000.json     transcrição do bloco, offsets relativos, modelo, granularidade
 sessoes/<id>/transcricao.json   final, offsets absolutos
-sessoes/<id>/extracao.json      proposta: átomos ancorados, entidades candidatas, procedência
+sessoes/<id>/extracao.json      proposta: átomos ancorados, referências resolvidas, marcas de perfil, entidades agregadas, procedência dos dois agentes
 _smoke/                         objetos temporários do `pnpm smoke`, apagados no fim
 ```
 
@@ -891,18 +1139,20 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT)` | corpo `{ext?, duracao_s?}`; `maxDuration = 300` |
 | `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha **e extrai** em `waitUntil` | `ja_finalizada` a partir de `em_revisao`; antes disso, é o retry da extração |
 | `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s, `force-dynamic`; `completa` é sobre a transcrição, não sobre a sessão |
-| `POST /api/sessoes/:id/extrair` | dispara a extração de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` reprocessa e sobrescreve |
+| `POST /api/sessoes/:id/extrair` | dispara extração **e resolução** de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` refaz as duas e sobrescreve |
 | `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco |
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
-| `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo | `ja_confirmada` na segunda; procedência relida do R2, não do corpo |
+| `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo, com `:PERFILA` | `ja_confirmada` na segunda; procedência relida do R2, não do corpo |
 | `GET /api/sessoes/abertas` | sessões não finalizadas com pelo menos um bloco | alimenta o chip |
-| `GET /api/entidades` | o que está no grafo, com átomos, sessões e aliases | só leitura; nó fundido vira alias do vencedor |
+| `GET /api/entidades` | o que está no grafo, com átomos, sessões, aliases e perfil | só leitura; nó fundido vira alias do vencedor; alimenta também o seletor da revisão |
 | `POST /api/entidades/duplicatas` | propõe pares que parecem a mesma coisa | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/entidades/fundir` | `{vencedora, perdedora}` — migra arestas, marca alias | idempotente pela guarda de `status` |
 | `POST /api/entidades/distintas` | `{a, b}` — a recusa que impede a pergunta de voltar | |
 | `POST /api/entidades/renomear` | `{chave, nome}` — grafia velha vira alias | recusa pronome, como o confirmar |
 | `POST /api/entidades/tipo` | `{chave, tipo}` — troca o label | o tipo só era editável enquanto a entidade era nova |
 | `POST /api/entidades/criar` | `{nome, tipo}` — semeia um nome antes de falá-lo | cria nó órfão de propósito |
+| `POST /api/entidades/perfil` | `{chave, campo, texto}` — grava um dos três campos | o único lugar que escreve perfil; corta no teto de 300 no servidor |
+| `POST /api/entidades/perfil/rascunho` | `{chave, campo}` — o agente 3 propõe | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
 
@@ -914,18 +1164,19 @@ Todas com `runtime = "nodejs"`.
 |---|---|---|
 | `/` | `Gravacao` + `Importacao` + `ChipRecuperacao` | botão "Como foi seu dia?", link "ou subir um áudio que já gravei"; gravando: timer e um ponto de "salvo" — nada mais |
 | `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; abre a revisão sozinho |
-| `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, editar, escutar cada trecho, confirmar |
+| `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, editar, escutar cada trecho, resolver a dúvida de quem é, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de áudios: abrir, ler a transcrição, forçar re-extração |
-| `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear |
+| `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, escrever o perfil |
 | `/entrar` | página de login | pede o e-mail permitido |
 
 `/entidades` é a única janela para dentro do grafo — até ela existir, saber o
 que tinha lá dentro exigia rodar Cypher por fora. Cada linha traz um `select` de
-tipo (editável) e um botão de renomear; no topo, um campo para semear um nome
-novo. Procurar duplicatas é um botão, não algo que acontece ao abrir: a camada
-de string é de graça, a que julga é uma chamada de modelo, e manutenção que
-cobra sozinha vira cobrança.
+tipo (editável), um botão de renomear e um botão **perfil**, que abre os três
+campos da migration 005; no topo, um campo para semear um nome novo. Procurar
+duplicatas e rascunhar um perfil são botões, não coisas que acontecem ao abrir: a
+camada de string é de graça, a que julga e a que escreve são chamadas de modelo,
+e manutenção que cobra sozinha vira cobrança.
 Ela não é painel da revisão de propósito — a revisão só vê as entidades da
 sessão atual, e o orçamento dela é 60 s (visão §8).
 
@@ -947,10 +1198,12 @@ transcrição se o texto já está inteiro, processamento no resto.
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, deduplicação
+AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, perfil, deduplicação
 STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
+RESOLUCAO_MODEL           opcional; padrão igual ao da extração
+PERFIL_MODEL              opcional; padrão igual ao da extração
 AUTH_SECRET, ALLOWED_EMAIL
 ```
 
@@ -1007,12 +1260,29 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   do ar não derruba transcrição.
 - `tests/vocabulario-entrega.test.ts` — provedor sem mecanismo conhecido não
   recebe opção nenhuma.
+- `tests/resolucao.test.ts` — **quando** o agente 2 é chamado (sessão sem
+  ambiguidade não paga nada) e o que acontece quando ele não responde direito:
+  resposta ruim vira dúvida, nunca atribuição errada em silêncio.
+- `tests/referencias.test.ts` — proposta do formato antigo ainda abre na revisão
+  (critério 10 da slice 4).
+- `tests/perfil.test.ts` — que o agente 3 **não escreve**, e que o teto de 300
+  caracteres é cortado no servidor e não só na tela.
+- Qualidade da resolução (slice 4) também não tem teste automático, e pelo mesmo
+  motivo. A diferença é que agora existe um caso concreto de que eu sei a
+  resposta: a sessão que fala do Rapha e do Raffa.
 - O que o confirmar escreveu agora se vê em `/entidades`. Para o detalhe do
   átomo ainda é Cypher à mão no console do Aura:
 
   ```cypher
   MATCH (s:Sessao)-[:GEROU]->(a:Atomo)-[:SOBRE]->(e:Entidade)
   RETURN a.tipo, a.texto, e.nome, a.inicios_s, a.prompt_version, a.modelo
+  ```
+
+  E as marcas de perfil que a slice 4 grava (critério 6):
+
+  ```cypher
+  MATCH (a:Atomo)-[p:PERFILA]->(e:Entidade)
+  RETURN e.nome, p.campo, a.texto, a.valido_em ORDER BY e.nome, p.campo
   ```
 
 ## 14. Limites conhecidos
@@ -1096,15 +1366,47 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   na tela de revisão; sem gabarito rotulado nem percentual de recall, regressão de
   prompt não aparece em teste — só na revisão seguinte.
 - **O `keyterm` vale só para o provedor de hoje.** Medido em 2026-08-31 e
-  funciona no `xai/grok-stt` (§4.4), mas o nome da opção é escrito à mão em
-  `stt.ts` enquanto a chave do mapa acompanha o provedor: trocar `STT_MODEL` por
-  um provedor que use outro nome faz o vocabulário sumir em silêncio, ou pior,
-  derrubar a transcrição. A slice 3 troca isso por um mapa de opção por
-  provedor, com silêncio como padrão para provedor desconhecido.
-- **Deduplicação não existe** (slice 3). A extração já passa por `modelos.ts` e
-  `tests/gateway.test.ts` impede que qualquer chamada nova fure a porta, mas nada
-  compara um átomo novo com os que já estão no grafo: dizer a mesma coisa em duas
-  sessões cria dois átomos.
+  funciona no `xai/grok-stt` (§4.4). Desde a slice 3 o nome da opção é um mapa
+  por provedor em `modelos.ts`, com **silêncio como padrão** para provedor
+  desconhecido — trocar `STT_MODEL` por um provedor fora do mapa faz o
+  vocabulário não ser mandado, e não derruba a transcrição. Mas continua sendo
+  verdade que só um provedor foi medido.
+- **Deduplicação de átomo não existe** (slice 5). A de **entidade** ficou pronta
+  na slice 3, mas nada compara um átomo novo com os que já estão no grafo: dizer
+  a mesma coisa em duas sessões cria dois átomos.
+- **Sessão sem ambiguidade nenhuma não marca perfil.** Quem aponta o que é
+  informação de perfil é o agente 2, e ele só é chamado quando alguma menção
+  precisa de julgamento (4.8) — é o critério 5 da spec, e é o que faz uma sessão
+  limpa não custar nada. A consequência é real e vale registrar: se eu falo do
+  Rapha numa sessão em que nenhum nome é ambíguo, "o Rapha sabe produzir evento"
+  **não** vira `:PERFILA`, e o perfil dele não se mantém sozinho. Enquanto o
+  grafo não tiver nomes parecidos, o agente 3 vive de perfil escrito à mão. A
+  saída, se incomodar, é chamar o agente também quando houver átomo com cara de
+  perfil — o que troca "sessão limpa é de graça" por "perfil acumula sozinho".
+- **A resolução nunca julgou um homófono de verdade.** O grafo tem `Isinha` e
+  `eu`; nada disputa nome parecido, então o `resolucao-1` só rodou contra teste.
+  O caso concreto de que eu sei a resposta — a sessão com o Rapha e o Raffa —
+  depende dos dois estarem **cadastrados antes da primeira menção**.
+- **O agente 2 só enxerga os candidatos da menção, não o grafo inteiro.** Quem
+  não casa por chave nem se parece por string nunca chega ao prompt: um apelido
+  sem nenhuma letra em comum com o nome do nó ("Bidu" para "Roberto") vira
+  entidade nova, e o conserto é fundir depois em `/entidades`. É deliberado —
+  mandar o catálogo todo seria pagar por texto que não muda resposta nenhuma —,
+  mas é um limite, não um detalhe.
+- **Não há como separar um nó que já conflacionou duas pessoas.** A máquina da
+  slice 3 junta, não divide, e mover átomo entre entidades não existe. É por isso
+  que dois nomes homófonos têm que ser cadastrados em `/entidades` **antes** da
+  primeira menção: depois de conflacionados, não há caminho de volta.
+- **A marca de perfil não é editável na revisão.** Ela aparece no átomo e some se
+  eu rejeitar o átomo ou desmarcar a entidade, mas não dá para trocar o campo nem
+  apontar outra entidade sem editar o sujeito. Se o agente 2 errar o campo com
+  frequência, o que se ajusta é o `resolucao-1`.
+- **O perfil realimenta a resolução, e isso é o risco declarado da slice.** O
+  agente 2 lê o perfil para desambiguar; um perfil errado contamina toda
+  atribuição futura, e átomo atribuído por engano vira evidência daquele mesmo
+  perfil. As travas são o agente 3 nunca escrever, o proposto aparecer ao lado do
+  atual e nunca por cima, e a escrita passar só por `POST /api/entidades/perfil`.
+  Nenhuma delas impede eu mesmo aprovar um rascunho ruim depressa.
 - `scripts/smoke.ts` roda solto no node e não importa de `src/`, então repete o
   id de modelo padrão. O teste "o smoke usa o mesmo modelo padrão que a lib"
   existe para as duas cópias não divergirem.

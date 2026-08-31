@@ -1,8 +1,8 @@
 /**
  * Porta única de modelo.
  *
- * Todo tráfego de LLM deste sistema sai pelo Vercel AI Gateway — STT hoje,
- * extração e deduplicação a partir da slice 2. Uma chave só
+ * Todo tráfego de LLM deste sistema sai pelo Vercel AI Gateway — STT, extração,
+ * resolução de identidade, perfil e deduplicação. Uma chave só
  * (`AI_GATEWAY_API_KEY`), um lugar só para ver custo e latência, e trocar de
  * provedor é mudar uma variável de ambiente — sem tocar em código.
  *
@@ -93,6 +93,26 @@ export function modeloExtracao(): string {
 }
 
 /**
+ * Modelo que decide **de quem** eu estava falando (slice 4, agente 2).
+ *
+ * Padrão igual ao da extração, e não uma constante própria: os dois agentes
+ * fazem o mesmo tipo de trabalho — ler português e devolver JSON curto — e
+ * fixar um segundo id aqui só criaria mais um lugar para desatualizar. Quando
+ * eu quiser separar, `RESOLUCAO_MODEL` separa sem tocar em código.
+ */
+export function modeloResolucao(): string {
+  return validarIdDeModelo(process.env.RESOLUCAO_MODEL || modeloExtracao());
+}
+
+/**
+ * Modelo que rascunha o texto de um campo de perfil (slice 4, agente 3).
+ * Mesma regra do de resolução: padrão é o da extração.
+ */
+export function modeloPerfil(): string {
+  return validarIdDeModelo(process.env.PERFIL_MODEL || modeloExtracao());
+}
+
+/**
  * Modelo que julga se duas entidades parecidas são a mesma coisa (slice 3).
  * Mesma família da extração: saída JSON curta, chamado sob demanda.
  */
@@ -100,6 +120,61 @@ export const MODELO_DUPLICATAS_PADRAO = "zai/glm-5.3-flash";
 
 export function modeloDuplicatas(): string {
   return validarIdDeModelo(process.env.DUPLICATAS_MODEL || MODELO_DUPLICATAS_PADRAO);
+}
+
+/**
+ * O pedaço da resposta do modelo que fala sobre a própria resposta.
+ *
+ * Mora aqui, e não em quem chama, porque **os três agentes têm o mesmo modo de
+ * falha**: todos usam a mesma família de modelo de raciocínio, e todos podem
+ * receber uma resposta sem texto nenhum. Extração, resolução e perfil importam
+ * este helper; duplicá-lo faria `extracao.ts` e `resolucao.ts` importarem um do
+ * outro, que já é um ciclo.
+ *
+ * Sem isto, "Vieram 0 caractere(s)" não distingue duas causas com consertos
+ * **opostos** — e foi exatamente essa dúvida que a sessão `mthu6r1y5h` deixou:
+ *
+ *   finishReason=length                    o raciocínio comeu o orçamento. O
+ *                                          conserto é subir o teto de saída de
+ *                                          quem chamou, ou trocar de modelo
+ *                                          pela variável de ambiente dele.
+ *   finishReason=stop, saida baixa e
+ *   raciocinio alto, com `pensamento`
+ *   grande                                 o modelo escreveu na parte de
+ *                                          raciocínio e não na de texto. Aí a
+ *                                          segunda tentativa acerta por sorte e
+ *                                          o problema volta na sessão seguinte.
+ *
+ * `zai/glm-5.3-flash` já gastou 1720 tokens pensando para 122 de texto — é o
+ * modo de falha que este sistema mais vê (`ARCHITECTURE.md` §4.6).
+ *
+ * Tipagem estrutural de propósito: o que interessa é o que o campo diz, não de
+ * qual versão do SDK ele veio. Campo ausente vira `?` em vez de derrubar o log
+ * — diagnóstico que estoura no meio de um erro é pior que diagnóstico nenhum.
+ */
+export interface RespostaDoModelo {
+  finishReason?: string;
+  text?: string;
+  reasoningText?: string;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    outputTokenDetails?: { reasoningTokens?: number; textTokens?: number };
+  };
+}
+
+export function diagnostico(r: RespostaDoModelo): string {
+  const n = (v: number | undefined) => (typeof v === "number" ? String(v) : "?");
+  const u = r.usage;
+  return [
+    `finishReason=${r.finishReason ?? "?"}`,
+    `entrada=${n(u?.inputTokens)}`,
+    `saida=${n(u?.outputTokens)}`,
+    `raciocinio=${n(u?.outputTokenDetails?.reasoningTokens)}`,
+    `texto=${(r.text ?? "").length} char`,
+    `pensamento=${(r.reasoningText ?? "").length} char`,
+  ].join(" ");
 }
 
 /**

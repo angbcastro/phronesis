@@ -24,6 +24,7 @@ const atomo = (extra: Partial<AtomoParaGravar> = {}): AtomoParaGravar => ({
   ancoras: ["exata"],
   sobre: "exxmed",
   menciona: [],
+  perfila: [],
   prompt_version: "extracao-3",
   modelo: "zai/glm-5.3-flash",
   ...extra,
@@ -151,6 +152,46 @@ describe("átomos", () => {
   it("nenhum átomo aprovado não fala com o banco", async () => {
     await gravarAtomos("s1", [], "2026-08-31T00:00:00.000Z");
     expect(consulta).not.toHaveBeenCalled();
+  });
+
+  it("a marca de perfil vira aresta com o campo dentro do MERGE", async () => {
+    // O `campo` dentro do MERGE é o que faz reconfirmar não dobrar a aresta
+    // (regra 4): o par (átomo, campo, entidade) é a identidade dela.
+    await gravarAtomos(
+      "s1",
+      [atomo({ perfila: [{ entidade: "raffa", campo: "fizemos_juntos" }] })],
+      "2026-08-31T00:00:00.000Z",
+    );
+    const cypher = cypherDe(1);
+    expect(cypher).toContain("MERGE (a)-[:PERFILA { campo: m.campo }]->(alvo)");
+    expect(paramsDe(1).marcas).toEqual([
+      { atomo_id: "s1-0", entidade: "raffa", campo: "fizemos_juntos" },
+    ]);
+  });
+
+  it("a marca atravessa alias, como :SOBRE e :MENCIONA", async () => {
+    await gravarAtomos(
+      "s1",
+      [atomo({ perfila: [{ entidade: "exx med", campo: "contexto" }] })],
+      "2026-08-31T00:00:00.000Z",
+    );
+    expect(cypherDe(1)).toContain("coalesce(v, e) AS alvo");
+  });
+
+  it("sem marca nenhuma, não roda a consulta de perfil", async () => {
+    await gravarAtomos("s1", [atomo()], "2026-08-31T00:00:00.000Z");
+    expect(consulta).toHaveBeenCalledTimes(1);
+  });
+
+  it("campo fora do schema não vira aresta", async () => {
+    // A migration 005 fecha a lista; deixar passar seria apodrecer o schema
+    // pela porta dos fundos.
+    await gravarAtomos(
+      "s1",
+      [atomo({ perfila: [{ entidade: "raffa", campo: "cor_favorita" as never }] })],
+      "2026-08-31T00:00:00.000Z",
+    );
+    expect(consulta).toHaveBeenCalledTimes(1);
   });
 
   it("átomo rejeitado não é gravado — nem com status", async () => {

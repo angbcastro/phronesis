@@ -19,6 +19,8 @@ import {
   MODELO_EXTRACAO_PADRAO,
   MODELO_STT_PADRAO,
   modeloExtracao,
+  modeloPerfil,
+  modeloResolucao,
   modeloStt,
   provedorDe,
   validarIdDeModelo,
@@ -163,6 +165,36 @@ describe("endereçamento de modelo", () => {
     } finally {
       if (antes === undefined) delete process.env.EXTRACAO_MODEL;
       else process.env.EXTRACAO_MODEL = antes;
+    }
+  });
+
+  it.each([
+    ["RESOLUCAO_MODEL", modeloResolucao],
+    ["PERFIL_MODEL", modeloPerfil],
+  ] as const)("%s cai no modelo da extração quando não é declarada", (nome, ler) => {
+    // Os agentes da slice 4 fazem o mesmo tipo de trabalho que a extração — ler
+    // português e devolver JSON curto. Um id próprio fixo aqui seria mais um
+    // lugar para desatualizar; a variável separa quando eu quiser separar.
+    const antes = process.env[nome];
+    const antesExtracao = process.env.EXTRACAO_MODEL;
+    try {
+      delete process.env[nome];
+      delete process.env.EXTRACAO_MODEL;
+      expect(ler()).toBe(MODELO_EXTRACAO_PADRAO);
+
+      process.env.EXTRACAO_MODEL = "openai/gpt-4o-mini";
+      expect(ler()).toBe("openai/gpt-4o-mini");
+
+      process.env[nome] = "zai/glm-5.3-air";
+      expect(ler()).toBe("zai/glm-5.3-air");
+
+      process.env[nome] = "";
+      expect(ler()).toBe("openai/gpt-4o-mini"); // vazio é ausente
+    } finally {
+      if (antes === undefined) delete process.env[nome];
+      else process.env[nome] = antes;
+      if (antesExtracao === undefined) delete process.env.EXTRACAO_MODEL;
+      else process.env.EXTRACAO_MODEL = antesExtracao;
     }
   });
 

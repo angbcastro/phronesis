@@ -7,9 +7,10 @@
  * Isso não fura a regra 5 — o que ela proíbe é o **pipeline** gravar sem passar
  * por mim, e semear é literalmente eu digitando e apertando criar.
  *
- * Três travas de idempotência trabalham juntas (regra 4):
+ * Quatro travas de idempotência trabalham juntas (regra 4):
  *
  *   id do átomo = `<sessao_id>-<índice>`   `MERGE` — confirmar duas vezes não duplica
+ *   `campo` dentro do `MERGE` de :PERFILA    reconfirmar não dobra a aresta
  *   `nome_normalizado` único (constraint)   duas menções à mesma pessoa = um nó
  *   status na cláusula WHERE (em sessoes.ts) confirmar duas vezes não reprocessa
  *
@@ -18,8 +19,8 @@
  */
 import { query } from "./neo4j";
 import { novoId } from "./sessoes";
-import { TIPOS_ENTIDADE } from "./tipos";
-import type { TipoAtomo, TipoEntidade } from "./tipos";
+import { CAMPOS_PERFIL, TIPOS_ENTIDADE } from "./tipos";
+import type { CampoPerfil, TipoAtomo, TipoEntidade } from "./tipos";
 
 /** Estado de um átomo recém-gravado. Deleção é soft (regra 6). */
 export const STATUS_ATOMO_ATIVO = "ativo";
@@ -40,6 +41,11 @@ export interface AtomoParaGravar {
   ancoras: string[];
   sobre: string;
   menciona: string[];
+  /**
+   * O que este átomo diz do perfil de quem (migration 005). Entidade por
+   * `nome_normalizado`, como `sobre` e `menciona`.
+   */
+  perfila: { entidade: string; campo: CampoPerfil }[];
   prompt_version: string;
   modelo: string;
 }
@@ -133,17 +139,53 @@ export async function gravarAtomos(
   const mencoes = atomos.flatMap((a) =>
     a.menciona.map((entidade) => ({ atomo_id: a.id, entidade })),
   );
-  if (mencoes.length === 0) return;
+
+  if (mencoes.length > 0) {
+    await query(
+      `UNWIND $mencoes AS m
+       MATCH (a:Atomo { id: m.atomo_id })
+       MATCH (e:Entidade { nome_normalizado: m.entidade })
+       OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
+       WITH a, coalesce(v, e) AS alvo
+       WHERE NOT (a)-[:SOBRE]->(alvo)
+       MERGE (a)-[:MENCIONA]->(alvo)`,
+      { mencoes },
+    );
+  }
+
+  await gravarPerfila(atomos);
+}
+
+/**
+ * As arestas `(:Atomo)-[:PERFILA { campo }]->(:Entidade)` (migration 005).
+ *
+ * Quem aponta é o agente de resolução, que já olha átomo e entidade juntos;
+ * quem grava é aqui, no confirmar, junto com os átomos e nunca antes (regra 5).
+ *
+ * O `campo` vai **dentro** do `MERGE`, e é o que faz reconfirmar não criar
+ * aresta repetida (regra 4): o par (átomo, campo, entidade) é a identidade da
+ * aresta. Fora do `MERGE`, um `SET` depois criaria uma aresta nova a cada
+ * confirmação.
+ *
+ * Atravessa alias como `:SOBRE` e `:MENCIONA`: proposta montada antes de eu
+ * fundir duas entidades penduraria a marca num nó morto.
+ */
+async function gravarPerfila(atomos: AtomoParaGravar[]): Promise<void> {
+  const marcas = atomos.flatMap((a) =>
+    (a.perfila ?? [])
+      .filter((m) => CAMPOS_PERFIL.includes(m.campo))
+      .map((m) => ({ atomo_id: a.id, entidade: m.entidade, campo: m.campo })),
+  );
+  if (marcas.length === 0) return;
 
   await query(
-    `UNWIND $mencoes AS m
+    `UNWIND $marcas AS m
      MATCH (a:Atomo { id: m.atomo_id })
      MATCH (e:Entidade { nome_normalizado: m.entidade })
      OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
-     WITH a, coalesce(v, e) AS alvo
-     WHERE NOT (a)-[:SOBRE]->(alvo)
-     MERGE (a)-[:MENCIONA]->(alvo)`,
-    { mencoes },
+     WITH a, coalesce(v, e) AS alvo, m
+     MERGE (a)-[:PERFILA { campo: m.campo }]->(alvo)`,
+    { marcas },
   );
 }
 

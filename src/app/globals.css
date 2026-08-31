@@ -430,3 +430,70 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .reextrair:hover { color: var(--texto); border-color: var(--texto-fraco); }
 .reextrair.armado { color: var(--acento); border-color: var(--acento); }
 .reextrair:disabled { opacity: 0.5; cursor: default; }
+
+/* ---- slice 4: dúvida de identidade, e os três campos de perfil ---- */
+
+/* Atribuição que o agente não teve certeza. Destaca, não trava: o pior caso é
+   uma atribuição trocada, que eu conserto depois — e travar a cada dúvida
+   mataria os 60 s da revisão. Diferente do pronome, que trava mesmo. */
+.atomo.incerto {
+  border-color: color-mix(in srgb, var(--acento) 45%, var(--linha));
+}
+.duvida {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--acento);
+}
+.duvida strong { font-weight: 600; }
+
+/* O que este átomo vai acrescentar ao perfil de alguém, se eu confirmar. */
+.meta.perfila { display: block; margin-top: 0.25rem; opacity: 0.9; }
+
+/* A linha de uma entidade abre para baixo quando o perfil está aberto. */
+.lista-sessoes li.com-perfil {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+.linha-entidade {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.lista-sessoes li.aberta { background: color-mix(in srgb, var(--fundo-alto) 60%, transparent); }
+
+.perfil {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.2rem 0 0.6rem;
+}
+.perfil > .aguardando { margin: 0; font-size: 0.8rem; color: var(--texto-fraco); }
+
+.campo-perfil { display: flex; flex-direction: column; gap: 0.3rem; }
+.campo-perfil label { font-size: 0.85rem; }
+.campo-perfil label .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+.campo-perfil textarea {
+  font: inherit;
+  font-size: 0.9rem;
+  color: inherit;
+  background: var(--fundo);
+  border: 1px solid var(--linha);
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+  width: 100%;
+  resize: vertical;
+}
+.campo-perfil .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+
+/* O que o agente 3 propôs: ao lado do atual, nunca por cima. */
+.proposta-perfil {
+  border-left: 2px solid var(--acento);
+  padding: 0.4rem 0 0.4rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.proposta-perfil p { margin: 0; font-size: 0.9rem; line-height: 1.4; }
+.proposta-perfil .meta { font-size: 0.78rem; color: var(--texto-fraco); }

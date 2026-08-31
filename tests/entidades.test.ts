@@ -1,32 +1,41 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   TIPO_PADRAO,
-  coletar,
+  agregarCandidatas,
   ehPronome,
   normalizarNome,
   normalizarTipoEntidade,
-  resolver,
   tipoDosLabels,
 } from "@/lib/entidades";
-import type { AtomoCru } from "@/lib/tipos";
+import type { EntidadeDoGrafo } from "@/lib/entidades";
+import type { ReferenciaResolvida } from "@/lib/tipos";
 
-vi.mock("@/lib/neo4j", () => ({ query: vi.fn(async () => []) }));
-import { query } from "@/lib/neo4j";
-
-const consulta = vi.mocked(query);
-
-const atomo = (sobre: string, menciona: string[] = []): AtomoCru => ({
-  texto: "t",
-  tipo: "FATO",
-  sobre,
-  menciona,
-  trechos: ["t"],
+/** Uma referência já atribuída, como o agente 2 a devolve. */
+const ref = (entidade: string, extra: Partial<ReferenciaResolvida> = {}): ReferenciaResolvida => ({
+  citado: entidade,
+  entidade,
+  conhecida: false,
+  certo: true,
+  alternativas: [],
+  motivo: "",
+  ...extra,
 });
 
-afterEach(() => {
-  consulta.mockReset();
-  consulta.mockResolvedValue([]);
-});
+const no = (nome: string, extra: Partial<EntidadeDoGrafo> = {}): EntidadeDoGrafo => {
+  const chave = normalizarNome(nome);
+  return {
+    id: `id-${chave}`,
+    nome,
+    nome_normalizado: chave,
+    chaves: [chave],
+    tipo: "Pessoa",
+    sessoes: 1,
+    atomos: 1,
+    aliases: [],
+    perfil: { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" },
+    ...extra,
+  };
+};
 
 describe("nome normalizado", () => {
   it("é a chave que faz a segunda sessão achar o nó da primeira", () => {
@@ -62,133 +71,84 @@ describe("tipo da entidade", () => {
   });
 });
 
-describe("coleta", () => {
-  it("conta sujeito e menção, sem duplicar a mesma entidade", () => {
-    const c = coletar([atomo("Rodozanco", ["Exxmed"]), atomo("Exxmed")]);
+describe("a visão agregada da revisão", () => {
+  it("conta quantas referências caíram em cada entidade", () => {
+    const c = agregarCandidatas([ref("Rodozanco"), ref("Exxmed"), ref("Exxmed")], []);
     expect(c.map((e) => [e.nome_normalizado, e.ocorrencias])).toEqual([
       ["rodozanco", 1],
       ["exxmed", 2],
     ]);
   });
 
-  it("variações de grafia são a mesma entidade; a primeira vira o nome", () => {
-    const c = coletar([atomo("Rodozanco"), atomo("RODOZANCO,")]);
+  it("variações de grafia são a mesma linha; a primeira vira o nome", () => {
+    const c = agregarCandidatas([ref("Rodozanco"), ref("RODOZANCO,")], []);
     expect(c).toHaveLength(1);
     expect(c[0]).toMatchObject({ nome: "Rodozanco", ocorrencias: 2 });
   });
 
   it('"eu" é entidade como qualquer outra', () => {
-    const [e] = coletar([atomo("eu")], [{ nome: "eu", tipo: "PESSOA" }]);
+    const [e] = agregarCandidatas([ref("eu")], [], [{ nome: "eu", tipo: "PESSOA" }]);
     expect(e).toMatchObject({ nome: "eu", nome_normalizado: "eu", tipo: "Pessoa" });
   });
 
-  it("usa o tipo que o extrator propôs", () => {
-    const [e] = coletar([atomo("Phronesis")], [{ nome: "Phronesis", tipo: "PROJETO" }]);
+  it("usa o tipo que o extrator propôs para entidade nova", () => {
+    const [e] = agregarCandidatas([ref("Phronesis")], [], [{ nome: "Phronesis", tipo: "PROJETO" }]);
     expect(e.tipo).toBe("Projeto");
   });
 
   it("sem proposta, ou com proposta inválida, cai no padrão", () => {
-    expect(coletar([atomo("Rodozanco")])[0].tipo).toBe(TIPO_PADRAO);
-    expect(coletar([atomo("X")], [{ nome: "X", tipo: "EMPRESA" }])[0].tipo).toBe(TIPO_PADRAO);
+    expect(agregarCandidatas([ref("Rodozanco")], [])[0].tipo).toBe(TIPO_PADRAO);
+    expect(agregarCandidatas([ref("X")], [], [{ nome: "X", tipo: "EMPRESA" }])[0].tipo).toBe(
+      TIPO_PADRAO,
+    );
   });
 
-  it("entidade que o modelo listou e nenhum átomo cita não entra", () => {
+  it("entidade que o modelo listou e nenhuma referência aponta não entra", () => {
     // Seria nó órfão no grafo: ninguém aponta para ela.
-    expect(coletar([atomo("Rodozanco")], [{ nome: "Ninguém", tipo: "PESSOA" }])).toHaveLength(1);
+    expect(
+      agregarCandidatas([ref("Rodozanco")], [], [{ nome: "Ninguém", tipo: "PESSOA" }]),
+    ).toHaveLength(1);
   });
 
-  it("sujeito vazio não vira entidade", () => {
-    expect(coletar([atomo("  ")])).toEqual([]);
+  it("referência vazia não vira entidade", () => {
+    expect(agregarCandidatas([ref("  ")], [])).toEqual([]);
   });
-});
 
-describe("resolução contra o grafo", () => {
-  it("uma consulta só para a sessão inteira", async () => {
-    await resolver(coletar([atomo("Rodozanco", ["Exxmed"]), atomo("Phronesis")]));
-    expect(consulta).toHaveBeenCalledTimes(1);
-    expect(consulta.mock.calls[0][1]).toEqual({
-      chaves: ["rodozanco", "exxmed", "phronesis"],
+  it("entidade já no grafo volta conhecida, com o id e as sessões do nó", () => {
+    const [e] = agregarCandidatas([ref("rodozanco,")], [no("Rodozanco", { sessoes: 3 })]);
+    expect(e).toMatchObject({
+      conhecida: true,
+      id: "id-rodozanco",
+      nome: "Rodozanco",
+      sessoes: 3,
     });
   });
 
-  it("sem entidade nenhuma, não vai ao banco", async () => {
-    expect(await resolver([])).toEqual([]);
-    expect(consulta).not.toHaveBeenCalled();
-  });
-
-  it("entidade já no grafo volta conhecida, com o id do nó", async () => {
-    consulta.mockResolvedValue([
-      {
-        id: "e1",
-        nome: "Rodozanco",
-        nome_normalizado: "rodozanco",
-        labels: ["Entidade", "Pessoa"],
-        sessoes: 3,
-      },
-    ]);
-    const [e] = await resolver(coletar([atomo("rodozanco,")]));
-    expect(e).toMatchObject({ conhecida: true, id: "e1", nome: "Rodozanco", tipo: "Pessoa" });
-  });
-
-  it("traz em quantas sessões a entidade já apareceu", async () => {
-    // É o que a revisão mostra para eu decidir se ela vira nó:
-    // "conhecida (3 sessões)" contra "nova, citada 1x".
-    consulta.mockResolvedValue([
-      {
-        id: "e1",
-        nome: "Rodozanco",
-        nome_normalizado: "rodozanco",
-        labels: ["Entidade", "Pessoa"],
-        sessoes: 3,
-      },
-    ]);
-    const [conhecida] = await resolver(coletar([atomo("Rodozanco")]));
-    expect(conhecida.sessoes).toBe(3);
-
-    consulta.mockResolvedValue([]);
-    const [nova] = await resolver(coletar([atomo("Alguém Novo")]));
-    expect(nova).toMatchObject({ conhecida: false, sessoes: 0, ocorrencias: 1 });
-  });
-
-  it("conta sessões distintas, não átomos", async () => {
-    const cypher = String(
-      (await resolver(coletar([atomo("Rodozanco")])), consulta.mock.calls[0][0]),
-    );
-    expect(cypher).toContain("count(DISTINCT s)");
-    expect(cypher).toContain("OPTIONAL MATCH");
-  });
-
-  it("o que está no grafo vence o que o extrator propôs", async () => {
+  it("o que está no grafo vence o que o extrator propôs", () => {
     // Mudar o tipo de uma entidade existente é edição na revisão, não efeito
     // colateral de uma extração.
-    consulta.mockResolvedValue([
-      {
-        id: "e2",
-        nome: "Exxmed",
-        nome_normalizado: "exxmed",
-        labels: ["Entidade", "Projeto"],
-        sessoes: 7,
-      },
-    ]);
-    const [e] = await resolver(coletar([atomo("Exxmed")], [{ nome: "Exxmed", tipo: "PESSOA" }]));
+    const [e] = agregarCandidatas(
+      [ref("Exxmed")],
+      [no("Exxmed", { tipo: "Projeto" })],
+      [{ nome: "Exxmed", tipo: "PESSOA" }],
+    );
     expect(e.tipo).toBe("Projeto");
   });
 
-  it("entidade nova volta sem id — quem cria é o confirmar", async () => {
-    const [e] = await resolver(coletar([atomo("Marina")]));
-    expect(e).toMatchObject({ conhecida: false, id: null, tipo: TIPO_PADRAO });
+  it("uma grafia fundida agrega na linha do vencedor, não numa própria", () => {
+    // É o que faz a fusão valer para o futuro: dita de novo, a grafia morta
+    // resolve até o vencedor em vez de renascer como nó.
+    const c = agregarCandidatas(
+      [ref("Exxmed"), ref("Exx Med")],
+      [no("Exxmed", { chaves: ["exxmed", "exx med"], aliases: ["Exx Med"] })],
+    );
+    expect(c).toHaveLength(1);
+    expect(c[0]).toMatchObject({ nome: "Exxmed", ocorrencias: 2, conhecida: true });
   });
 
-  it("preserva a contagem de ocorrências ao resolver", async () => {
-    const [e] = await resolver(coletar([atomo("Exxmed"), atomo("X", ["Exxmed"])]));
-    expect(e.ocorrencias).toBe(2);
-  });
-
-  it("nada é escrito no grafo — a resolução só lê (regra 5)", async () => {
-    await resolver(coletar([atomo("Rodozanco")]));
-    const cypher = String(consulta.mock.calls[0][0]);
-    expect(cypher).toContain("MATCH");
-    expect(cypher).not.toMatch(/CREATE|MERGE|SET|DELETE/);
+  it("entidade nova volta sem id — quem cria é o confirmar", () => {
+    const [e] = agregarCandidatas([ref("Marina")], []);
+    expect(e).toMatchObject({ conhecida: false, id: null, sessoes: 0, tipo: TIPO_PADRAO });
   });
 });
 
@@ -209,27 +169,17 @@ describe("pronome não vira nó", () => {
     }
   });
 
-  it("candidata nova com nome de pronome pede nome na revisão", async () => {
-    const [e] = await resolver(coletar([atomo("ela")]));
+  it("candidata nova com nome de pronome pede nome na revisão", () => {
+    const [e] = agregarCandidatas([ref("ela")], []);
     expect(e).toMatchObject({ conhecida: false, precisa_nome: true });
   });
 
-  it("candidata com nome de verdade não pede nada", async () => {
-    const [e] = await resolver(coletar([atomo("Marina")]));
-    expect(e.precisa_nome).toBe(false);
+  it("candidata com nome de verdade não pede nada", () => {
+    expect(agregarCandidatas([ref("Marina")], [])[0].precisa_nome).toBe(false);
   });
 
-  it("entidade já no grafo nunca pede nome — ela já passou por uma revisão", async () => {
-    consulta.mockResolvedValue([
-      {
-        id: "e9",
-        nome: "Ela Fitzgerald",
-        nome_normalizado: "ela",
-        labels: ["Entidade", "Pessoa"],
-        sessoes: 2,
-      },
-    ]);
-    const [e] = await resolver(coletar([atomo("ela")]));
+  it("entidade já no grafo nunca pede nome — ela já passou por uma revisão", () => {
+    const [e] = agregarCandidatas([ref("ela")], [no("Ela Fitzgerald", { chaves: ["ela"] })]);
     expect(e).toMatchObject({ conhecida: true, precisa_nome: false });
   });
 });

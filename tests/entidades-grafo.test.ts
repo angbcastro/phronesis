@@ -9,7 +9,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/neo4j", () => ({ query: vi.fn(async () => []) }));
 
-import { buscarConhecidas, listarEntidades, nomesParaVocabulario, resolver } from "@/lib/entidades";
+import { acharPorChave, listarEntidades, nomesParaVocabulario } from "@/lib/entidades";
+import type { EntidadeDoGrafo } from "@/lib/entidades";
 import { query } from "@/lib/neo4j";
 
 const consulta = vi.mocked(query);
@@ -20,46 +21,68 @@ beforeEach(() => {
   consulta.mockResolvedValue([]);
 });
 
-describe("buscar entidade conhecida", () => {
-  it("atravessa o alias e devolve o vencedor", async () => {
-    await buscarConhecidas(["exx med"]);
-    expect(cypher()).toContain("OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)");
-    expect(cypher()).toContain("coalesce(v, e) AS alvo");
-    expect(cypher()).toContain("RETURN alvo.id AS id, alvo.nome AS nome");
+describe("a chave atravessa o alias", () => {
+  it("a consulta traz as grafias fundidas junto com a do vencedor", async () => {
+    // É o ponto inteiro da slice 3: a grafia morta continua no banco, e quem a
+    // encontra tem que ser levado ao vencedor. Sem `chaves` a resolução de
+    // amanhã recriaria o nó que eu fundi ontem.
+    await listarEntidades();
+    expect(cypher()).toContain("collect(DISTINCT alias.nome_normalizado) AS chaves_alias");
   });
 
-  it("mantém a chave procurada, não a do vencedor", async () => {
-    // O chamador casa a candidata da sessão de volta por essa chave; devolver a
-    // do vencedor faria a candidata "Exx Med" não encontrar a si mesma.
-    await buscarConhecidas(["exx med"]);
-    expect(cypher()).toContain("e.nome_normalizado AS nome_normalizado");
-  });
-
-  it("uma grafia fundida volta como conhecida, com o nome do vencedor", async () => {
+  it("uma grafia fundida encontra o vencedor, com o nome e o tipo dele", async () => {
     consulta.mockResolvedValue([
       {
         id: "id-exxmed",
         nome: "Exxmed",
-        nome_normalizado: "exx med",
+        nome_normalizado: "exxmed",
         labels: ["Entidade", "Projeto"],
+        atomos: 5,
         sessoes: 3,
+        aliases: ["Exx Med"],
+        chaves_alias: ["exx med"],
       },
     ] as never);
 
-    const [c] = await resolver([
-      { nome: "Exx Med", nome_normalizado: "exx med", tipo: "Pessoa", ocorrencias: 1 },
-    ]);
+    const catalogo = await listarEntidades();
+    const achada = acharPorChave("exx med", catalogo) as EntidadeDoGrafo;
 
-    expect(c.conhecida).toBe(true);
-    expect(c.nome).toBe("Exxmed");
+    expect(achada.nome).toBe("Exxmed");
     // O grafo vence sobre o extrator, inclusive no tipo.
-    expect(c.tipo).toBe("Projeto");
-    expect(c.sessoes).toBe(3);
+    expect(achada.tipo).toBe("Projeto");
+    expect(achada.sessoes).toBe(3);
   });
 
-  it("lista vazia não fala com o banco", async () => {
-    await buscarConhecidas([]);
-    expect(consulta).not.toHaveBeenCalled();
+  it("chave que ninguém tem não acha nada — é entidade nova", async () => {
+    expect(acharPorChave("alguem novo", await listarEntidades())).toBeUndefined();
+  });
+});
+
+describe("os três campos de perfil", () => {
+  it("a consulta lê os três, com campo ausente valendo vazio", async () => {
+    // Mesma decisão do `status` na 004: a defesa fica na leitura, para valer
+    // também para o nó que um deploy antigo criar amanhã.
+    await listarEntidades();
+    for (const campo of ["contexto", "pode_ajudar_com", "fizemos_juntos"]) {
+      expect(cypher()).toContain(`coalesce(e.${campo}, '') AS ${campo}`);
+    }
+  });
+
+  it("nó sem perfil nenhum vira perfil vazio, não undefined", async () => {
+    consulta.mockResolvedValue([
+      {
+        id: "id-1",
+        nome: "Isinha",
+        nome_normalizado: "isinha",
+        labels: ["Entidade", "Pessoa"],
+        atomos: 4,
+        sessoes: 2,
+        aliases: [],
+      },
+    ] as never);
+
+    const [e] = await listarEntidades();
+    expect(e.perfil).toEqual({ contexto: "", pode_ajudar_com: "", fizemos_juntos: "" });
   });
 });
 

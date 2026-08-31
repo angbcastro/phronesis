@@ -14,6 +14,13 @@
  * nome novo. Enquanto sobrar pronome, o confirmar fica travado: um nó chamado
  * "ela" é grafo apodrecido garantido — daqui a seis meses ninguém sabe quem era.
  *
+ * **Dúvida destaca, não trava** (slice 4). O agente de resolução pode não ter
+ * certeza de qual "Rafa" era; o átomo aparece marcado, com a sugestão já
+ * preenchida e o motivo ao lado, e o confirmar continua liberado. Diferente do
+ * pronome, que trava: ali o resultado seria um nó chamado "ela". Aqui o pior
+ * caso é uma atribuição trocada, que eu conserto depois — e travar a cada
+ * dúvida mataria os 60 s numa sessão que fale muito das duas pessoas.
+ *
  * O player é o que torna a revisão confiável: escuto antes de aprovar. Um átomo
  * pode ter vários trechos, então há um botão por âncora. Átomo sem âncora não
  * ganha player e aparece marcado — trecho que não existe na transcrição costuma
@@ -22,12 +29,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { mencoesDe, sobreDe } from "@/lib/referencias";
 import { ehPronome, normalizarNome } from "@/lib/texto";
 import { TIPOS_ATOMO, TIPOS_ENTIDADE } from "@/lib/tipos";
 import type {
   AtomoProposto,
   BlocoAbsoluto,
+  CampoPerfil,
   EntidadeCandidata,
+  MarcaPerfil,
   TipoAtomo,
   TipoEntidade,
 } from "@/lib/tipos";
@@ -40,8 +50,16 @@ interface Proposta {
     descartados: { motivo: string }[];
     modelo: string;
     prompt_version: string;
+    prompt_version_resolucao?: string | null;
   };
   blocos: BlocoAbsoluto[];
+}
+
+/** Uma entidade do grafo, como o seletor de sujeito a lista. */
+interface EntidadeDoGrafo {
+  nome: string;
+  nome_normalizado: string;
+  tipo: TipoEntidade;
 }
 
 /** Edições locais de um átomo. Só o que eu mexi; o resto vem da proposta. */
@@ -56,6 +74,12 @@ interface Renome {
   nome: string;
   tipo: TipoEntidade;
 }
+
+const ROTULO_CAMPO: Record<CampoPerfil, string> = {
+  contexto: "contexto",
+  pode_ajudar_com: "pode ajudar com",
+  fizemos_juntos: "fizemos juntos",
+};
 
 const mmss = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -77,12 +101,14 @@ export function Revisao({ id }: { id: string }) {
   const router = useRouter();
   const [proposta, setProposta] = useState<Proposta | null>(null);
   const [falha, setFalha] = useState<string | null>(null);
+  const [doGrafo, setDoGrafo] = useState<EntidadeDoGrafo[]>([]);
 
   const [rejeitados, setRejeitados] = useState<Set<number>>(new Set());
   const [semEntidade, setSemEntidade] = useState<Set<string>>(new Set());
   const [renomes, setRenomes] = useState<Record<string, Renome>>({});
   const [edicoes, setEdicoes] = useState<Record<number, Edicao>>({});
   const [abertos, setAbertos] = useState<Set<number>>(new Set());
+  const [filtros, setFiltros] = useState<Record<number, TipoEntidade | "todas">>({});
   const [gravando, setGravando] = useState(false);
 
   const audio = useRef<HTMLAudioElement | null>(null);
@@ -100,6 +126,22 @@ export function Revisao({ id }: { id: string }) {
       vivo = false;
     };
   }, [id]);
+
+  /**
+   * A lista completa do grafo alimenta o seletor de sujeito. Rota que já
+   * existia, sem nada novo do lado do servidor — e se ela falhar, o seletor
+   * continua sendo um campo de texto livre, que é o comportamento anterior.
+   */
+  useEffect(() => {
+    let vivo = true;
+    fetch("/api/entidades", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ entidades: EntidadeDoGrafo[] }>) : null))
+      .then((d) => vivo && d && setDoGrafo(d.entidades))
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   /** Toca o bloco certo no segundo certo. Uma URL presigned por clique. */
   const escutar = useCallback(
@@ -130,11 +172,29 @@ export function Revisao({ id }: { id: string }) {
   const atomos = proposta?.extracao.atomos ?? [];
   const entidades = proposta?.extracao.entidades ?? [];
 
-  const valorDe = (a: AtomoProposto): Required<Edicao> => ({
-    texto: edicoes[a.indice]?.texto ?? a.texto,
-    tipo: edicoes[a.indice]?.tipo ?? a.tipo,
-    sobre: edicoes[a.indice]?.sobre ?? a.sobre,
-  });
+  /**
+   * As chaves que já existiam no grafo quando a proposta foi montada. Serve à
+   * leitura do formato antigo, em que o átomo guardava só o nome: `conhecida`
+   * sai do casamento contra esta lista, que é a informação que havia.
+   */
+  const conhecidas = useMemo(
+    () => new Set(entidades.filter((e) => e.conhecida).map((e) => e.nome_normalizado)),
+    [entidades],
+  );
+
+  const referenciaDe = useCallback(
+    (a: AtomoProposto) => sobreDe(a, conhecidas),
+    [conhecidas],
+  );
+
+  const valorDe = useCallback(
+    (a: AtomoProposto): Required<Edicao> => ({
+      texto: edicoes[a.indice]?.texto ?? a.texto,
+      tipo: edicoes[a.indice]?.tipo ?? a.tipo,
+      sobre: edicoes[a.indice]?.sobre ?? referenciaDe(a).entidade,
+    }),
+    [edicoes, referenciaDe],
+  );
 
   /** O que a entidade virou depois das minhas edições. */
   const finalDe = useCallback(
@@ -143,14 +203,14 @@ export function Revisao({ id }: { id: string }) {
   );
 
   /**
-   * Traduz um nome cru do átomo para o nome final. É isto que faz renomear a
+   * Traduz um nome de entidade para o nome final. É isto que faz renomear a
    * entidade uma vez consertar todos os átomos que apontam para ela.
    */
   const nomeFinal = useCallback(
-    (nomeCru: string): string => {
-      const chave = normalizarNome(nomeCru);
+    (nome: string): string => {
+      const chave = normalizarNome(nome);
       const candidata = entidades.find((e) => e.nome_normalizado === chave);
-      return candidata ? finalDe(candidata).nome : nomeCru;
+      return candidata ? finalDe(candidata).nome : nome;
     },
     [entidades, finalDe],
   );
@@ -166,7 +226,7 @@ export function Revisao({ id }: { id: string }) {
     for (const a of aprovados) s.add(normalizarNome(valorDe(a).sobre));
     return s;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aprovados, edicoes]);
+  }, [aprovados, edicoes, valorDe]);
 
   const usada = (e: EntidadeCandidata) =>
     !semEntidade.has(e.nome_normalizado) || travadas.has(e.nome_normalizado);
@@ -176,10 +236,26 @@ export function Revisao({ id }: { id: string }) {
     (e) => e.precisa_nome && usada(e) && ehPronome(finalDe(e).nome),
   );
 
+  /** Atribuições que o agente não teve certeza. Destacam, não travam. */
+  const duvidosos = aprovados.filter((a) => !referenciaDe(a).certo);
+
   /** Pendente primeiro: é o que precisa da minha atenção. */
   const ordenadas = useMemo(
     () => [...entidades].sort((a, b) => Number(b.precisa_nome) - Number(a.precisa_nome)),
     [entidades],
+  );
+
+  /** O que o seletor de um átomo oferece: as alternativas primeiro, o grafo depois. */
+  const opcoesDe = useCallback(
+    (a: AtomoProposto): string[] => {
+      const filtro = filtros[a.indice] ?? "todas";
+      const daResolucao = referenciaDe(a).alternativas;
+      const doGrafoFiltrado = doGrafo
+        .filter((e) => filtro === "todas" || e.tipo === filtro)
+        .map((e) => e.nome);
+      return [...new Set([...daResolucao, ...doGrafoFiltrado])];
+    },
+    [doGrafo, filtros, referenciaDe],
   );
 
   function editarEntidade(e: EntidadeCandidata, mudanca: Partial<Renome>) {
@@ -220,9 +296,14 @@ export function Revisao({ id }: { id: string }) {
         texto: v.texto,
         tipo: v.tipo,
         sobre,
-        menciona: a.menciona
-          .map(nomeFinal)
+        menciona: mencoesDe(a, conhecidas)
+          .map((m) => nomeFinal(m.entidade))
           .filter((m) => normalizarNome(m) !== chaveSobre && paraGravar.has(normalizarNome(m))),
+        // As marcas de perfil vão com o nome final, como tudo o mais. O servidor
+        // recusa campo fora do schema e entidade fora da lista aprovada.
+        perfila: (a.perfila ?? [])
+          .map((m: MarcaPerfil) => ({ entidade: nomeFinal(m.entidade), campo: m.campo }))
+          .filter((m) => paraGravar.has(normalizarNome(m.entidade))),
       };
     });
 
@@ -268,6 +349,8 @@ export function Revisao({ id }: { id: string }) {
         <h1>o que eu entendi</h1>
         <p className="aguardando">
           {aprovados.length} de {atomos.length} — desmarque o que não presta, edite o que ficou torto
+          {duvidosos.length > 0 &&
+            ` · ${duvidosos.length} com dúvida de quem é (dá para confirmar assim mesmo)`}
         </p>
       </header>
 
@@ -276,16 +359,22 @@ export function Revisao({ id }: { id: string }) {
           const rejeitado = rejeitados.has(a.indice);
           const aberto = abertos.has(a.indice);
           const v = valorDe(a);
+          const ref = referenciaDe(a);
           const sobre = nomeFinal(v.sobre);
-          const mencoes = a.menciona
-            .map(nomeFinal)
+          const incerto = !ref.certo;
+          const mencoes = mencoesDe(a, conhecidas)
+            .map((m) => nomeFinal(m.entidade))
             .filter((m) => normalizarNome(m) !== normalizarNome(sobre));
           // `?? []` protege contra proposta gravada por um prompt anterior, de
           // quando o átomo tinha uma âncora só.
           const ancorados = (a.trechos ?? []).filter((t) => t.inicio_s !== null);
+          const marcas = a.perfila ?? [];
 
           return (
-            <li key={a.indice} className={rejeitado ? "atomo fora" : "atomo"}>
+            <li
+              key={a.indice}
+              className={`atomo${rejeitado ? " fora" : ""}${incerto ? " incerto" : ""}`}
+            >
               <div className="linha">
                 <input
                   type="checkbox"
@@ -307,6 +396,27 @@ export function Revisao({ id }: { id: string }) {
                     sobre {sobre}
                     {mencoes.length > 0 && ` · menciona ${mencoes.join(", ")}`}
                   </p>
+
+                  {incerto && (
+                    // Destaca, não trava. A sugestão já está preenchida no
+                    // seletor; o motivo é o que me deixa decidir em um segundo.
+                    <p className="duvida">
+                      de quem é? escolhi <strong>{sobre}</strong>
+                      {ref.citado !== "" && ref.citado !== sobre && ` para "${ref.citado}"`}
+                      {ref.motivo !== "" && ` — ${ref.motivo}`}
+                      {ref.alternativas.length > 0 && ` · também podia ser ${ref.alternativas.join(", ")}`}
+                    </p>
+                  )}
+
+                  {marcas.length > 0 && (
+                    <p className="meta perfila">
+                      vai para o perfil:{" "}
+                      {marcas
+                        .map((m) => `${nomeFinal(m.entidade)} · ${ROTULO_CAMPO[m.campo] ?? m.campo}`)
+                        .join(" · ")}
+                    </p>
+                  )}
+
                   <div className="trechos">
                     {ancorados.map((t, k) => (
                       <button key={k} className="ouvir" onClick={() => void escutar(t.inicio_s!)}>
@@ -330,7 +440,7 @@ export function Revisao({ id }: { id: string }) {
                         })
                       }
                     >
-                      {aberto ? "fechar" : "editar"}
+                      {aberto ? "fechar" : incerto ? "escolher" : "editar"}
                     </button>
                   </div>
                 </div>
@@ -363,13 +473,42 @@ export function Revisao({ id }: { id: string }) {
                         </option>
                       ))}
                     </select>
+
+                    {/* Filtro de tipo + lista pesquisável de todas as entidades
+                        do grafo. `<datalist>` dá busca conforme eu digito sem
+                        biblioteca nenhuma e sem estado novo na tela — e o campo
+                        continua aceitando um nome que ainda não existe. */}
+                    <select
+                      value={filtros[a.indice] ?? "todas"}
+                      aria-label="filtrar por tipo de entidade"
+                      onChange={(e) =>
+                        setFiltros((s) => ({
+                          ...s,
+                          [a.indice]: e.target.value as TipoEntidade | "todas",
+                        }))
+                      }
+                    >
+                      <option value="todas">todas</option>
+                      {TIPOS_ENTIDADE.map((t) => (
+                        <option key={t} value={t}>
+                          {t.toLowerCase()}
+                        </option>
+                      ))}
+                    </select>
+
                     <input
                       value={sobre}
+                      list={`entidades-${a.indice}`}
                       aria-label="sobre quem"
                       onChange={(e) =>
                         setEdicoes((s) => ({ ...s, [a.indice]: { ...s[a.indice], sobre: e.target.value } }))
                       }
                     />
+                    <datalist id={`entidades-${a.indice}`}>
+                      {opcoesDe(a).map((nome) => (
+                        <option key={nome} value={nome} />
+                      ))}
+                    </datalist>
                   </div>
                   <p className="aguardando">
                     para trocar um nome em todos os átomos de uma vez, edite a entidade lá embaixo

@@ -191,6 +191,73 @@ describe("procedência e integridade", () => {
   });
 });
 
+describe("as marcas de perfil (migration 005)", () => {
+  const comPerfil = (perfila: unknown[]) => ({
+    aprovados: [
+      { indice: 0, texto: "t", tipo: "FATO", sobre: "Marina", menciona: ["Pedro"], perfila },
+    ],
+    entidades: [
+      { nome: "Marina", tipo: "Pessoa" },
+      { nome: "Pedro", tipo: "Pessoa" },
+    ],
+  });
+
+  it("a marca chega ao grafo com a entidade normalizada (critério 6)", async () => {
+    await chamar(comPerfil([{ entidade: "Pedro", campo: "pode_ajudar_com" }]));
+    expect(atomosGravados()[0].perfila).toEqual([
+      { entidade: "pedro", campo: "pode_ajudar_com" },
+    ]);
+  });
+
+  it("campo fora do schema é descartado, como a menção fora da lista", async () => {
+    await chamar(comPerfil([{ entidade: "Pedro", campo: "cor_favorita" }]));
+    expect(atomosGravados()[0].perfila).toEqual([]);
+  });
+
+  it("marca para entidade não aprovada não vira aresta pendurada em nada", async () => {
+    await chamar(comPerfil([{ entidade: "Alguém Que Eu Desmarquei", campo: "contexto" }]));
+    expect(atomosGravados()[0].perfila).toEqual([]);
+  });
+
+  it("a mesma marca duas vezes vira uma (regra 4)", async () => {
+    await chamar(
+      comPerfil([
+        { entidade: "Pedro", campo: "contexto" },
+        { entidade: "PEDRO", campo: "contexto" },
+      ]),
+    );
+    expect(atomosGravados()[0].perfila).toHaveLength(1);
+  });
+
+  it("a entidade só marcada por perfil ainda vira nó — a aresta precisa de destino", async () => {
+    await chamar({
+      aprovados: [
+        {
+          indice: 0,
+          texto: "t",
+          tipo: "FATO",
+          sobre: "Marina",
+          menciona: [],
+          perfila: [{ entidade: "Pedro", campo: "fizemos_juntos" }],
+        },
+      ],
+      entidades: [
+        { nome: "Marina", tipo: "Pessoa" },
+        { nome: "Pedro", tipo: "Pessoa" },
+      ],
+    });
+    expect(entidadesGravadas().map((e) => e.nome).sort()).toEqual(["Marina", "Pedro"]);
+  });
+
+  it("proposta antiga, sem marca nenhuma, grava lista vazia (critério 10)", async () => {
+    await chamar({
+      aprovados: [{ indice: 0, texto: "t", tipo: "FATO", sobre: "Marina", menciona: [] }],
+      entidades: [{ nome: "Marina", tipo: "Pessoa" }],
+    });
+    expect(atomosGravados()[0].perfila).toEqual([]);
+  });
+});
+
 describe("guardas de estado", () => {
   it("confirmar duas vezes não reprocessa", async () => {
     vi.mocked(buscarSessao).mockResolvedValue({

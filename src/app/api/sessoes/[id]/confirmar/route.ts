@@ -3,11 +3,12 @@ import { gravarAtomos, gravarEntidades } from "@/lib/atomos";
 import { chaveExtracao } from "@/lib/chaves";
 import { ehPronome, normalizarNome, normalizarTipoEntidade } from "@/lib/entidades";
 import { normalizarTipo } from "@/lib/extracao";
+import { normalizarCampo } from "@/lib/perfil";
 import { getJson } from "@/lib/r2";
 import { atualizarSessao, buscarSessao } from "@/lib/sessoes";
 import { erro, parametros } from "@/lib/rotas";
 import type { AtomoParaGravar, EntidadeParaGravar } from "@/lib/atomos";
-import type { Extracao } from "@/lib/tipos";
+import type { CampoPerfil, Extracao } from "@/lib/tipos";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -18,6 +19,15 @@ interface AtomoAprovado {
   tipo: string;
   sobre: string;
   menciona: string[];
+  /**
+   * As marcas de perfil que o agente 2 apontou, já com o nome **final** — a
+   * revisão pode ter renomeado a entidade, e a marca tem que acompanhar.
+   *
+   * Vem do corpo pela mesma razão que `sobre` e `menciona` vêm: é conteúdo, e
+   * conteúdo eu edito na tela. Procedência (`id`, offsets, `prompt_version`,
+   * `modelo`) continua sendo relida do R2 e nunca aceita do navegador.
+   */
+  perfila?: { entidade?: unknown; campo?: unknown }[];
 }
 
 /**
@@ -120,6 +130,21 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     // em vez de estourar. Re-extrair com `forcar` devolve o formato novo.
     const trechos = (original.trechos ?? []).filter((t) => t.inicio_s !== null);
 
+    // Marca de perfil só vale para campo do schema (migration 005) e para
+    // entidade que de fato vai virar nó. Marca solta seria aresta pendurada em
+    // nada; marca com campo inventado seria schema apodrecido pela porta dos
+    // fundos. Silenciosamente descartada, como a menção fora da lista.
+    const perfila = [
+      ...new Map(
+        (Array.isArray(bruto.perfila) ? bruto.perfila : []).flatMap((m) => {
+          const campo = normalizarCampo(m?.campo);
+          const entidade = normalizarNome(String(m?.entidade ?? ""));
+          if (!campo || entidade === "" || !aprovadas.has(entidade)) return [];
+          return [[`${entidade}|${campo}`, { entidade, campo: campo as CampoPerfil }] as const];
+        }),
+      ).values(),
+    ];
+
     atomos.push({
       // Procedência: sempre do servidor, nunca do corpo.
       id: original.id,
@@ -139,12 +164,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             .filter((m) => m !== "" && m !== sobre && aprovadas.has(m)),
         ),
       ],
+      perfila,
     });
   }
 
   // Só entidade de fato usada por um átomo aprovado. Aprovar na tela e depois
   // rejeitar todos os átomos dela não pode deixar nó órfão no grafo.
-  const usadas = new Set(atomos.flatMap((a) => [a.sobre, ...a.menciona]));
+  const usadas = new Set(
+    atomos.flatMap((a) => [a.sobre, ...a.menciona, ...a.perfila.map((m) => m.entidade)]),
+  );
   const entidades = [...usadas].flatMap((chave) => {
     const e = aprovadas.get(chave);
     return e ? [e] : [];
@@ -160,6 +188,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     status: "confirmada",
     atomos: atomos.length,
     entidades: entidades.length,
+    perfila: atomos.reduce((n, a) => n + a.perfila.length, 0),
     rejeitados: proposta.valor.atomos.length - atomos.length,
   });
 }

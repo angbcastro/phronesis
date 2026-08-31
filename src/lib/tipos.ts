@@ -113,6 +113,71 @@ export const TIPOS_ENTIDADE = ["Pessoa", "Projeto", "Objetivo"] as const;
 
 export type TipoEntidade = (typeof TIPOS_ENTIDADE)[number];
 
+// ──────────────────── Slice 4: identidade por contexto ────────────────────
+
+/**
+ * Os três campos de perfil de uma `:Entidade` (migration 005). Texto livre,
+ * editado à mão em `/entidades`, e é o que o agente de resolução lê para saber
+ * de quem eu estou falando.
+ *
+ * `fizemos_juntos` é provavelmente o melhor desambiguador dos três: atividade
+ * compartilhada ("slackline no parque") é exatamente o que aparece na
+ * transcrição — mais do que um rótulo de relação.
+ */
+export const CAMPOS_PERFIL = ["contexto", "pode_ajudar_com", "fizemos_juntos"] as const;
+
+export type CampoPerfil = (typeof CAMPOS_PERFIL)[number];
+
+/**
+ * Teto por campo. Não é estética: os três campos de **todas** as entidades
+ * entram no prompt do agente 2, então sem teto o custo daquela chamada cresce
+ * junto com o grafo.
+ */
+export const TETO_PERFIL = 300;
+
+/** Perfil completo. Campo ausente no grafo é lido como string vazia. */
+export type Perfil = Record<CampoPerfil, string>;
+
+export const PERFIL_VAZIO: Perfil = {
+  contexto: "",
+  pode_ajudar_com: "",
+  fizemos_juntos: "",
+};
+
+/**
+ * Uma menção do extrator já atribuída a alguém — **por menção, não por sessão**.
+ *
+ * É a diferença que carrega a slice 4. Até a 3, todas as menções ao mesmo nome
+ * colapsavam numa candidata só, válida para a sessão inteira; isso deixa de
+ * servir quando dois átomos que dizem "Rafa" podem ser duas pessoas.
+ */
+export interface ReferenciaResolvida {
+  /** O que o extrator escreveu: "Rafa". */
+  citado: string;
+  /** A quem foi atribuído: o nome canônico do nó, ou o nome de uma entidade nova. */
+  entidade: string;
+  /** Casou com nó do grafo, ou seria criada no confirmar. */
+  conhecida: boolean;
+  /** `false` = o agente não teve certeza; a revisão destaca e eu decido. */
+  certo: boolean;
+  /** Os outros candidatos, para o seletor da revisão já abrir com eles. */
+  alternativas: string[];
+  /** Uma frase curta do porquê. Só é mostrada na dúvida. */
+  motivo: string;
+}
+
+/**
+ * "Este átomo diz algo que pertence ao perfil daquela entidade, neste campo."
+ * Vira `(:Atomo)-[:PERFILA { campo }]->(:Entidade)` no confirmar (migration 005).
+ *
+ * `entidade` é o nome canônico, como em `ReferenciaResolvida` — a normalização
+ * para `nome_normalizado` acontece no confirmar, com a mesma regra de tudo.
+ */
+export interface MarcaPerfil {
+  entidade: string;
+  campo: CampoPerfil;
+}
+
 /**
  * Como o offset do átomo foi obtido. Vai gravado junto: a tela não promete
  * mais precisão do que tem, e átomo sem âncora é o primeiro candidato a ser
@@ -137,6 +202,15 @@ export interface AtomoCru {
   trechos: string[];
 }
 
+/**
+ * O que o extrator propôs sobre uma entidade citada, antes de olhar o grafo.
+ * Só uma dica de tipo: quem decide o que vira nó é a revisão.
+ */
+export interface EntidadePropostaFrase {
+  nome: string;
+  tipo?: unknown;
+}
+
 /** Um pedaço literal já casado com o áudio. */
 export interface TrechoAncorado {
   texto: string;
@@ -145,17 +219,32 @@ export interface TrechoAncorado {
   ancora: Ancora;
 }
 
-/** Átomo da proposta: já com offsets casados e procedência (regra 7). */
-export interface AtomoProposto extends Omit<AtomoCru, "trechos"> {
+/**
+ * Átomo da proposta: já com offsets casados, referências atribuídas e
+ * procedência (regra 7).
+ *
+ * `sobre` e `menciona` deixaram de ser o nome cru do extrator e passaram a ser
+ * `ReferenciaResolvida` (slice 4) — o extrator continua devolvendo "Rafa", e
+ * quem diz **qual** Rafa é o agente de resolução.
+ *
+ * Proposta gravada antes da slice 4 tem os dois como string. `referencias.ts`
+ * lê os dois formatos; é o que impede a revisão de quebrar numa sessão que já
+ * estava esperando (`Specs/slice-4.md` §2).
+ */
+export interface AtomoProposto extends Omit<AtomoCru, "trechos" | "sobre" | "menciona"> {
   /** `<sessao_id>-<índice>` — determinístico, é o que faz o MERGE ser idempotente. */
   id: string;
   indice: number;
+  sobre: ReferenciaResolvida;
+  menciona: ReferenciaResolvida[];
   /**
    * A proposta guarda a forma rica; o achatamento em listas paralelas
    * (`inicios_s`/`fins_s`/`ancoras`, migration 003) acontece só no confirmar,
    * porque é o grafo que não sabe guardar array de mapa.
    */
   trechos: TrechoAncorado[];
+  /** O que este átomo diz do perfil de quem — vira `:PERFILA` no confirmar. */
+  perfila: MarcaPerfil[];
   prompt_version: string;
   modelo: string;
 }
@@ -204,10 +293,22 @@ export interface EntidadeCandidata {
 export interface Extracao {
   sessao_id: string;
   atomos: AtomoProposto[];
+  /**
+   * Visão **agregada** do que foi resolvido, uma linha por entidade. Continua
+   * sendo onde eu decido se uma entidade nova vira nó; a atribuição de cada
+   * menção, essa vive no átomo.
+   */
   entidades: EntidadeCandidata[];
   descartados: Descarte[];
   prompt_version: string;
   modelo: string;
+  /**
+   * Procedência do agente de resolução (regra 7, critério 8 da slice 4).
+   * `null` quando nenhuma menção precisou de julgamento — sessão sem ambiguidade
+   * não chama o modelo, e registrar uma versão que não rodou seria mentira.
+   */
+  prompt_version_resolucao: string | null;
+  modelo_resolucao: string | null;
   granularidade: Granularidade;
   criado_em: string;
 }

@@ -12,16 +12,21 @@ import { distancia, extrairJson, parecidas, proximidade } from "@/lib/duplicatas
 import { chaveDoPar } from "@/lib/fusao";
 import type { EntidadeDoGrafo } from "@/lib/entidades";
 
-const ent = (nome: string, extra: Partial<EntidadeDoGrafo> = {}): EntidadeDoGrafo => ({
-  id: `id-${nome}`,
-  nome,
-  nome_normalizado: nome.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(),
-  tipo: "Pessoa",
-  sessoes: 1,
-  atomos: 1,
-  aliases: [],
-  ...extra,
-});
+const ent = (nome: string, extra: Partial<EntidadeDoGrafo> = {}): EntidadeDoGrafo => {
+  const chave = nome.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return {
+    id: `id-${nome}`,
+    nome,
+    nome_normalizado: chave,
+    chaves: [chave],
+    tipo: "Pessoa",
+    sessoes: 1,
+    atomos: 1,
+    aliases: [],
+    perfil: { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" },
+    ...extra,
+  };
+};
 
 describe("distância de edição", () => {
   it("igual é zero", () => {

@@ -77,7 +77,7 @@ Texto livre, editáveis em `/entidades` do mesmo jeito que o nome já é:
 
 | Campo | O que é |
 |---|---|
-| `contexto` | contexto geral — "colega de trabalho", "amigo, mora comigo" |
+| `contexto` | contexto geral sobre ela: quem é para mim — "colega de trabalho", "amigo, mora comigo" — e qualquer outra coisa que me seja relevante saber (momento de vida, situação, o que está acontecendo) |
 | `pode_ajudar_com` | habilidades: o que sabe, com o que já trabalhou |
 | `fizemos_juntos` | as histórias — o que já vivemos juntos |
 
