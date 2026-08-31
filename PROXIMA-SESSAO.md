@@ -187,14 +187,21 @@ automática e a resposta crua na mensagem de erro. Se voltar a falhar, o log
 
 ## 6. Próximos passos, em ordem
 
-**A slice 3 está construída** (`Specs/slice-3.md`). O que falta nela é uso: a
+**A slice 3 está construída** (`Specs/slice-3.md`) e **a slice 4 tem spec**
+(`Specs/slice-4.md` — identidade por contexto). O que falta na 3 é uso: a
 mecânica foi validada contra o Aura, mas o grafo não tem duplicata nenhuma para
 o `duplicatas-1` julgar, então a qualidade da proposta é a única parte que
 continua sem medida.
 
+0. **Implementar a slice 4**, na ordem que a spec fixa — os três campos de
+   perfil primeiro, o agente de resolução depois. Parar no passo 3 já resolve o
+   caso do Raffa/Rapha; do 4 em diante é o perfil se mantendo sozinho.
+   Migration 005 vai proposta e precisa da sua aprovação antes de rodar.
 1. **Abrir `/entidades`** — link no rodapé da home, ao lado de "áudios". Hoje
    ela lista `Isinha` (6 átomos, 2 sessões) e `eu` (7 átomos, 2 sessões). É a
-   primeira janela para dentro do grafo que este sistema tem.
+   primeira janela para dentro do grafo que este sistema tem. **Cadastrar ali o
+   Raffa e o Rapha antes de falar deles numa sessão** é o passo zero da slice 4:
+   nó já conflacionado não tem como separar depois.
 2. **Reextrair as duas sessões em `em_revisao`** com o `extracao-5` e julgar a
    saída na revisão. É a única medida de qualidade que existe — e as sessões
    nunca extraídas (`mtgeskkd`, `mtgeoq7a`) trazem entidade nova, que é o que
@@ -215,13 +222,20 @@ continua sem medida.
 
 ---
 
-## 7. Fora de escopo (slice 4)
+## 7. Fora de escopo (slice 5)
 
 As 2-4 perguntas do ritual, `:ATUALIZA`/`:CONTRADIZ`/`:CONFIRMA` entre átomos,
 busca, tela Perguntar, `:Foco`, visualização de grafo e deduplicação de **átomo**
 (a de entidade ficou pronta na slice 3). **Não existem e não devem ser
 construídos agora** — todos dependem de material acumulado que ainda não existe.
 
-Também fora: **desfazer uma fusão.** Migrar as arestas de volta exigiria saber
-quais eram de quem, e isso não é gravado. O que protege é a fusão nunca ser
-automática.
+Eram "slice 4" até a identidade por contexto entrar na frente, e a ordem faz
+sentido: pergunta boa precisa saber de quem se está falando.
+
+Também fora, e sem previsão:
+
+- **Desfazer uma fusão.** Migrar as arestas de volta exigiria saber quais eram de
+  quem, e isso não é gravado. O que protege é a fusão nunca ser automática.
+- **Separar um nó que já conflacionou duas pessoas.** A máquina de fusão junta,
+  não divide, e mover átomo entre entidades não existe. É por isso que o Raffa e
+  o Rapha têm que ser cadastrados **antes** da primeira menção.

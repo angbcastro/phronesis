@@ -975,6 +975,17 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   provedor escrito à mão e leitura de chave de provedor, e confere as
   dependências e o `.env.example`. Roda junto com `pnpm test`.
 - `pnpm typecheck` — `tsc --noEmit`.
+- **Bater numa rota do dev server pela porta da frente.** O middleware barra tudo
+  sem cookie, e fora de produção `POST /api/auth/link` devolve o magic link **no
+  corpo da resposta** (`route.ts`, a função `entregar`). Então: pede o link com o
+  `ALLOWED_EMAIL`, segue o link para receber o cookie, e usa o cookie nas
+  chamadas seguintes. É o que permite verificar rota de verdade sem forjar token
+  e sem `pnpm build` — que aliás não pode rodar com o dev server de pé, porque os
+  dois compartilham o `.next`.
+- **Validar Cypher sem escrever nada:** prefixar a consulta com `EXPLAIN` faz o
+  Aura planejar sem executar, o que pega erro de sintaxe e de schema contra o
+  banco real. Foi assim que as escritas da slice 3 foram conferidas antes de
+  existir dado para exercitá-las.
 - `scripts/dev.ps1` (Windows; atalho **Phronesis** na área de trabalho, recriável
   por `scripts/atalho.ps1`) — sobe o `pnpm dev` do jeito certo: recusa-se a subir
   um segundo servidor quando a 3000 já responde (o Next escolheria outra porta e
