@@ -112,7 +112,8 @@ src/client/       navegador
   deposito.ts     IndexedDB: blocos pendentes + sessão em andamento
   fila.ts         upload serial com retry, observável pela UI
 
-src/components/   Gravacao (gravar), Importacao (subir arquivo),
+src/components/   Marca (o canto superior esquerdo — volta ao início),
+                  Gravacao (gravar), Importacao (subir arquivo),
                   ChipRecuperacao (retomar ou revisar),
                   Processando (fechar a sessão e esperar; leva à revisão),
                   Revisao (aprovar, editar, escutar, confirmar),
@@ -1170,6 +1171,9 @@ Todas com `runtime = "nodejs"`.
 | `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, escrever o perfil |
 | `/entrar` | página de login | pede o e-mail permitido |
 
+Em toda tela dessa tabela menos `/` e `/entrar`, `Marca` fica fixa no canto
+superior esquerdo e leva a `/`.
+
 `/entidades` é a única janela para dentro do grafo — até ela existir, saber o
 que tinha lá dentro exigia rodar Cypher por fora. Cada linha traz um `select` de
 tipo (editável), um botão de renomear e um botão **perfil**, que abre os três
@@ -1179,6 +1183,18 @@ camada de string é de graça, a que julga e a que escreve são chamadas de mode
 e manutenção que cobra sozinha vira cobrança.
 Ela não é painel da revisão de propósito — a revisão só vê as entidades da
 sessão atual, e o orçamento dela é 60 s (visão §8).
+
+**A volta ao início é a marca, no canto superior esquerdo.** `Marca` mora no
+layout raiz — nenhuma tela nova nasce sem caminho de volta — e é ela que decide
+onde não aparecer: em `/`, que já *é* o início e é a tela de gravar, onde nada
+crônico entra (visão §6), e em `/entrar`, que é anterior à sessão. `mostraMarca()`
+é a regra, e `tests/marca.test.ts` a fixa. Ela é `position: fixed`: numa revisão
+longa ou numa lista grande de entidades, um "voltar" de rodapé só existe depois
+de rolar a tela inteira. Os "voltar → `/`" que ficavam no fim de `Sessoes`,
+`Entidades`, `Processando` e da falha da `Revisao` saíram, por duplicarem a
+marca. Ficaram os dois que não são ela: o "voltar" da `Leitura`, que vai para
+`/sessoes` (de onde se chega), e o "depois" no rodapé da `Revisao`, que é adiar
+a revisão, não navegar.
 
 `Processando` é quem dispara `finalizar`, uma vez só (`useRef`), depois de
 garantir a fila vazia; faz o polling de 2 s e, ao ver `em_revisao`, troca a URL

@@ -24,7 +24,6 @@
  * que escreve são chamadas de modelo.
  */
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { ehPronome, normalizarNome } from "@/lib/texto";
 import { CAMPOS_PERFIL, TETO_PERFIL, TIPOS_ENTIDADE } from "@/lib/tipos";
 import type { CampoPerfil, Perfil, TipoEntidade } from "@/lib/tipos";
@@ -508,9 +507,6 @@ export function Entidades() {
         </p>
       )}
 
-      <Link className="voltar" href="/">
-        voltar
-      </Link>
     </main>
   );
 }

@@ -497,3 +497,36 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .proposta-perfil p { margin: 0; font-size: 0.9rem; line-height: 1.4; }
 .proposta-perfil .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+
+/* ---- marca: o canto superior esquerdo, e a volta ao início ---- */
+
+/* Fixa, não no fluxo: numa revisão longa o caminho de volta não pode depender
+   de rolar até o rodapé. Discreta em repouso — ela é saída, não convite. */
+.marca {
+  position: fixed;
+  top: calc(0.85rem + env(safe-area-inset-top));
+  left: calc(1.25rem + env(safe-area-inset-left));
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.55rem 0.3rem 0.35rem;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--texto-fraco);
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  /* O fundo acompanha a tela para o texto que rola por baixo não atravessar. */
+  background: color-mix(in srgb, var(--fundo) 82%, transparent);
+  backdrop-filter: blur(6px);
+  transition: color 140ms ease, opacity 140ms ease;
+}
+.marca svg { width: 13px; height: 13px; flex: none; fill: var(--acento); }
+.marca span { line-height: 1; }
+.marca:hover { color: var(--texto); }
+.marca:active { opacity: 0.7; }
+.marca:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+/* Espaço para ela nas telas que ela cobre. `.leitura` já abre com 3.5rem. */
+.sessoes,
+.revisao { padding-top: 3.75rem; }

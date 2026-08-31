@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Marca } from "@/components/Marca";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,7 +18,12 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        {/* Fica no layout, não em cada tela: assim nenhuma tela nova nasce sem
+            caminho de volta. Ela mesma decide onde não aparecer. */}
+        <Marca />
+        {children}
+      </body>
     </html>
   );
 }

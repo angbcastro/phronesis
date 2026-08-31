@@ -176,9 +176,6 @@ export function Sessoes() {
 
       {sessoes?.length === 0 && <p className="aguardando">nenhum áudio ainda</p>}
 
-      <Link className="voltar" href="/">
-        voltar
-      </Link>
     </main>
   );
 }

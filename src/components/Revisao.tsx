@@ -327,9 +327,6 @@ export function Revisao({ id }: { id: string }) {
       <main className="leitura">
         <h1>revisão</h1>
         <p className="aguardando">{falha}</p>
-        <Link className="voltar" href="/">
-          voltar
-        </Link>
       </main>
     );
   }

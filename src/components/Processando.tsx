@@ -117,9 +117,6 @@ export function Processando({ id }: { id: string }) {
         <p className="aguardando">{legenda(status, estado?.completa ?? false)}</p>
       )}
 
-      <Link className="voltar" href="/">
-        voltar
-      </Link>
     </main>
   );
 }
