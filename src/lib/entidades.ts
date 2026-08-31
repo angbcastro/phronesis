@@ -103,6 +103,8 @@ interface LinhaEntidade {
   nome: string;
   nome_normalizado: string;
   labels: string[];
+  /** Em quantas sessões passadas ela apareceu. */
+  sessoes: number;
 }
 
 /** O label que não é `:Entidade`. Nó sem tipo reconhecível cai no padrão. */
@@ -110,14 +112,22 @@ export function tipoDosLabels(labels: string[]): TipoEntidade {
   return TIPOS_ENTIDADE.find((t) => labels.includes(t)) ?? TIPO_PADRAO;
 }
 
-/** Uma consulta só para a sessão inteira, não uma por entidade. */
+/**
+ * Uma consulta só para a sessão inteira, não uma por entidade.
+ *
+ * `sessoes` é o que a revisão mostra para eu decidir se a entidade vira nó:
+ * "conhecida (3 sessões)" contra "nova, citada 1x". `OPTIONAL MATCH` porque
+ * entidade pode existir sem átomo apontando para ela — foi criada numa revisão
+ * e os átomos dela foram todos rejeitados depois.
+ */
 export async function buscarConhecidas(chaves: string[]): Promise<LinhaEntidade[]> {
   if (chaves.length === 0) return [];
   return query<LinhaEntidade>(
     `MATCH (e:Entidade)
      WHERE e.nome_normalizado IN $chaves
+     OPTIONAL MATCH (e)<-[:SOBRE|:MENCIONA]-(:Atomo)<-[:GEROU]-(s:Sessao)
      RETURN e.id AS id, e.nome AS nome, e.nome_normalizado AS nome_normalizado,
-            labels(e) AS labels`,
+            labels(e) AS labels, count(DISTINCT s) AS sessoes`,
     { chaves },
   );
 }
@@ -148,8 +158,9 @@ export async function resolver(coletadas: Coletada[]): Promise<EntidadeCandidata
           conhecida: true,
           id: no.id,
           ocorrencias: c.ocorrencias,
+          sessoes: no.sessoes ?? 0,
         }
-      : { ...c, conhecida: false, id: null };
+      : { ...c, conhecida: false, id: null, sessoes: 0 };
   });
 }
 

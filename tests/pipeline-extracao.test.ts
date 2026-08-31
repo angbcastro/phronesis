@@ -130,6 +130,40 @@ describe("idempotência", () => {
   });
 });
 
+describe("re-extração forçada", () => {
+  it("ignora a proposta pronta e chama o modelo de novo", async () => {
+    // É o que permite calibrar o prompt sem gravar áudio novo.
+    r2.set(CHAVE_TRANSCRICAO, transcricao);
+    r2.set(CHAVE_EXTRACAO, proposta("extracao-2"));
+    vi.mocked(extrair).mockResolvedValue(proposta("extracao-3") as never);
+
+    const r = await extrairSessao("s1", { forcar: true });
+
+    expect(extrair).toHaveBeenCalledTimes(1);
+    expect(r.extracao).toMatchObject({ prompt_version: "extracao-3" });
+  });
+
+  it("sobrescreve: forçado não vai com If-None-Match", async () => {
+    // Quem forçou quer a proposta nova no lugar da antiga; não há corrida a perder.
+    r2.set(CHAVE_TRANSCRICAO, transcricao);
+    r2.set(CHAVE_EXTRACAO, proposta("extracao-2"));
+    vi.mocked(extrair).mockResolvedValue(proposta("extracao-3") as never);
+
+    await extrairSessao("s1", { forcar: true });
+
+    expect(vi.mocked(putJson).mock.calls[0][2]).toEqual({});
+  });
+
+  it("sem forcar, a trava continua valendo", async () => {
+    r2.set(CHAVE_TRANSCRICAO, transcricao);
+    r2.set(CHAVE_EXTRACAO, proposta("extracao-2"));
+
+    await extrairSessao("s1");
+
+    expect(extrair).not.toHaveBeenCalled();
+  });
+});
+
 describe("falha", () => {
   it("modelo que estoura leva a sessão para erro, com o motivo no log", async () => {
     r2.set(CHAVE_TRANSCRICAO, transcricao);

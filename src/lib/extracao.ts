@@ -26,7 +26,7 @@ import type { AtomoCru, AtomoProposto, Descarte, Extracao, TipoAtomo, Transcrica
  * Muda sempre que o prompt mudar. Vai gravado em todo átomo (regra 7): sem
  * isso, daqui a três meses não há como saber qual versão produziu o quê.
  */
-export const PROMPT_VERSION = "extracao-2";
+export const PROMPT_VERSION = "extracao-3";
 
 export class ExtracaoError extends Error {
   constructor(message: string) {
@@ -35,23 +35,52 @@ export class ExtracaoError extends Error {
   }
 }
 
-const INSTRUCOES = `Você recebe a transcrição de um diário falado, em português. Extraia as afirmações atômicas.
+const INSTRUCOES = `Você recebe a transcrição de um diário falado, em português, gravado no fim do dia. Sua tarefa é devolver uma versão ESTRUTURADA E ORGANIZADA do que foi dito — não um recorte da transcrição.
 
-Uma afirmação atômica é uma coisa só, dita por quem gravou, que continue fazendo sentido lida sozinha daqui a um ano.
+Pense assim: daqui a um ano, o que desta sessão eu vou querer reencontrar, ou ver que mudou de ideia, ou lembrar que tinha esquecido?
 
-Regras:
-- Use as palavras de quem falou. Não parafraseie, não resuma, não melhore a frase.
-- Uma afirmação por item. Frase com duas afirmações vira dois itens.
-- Descarte o que não afirma nada: hesitação, teste de microfone, pensamento interrompido, "então", "né".
-- "trecho" é obrigatório e tem que ser COPIADO LITERALMENTE da transcrição, sem corrigir nada. É o que liga a afirmação ao áudio. Não junte pedaços distantes num trecho só.
-- "sobre": exatamente uma entidade — pessoa, projeto ou objetivo. Quando a afirmação é sobre quem está falando, use "eu", que é uma entidade como qualquer outra.
-- "menciona": as outras entidades citadas na afirmação, ou [].
-- "tipo": FATO (aconteceu), OPINIAO (o que eu acho), SENTIMENTO (como eu me senti), APRENDIZADO (o que eu concluí), CONQUISTA (o que eu consegui).
+QUANTOS
+Uma sessão de 15 minutos deve render de 10 a 20 átomos. Prefira sempre o átomo maior e mais organizado a vários recortes pequenos. Se você está produzindo um átomo por frase, está errado.
 
-Devolva também "entidades": cada entidade citada uma vez só, com o tipo proposto — PESSOA, PROJETO ou OBJETIVO. "eu" é PESSOA.
+O QUE MERECE UM ÁTOMO
+- Carga: o que eu senti, o que me incomodou, o que me deu alívio ou orgulho.
+- Conclusão: o que eu aprendi, percebi ou entendi.
+- Consequência: o que muda alguma coisa daqui pra frente.
+- Decisão: o que eu decidi fazer ou parar de fazer.
+- Interação: o que aconteceu com uma pessoa, num projeto, num objetivo — inclusive detalhe sobre alguém que eu vou querer saber antes da próxima conversa.
 
-Responda somente com JSON, sem texto antes ou depois, neste formato:
-{"atomos":[{"texto":"...","tipo":"FATO","sobre":"...","menciona":[],"trecho":"..."}],
+A TRIVIALIDADE DO DIA VIRA UM ÁTOMO SÓ
+Tarefa doméstica, rotina de exercício, deslocamento, compra corriqueira, refeição — nada disso merece átomo próprio. Junte TUDO num único átomo de tipo ROTINA, no máximo um por sessão, listando as coisas numa frase. Se a rotina tiver carga ("foi muito bom"), essa parte vira um átomo separado de SENTIMENTO; a lista continua na ROTINA.
+
+JUNTE O QUE É O MESMO ASSUNTO
+Se eu falo de uma coisa no começo e volto a ela mais tarde, isso é UM átomo, não dois. Reúna o que foi dito nos dois momentos numa afirmação só, e devolva os dois trechos.
+
+OS CAMPOS
+"texto": a afirmação, limpa e organizada, COM AS MINHAS PALAVRAS. Tire muleta de fala ("aí", "tipo", "basicamente", "né", "assim"), resolva pronome solto ("ele" → o nome), monte uma frase que se sustente sozinha daqui a um ano. NÃO parafraseie para outro vocabulário, não interprete, não psicologize, não melhore o que eu penso. Se eu falei feio, fica feio; o que não pode é ficar ininteligível fora do contexto.
+
+"trechos": lista de 1 ou mais pedaços COPIADOS LITERALMENTE da transcrição, sem corrigir nada, que sustentam a afirmação. É o que liga o átomo ao áudio. Cada trecho tem que aparecer palavra por palavra na transcrição. Se o átomo junta dois momentos, devolva os dois trechos.
+
+"tipo": um de
+  FATO        aconteceu, e importa
+  OPINIAO     o que eu acho
+  SENTIMENTO  como eu me senti
+  APRENDIZADO o que eu concluí
+  CONQUISTA   o que eu consegui
+  DECISAO     o que eu decidi fazer ou parar de fazer
+  ROTINA      a trivialidade do dia, colapsada (no máximo um por sessão)
+
+"sobre": exatamente uma entidade, e ela depende do tipo:
+  SENTIMENTO, APRENDIZADO e ROTINA  → "eu"
+  FATO, OPINIAO, CONQUISTA, DECISAO → o assunto de que trata: a pessoa, o projeto ou o objetivo. Só use "eu" quando não houver mesmo nenhum outro assunto.
+
+"menciona": as outras entidades citadas, ou [].
+
+ENTIDADES
+Devolva também "entidades": cada entidade citada uma vez só, com o tipo proposto — PESSOA, PROJETO ou OBJETIVO. "eu" é PESSOA. Só liste o que for de fato uma pessoa, um projeto ou um objetivo; coisa que não é nenhum dos três não entra nessa lista e fica apenas dentro do texto do átomo.
+
+FORMATO
+Responda somente com JSON, sem texto antes ou depois:
+{"atomos":[{"texto":"...","tipo":"FATO","sobre":"...","menciona":[],"trechos":["...","..."]}],
  "entidades":[{"nome":"...","tipo":"PESSOA"}]}
 
 Transcrição:
@@ -91,6 +120,17 @@ export function normalizarTipo(valor: unknown): TipoAtomo | null {
 
 const texto = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
+/**
+ * Lista de strings não vazias. Aceita uma string solta como lista de um: o
+ * modelo às vezes devolve `"trechos": "..."` em vez do array, e recusar o átomo
+ * por causa disso seria perder conteúdo bom por erro de forma.
+ */
+function listaDeTexto(v: unknown): string[] {
+  if (typeof v === "string") return texto(v) === "" ? [] : [texto(v)];
+  if (!Array.isArray(v)) return [];
+  return v.map(texto).filter((x) => x !== "");
+}
+
 export interface RespostaExtrator {
   atomos: AtomoCru[];
   /** Só uma dica de tipo: quem decide o que vira nó é `entidades.ts`. */
@@ -127,20 +167,20 @@ export function parsearResposta(bruto: string): RespostaExtrator {
     const i = item as Record<string, unknown>;
     const tipo = normalizarTipo(i.tipo);
     const t = texto(i.texto);
-    const trecho = texto(i.trecho);
+    const trechos = listaDeTexto(i.trechos);
     const sobre = texto(i.sobre);
 
     if (t === "") descartados.push({ motivo: "texto vazio", bruto: item });
     else if (tipo === null) descartados.push({ motivo: `tipo desconhecido: ${String(i.tipo)}`, bruto: item });
-    else if (trecho === "") descartados.push({ motivo: "sem trecho — não haveria como ligar ao áudio", bruto: item });
+    else if (trechos.length === 0) descartados.push({ motivo: "sem trecho — não haveria como ligar ao áudio", bruto: item });
     else if (sobre === "") descartados.push({ motivo: "sem sujeito", bruto: item });
     else {
       atomos.push({
         texto: t,
         tipo,
         sobre,
-        menciona: Array.isArray(i.menciona) ? i.menciona.map(texto).filter((m) => m !== "") : [],
-        trecho,
+        menciona: listaDeTexto(i.menciona),
+        trechos,
       });
     }
   }
@@ -168,6 +208,11 @@ function propostasDeEntidade(cru: unknown): EntidadePropostaFrase[] {
  * Ata cada átomo ao áudio e carimba a procedência. O id é determinístico
  * (`<sessao_id>-<índice>`) — é o que fará o MERGE do confirmar ser idempotente
  * quando o confirmar existir (regra 4).
+ *
+ * Só o **primeiro** trecho de cada átomo empurra o cursor do localizador. Os
+ * demais podem estar em qualquer ponto da sessão — é o que significa juntar o
+ * mesmo assunto dito em dois momentos —, e deixá-los mover o cursor jogaria a
+ * busca do próximo átomo para o fim da transcrição.
  */
 export function ancorar(
   sessao_id: string,
@@ -177,9 +222,12 @@ export function ancorar(
 ): AtomoProposto[] {
   const localizar = criarLocalizador(transcricao.palavras);
 
-  return crus.map((atomo, indice) => ({
+  return crus.map(({ trechos, ...atomo }, indice) => ({
     ...atomo,
-    ...localizar(atomo.trecho),
+    trechos: trechos.map((texto, ordem) => ({
+      texto,
+      ...(ordem === 0 ? localizar(texto) : localizar.semAvancar(texto)),
+    })),
     id: `${sessao_id}-${indice}`,
     indice,
     prompt_version: PROMPT_VERSION,

@@ -40,7 +40,7 @@ Contrato resumido (referência rápida, não substitui a leitura):
 
 ```
 :Pessoa, :Projeto, :Objetivo   — todos carregam também :Entidade
-:Atomo                          — tipo ∈ FATO|OPINIAO|SENTIMENTO|APRENDIZADO|CONQUISTA
+:Atomo                          — tipo ∈ FATO|OPINIAO|SENTIMENTO|APRENDIZADO|CONQUISTA|DECISAO|ROTINA
 :Sessao, :Foco, :Pergunta
 
 (:Sessao)-[:GEROU]->(:Atomo)

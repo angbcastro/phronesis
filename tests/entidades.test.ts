@@ -19,7 +19,7 @@ const atomo = (sobre: string, menciona: string[] = []): AtomoCru => ({
   tipo: "FATO",
   sobre,
   menciona,
-  trecho: "t",
+  trechos: ["t"],
 });
 
 afterEach(() => {
@@ -117,17 +117,57 @@ describe("resolução contra o grafo", () => {
 
   it("entidade já no grafo volta conhecida, com o id do nó", async () => {
     consulta.mockResolvedValue([
-      { id: "e1", nome: "Rodozanco", nome_normalizado: "rodozanco", labels: ["Entidade", "Pessoa"] },
+      {
+        id: "e1",
+        nome: "Rodozanco",
+        nome_normalizado: "rodozanco",
+        labels: ["Entidade", "Pessoa"],
+        sessoes: 3,
+      },
     ]);
     const [e] = await resolver(coletar([atomo("rodozanco,")]));
     expect(e).toMatchObject({ conhecida: true, id: "e1", nome: "Rodozanco", tipo: "Pessoa" });
+  });
+
+  it("traz em quantas sessões a entidade já apareceu", async () => {
+    // É o que a revisão mostra para eu decidir se ela vira nó:
+    // "conhecida (3 sessões)" contra "nova, citada 1x".
+    consulta.mockResolvedValue([
+      {
+        id: "e1",
+        nome: "Rodozanco",
+        nome_normalizado: "rodozanco",
+        labels: ["Entidade", "Pessoa"],
+        sessoes: 3,
+      },
+    ]);
+    const [conhecida] = await resolver(coletar([atomo("Rodozanco")]));
+    expect(conhecida.sessoes).toBe(3);
+
+    consulta.mockResolvedValue([]);
+    const [nova] = await resolver(coletar([atomo("Alguém Novo")]));
+    expect(nova).toMatchObject({ conhecida: false, sessoes: 0, ocorrencias: 1 });
+  });
+
+  it("conta sessões distintas, não átomos", async () => {
+    const cypher = String(
+      (await resolver(coletar([atomo("Rodozanco")])), consulta.mock.calls[0][0]),
+    );
+    expect(cypher).toContain("count(DISTINCT s)");
+    expect(cypher).toContain("OPTIONAL MATCH");
   });
 
   it("o que está no grafo vence o que o extrator propôs", async () => {
     // Mudar o tipo de uma entidade existente é edição na revisão, não efeito
     // colateral de uma extração.
     consulta.mockResolvedValue([
-      { id: "e2", nome: "Exxmed", nome_normalizado: "exxmed", labels: ["Entidade", "Projeto"] },
+      {
+        id: "e2",
+        nome: "Exxmed",
+        nome_normalizado: "exxmed",
+        labels: ["Entidade", "Projeto"],
+        sessoes: 7,
+      },
     ]);
     const [e] = await resolver(coletar([atomo("Exxmed")], [{ nome: "Exxmed", tipo: "PESSOA" }]));
     expect(e.tipo).toBe("Projeto");

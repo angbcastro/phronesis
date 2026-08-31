@@ -284,8 +284,8 @@ do `finalizarSessao` — ninguém aperta nada entre parar de falar e ter a propo
 (aceite 1 da slice 2). O que ainda não existe é quem a leia: a tela de revisão e
 o confirmar.
 
-`extracao.ts` faz três coisas e mais nada: monta o prompt, valida a resposta item
-por item e carimba a procedência. Sai pelo Gateway como o STT, por
+`extracao.ts` monta o prompt, valida a resposta item por item e carimba a
+procedência. Sai pelo Gateway como o STT, por
 `modeloExtracao()`. Devolve uma `Extracao` — a proposta, que pertence ao R2 e não
 ao grafo (regra 5). Cada átomo leva `id` determinístico (`<sessao_id>-<índice>`,
 que é o que fará o `MERGE` do confirmar ser idempotente), `prompt_version` e
@@ -295,7 +295,28 @@ Item malformado não derruba a extração inteira: vai para `descartados` com o
 motivo. Lista de descarte crescendo é sinal de prompt piorando — e é o único
 sinal automático que existe, já que a qualidade é avaliada à mão na revisão.
 
-**Os offsets não saem do modelo.** `offsets.ts` casa o `trecho` que o modelo
+#### O que o prompt manda fazer (`extracao-3`)
+
+A primeira versão pedia "uma afirmação por item" e só descartava hesitação. Numa
+sessão real de 45 s isso rendeu 9 átomos — "acordei", "pedalei", "nadei", "fui
+sauna" —, o que extrapolado dá ~150 numa sessão de 15 min. Duas condições de
+morte de `Specs/visao.md` §8 de uma vez: revisão que passa de um minuto, e
+rotina repetida todo dia apodrecendo o grafo. O prompt **manda selecionar**, não
+picar:
+
+| Critério | Regra |
+|---|---|
+| Volume | 10 a 20 átomos numa sessão de 15 min; preferir o átomo maior ao recorte |
+| O que entra | carga, conclusão, consequência, decisão, interação |
+| Trivialidade | colapsa num único átomo `ROTINA` por sessão |
+| `texto` | frase limpa, com as palavras de quem falou — tira muleta, resolve pronome, não parafraseia nem interpreta |
+| `trechos` | literais, 1..n, copiados da transcrição |
+| Junção | o mesmo assunto dito em dois momentos é **um** átomo |
+| `sobre` | `SENTIMENTO`, `APRENDIZADO`, `ROTINA` → "eu"; `FATO`, `OPINIAO`, `CONQUISTA`, `DECISAO` → o assunto |
+
+`"eu"` é uma `:Pessoa` como qualquer outra — decisão tomada, não acidente.
+
+**Os offsets não saem do modelo.** `offsets.ts` casa cada `trecho` que o modelo
 devolveu contra as `palavras[]` da transcrição e registra como conseguiu:
 
 | Âncora | O que significa |
@@ -308,6 +329,14 @@ A comparação é por token normalizado (minúsculas, sem acento, sem pontuaçã
 com um cursor que avança a cada acerto. Sem o cursor, "eu acho que" casaria
 sempre com a primeira ocorrência e a sessão inteira apontaria para o mesmo
 segundo do áudio.
+
+**Um átomo tem 1..n âncoras** (migration 003), porque ele junta o mesmo assunto
+dito em momentos distintos e porque o átomo de `ROTINA` colapsa o dia. Com uma
+âncora só, ele afirmaria mais do que dá para escutar — e "todo item aponta para
+o segundo exato" é necessidade declarada na visão §4. Só o **primeiro** trecho de
+cada átomo empurra o cursor (`localizar.semAvancar` cuida dos demais): deixar o
+segundo trecho mover o cursor jogaria a busca do próximo átomo para o fim da
+transcrição.
 
 `ancora: "nenhuma"` é deliberado e **diverge do critério 3 da spec**, que pede
 offset em todo átomo. Trecho que não existe na transcrição é quase sempre
@@ -324,7 +353,14 @@ provedor deu — nem mais, nem menos.
 "Rodozanco" na segunda sessão tem que achar o nó da primeira. `entidades.ts`
 casa por `nome_normalizado` contra as `:Entidade` existentes, numa consulta só
 para a sessão inteira, e devolve candidatas — cada uma dizendo se já existe
-(`conhecida`, com o `id` do nó) ou se seria criada no confirmar.
+(`conhecida`, com o `id` do nó e em quantas `sessoes` apareceu) ou se seria
+criada no confirmar.
+
+**Só entidade recorrente deve virar nó, e quem filtra é quem revisa.** A
+proposta traz "conhecida (3 sessões)" contra "nova, citada 1x"; desmarcada na
+revisão, a entidade fica apenas dentro do texto do átomo. Não há regra
+automática de recorrência: ela exigiria guardar candidata fora do grafo, e o
+julgamento na revisão custa um toque.
 
 É **resolução, não deduplicação**: juntar "Exxmed" com "Exx Med" exige semântica
 e é slice 3. E é **só leitura** — quem cria nó é o confirmar, depois da revisão
@@ -422,6 +458,12 @@ Três travas independentes:
 | entrada no manifest por `i` | `manifest.registrarChunk` | reenviar o mesmo bloco não duplica nem reabre bloco transcrito |
 | status na cláusula `WHERE` | `sessoes.atualizarSessao` | transição já feita não volta atrás |
 
+**A única saída da trava é `extrairSessao(id, { forcar: true })`**, exposta por
+`POST /api/sessoes/:id/extrair` com `{"forcar": true}`. Ela existe para calibrar
+o prompt: sem ela, cada versão nova exigiria gravar áudio novo, porque a proposta
+existente bloqueia o reprocessamento. Forçado sobrescreve — inclusive proposta já
+revisada — e por isso vai sem `If-None-Match`. O caminho automático nunca força.
+
 `finalizar` numa sessão `em_revisao` ou `confirmada` devolve
 `{ ja_finalizada: true }` sem reprocessar (aceite 9). Numa sessão que já
 transcreveu mas ainda não extraiu, a segunda chamada **é** o retry da extração —
@@ -507,6 +549,21 @@ constraint e índice no Aura, e **nenhum nó**. Nada escreve neles ainda; quem v
 escrever é o confirmar da revisão (`Specs/slice-2.md`). O que já existe é a
 leitura: `entidades.ts` consulta `:Entidade` por `nome_normalizado`.
 
+Depois da migration 003 o contrato de `:Atomo` é:
+
+```
+(:Atomo { id, texto, tipo, inicios_s, fins_s, ancoras,
+          criado_em, valido_em, status, prompt_version, modelo })
+
+tipo ∈ FATO | OPINIAO | SENTIMENTO | APRENDIZADO | CONQUISTA | DECISAO | ROTINA
+```
+
+`inicios_s`/`fins_s`/`ancoras` são listas paralelas, uma entrada por âncora —
+Neo4j não guarda array de mapa como propriedade. A proposta no R2 guarda a forma
+rica (`trechos: [{texto, inicio_s, fim_s, ancora}]`); o achatamento acontece no
+confirmar. A 003 **não tem statement nenhum**: nada do que ela muda é declarável
+no Aura Free, então ela documenta o contrato e o código o garante.
+
 | Constraint | Alcance |
 |---|---|
 | `atomo_id` | id determinístico `<sessao_id>-<índice>` — é ele que faz o `MERGE` do confirmar ser idempotente |
@@ -560,6 +617,7 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT)` | corpo `{ext?, duracao_s?}`; `maxDuration = 300` |
 | `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha **e extrai** em `waitUntil` | `ja_finalizada` a partir de `em_revisao`; antes disso, é o retry da extração |
 | `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s, `force-dynamic`; `completa` é sobre a transcrição, não sobre a sessão |
+| `POST /api/sessoes/:id/extrair` | dispara a extração de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` reprocessa e sobrescreve |
 | `GET /api/sessoes/abertas` | sessões não finalizadas com pelo menos um bloco | alimenta o chip |
 | `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
@@ -657,6 +715,9 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **`zai/glm-5.3-flash` nunca foi chamado de verdade.** O id passa na validação
   de formato, mas se o Gateway não o conhecer a extração falha na primeira
   chamada real — o conserto é `EXTRACAO_MODEL`, sem tocar em código.
+- **O prompt `extracao-3` nunca rodou.** Os critérios vieram de uma calibração
+  contra uma sessão de 45 s; o alvo de 10 a 20 átomos por 15 min é uma aposta que
+  só a primeira sessão longa confirma ou derruba.
 - **Transcrição longa pode truncar a resposta da extração.** Não há corte em
   pedaços nem limite de saída declarado; JSON truncado vira `ExtracaoError` na
   primeira sessão em que acontecer.

@@ -116,6 +116,13 @@ export function melhorJanela(tokens: string[], alvo: string[]): Janela | null {
  * apontaria para o mesmo lugar do áudio.
  *
  * Cursor só anda quando acha. Trecho não encontrado não desalinha o resto.
+ *
+ * `localizar.semAvancar` existe por causa do átomo que junta momentos distintos
+ * da sessão: o segundo trecho dele pode estar lá na frente, e o átomo seguinte
+ * volta para trás. Quem chama avança o cursor no primeiro trecho de cada átomo
+ * e usa `semAvancar` nos demais — assim a ordem narrativa continua guiando a
+ * busca. `acharExato` dá a volta na transcrição, então trecho atrás do cursor
+ * continua sendo encontrado de qualquer forma.
  */
 export function criarLocalizador(palavras: Palavra[]) {
   const indexados = indexar(palavras);
@@ -133,7 +140,18 @@ export function criarLocalizador(palavras: Palavra[]) {
     };
   };
 
-  return function localizar(trecho: string): Trecho {
+  function localizar(trecho: string, avancar = true): Trecho {
+    const cursorAntes = cursor;
+    const achado = procurar(trecho);
+    if (!avancar) cursor = cursorAntes;
+    return achado;
+  }
+
+  localizar.semAvancar = (trecho: string): Trecho => localizar(trecho, false);
+
+  return localizar;
+
+  function procurar(trecho: string): Trecho {
     const alvo = tokenizar(trecho);
     if (alvo.length === 0 || tokens.length === 0) return SEM_ANCORA;
 
@@ -153,7 +171,7 @@ export function criarLocalizador(palavras: Palavra[]) {
     // A janela pode ter sido cortada pelo fim da transcrição — nunca passar dela.
     const fim = Math.min(escolhida.inicio + alvo.length - 1, tokens.length - 1);
     return segundos(escolhida.inicio, fim, "aproximada");
-  };
+  }
 }
 
 const arredondar = (n: number) => Math.round(n * 1000) / 1000;

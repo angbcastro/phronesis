@@ -86,7 +86,22 @@ export interface Transcricao {
 
 // ─────────────────────────── Slice 2: extração ───────────────────────────
 
-export const TIPOS_ATOMO = ["FATO", "OPINIAO", "SENTIMENTO", "APRENDIZADO", "CONQUISTA"] as const;
+/**
+ * DECISAO e ROTINA entraram na migration 003. DECISAO é o material do trabalho
+ * "confrontar": mudar de ideia sobre uma decisão é o que mais vale ser
+ * confrontado. ROTINA é o átomo único por sessão que colapsa a trivialidade do
+ * dia — tipo próprio para poder ser filtrado para fora de uma busca por
+ * aprendizado, e para dentro de "como eram meus dias em agosto".
+ */
+export const TIPOS_ATOMO = [
+  "FATO",
+  "OPINIAO",
+  "SENTIMENTO",
+  "APRENDIZADO",
+  "CONQUISTA",
+  "DECISAO",
+  "ROTINA",
+] as const;
 
 export type TipoAtomo = (typeof TIPOS_ATOMO)[number];
 
@@ -112,18 +127,35 @@ export interface AtomoCru {
   tipo: TipoAtomo;
   sobre: string;
   menciona: string[];
-  /** Pedaço literal da transcrição. É o que vira `inicio_s`/`fim_s` em código. */
-  trecho: string;
+  /**
+   * Pedaços literais da transcrição que sustentam o átomo — 1..n.
+   *
+   * São vários porque o átomo junta o mesmo assunto dito em momentos distintos,
+   * e porque o átomo de ROTINA colapsa a trivialidade do dia inteiro. Com um
+   * trecho só, ele afirmaria mais do que dá para escutar.
+   */
+  trechos: string[];
 }
 
-/** Átomo da proposta: já com offsets casados e procedência (regra 7). */
-export interface AtomoProposto extends AtomoCru {
-  /** `<sessao_id>-<índice>` — determinístico, é o que faz o MERGE ser idempotente. */
-  id: string;
-  indice: number;
+/** Um pedaço literal já casado com o áudio. */
+export interface TrechoAncorado {
+  texto: string;
   inicio_s: number | null;
   fim_s: number | null;
   ancora: Ancora;
+}
+
+/** Átomo da proposta: já com offsets casados e procedência (regra 7). */
+export interface AtomoProposto extends Omit<AtomoCru, "trechos"> {
+  /** `<sessao_id>-<índice>` — determinístico, é o que faz o MERGE ser idempotente. */
+  id: string;
+  indice: number;
+  /**
+   * A proposta guarda a forma rica; o achatamento em listas paralelas
+   * (`inicios_s`/`fins_s`/`ancoras`, migration 003) acontece só no confirmar,
+   * porque é o grafo que não sabe guardar array de mapa.
+   */
+  trechos: TrechoAncorado[];
   prompt_version: string;
   modelo: string;
 }
@@ -151,6 +183,12 @@ export interface EntidadeCandidata {
   id: string | null;
   /** Quantos átomos desta proposta apontam para ela, como sujeito ou menção. */
   ocorrencias: number;
+  /**
+   * Em quantas sessões passadas ela já apareceu. É o que a revisão mostra para
+   * eu decidir se vira nó: "conhecida (3 sessões)" contra "nova, citada 1x".
+   * Zero para entidade que ainda não existe no grafo.
+   */
+  sessoes: number;
 }
 
 /**

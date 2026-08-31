@@ -165,16 +165,21 @@ export async function finalizarSessao(sessao_id: string): Promise<{
  * revisado (regra 4). O `If-None-Match: *` fecha a corrida entre dois workers:
  * quem chega em segundo recebe conflito e passa a usar a proposta do primeiro.
  *
+ * `forcar` é a saída de emergência, e existe por um motivo só: calibrar o
+ * prompt. Sem ela, cada tentativa de prompt novo exigiria gravar áudio novo,
+ * porque a trava impede reprocessar a sessão que já tem proposta. O caminho
+ * automático nunca força.
+ *
  * Nada disso toca o grafo além do estado da própria `:Sessao` — átomo e
  * entidade só entram no confirmar, depois da revisão (regra 5).
  */
-export async function extrairSessao(sessao_id: string): Promise<{
-  status: "em_revisao" | "erro";
-  extracao?: Extracao;
-}> {
+export async function extrairSessao(
+  sessao_id: string,
+  { forcar = false }: { forcar?: boolean } = {},
+): Promise<{ status: "em_revisao" | "erro"; extracao?: Extracao }> {
   const key = chaveExtracao(sessao_id);
 
-  const pronta = await getJson<Extracao>(key);
+  const pronta = forcar ? null : await getJson<Extracao>(key);
   if (pronta) {
     await marcarEmRevisao(sessao_id);
     return { status: "em_revisao", extracao: pronta.valor };
@@ -191,7 +196,10 @@ export async function extrairSessao(sessao_id: string): Promise<{
 
   try {
     const extracao = await extrair(transcricao.valor);
-    await putJson(key, extracao, { ifNoneMatch: "*" });
+    // Forçado sobrescreve: é o modo de calibrar o prompt contra uma sessão já
+    // gravada. Sem `ifNoneMatch` não há corrida a perder — quem forçou quer
+    // exatamente a proposta nova no lugar da antiga.
+    await putJson(key, extracao, forcar ? {} : { ifNoneMatch: "*" });
     await marcarEmRevisao(sessao_id);
     return { status: "em_revisao", extracao };
   } catch (e) {
