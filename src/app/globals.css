@@ -227,7 +227,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   letter-spacing: 0.06em;
   color: var(--texto-fraco);
 }
-.atomo .corpo > p { margin: 0.2rem 0 0; line-height: 1.45; cursor: text; }
+.atomo .corpo > p { margin: 0.2rem 0 0; line-height: 1.45; }
 .atomo .meta { font-size: 0.82rem; color: var(--texto-fraco); }
 
 .trechos { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
@@ -261,10 +261,38 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .entidades { display: flex; flex-direction: column; gap: 0.35rem; }
 .entidades h2 { font-size: 0.95rem; font-weight: 600; margin: 0.5rem 0 0; }
 .entidades p { margin: 0 0 0.35rem; }
-.entidade { display: flex; align-items: center; gap: 0.6rem; font-size: 0.92rem; }
-.entidade input { accent-color: var(--acento); }
-.entidade.travada { opacity: 0.65; }
+.entidade {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.92rem;
+  flex-wrap: wrap;
+  padding: 0.3rem 0.4rem;
+  border-radius: 10px;
+}
+.entidade input[type="checkbox"] { accent-color: var(--acento); }
+.entidade.travada input[type="checkbox"] { opacity: 0.5; }
 .entidade .meta { font-size: 0.8rem; color: var(--texto-fraco); }
+
+.entidade input.nome,
+.entidade select {
+  font: inherit;
+  color: inherit;
+  background: var(--fundo-alto);
+  border: 1px solid var(--linha);
+  border-radius: 8px;
+  padding: 0.25rem 0.45rem;
+}
+.entidade input.nome { min-width: 9rem; }
+.entidade span.nome { padding: 0.25rem 0; }
+
+/* pronome sem nome: é o que trava o confirmar */
+.entidade.pedindo {
+  background: color-mix(in srgb, var(--acento) 12%, transparent);
+  outline: 1px solid var(--acento);
+}
+.entidade.pedindo input.nome { border-color: var(--acento); }
+.entidade.pedindo .meta { color: var(--acento); }
 
 .revisao footer {
   position: sticky;
@@ -297,3 +325,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 0.7rem 1.1rem;
   font-weight: 600;
 }
+
+.editar {
+  background: none;
+  border: 1px solid var(--linha);
+  border-radius: 999px;
+  padding: 0.15rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--texto-fraco);
+  margin-left: auto;
+}
+.editar:hover { color: var(--texto); border-color: var(--texto-fraco); }
+.editor .aguardando { font-size: 0.8rem; margin: 0; }

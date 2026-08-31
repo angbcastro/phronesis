@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   TIPO_PADRAO,
   coletar,
+  ehPronome,
   normalizarNome,
   normalizarTipoEntidade,
   resolver,
@@ -174,7 +175,7 @@ describe("resolução contra o grafo", () => {
   });
 
   it("entidade nova volta sem id — quem cria é o confirmar", async () => {
-    const [e] = await resolver(coletar([atomo("Alguém Novo")]));
+    const [e] = await resolver(coletar([atomo("Marina")]));
     expect(e).toMatchObject({ conhecida: false, id: null, tipo: TIPO_PADRAO });
   });
 
@@ -188,5 +189,47 @@ describe("resolução contra o grafo", () => {
     const cypher = String(consulta.mock.calls[0][0]);
     expect(cypher).toContain("MATCH");
     expect(cypher).not.toMatch(/CREATE|MERGE|SET|DELETE/);
+  });
+});
+
+describe("pronome não vira nó", () => {
+  it("reconhece o que o extrator devolve quando não sabe quem é", () => {
+    for (const p of ["ela", "Ele", "eles", "a gente", "esse cara", "ALGUÉM", "essa pessoa"]) {
+      expect(ehPronome(p), p).toBe(true);
+    }
+  });
+
+  it('"eu" não é pronome aqui — é entidade legítima, decisão tomada', () => {
+    expect(ehPronome("eu")).toBe(false);
+  });
+
+  it("nome de verdade passa", () => {
+    for (const n of ["Marina", "Rodozanco", "Pedro", "Exxmed"]) {
+      expect(ehPronome(n), n).toBe(false);
+    }
+  });
+
+  it("candidata nova com nome de pronome pede nome na revisão", async () => {
+    const [e] = await resolver(coletar([atomo("ela")]));
+    expect(e).toMatchObject({ conhecida: false, precisa_nome: true });
+  });
+
+  it("candidata com nome de verdade não pede nada", async () => {
+    const [e] = await resolver(coletar([atomo("Marina")]));
+    expect(e.precisa_nome).toBe(false);
+  });
+
+  it("entidade já no grafo nunca pede nome — ela já passou por uma revisão", async () => {
+    consulta.mockResolvedValue([
+      {
+        id: "e9",
+        nome: "Ela Fitzgerald",
+        nome_normalizado: "ela",
+        labels: ["Entidade", "Pessoa"],
+        sessoes: 2,
+      },
+    ]);
+    const [e] = await resolver(coletar([atomo("ela")]));
+    expect(e).toMatchObject({ conhecida: true, precisa_nome: false });
   });
 });

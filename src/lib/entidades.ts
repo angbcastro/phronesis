@@ -18,18 +18,17 @@
  * garante é o banco (migration 002).
  */
 import { query } from "./neo4j";
-import { tokenizar } from "./texto";
+import { ehPronome, normalizarNome } from "./texto";
 import { TIPOS_ENTIDADE } from "./tipos";
 import type { AtomoCru, EntidadeCandidata, TipoEntidade } from "./tipos";
 
 /** Tipo de quem o extrator não classificou. Num diário falado, quase sempre acerta. */
 export const TIPO_PADRAO: TipoEntidade = "Pessoa";
 
-/**
- * A chave única do grafo. Mesma normalização que o casamento de offsets usa —
- * ver `texto.ts` para o porquê de morar num lugar só.
- */
-export const normalizarNome = (nome: string): string => tokenizar(nome).join(" ");
+
+// A normalização e a lista de pronomes moram em `texto.ts`: a revisão, no
+// navegador, precisa das duas para montar o payload com as mesmas chaves.
+export { ehPronome, normalizarNome };
 
 /** "PESSOA", "pessoa", "Pessoa" — tudo a mesma coisa. Fora da lista, `null`. */
 export function normalizarTipoEntidade(valor: unknown): TipoEntidade | null {
@@ -159,8 +158,17 @@ export async function resolver(coletadas: Coletada[]): Promise<EntidadeCandidata
           id: no.id,
           ocorrencias: c.ocorrencias,
           sessoes: no.sessoes ?? 0,
+          // Entidade que já está no grafo passou por uma revisão minha: se o
+          // nome dela é o que é, foi porque eu deixei.
+          precisa_nome: false,
         }
-      : { ...c, conhecida: false, id: null, sessoes: 0 };
+      : {
+          ...c,
+          conhecida: false,
+          id: null,
+          sessoes: 0,
+          precisa_nome: ehPronome(c.nome_normalizado),
+        };
   });
 }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { gravarAtomos, gravarEntidades } from "@/lib/atomos";
 import { chaveExtracao } from "@/lib/chaves";
-import { normalizarNome, normalizarTipoEntidade } from "@/lib/entidades";
+import { ehPronome, normalizarNome, normalizarTipoEntidade } from "@/lib/entidades";
 import { normalizarTipo } from "@/lib/extracao";
 import { getJson } from "@/lib/r2";
 import { atualizarSessao, buscarSessao } from "@/lib/sessoes";
@@ -20,10 +20,18 @@ interface AtomoAprovado {
   menciona: string[];
 }
 
+/**
+ * A entidade chega com o nome **final** — a revisão pode ter renomeado "ela"
+ * para "Marina", e é esse nome que vira nó.
+ */
+interface EntidadeAprovada {
+  nome: string;
+  tipo?: string;
+}
+
 interface Corpo {
   aprovados: AtomoAprovado[];
-  /** `nome_normalizado` das entidades que devem virar nó. */
-  entidades: string[];
+  entidades: EntidadeAprovada[];
 }
 
 /**
@@ -39,6 +47,11 @@ interface Corpo {
  * Átomo não aprovado simplesmente não é gravado. Entidade não aprovada não vira
  * nó, e as menções a ela caem fora; se ela for o sujeito de um átomo aprovado, a
  * requisição é recusada — átomo sem `:SOBRE` quebraria o contrato do schema.
+ *
+ * A lista de entidades vem da tela, não da proposta: é o que permite renomear
+ * "ela" para um nome de verdade e ainda assim o sujeito dos átomos bater. Nome
+ * que continue sendo pronome é recusado aqui também — a regra não pode depender
+ * da UI ter sido usada.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const p = parametros(await ctx.params);
@@ -64,10 +77,24 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const porIndice = new Map(proposta.valor.atomos.map((a) => [a.indice, a]));
-  const tipoDaEntidade = new Map(
-    proposta.valor.entidades.map((e) => [e.nome_normalizado, e]),
-  );
-  const aprovadas = new Set(corpo.entidades.map(normalizarNome).filter((n) => n !== ""));
+
+  // Nome final → o que vai virar nó. `nome_normalizado` é a chave em tudo.
+  const aprovadas = new Map<string, EntidadeParaGravar>();
+  for (const e of corpo.entidades) {
+    const nome = String(e?.nome ?? "").trim();
+    const chave = normalizarNome(nome);
+    if (chave === "") continue;
+    if (ehPronome(chave)) {
+      return erro(`"${nome}" é um pronome, não um nome — diga quem é antes de confirmar`, 400);
+    }
+    if (!aprovadas.has(chave)) {
+      aprovadas.set(chave, {
+        nome,
+        nome_normalizado: chave,
+        tipo: normalizarTipoEntidade(e?.tipo) ?? "Pessoa",
+      });
+    }
+  }
 
   const atomos: AtomoParaGravar[] = [];
 
@@ -115,13 +142,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // Só entidade de fato usada por um átomo aprovado. Aprovar na tela e depois
   // rejeitar todos os átomos dela não pode deixar nó órfão no grafo.
   const usadas = new Set(atomos.flatMap((a) => [a.sobre, ...a.menciona]));
-  const entidades: EntidadeParaGravar[] = [...usadas].map((chave) => {
-    const candidata = tipoDaEntidade.get(chave);
-    return {
-      nome: candidata?.nome ?? chave,
-      nome_normalizado: chave,
-      tipo: normalizarTipoEntidade(candidata?.tipo) ?? "Pessoa",
-    };
+  const entidades = [...usadas].flatMap((chave) => {
+    const e = aprovadas.get(chave);
+    return e ? [e] : [];
   });
 
   await gravarEntidades(entidades);

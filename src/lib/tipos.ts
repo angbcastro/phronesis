@@ -189,6 +189,12 @@ export interface EntidadeCandidata {
    * Zero para entidade que ainda não existe no grafo.
    */
   sessoes: number;
+  /**
+   * O extrator devolveu um pronome em vez de um nome ("ela", "esse cara"). A
+   * revisão pergunta quem é e trava o confirmar até eu responder — nó chamado
+   * "ela" é grafo apodrecido garantido.
+   */
+  precisa_nome: boolean;
 }
 
 /**

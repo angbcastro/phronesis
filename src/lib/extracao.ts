@@ -26,7 +26,7 @@ import type { AtomoCru, AtomoProposto, Descarte, Extracao, TipoAtomo, Transcrica
  * Muda sempre que o prompt mudar. Vai gravado em todo átomo (regra 7): sem
  * isso, daqui a três meses não há como saber qual versão produziu o quê.
  */
-export const PROMPT_VERSION = "extracao-3";
+export const PROMPT_VERSION = "extracao-4";
 
 export class ExtracaoError extends Error {
   constructor(message: string) {
@@ -69,14 +69,19 @@ OS CAMPOS
   DECISAO     o que eu decidi fazer ou parar de fazer
   ROTINA      a trivialidade do dia, colapsada (no máximo um por sessão)
 
-"sobre": exatamente uma entidade, e ela depende do tipo:
-  SENTIMENTO, APRENDIZADO e ROTINA  → "eu"
+"sobre": exatamente uma entidade, e ela depende do tipo. Esta regra não tem exceção:
+  SENTIMENTO, APRENDIZADO e ROTINA  → SEMPRE "eu". Sentimento é meu por definição, mesmo quando foi outra pessoa que o provocou; quem provocou vai em "menciona". Aprendizado é meu mesmo quando é sobre outra pessoa.
   FATO, OPINIAO, CONQUISTA, DECISAO → o assunto de que trata: a pessoa, o projeto ou o objetivo. Só use "eu" quando não houver mesmo nenhum outro assunto.
 
-"menciona": as outras entidades citadas, ou [].
+"menciona": as OUTRAS entidades citadas, ou []. Nunca repita aqui o que já está em "sobre", e não liste "eu" num átomo que já é sobre "eu".
 
 ENTIDADES
 Devolva também "entidades": cada entidade citada uma vez só, com o tipo proposto — PESSOA, PROJETO ou OBJETIVO. "eu" é PESSOA. Só liste o que for de fato uma pessoa, um projeto ou um objetivo; coisa que não é nenhum dos três não entra nessa lista e fica apenas dentro do texto do átomo.
+
+NOME DE ENTIDADE É NOME
+Procure o nome na transcrição INTEIRA antes de desistir: se em algum momento eu digo "a Marina" e depois passo a falar "ela", a entidade é "Marina" em todos os átomos, inclusive nos que só dizem "ela". O mesmo vale para "meu chefe", "esse cara", "a gente".
+
+Só quando a pessoa NUNCA é nomeada na sessão inteira, devolva o pronome como está ("ela"). Não invente nome, não escreva "ela (namorada)", não use apelido que eu não usei. Quem vai perguntar quem é sou eu, na revisão.
 
 FORMATO
 Responda somente com JSON, sem texto antes ou depois:

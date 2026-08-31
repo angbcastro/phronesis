@@ -64,7 +64,7 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   stt.ts          transcrição — pede o modelo a modelos.ts
   vocabulario.ts  nomes próprios → keyterms do STT
   transcricao.ts  offsets absolutos, prefixo contíguo, concatenação
-  texto.ts        normalização em um lugar só: offsets e nome_normalizado (client)
+  texto.ts        normalização, nome_normalizado e lista de pronomes       (client)
   extracao.ts     átomos a partir da transcrição: prompt, JSON estrito, procedência
   offsets.ts      trecho do modelo → segundo do áudio (modelo não dá timestamp)
   entidades.ts    resolve entidade citada contra o grafo — só leitura
@@ -368,6 +368,29 @@ revisão, a entidade fica apenas dentro do texto do átomo. Não há regra
 automática de recorrência: ela exigiria guardar candidata fora do grafo, e o
 julgamento na revisão custa um toque.
 
+#### Pronome não vira nó
+
+Uma sessão inteira sobre alguém que eu nunca nomeio em voz alta não tem contexto
+para o modelo resolver — foi o que aconteceu na primeira sessão longa, que
+rendeu uma `:Pessoa` chamada **"ela"** com 10 ocorrências. O sistema precisa
+saber **pedir**.
+
+A detecção é uma lista fechada em `texto.ts` (`ehPronome`): "ela", "ele", "a
+gente", "esse cara", "alguém"… **`eu` fica de fora de propósito** — é entidade
+legítima por decisão. Candidata nova cujo nome cai na lista recebe
+`precisa_nome`, e a revisão trava o confirmar até eu dar um nome. Entidade que
+já está no grafo nunca pede: ela passou por uma revisão minha, e se o nome dela
+é o que é, foi porque eu deixei.
+
+A lista mora em `texto.ts` e não em `entidades.ts` porque os dois lados precisam
+dela com a mesma regra: a revisão, no navegador, para saber quando ainda falta
+nomear; o confirmar, no servidor, para recusar o que passar mesmo assim. Duas
+listas divergiriam e a trava valeria só na tela.
+
+O prompt também tenta: manda procurar o nome na transcrição inteira antes de
+desistir, e proíbe inventar nome ou apelido. Mas o prompt é tentativa, não
+garantia — a trava é o código.
+
 É **resolução, não deduplicação**: juntar "Exxmed" com "Exx Med" exige semântica
 e é slice 3. E é **só leitura** — quem cria nó é o confirmar, depois da revisão
 (regra 5). A trava contra duplicata em corrida não é este código: é a constraint
@@ -405,10 +428,20 @@ inventada. `localizarNoAudio` traduz o segundo absoluto em "bloco N, segundo M"
 pegando o último bloco que começa antes dele — funciona igual para gravação (um
 bloco a cada 30 s) e para importação (um bloco só), sem caso especial.
 
-As entidades aparecem com "conhecida (N sessões)" ou "nova, citada Nx", e
-desmarcar deixa a entidade só no texto do átomo. **Entidade que é sujeito de um
-átomo aprovado fica travada**: sem ela o átomo ficaria sem `:SOBRE`, o que o
-contrato do schema não admite.
+**O painel de entidades é o lugar onde se corrige.** Entidade nova tem nome e
+tipo editáveis; renomear "ela" para "Marina" uma vez faz todos os átomos que
+apontam para ela passarem a apontar para o nome novo — a tradução acontece na
+hora de montar o payload, nenhum átomo é reescrito. Entidade **conhecida** não é
+editável: o grafo vence, como já vale na resolução (4.6).
+
+Entidade com `precisa_nome` vai para o topo, destacada, e **o confirmar fica
+desabilitado** enquanto sobrar pronome. Desmarcar deixa a entidade só no texto do
+átomo. **Entidade que é sujeito de um átomo aprovado fica travada**: sem ela o
+átomo ficaria sem `:SOBRE`, o que o contrato do schema não admite.
+
+O editor de um átomo abre por um botão **editar**. Antes ele abria clicando no
+texto, sem pista nenhuma — e o CSS ainda dava `cursor: text` ali, sinalizando o
+contrário. Menção igual ao sujeito não é exibida nem enviada.
 
 #### O que o cliente pode mandar, e o que não pode
 
@@ -420,6 +453,14 @@ afirmação dele, e átomo com procedência falsa é pior que átomo nenhum.
 
 Entidade só é gravada se algum átomo aprovado de fato a usa: aprovar na tela e
 depois rejeitar todos os átomos dela não pode deixar nó órfão.
+
+**A lista de entidades vem da tela, não da proposta.** Era o contrário, e por
+isso renomear o sujeito de um átomo devolvia 400: o servidor exigia que ele
+estivesse entre as entidades da extração, e a lista não tinha como crescer. Agora
+o corpo manda `entidades: [{ nome, tipo }]` com os nomes finais, e o cliente
+acrescenta qualquer sujeito que eu tenha escrito à mão. Duas guardas no servidor,
+porque a regra não pode depender da UI: nome que caia na lista de pronomes é
+recusado com 400, e `tipo` é validado contra `TIPOS_ENTIDADE`.
 
 ## 5. Estados da sessão
 
@@ -765,6 +806,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Editar não muda a procedência.** Reescrever o texto de um átomo mantém os
   offsets do trecho original — é o certo, mas quer dizer que um texto muito
   editado aponta para um áudio que já não o sustenta palavra por palavra.
+- **A lista de pronomes é fechada e em português.** Ela pega o que apareceu até
+  agora; um placeholder que eu use e não esteja lá passa direto e vira nó. O
+  conserto é acrescentar à lista em `texto.ts`.
+- **Renomear entidade só vale para entidade nova.** Trocar o nome de uma que já
+  está no grafo criaria um segundo nó em vez de renomear o primeiro, então a
+  revisão nem oferece. Renomear de verdade é trabalho de slice 3.
 - **Não há como desfazer um confirmar.** `confirmada` não tem transição de saída
   e nada apaga átomo (regra 6). Corrigir depois de confirmar depende de edição
   no grafo, que não existe nesta slice.
