@@ -301,6 +301,31 @@ Item malformado não derruba a extração inteira: vai para `descartados` com o
 motivo. Lista de descarte crescendo é sinal de prompt piorando — e é o único
 sinal automático que existe, já que a qualidade é avaliada à mão na revisão.
 
+#### O modelo raciocina, e o raciocínio come a saída
+
+`zai/glm-5.3-flash` é modelo de raciocínio. Numa sessão de 4 mil caracteres ele
+gastou **1720 tokens raciocinando para 122 de texto** — e quando o raciocínio
+consome o orçamento inteiro a resposta chega sem JSON nenhum. Foi assim que a
+sessão `mtgo3kaf5` falhou, de forma intermitente: a mesma transcrição às vezes
+passava.
+
+Três defesas, nenhuma dependente do provedor:
+
+| | |
+|---|---|
+| `maxOutputTokens: 8000` | folga para o raciocínio caber sem espremer o JSON |
+| uma segunda tentativa | resposta sem JSON é refeita uma vez, com `[extracao]` no log; a segunda falha sobe |
+| a resposta crua no erro | os primeiros 400 caracteres vão na mensagem, e "resposta vazia" é dito com essas palavras |
+
+A terceira é a que mais importa e foi a que faltou: sem ela, "não é JSON válido"
+é indiagnosticável depois do fato — a mesma lição que o STT já tinha ensinado
+uma vez (5.1).
+
+O prompt também ganhou uma proibição explícita de **comentar a transcrição**. O
+modelo devolveu um átomo dizendo que o texto era confuso e circular; falar
+desorganizado é o esperado num diário falado, e lista vazia é a resposta certa
+quando não há o que extrair.
+
 #### O que o prompt manda fazer (`extracao-3`)
 
 A primeira versão pedia "uma afirmação por item" e só descartava hesitação. Numa
@@ -806,6 +831,10 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Editar não muda a procedência.** Reescrever o texto de um átomo mantém os
   offsets do trecho original — é o certo, mas quer dizer que um texto muito
   editado aponta para um áudio que já não o sustenta palavra por palavra.
+- **Nome descritivo não é pronome.** "meu pai", "minha mãe" e "meu chefe" passam
+  pela lista e viram nó com esse nome. É defensável — o referente é estável —
+  mas quer dizer que o grafo pode ter "meu pai" e o nome dele como entidades
+  diferentes.
 - **A lista de pronomes é fechada e em português.** Ela pega o que apareceu até
   agora; um placeholder que eu use e não esteja lá passa direto e vira nó. O
   conserto é acrescentar à lista em `texto.ts`.

@@ -236,3 +236,30 @@ describe("ancoragem", () => {
     expect(segundo.trechos[0].inicio_s).toBe(3); // "um" é a 4a palavra (índice 3)
   });
 });
+
+describe("resposta ilegível deixa rastro", () => {
+  it("o erro carrega o que o modelo devolveu, não só que falhou", () => {
+    // Sem isto, "não é JSON" é indiagnosticável depois do fato — foi o que
+    // aconteceu na sessão mtgo3kaf5, em que o raciocínio do modelo comeu o
+    // orçamento de saída e sobrou texto nenhum.
+    expect(() => parsearResposta("desculpe, não consegui extrair nada")).toThrow(
+      /desculpe, não consegui/,
+    );
+  });
+
+  it("resposta vazia é dita como vazia, não como texto em branco", () => {
+    expect(() => parsearResposta("   ")).toThrow(/resposta vazia/);
+  });
+
+  it("o erro diz quantos caracteres vieram", () => {
+    expect(() => parsearResposta("abc")).toThrow(/3 caractere/);
+  });
+});
+
+describe("prompt não deixa o modelo comentar o material", () => {
+  it("proíbe átomo sobre a transcrição e oferece a lista vazia como saída", () => {
+    const p = montarPrompt("x");
+    expect(p).toMatch(/NÃO COMENTE A TRANSCRIÇÃO/);
+    expect(p).toContain('{"atomos":[],"entidades":[]}');
+  });
+});

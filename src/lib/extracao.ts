@@ -26,7 +26,7 @@ import type { AtomoCru, AtomoProposto, Descarte, Extracao, TipoAtomo, Transcrica
  * Muda sempre que o prompt mudar. Vai gravado em todo átomo (regra 7): sem
  * isso, daqui a três meses não há como saber qual versão produziu o quê.
  */
-export const PROMPT_VERSION = "extracao-4";
+export const PROMPT_VERSION = "extracao-5";
 
 export class ExtracaoError extends Error {
   constructor(message: string) {
@@ -34,6 +34,17 @@ export class ExtracaoError extends Error {
     this.name = "ExtracaoError";
   }
 }
+
+/**
+ * Teto de saída generoso porque `zai/glm-5.3-flash` é modelo de raciocínio: numa
+ * sessão de 4 mil caracteres ele gastou 1720 tokens raciocinando para 122 de
+ * texto. Sem folga, o raciocínio come o orçamento e a resposta chega sem JSON
+ * nenhum — foi assim que a sessão `mtgo3kaf5` falhou.
+ */
+const MAX_TOKENS_SAIDA = 8000;
+
+/** Quanto da resposta crua entra na mensagem de erro. */
+const AMOSTRA_ERRO = 400;
 
 const INSTRUCOES = `Você recebe a transcrição de um diário falado, em português, gravado no fim do dia. Sua tarefa é devolver uma versão ESTRUTURADA E ORGANIZADA do que foi dito — não um recorte da transcrição.
 
@@ -82,6 +93,11 @@ NOME DE ENTIDADE É NOME
 Procure o nome na transcrição INTEIRA antes de desistir: se em algum momento eu digo "a Marina" e depois passo a falar "ela", a entidade é "Marina" em todos os átomos, inclusive nos que só dizem "ela". O mesmo vale para "meu chefe", "esse cara", "a gente".
 
 Só quando a pessoa NUNCA é nomeada na sessão inteira, devolva o pronome como está ("ela"). Não invente nome, não escreva "ela (namorada)", não use apelido que eu não usei. Quem vai perguntar quem é sou eu, na revisão.
+
+NÃO COMENTE A TRANSCRIÇÃO
+Você extrai o que eu disse; não avalia como eu disse. Nunca devolva um átomo sobre a transcrição em si ("o texto é confuso", "não há conclusões claras", "o relato é circular"). Falar desorganizado, repetir e voltar atrás é o esperado num diário falado — é o meu jeito de pensar, não um defeito a ser relatado.
+
+Se não houver nada que mereça um átomo, devolva {"atomos":[],"entidades":[]}. Lista vazia é uma resposta legítima; comentário sobre o material não é.
 
 FORMATO
 Responda somente com JSON, sem texto antes ou depois:
@@ -153,8 +169,12 @@ export function parsearResposta(bruto: string): RespostaExtrator {
   try {
     cru = JSON.parse(isolarJson(bruto));
   } catch (e) {
+    // A resposta crua vai junto: sem ela, "não é JSON" é indiagnosticável
+    // depois do fato — a mesma lição que o STT já ensinou uma vez.
+    const amostra = bruto.trim().slice(0, AMOSTRA_ERRO);
     throw new ExtracaoError(
-      `resposta não é JSON válido: ${e instanceof Error ? e.message : String(e)}`,
+      `resposta não é JSON válido: ${e instanceof Error ? e.message : String(e)}. ` +
+        `Vieram ${bruto.length} caractere(s): ${amostra === "" ? "(resposta vazia)" : JSON.stringify(amostra)}`,
     );
   }
 
@@ -249,20 +269,40 @@ export async function extrair(transcricao: Transcricao): Promise<Extracao> {
     throw new ExtracaoError("transcrição vazia — não há o que extrair");
   }
 
-  let resposta;
-  try {
-    // `model` é string de propósito: id em string sai pelo Gateway. Objeto de
-    // provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
-    resposta = await generateText({
-      model: modelo,
-      prompt: montarPrompt(transcricao.texto),
-      temperature: 0,
-    });
-  } catch (e) {
-    throw new ExtracaoError(e instanceof Error ? e.message : String(e));
+  const prompt = montarPrompt(transcricao.texto);
+
+  async function chamar() {
+    try {
+      // `model` é string de propósito: id em string sai pelo Gateway. Objeto de
+      // provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
+      return await generateText({
+        model: modelo,
+        prompt,
+        temperature: 0,
+        maxOutputTokens: MAX_TOKENS_SAIDA,
+      });
+    } catch (e) {
+      throw new ExtracaoError(e instanceof Error ? e.message : String(e));
+    }
   }
 
-  const { atomos, entidades, descartados } = parsearResposta(resposta.text ?? "");
+  let resposta = await chamar();
+  let lido;
+  try {
+    lido = parsearResposta(resposta.text ?? "");
+  } catch (primeira) {
+    // Modelo de raciocínio às vezes gasta a saída inteira pensando e devolve
+    // nada de texto. É intermitente, então uma segunda tentativa resolve o caso
+    // comum; a segunda falha sobe com a resposta crua junto.
+    console.error(
+      `[extracao] sessão ${transcricao.sessao_id}: primeira tentativa sem JSON, repetindo.`,
+      primeira instanceof Error ? primeira.message : primeira,
+    );
+    resposta = await chamar();
+    lido = parsearResposta(resposta.text ?? "");
+  }
+
+  const { atomos, entidades, descartados } = lido;
   const modeloReal = resposta.response?.modelId ?? modelo;
 
   return {
