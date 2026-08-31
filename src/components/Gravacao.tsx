@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Gravador, suportado } from "@/client/gravador";
 import { acordar, enfileirar, observarFila, type EstadoFila } from "@/client/fila";
 import { guardarSessaoAtual, limparSessaoAtual } from "@/client/deposito";
@@ -124,6 +125,10 @@ export function Gravacao() {
       <Importacao />
       <ChipRecuperacao aoRetomar={comecar} />
       {problema && <p className="aviso">{problema}</p>}
+      {/* Porta de serviço: some da tela de gravar, que é onde eu passo o tempo. */}
+      <Link className="link-sessoes" href="/sessoes">
+        áudios
+      </Link>
     </main>
   );
 }

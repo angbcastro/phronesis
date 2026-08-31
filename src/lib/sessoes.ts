@@ -75,6 +75,24 @@ export async function atualizarSessao(
   return r?.sessao ?? null;
 }
 
+/**
+ * Todas as sessões, da mais recente para a mais antiga.
+ *
+ * Alimenta a lista de áudios, que é de onde se força uma re-extração. Limite
+ * baixo de propósito: é uma lista para achar uma sessão, não um histórico
+ * navegável — histórico é trabalho da busca, slice 3.
+ */
+export async function todasSessoes(limite = 50): Promise<Sessao[]> {
+  const r = await query<{ sessao: Sessao }>(
+    `MATCH (s:Sessao)
+     RETURN s { .* } AS sessao
+     ORDER BY s.iniciada_em DESC
+     LIMIT $limite`,
+    { limite },
+  );
+  return r.map((l) => l.sessao);
+}
+
 /** Sessões não finalizadas, para o chip de recuperação da home. */
 export async function sessoesAbertas(): Promise<Sessao[]> {
   // A lista vem de `estados.ts`: escrita à mão aqui, divergiria da predicada
