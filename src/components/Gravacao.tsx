@@ -3,9 +3,14 @@
 /**
  * A tela de gravar: um botão, um timer, um jeito de parar.
  *
- * Durante a fala não aparece nada além do timer e de um ponto discreto de
- * "salvo". Sem waveform, sem contador de blocos, sem barra de progresso —
- * a mecânica de upload é invisível.
+ * O botão é o mesmo nó do DOM nos dois estados — ver `BotaoGravar`. Parado e
+ * gravando não são duas telas, são a mesma tela com o círculo no centro; é o
+ * que dá continuidade à transição em vez de um corte.
+ *
+ * O que muda em volta dele: parado, as portas de serviço e o chip de retomada;
+ * gravando, o timer, o ponto de "salvo" e o "parar". A mecânica de upload
+ * continua invisível — sem contador de blocos, sem barra de progresso. A onda
+ * lateral do botão mostra o microfone, não a fila.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -13,6 +18,7 @@ import Link from "next/link";
 import { Gravador, suportado } from "@/client/gravador";
 import { acordar, enfileirar, observarFila, type EstadoFila } from "@/client/fila";
 import { guardarSessaoAtual, limparSessaoAtual } from "@/client/deposito";
+import { BotaoGravar } from "./BotaoGravar";
 import { ChipRecuperacao } from "./ChipRecuperacao";
 import { Importacao } from "./Importacao";
 
@@ -32,6 +38,9 @@ export function Gravacao() {
   const [segundos, setSegundos] = useState(0);
   const [fila, setFila] = useState<EstadoFila>({ pendentes: 0, ultimo_salvo_em: null, offline: false });
   const [problema, setProblema] = useState<string | null>(null);
+  // O stream vira estado, não só ref: a onda do botão precisa re-renderizar
+  // quando o microfone abre, e um ref não avisa ninguém.
+  const [faixa, setFaixa] = useState<MediaStream | null>(null);
 
   useEffect(() => observarFila(setFila), []);
   useEffect(() => acordar(), []);
@@ -70,6 +79,7 @@ export function Gravacao() {
 
         await g.iniciar();
         gravador.current = g;
+        setFaixa(g.faixa);
         setSegundos(retomar?.duracao_s ?? 0);
         setFase("gravando");
       } catch (e) {
@@ -91,6 +101,7 @@ export function Gravacao() {
 
     await g?.parar();
     gravador.current = null;
+    setFaixa(null);
     await limparSessaoAtual();
     acordar();
 
@@ -102,39 +113,50 @@ export function Gravacao() {
     }
   }, [fase, router, segundos]);
 
-  if (fase === "gravando" || fase === "encerrando") {
-    const salvo = fila.pendentes === 0 && fila.ultimo_salvo_em !== null;
-    return (
-      <main className="tela">
-        <div className="timer">{mmss(segundos)}</div>
-        <div className={`ponto-salvo ${salvo ? "" : "pendente"}`}>
-          <i /> {salvo ? "salvo" : "salvando"}
-        </div>
-        <button className="botao-parar" onClick={parar} disabled={fase === "encerrando"}>
-          {fase === "encerrando" ? "encerrando…" : "parar"}
-        </button>
-      </main>
-    );
-  }
+  const gravando = fase === "gravando" || fase === "encerrando";
+  const salvo = fila.pendentes === 0 && fila.ultimo_salvo_em !== null;
 
   return (
-    <main className="tela">
-      <button className="botao-gravar" onClick={() => comecar()} disabled={fase === "abrindo"}>
-        Como foi seu dia?
-      </button>
-      <Importacao />
-      <ChipRecuperacao aoRetomar={comecar} />
+    <main className={`tela ${gravando ? "gravando" : ""}`}>
+      <BotaoGravar
+        gravando={gravando}
+        ocupado={fase === "abrindo" || fase === "encerrando"}
+        rotulo="Como foi seu dia?"
+        faixa={faixa}
+        aoTocar={() => void comecar()}
+      />
+
+      {gravando ? (
+        <>
+          {/* O timer deixou de ser o herói da tela quando o círculo virou o
+              centro. Ele continua aqui porque é informação real — quanto tempo
+              eu já falei —, só que no tamanho de informação, não de manchete. */}
+          <div className="timer">{mmss(segundos)}</div>
+          <div className={`ponto-salvo ${salvo ? "" : "pendente"}`}>
+            <i /> {salvo ? "salvo" : "salvando"}
+          </div>
+          <button className="botao-parar" onClick={parar} disabled={fase === "encerrando"}>
+            {fase === "encerrando" ? "encerrando…" : "parar"}
+          </button>
+        </>
+      ) : (
+        <>
+          <Importacao />
+          <ChipRecuperacao aoRetomar={comecar} />
+          {/* Portas de serviço: discretas de propósito na tela de gravar, que é
+              onde eu passo o tempo e onde nada pode virar cobrança. */}
+          <span className="portas">
+            <Link className="link-sessoes" href="/sessoes">
+              áudios
+            </Link>
+            <Link className="link-sessoes" href="/entidades">
+              entidades
+            </Link>
+          </span>
+        </>
+      )}
+
       {problema && <p className="aviso">{problema}</p>}
-      {/* Portas de serviço: discretas de propósito na tela de gravar, que é
-          onde eu passo o tempo e onde nada pode virar cobrança. */}
-      <span className="portas">
-        <Link className="link-sessoes" href="/sessoes">
-          áudios
-        </Link>
-        <Link className="link-sessoes" href="/entidades">
-          entidades
-        </Link>
-      </span>
     </main>
   );
 }

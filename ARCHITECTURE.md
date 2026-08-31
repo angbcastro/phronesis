@@ -104,16 +104,19 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   auth.ts         magic link HMAC, cookie httpOnly
   backoff.ts      backoff exponencial com jitter                          (client)
   audio.ts        formatos aceitos na importação, limites de arquivo       (client)
+  onda.ts         a matemática da onda do botão de gravar — nível, envelope (client)
   rotas.ts        validação de parâmetro compartilhada pelas rotas
   tipos.ts        contratos do domínio + constantes (DURACAO_CHUNK_S = 30)
 
 src/client/       navegador
-  gravador.ts     MediaRecorder recriado a cada 30 s sobre um stream fixo
+  gravador.ts     MediaRecorder recriado a cada 30 s sobre um stream fixo;
+                  expõe `faixa` (o MediaStream) para a onda do botão ouvir
   deposito.ts     IndexedDB: blocos pendentes + sessão em andamento
   fila.ts         upload serial com retry, observável pela UI
 
 src/components/   Marca (o canto superior esquerdo — volta ao início),
-                  Gravacao (gravar), Importacao (subir arquivo),
+                  Gravacao (a tela de gravar), BotaoGravar (o círculo, o halo,
+                  as ondas laterais e o selo de REC), Importacao (subir arquivo),
                   ChipRecuperacao (retomar ou revisar),
                   Processando (fechar a sessão e esperar; leva à revisão),
                   Revisao (aprovar, editar, escutar, confirmar),
@@ -1163,7 +1166,7 @@ Todas com `runtime = "nodejs"`.
 
 | Rota | Componente | O que mostra |
 |---|---|---|
-| `/` | `Gravacao` + `Importacao` + `ChipRecuperacao` | botão "Como foi seu dia?", link "ou subir um áudio que já gravei"; gravando: timer e um ponto de "salvo" — nada mais |
+| `/` | `Gravacao` + `BotaoGravar` + `Importacao` + `ChipRecuperacao` | o círculo "Como foi seu dia?", link "ou subir um áudio que já gravei"; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo" |
 | `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; abre a revisão sozinho |
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, editar, escutar cada trecho, resolver a dúvida de quem é, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
@@ -1173,6 +1176,81 @@ Todas com `runtime = "nodejs"`.
 
 Em toda tela dessa tabela menos `/` e `/entrar`, `Marca` fica fixa no canto
 superior esquerdo e leva a `/`.
+
+### 11.1 O botão de gravar
+
+`BotaoGravar` é **um nó do DOM só**, parado e gravando. Antes eram duas árvores
+diferentes — a de gravar trocava a tela inteira pelo timer — e por isso não
+havia o que transicionar entre elas, só um corte. Agora o círculo permanece e o
+que muda é o que o cerca: parado, as portas de serviço e o chip de retomada;
+gravando, o timer, o "salvo" e o "parar".
+
+O palco é um grid de uma célula com tudo empilhado (`.palco > * { grid-area: 1/1 }`):
+
+- **o halo** (`.brilho`) é um elemento próprio, não uma sombra no botão — assim
+  ele respira (escala 1 → 1,03 e raio 20 px → 35 px, 4,5 s `ease-in-out
+  alternate`) sem arrastar o texto do círculo junto;
+- **o círculo** é o botão, 220 px (`min(72vw, 220px)`, o `min` só para não
+  estourar aparelho estreito), terracota, texto branco de 18 px/500;
+- **as ondas** são um `<canvas>` absoluto. O bloco que o contém vira a própria
+  célula do grid, ou seja a faixa vertical do círculo — é o que põe o eixo da
+  onda no centro dele sem número mágico. Some e aparece por opacidade em 400 ms
+  com `cubic-bezier(.16,1,.3,1)`;
+- **o selo de REC** fica dentro do círculo, abaixo da pergunta, mas **fora** do
+  `<button>`: o botão fica `disabled` durante a gravação e levaria o selo junto
+  para fora do alcance de um leitor de tela. Entra deslizando 8 px, no mesmo
+  tempo e na mesma curva das ondas.
+
+**Canvas, e não SVG animado**, porque a onda segue o microfone a 60 quadros por
+segundo e reconstruir um path do DOM nessa cadência engasga no celular — que é
+onde este botão vive. O `AnalyserNode` sai do `MediaStream` que o `Gravador`
+agora expõe em `faixa`, e **não se liga ao destino**: ligar devolveria o próprio
+microfone pelo alto-falante, que é microfonia na cara de quem está falando. Sem
+Web Audio disponível, `nivelSimulado()` mantém a onda viva com duas senoides de
+períodos incomensuráveis.
+
+O laço de `requestAnimationFrame` **só existe enquanto grava**; parado, o halo
+respira em CSS puro e nada fica de pé. O `AudioContext` é fechado ao parar —
+um contexto vivo segura hardware de áudio e conta como microfone em uso.
+
+A matemática mora em `src/lib/onda.ts`, fora do componente: é a única parte
+desenhável que dá para testar sem canvas, sem microfone e sem navegador
+(`tests/onda.test.ts`). O nível é RMS e não pico — pico pula com qualquer
+estalo —, passa por média móvel exponencial, e a amplitude fica entre 15 px e
+25 px. `envelope()` zera nas duas pontas: encostada no círculo a linha seria
+cortada por ele, e na ponta precisa sumir em vez de ser decepada.
+
+`prefers-reduced-motion` para o halo no estado médio e tira o deslize do selo.
+A onda continua, porque ali ela não é enfeite: é o retorno de que o microfone
+está ouvindo.
+
+**O timer deixou de ser o herói.** Ele era `clamp(3rem, 16vw, 5rem)` porque era
+o centro da tela; com o círculo nesse posto, ficou em 1,5 rem, tabular, no tom
+de texto fraco. Continua na tela porque é informação real — quanto tempo eu já
+falei.
+
+### 11.2 Tokens de cor
+
+Um lugar só, no topo de `src/app/globals.css`. Nada de cor literal em regra de
+componente — quem precisa de uma variação usa `color-mix()` sobre o token.
+
+| Token | Escuro | Claro | Onde |
+|---|---|---|---|
+| `--fundo` | `#0d0d0d` | `#faf9f7` | fundo da tela |
+| `--fundo-alto` | `#1a1a1c` | `#ffffff` | cartão, campo, chip |
+| `--texto` / `--texto-fraco` | `#ececec` / `#8a8a8f` | `#17171a` / `#6b6b72` | texto e texto secundário |
+| `--linha` | `#2a2a2e` | `#e4e2dd` | borda |
+| `--acento` | `#d65a31` | igual | terracota: círculo, ondas, confirmar, destaque |
+| `--sobre-acento` | `#ffffff` | igual | texto **sobre** terracota — a única superfície que não usa `--texto` |
+| `--glow` | `rgba(214,90,49,.55)` | `rgba(214,90,49,.28)` | o halo do botão (0,55 sobre papel vira mancha) |
+| `--status` | `#fff` a 0,7 | `#17171a` a 0,7 | texto de status e ícone |
+| `--rec` | `#ff4d3d` | igual | o ponto vermelho do selo de REC |
+| `--circulo` | `min(72vw, 220px)` | igual | diâmetro do botão de gravar |
+| `--ok` | `#6aa84f` | igual | o ponto de "salvo" |
+
+`--fundo` e `--acento` mudaram de `#0f0f10` e `#d8613c` para os valores acima
+quando o botão foi redesenhado; a diferença é pequena, e manter dois terracotas
+quase iguais no mesmo sistema seria pior que trocar o antigo.
 
 `/entidades` é a única janela para dentro do grafo — até ela existir, saber o
 que tinha lá dentro exigia rodar Cypher por fora. Cada linha traz um `select` de
@@ -1303,6 +1381,14 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
+- **O botão de gravar foi verificado por compilação e teste, não por olho.**
+  `tests/onda.test.ts` cobre a matemática da onda, e `tsc` mais `next build`
+  passam; ninguém abriu a tela e olhou o halo respirar. Não há navegador
+  automatizado no projeto, e o `middleware` exige cookie para chegar em `/`.
+- **O tema claro não foi desenhado para o botão novo.** Os tokens têm valor
+  claro e a tela não quebra, mas a especificação do círculo é sobre `#0D0D0D`:
+  o halo terracota sobre papel é um efeito diferente do que foi pedido. Decidir
+  entre ajustar o claro ou fixar o app em escuro está em aberto.
 - **Entrega do magic link**: não há provedor de e-mail configurado. O link sai no
   log do servidor e, fora de produção, no corpo da resposta. Único ponto a
   mexer: a função `entregar` em `src/app/api/auth/link/route.ts`.

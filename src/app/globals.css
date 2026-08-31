@@ -1,12 +1,23 @@
 :root {
-  --fundo: #0f0f10;
+  --fundo: #0d0d0d;
   --fundo-alto: #1a1a1c;
   --texto: #ececec;
   --texto-fraco: #8a8a8f;
   --linha: #2a2a2e;
-  --acento: #d8613c;
+  --acento: #d65a31;
   --ok: #6aa84f;
+  --rec: #ff4d3d;
   --raio: 14px;
+
+  /* Sobre o terracota o texto é branco puro, nos dois temas: é a única
+     superfície do sistema que não usa --texto. */
+  --sobre-acento: #ffffff;
+  --status: rgba(255, 255, 255, 0.7);
+
+  /* O halo do botão de gravar, e o diâmetro dele. 220px é o alvo; o `min`
+     existe só para o círculo não estourar um aparelho estreito. */
+  --glow: rgba(214, 90, 49, 0.55);
+  --circulo: min(72vw, 220px);
 }
 
 @media (prefers-color-scheme: light) {
@@ -16,6 +27,9 @@
     --texto: #17171a;
     --texto-fraco: #6b6b72;
     --linha: #e4e2dd;
+    /* 0.55 sobre papel vira mancha; o halo continua o mesmo, mais discreto. */
+    --glow: rgba(214, 90, 49, 0.28);
+    --status: rgba(23, 23, 26, 0.7);
   }
 }
 
@@ -45,36 +59,148 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin: 0 auto;
 }
 
+/* Gravando, a pilha abaixo do círculo é curta — selo, timer, "salvo", parar.
+   2rem de intervalo espalha isso pela tela inteira. */
+.tela.gravando { gap: 1.1rem; }
+
 /* ---- gravar ---- */
 
+/* O palco: o círculo no meio, o halo atrás dele, as ondas atravessando de
+   ponta a ponta. Tudo empilhado no mesmo ponto com um grid de uma célula —
+   assim nada aqui depende de altura fixa, e o canvas herda a medida do palco. */
+.palco {
+  position: relative;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  /* Folga vertical para o halo respirar sem ser cortado pelo overflow. */
+  padding: 1.25rem 0;
+}
+.palco > * { grid-area: 1 / 1; }
+
+/* O canvas vale a largura inteira: as ondas nascem na borda do círculo e vão
+   até onde a tela deixar. Fica atrás do círculo, que é opaco.
+   Absoluto: `height: 100%` precisa de altura definida para resolver, e a
+   linha do grid é `auto`. O bloco que o contém passa a ser a própria célula —
+   ou seja, exatamente a faixa vertical do círculo. É o que põe o eixo da onda
+   no centro dele, sem número mágico nenhum. */
+.ondas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--acento); /* o desenho lê esta cor já resolvida */
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.palco.gravando .ondas { opacity: 1; }
+
+/* O halo é um elemento próprio, não uma sombra no botão: assim ele respira
+   (escala + raio) sem arrastar o texto do círculo junto. */
+.brilho {
+  width: var(--circulo);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  box-shadow: 0 0 20px var(--glow);
+  pointer-events: none;
+  animation: respirar 4.5s ease-in-out infinite alternate;
+}
+
+@keyframes respirar {
+  from { transform: scale(1);    box-shadow: 0 0 20px var(--glow); }
+  to   { transform: scale(1.03); box-shadow: 0 0 35px var(--glow); }
+}
+
 .botao-gravar {
-  width: min(72vw, 17rem);
+  position: relative;
+  z-index: 1;
+  width: var(--circulo);
   aspect-ratio: 1;
   border-radius: 50%;
   border: none;
   background: var(--acento);
-  color: #fff;
-  font-size: 1.25rem;
+  color: var(--sobre-acento);
+  font-size: 18px;
   font-weight: 500;
   line-height: 1.35;
   padding: 1.5rem;
-  transition: transform 120ms ease, opacity 120ms ease;
+  transition: transform 120ms ease, opacity 400ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .botao-gravar:active { transform: scale(0.97); }
-.botao-gravar:disabled { opacity: 0.5; cursor: default; }
 
+/* Esmaecer é para "abrindo o microfone" e "encerrando". Gravando o botão
+   também está `disabled` — quem para é o "parar" —, mas ali ele continua
+   inteiro: o círculo é o centro da tela, não um controle desligado. */
+.botao-gravar.esmaecido { opacity: 0.5; cursor: default; }
+.botao-gravar:disabled { cursor: default; }
+
+/* O selo de REC entra deslizando 8px para baixo, junto com as ondas.
+   Mora dentro do círculo, logo abaixo da pergunta — mas fora do `<button>`,
+   que fica `disabled` durante a gravação e levaria o selo junto para fora do
+   alcance de um leitor de tela. Daí o posicionamento por transform. */
+.selo-rec {
+  z-index: 2;
+  margin: 0;
+  transform: translateY(3.4rem);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  /* Ele está sobre o terracota, nos dois temas: branco a 70 %, e um pill
+     escuro de leve para o texto não se dissolver no laranja. */
+  background: rgba(0, 0, 0, 0.18);
+  color: color-mix(in srgb, var(--sobre-acento) 70%, transparent);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  animation: descer 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.selo-rec svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.selo-rec i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rec);
+  flex: none;
+}
+
+@keyframes descer {
+  from { opacity: 0; transform: translateY(calc(3.4rem - 8px)); }
+  to   { opacity: 1; transform: translateY(3.4rem); }
+}
+
+/* Quem pediu menos movimento não perde informação: o halo para no estado
+   médio e o selo aparece sem deslizar. A onda continua, porque ali ela não é
+   enfeite — é o retorno de que o microfone está ouvindo. */
+@media (prefers-reduced-motion: reduce) {
+  .brilho { animation: none; box-shadow: 0 0 28px var(--glow); }
+  .selo-rec { animation-duration: 1ms; }
+}
+
+/* O timer perdeu o posto de herói para o círculo. Continua legível e tabular,
+   no tamanho de informação — não no de manchete. */
 .timer {
-  font-size: clamp(3rem, 16vw, 5rem);
+  font-size: 1.5rem;
   font-variant-numeric: tabular-nums;
   font-weight: 300;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.06em;
+  color: var(--texto-fraco);
 }
 
 .ponto-salvo {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  color: var(--texto-fraco);
+  color: var(--status);
   font-size: 0.8rem;
 }
 .ponto-salvo i {

@@ -48,6 +48,15 @@ export class Gravador {
     return this.proximo;
   }
 
+  /**
+   * O stream aberto, para quem precisa ouvir junto — hoje a onda do botão de
+   * gravar, via Web Audio. Só leitura: quem abriu o microfone fecha, e o
+   * `MediaStream` é aberto uma vez e nunca tocado (ver o topo do arquivo).
+   */
+  get faixa(): MediaStream | null {
+    return this.stream;
+  }
+
   duracaoS(): number {
     return this.inicioMs === 0 ? 0 : (Date.now() - this.inicioMs) / 1000;
   }
