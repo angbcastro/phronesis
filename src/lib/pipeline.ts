@@ -1,11 +1,13 @@
 /**
- * Pipeline de transcrição. Todo passo é idempotente, chaveado por
+ * Pipeline de transcrição e extração. Todo passo é idempotente, chaveado por
  * `sessao_id` (+ `chunk_index` quando aplicável) — regra 4.
  *
  * Cada bloco é transcrito assim que sobe, não no fim: quando a gravação
- * para, só falta o último bloco.
+ * para, só falta o último bloco. Terminada a transcrição, a extração dispara
+ * sozinha — ninguém aperta nada entre parar de falar e ter a proposta.
  */
-import { chaveChunkAudio, chaveChunkTranscricao, chaveTranscricao } from "./chaves";
+import { chaveChunkAudio, chaveChunkTranscricao, chaveExtracao, chaveTranscricao } from "./chaves";
+import { extrair } from "./extracao";
 import {
   atualizarManifest,
   carregarManifest,
@@ -14,11 +16,12 @@ import {
   pendentes,
   tudoTranscrito,
 } from "./manifest";
-import { getBytes, getJson, putJson } from "./r2";
+import { ConflitoR2Error, getBytes, getJson, putJson } from "./r2";
 import { atualizarSessao, buscarSessao } from "./sessoes";
+import { temTranscricao } from "./estados";
 import { transcrever } from "./stt";
 import { concatenar, prefixoContiguo } from "./transcricao";
-import type { Transcricao, TranscricaoBloco } from "./tipos";
+import type { Extracao, Transcricao, TranscricaoBloco } from "./tipos";
 
 /**
  * Transcreve um bloco e grava `chunk_NNN.json`.
@@ -81,16 +84,21 @@ const INTERVALO_ESPERA_MS = 1_000;
  * sem reprocessar.
  */
 export async function finalizarSessao(sessao_id: string): Promise<{
-  status: "transcrito" | "erro";
+  status: "em_revisao" | "transcrito" | "erro";
   transcricao?: Transcricao;
   faltando?: number[];
 }> {
   const sessao = await buscarSessao(sessao_id);
   if (!sessao) throw new Error(`Sessão ${sessao_id} não existe`);
 
-  if (sessao.status === "transcrito") {
+  if (temTranscricao(sessao.status)) {
     const pronta = await getJson<Transcricao>(chaveTranscricao(sessao_id));
-    if (pronta) return { status: "transcrito", transcricao: pronta.valor };
+    // A transcrição já está gravada; o que pode faltar é a extração. Chamar
+    // de novo é o retry do caminho que o `waitUntil` pode ter perdido.
+    if (pronta) {
+      const { status } = await extrairSessao(sessao_id);
+      return { status, transcricao: pronta.valor };
+    }
   }
 
   await atualizarSessao(sessao_id, { status: "transcrevendo" }, [
@@ -142,5 +150,71 @@ export async function finalizarSessao(sessao_id: string): Promise<{
     duracao_s: sessao.duracao_s,
   });
 
-  return { status: "transcrito", transcricao };
+  // Emenda direto na extração, no mesmo waitUntil (aceite 1 da slice 2: eu não
+  // aperto nada entre parar de falar e ver a lista). Falhar aqui não desfaz a
+  // transcrição, que já está no R2 e no estado da sessão.
+  const { status } = await extrairSessao(sessao_id);
+  return { status, transcricao };
 }
+
+/**
+ * Extrai os átomos e grava a proposta em `extracao.json`.
+ *
+ * **Trava de idempotência: a existência do objeto.** Se a proposta já está no
+ * R2, não se chama o modelo de novo nem se sobrescreve o que pode já ter sido
+ * revisado (regra 4). O `If-None-Match: *` fecha a corrida entre dois workers:
+ * quem chega em segundo recebe conflito e passa a usar a proposta do primeiro.
+ *
+ * Nada disso toca o grafo além do estado da própria `:Sessao` — átomo e
+ * entidade só entram no confirmar, depois da revisão (regra 5).
+ */
+export async function extrairSessao(sessao_id: string): Promise<{
+  status: "em_revisao" | "erro";
+  extracao?: Extracao;
+}> {
+  const key = chaveExtracao(sessao_id);
+
+  const pronta = await getJson<Extracao>(key);
+  if (pronta) {
+    await marcarEmRevisao(sessao_id);
+    return { status: "em_revisao", extracao: pronta.valor };
+  }
+
+  const transcricao = await getJson<Transcricao>(chaveTranscricao(sessao_id));
+  if (!transcricao) {
+    console.error(`[extracao] sessão ${sessao_id}: sem transcricao.json, não há o que extrair`);
+    await atualizarSessao(sessao_id, { status: "erro" });
+    return { status: "erro" };
+  }
+
+  await atualizarSessao(sessao_id, { status: "extraindo" }, ["transcrito", "extraindo", "erro"]);
+
+  try {
+    const extracao = await extrair(transcricao.valor);
+    await putJson(key, extracao, { ifNoneMatch: "*" });
+    await marcarEmRevisao(sessao_id);
+    return { status: "em_revisao", extracao };
+  } catch (e) {
+    if (e instanceof ConflitoR2Error) {
+      // Outro worker gravou primeiro. A proposta dele vale tanto quanto a
+      // nossa, e é a que já está no R2 — duas propostas para a mesma sessão
+      // seriam duas listas diferentes para eu revisar.
+      const dele = await getJson<Extracao>(key);
+      await marcarEmRevisao(sessao_id);
+      return { status: "em_revisao", extracao: dele?.valor };
+    }
+    // A tela só sabe dizer que falhou; sem esta linha o motivo se perde.
+    console.error(`[extracao] sessão ${sessao_id} falhou:`, e);
+    await atualizarSessao(sessao_id, { status: "erro" }); // transcrição intacta, retry manual
+    return { status: "erro" };
+  }
+}
+
+/** `confirmada` não volta para `em_revisao`: a guarda é quem impede. */
+const marcarEmRevisao = (sessao_id: string) =>
+  atualizarSessao(sessao_id, { status: "em_revisao" }, [
+    "transcrito",
+    "extraindo",
+    "em_revisao",
+    "erro",
+  ]);

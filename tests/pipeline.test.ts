@@ -24,7 +24,12 @@ vi.mock("@/lib/r2", () => ({
   getJson: vi.fn(async () => null),
   getBytes: vi.fn(async () => new ArrayBuffer(8)),
   putJson: vi.fn(async () => {}),
+  ConflitoR2Error: class ConflitoR2Error extends Error {},
 }));
+
+// A extração não chega a rodar aqui — a transcrição falha antes. Mockada para
+// o teste não depender do Gateway nem do Neo4j.
+vi.mock("@/lib/extracao", () => ({ extrair: vi.fn() }));
 
 vi.mock("@/lib/sessoes", () => ({
   buscarSessao: vi.fn(async () => ({ id: "s1", status: "finalizando", duracao_s: 30 })),

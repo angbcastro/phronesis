@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { duracaoPorChunks, estaAberta, estaConcluida, foiAbandonada, podeIrPara } from "@/lib/estados";
+import {
+  STATUS_ABERTOS,
+  duracaoPorChunks,
+  estaAberta,
+  estaConcluida,
+  estaPendenteDeRevisao,
+  foiAbandonada,
+  podeIrPara,
+  temTranscricao,
+} from "@/lib/estados";
 
 describe("transições", () => {
   it("segue o caminho feliz da slice", () => {
@@ -11,6 +20,27 @@ describe("transições", () => {
   it("não volta atrás de uma sessão já transcrita", () => {
     expect(podeIrPara("transcrito", "finalizando")).toBe(false);
     expect(podeIrPara("transcrito", "gravando")).toBe(false);
+  });
+
+  it("transcrito deixou de ser terminal: emenda na extração", () => {
+    expect(podeIrPara("transcrito", "extraindo")).toBe(true);
+    expect(podeIrPara("extraindo", "em_revisao")).toBe(true);
+    expect(podeIrPara("em_revisao", "confirmada")).toBe(true);
+  });
+
+  it("confirmada é o fim da linha — nada a desfaz por transição", () => {
+    expect(podeIrPara("confirmada", "em_revisao")).toBe(false);
+    expect(podeIrPara("confirmada", "extraindo")).toBe(false);
+    expect(podeIrPara("confirmada", "confirmada")).toBe(true);
+  });
+
+  it("extração que falhou pode ser tentada de novo", () => {
+    expect(podeIrPara("extraindo", "erro")).toBe(true);
+    expect(podeIrPara("erro", "extraindo")).toBe(true);
+  });
+
+  it("revisar de novo é permitido; a proposta é que não se sobrescreve", () => {
+    expect(podeIrPara("em_revisao", "extraindo")).toBe(true);
   });
 
   it("permite repetir o estado atual — finalizar duas vezes não quebra", () => {
@@ -55,12 +85,33 @@ describe("classificação", () => {
     expect((["transcrito", "finalizando", "transcrevendo"] as const).some(estaAberta)).toBe(false);
   });
 
-  it("só transcrito é terminal", () => {
-    expect(estaConcluida("transcrito")).toBe(true);
-    expect(estaConcluida("erro")).toBe(false);
-  });
-
   it("converte contagem de blocos em segundos", () => {
     expect(duracaoPorChunks(30)).toBe(900); // 15 min
+  });
+});
+
+describe("o que cada estado significa para as telas", () => {
+  it("concluída é confirmada — transcrever deixou de ser o fim", () => {
+    expect(estaConcluida("confirmada")).toBe(true);
+    expect(estaConcluida("transcrito")).toBe(false);
+    expect(estaConcluida("em_revisao")).toBe(false);
+  });
+
+  it("a leitura para o polling assim que a transcrição existe", () => {
+    // A extração corre atrás; a tela de leitura não espera por ela.
+    for (const s of ["transcrito", "extraindo", "em_revisao", "confirmada"] as const) {
+      expect(temTranscricao(s)).toBe(true);
+    }
+    for (const s of ["gravando", "transcrevendo", "erro"] as const) {
+      expect(temTranscricao(s)).toBe(false);
+    }
+  });
+
+  it("em_revisao é pendência de revisão, não de gravação", () => {
+    expect(estaPendenteDeRevisao("em_revisao")).toBe(true);
+    // Ainda fora do chip: ele só sabe oferecer "retomar a gravação", que é a
+    // coisa errada para uma sessão esperando revisão.
+    expect(estaAberta("em_revisao")).toBe(false);
+    expect(STATUS_ABERTOS).toEqual(["gravando", "abandonada", "erro"]);
   });
 });

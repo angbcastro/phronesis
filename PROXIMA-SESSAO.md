@@ -32,6 +32,7 @@ rotulado nem percentual de recall. Ver `Specs/slice-2.md`.
 | | |
 |---|---|
 | Slice 1 | validada ponta a ponta: gravou, subiu, transcreveu, li o texto |
+| Extração | dispara sozinha no fim da transcrição, grava `extracao.json`, sessão vai a `em_revisao` |
 | Importação | arquivo já gravado vira sessão de um bloco só — nunca testada com arquivo real |
 | R2 | CORS aplicado; PUT por presigned URL funcionando do navegador |
 | STT | `xai/grok-stt` pelo Gateway, aceita webm/opus, `keyterm` passa |
@@ -67,16 +68,18 @@ erro é mudança de schema.
 
 Critérios de aceite completos em `Specs/slice-2.md`.
 
-1. **Extração** — job pelo Gateway, JSON estrito, `prompt_version` e `modelo`
-   em todo átomo. Os offsets **não saem do LLM**: o modelo devolve o trecho, o
-   casamento com as palavras da transcrição é em código.
-2. **Resolução de entidade** — casar por nome normalizado com o que já existe.
-   A constraint do banco é quem garante que não duplique em corrida.
-3. **Tela de revisão + player** — aprovar tudo em um toque, discordar em dois,
+1. ~~**Extração**~~ — feita. Job pelo Gateway, JSON estrito, `prompt_version` e
+   `modelo` em todo átomo, offsets casados em código.
+2. ~~**Resolução de entidade**~~ — feita. Casamento por nome normalizado, só
+   leitura; a constraint do banco é quem impede duplicata em corrida.
+3. ~~**Gatilho e proposta no R2**~~ — feito. `transcrito → extraindo →
+   em_revisao`, `extracao.json` gravado com `If-None-Match`.
+4. **Tela de revisão + player** — aprovar tudo em um toque, discordar em dois,
    escutar o trecho antes de aprovar. Menos de 60 s numa sessão de 15 min.
-4. **Confirmar** — só aqui o grafo recebe alguma coisa. Idempotente por
+   Inclui a rota de presigned GET do bloco e pôr `em_revisao` no chip da home.
+5. **Confirmar** — só aqui o grafo recebe alguma coisa. Idempotente por
    `<sessao_id>-<índice>`. Rejeitado não é gravado.
-5. **Avaliar na revisão** — ler o que saiu de uma sessão real e decidir. Muita
+6. **Avaliar na revisão** — ler o que saiu de uma sessão real e decidir. Muita
    rejeição ou muita edição quer dizer prompt ruim; o que se mexe é o prompt.
 
 A máquina de estados muda: `transcrito → extraindo → em_revisao → confirmada`.

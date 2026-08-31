@@ -8,15 +8,14 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-1.md`.
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
 > arquivo no mesmo commit. Ver "Manutenção deste arquivo" no fim.
 
-**Estado: slice 1 no ar — gravar (ou importar), subir, transcrever.** Nenhum
-código escreve no grafo nada além de `:Sessao`: não existem revisão, confirmação,
-busca nem grafo de conteúdo. O **schema** da slice 2 está aplicado e vazio
-(migration 002, seção 8).
+**Estado: gravar (ou importar), subir, transcrever e extrair.** Terminada a
+transcrição, a extração dispara sozinha, grava a proposta em `extracao.json` e
+deixa a sessão em `em_revisao` (seções 4.6 e 5).
 
-Da slice 2 já existem **extração de átomos, casamento de offsets e resolução de
-entidade** (seção 4.6) — módulos testados que **ainda não estão ligados a nada**.
-Nenhuma rota, nenhum gatilho, nenhum estado novo de sessão. A resolução lê
-`:Entidade` no grafo; nada escreve nele.
+**Falta a revisão e o confirmar.** A proposta existe no R2 e ninguém a lê ainda:
+não há tela de revisão, player, nem rota de confirmação. Nenhum código escreve no
+grafo nada além de `:Sessao` — `:Atomo` e `:Entidade` continuam vazios (migration
+002, seção 8), e a resolução de entidade só lê.
 
 ---
 
@@ -280,10 +279,10 @@ parcial nunca é lido fora de ordem.
 
 ### 4.6 Extração de átomos
 
-Primeira peça da slice 2. **Existe como módulo e não está ligada a nada:** ninguém
-chama `extrair()` — falta o gatilho no pipeline, os estados novos da sessão, a
-proposta gravada no R2, a resolução de entidade, a revisão e o confirmar. O que
-existe é a lógica, testada.
+**Dispara sozinha** quando a transcrição termina, emendada no mesmo `waitUntil`
+do `finalizarSessao` — ninguém aperta nada entre parar de falar e ter a proposta
+(aceite 1 da slice 2). O que ainda não existe é quem a leia: a tela de revisão e
+o confirmar.
 
 `extracao.ts` faz três coisas e mais nada: monta o prompt, valida a resposta item
 por item e carimba a procedência. Sai pelo Gateway como o STT, por
@@ -353,22 +352,42 @@ Um átomo sobre quem fala aponta `sobre: "eu"`, e o confirmar criará o nó.
 ## 5. Estados da sessão
 
 ```
-gravando → finalizando → transcrevendo → transcrito
-     ↓            ↓              ↓
-abandonada       erro          erro        (áudio intacto, retry manual)
+gravando → finalizando → transcrevendo → transcrito → extraindo → em_revisao → confirmada
+     ↓            ↓              ↓                         ↓
+abandonada       erro          erro                       erro    (o que está no R2 fica
+                                                                   intacto, retry manual)
 ```
 
+`transcrito` **não é mais terminal**: a extração emenda nele. O fim da linha é
+`confirmada`, e quem confirma sou eu, na revisão — `estaConcluida` mudou junto.
+`confirmada` não tem transição de saída.
+
 `estados.ts` guarda as transições permitidas e `foiAbandonada()` (sem bloco novo
-há mais de 10 min, `ABANDONO_MIN`). `sessoesAbertas()` devolve `gravando`,
-`abandonada` e `erro` — é o que alimenta o chip de recuperação.
+há mais de 10 min, `ABANDONO_MIN`). Três predicadas dizem o que cada estado
+significa para as telas:
+
+| Predicada | Verdadeira em | Para quê |
+|---|---|---|
+| `temTranscricao` | `transcrito`, `extraindo`, `em_revisao`, `confirmada` | a leitura para o polling; a extração corre atrás |
+| `estaPendenteDeRevisao` | `em_revisao` | tem proposta esperando |
+| `estaAberta` / `STATUS_ABERTOS` | `gravando`, `abandonada`, `erro` | o chip de recuperação |
+
+`em_revisao` **ainda não entra em `STATUS_ABERTOS`**, embora a spec peça que a
+home a ofereça: o chip de hoje só sabe dizer "retomar", e retomar a gravação de
+uma sessão que espera revisão é a coisa errada. Entra junto com a tela de
+revisão. `sessoesAbertas()` passou a receber a lista de `estados.ts` por
+parâmetro em vez de repeti-la no Cypher — escrita à mão nos dois lugares, ela
+divergiria no primeiro estado novo, que foi exatamente o que quase aconteceu.
 
 A guarda real da idempotência está no Cypher: `atualizarSessao(id, mudança,
 sePartirDe)` só grava se o status atual estiver na lista, então um segundo
-`finalizar` não rebaixa uma sessão já `transcrito`.
+`finalizar` não rebaixa uma sessão já `em_revisao`, e nada devolve `confirmada`
+para trás.
 
 ### 5.1 Onde o motivo de uma falha aparece
 
-`erro` é um estado sem explicação: a tela só sabe dizer "a transcrição falhou" e
+`erro` é um estado sem explicação — e agora ele cobre duas coisas diferentes,
+falha de transcrição e falha de extração. A tela só sabe dizer que falhou e
 o grafo guarda o status, não a causa — `:Sessao` não tem propriedade de erro, e
 acrescentar uma é mudança de schema. **O motivo existe só no log do servidor**,
 com prefixo:
@@ -378,6 +397,8 @@ com prefixo:
 | `[stt] sessão <id> bloco <i> falhou:` | rota `/chunks/:i/pronto` | o bloco falhou ao ser transcrito na subida |
 | `[pipeline] sessão <id> bloco <i> não transcreveu:` | laço de espera em `finalizarSessao` | a retentativa da finalização falhou |
 | `[pipeline] sessão <id>: desistiu após 45s…` | `finalizarSessao` | o prazo estourou; lista os blocos que faltaram |
+| `[extracao] sessão <id> falhou:` | `extrairSessao` | o modelo estourou, ou a resposta não era JSON válido |
+| `[extracao] sessão <id>: sem transcricao.json…` | `extrairSessao` | pediram extração de uma sessão sem transcrição gravada |
 | `[finalizar] sessão <id> falhou:` | rota `/finalizar` | `finalizarSessao` estourou uma exceção |
 
 O laço de espera engolia o erro do bloco em `catch {}` — a falha ia para `erro`
@@ -396,11 +417,15 @@ Três travas independentes:
 | Trava | Onde | Efeito |
 |---|---|---|
 | `chunk_NNN.json` existir | `pipeline.transcreverBloco` | não rechama o STT nem sobrescreve resultado pronto |
+| `extracao.json` existir | `pipeline.extrairSessao` | não rechama o modelo nem sobrescreve proposta que eu já posso ter revisado |
+| `If-None-Match: *` no PUT da proposta | `pipeline.extrairSessao` | dois workers na mesma sessão geram uma proposta só: quem chega em segundo usa a do primeiro |
 | entrada no manifest por `i` | `manifest.registrarChunk` | reenviar o mesmo bloco não duplica nem reabre bloco transcrito |
 | status na cláusula `WHERE` | `sessoes.atualizarSessao` | transição já feita não volta atrás |
 
-`finalizar` numa sessão `transcrito` devolve `{ ja_finalizada: true }` e lê o
-resultado gravado, sem reprocessar (aceite 9).
+`finalizar` numa sessão `em_revisao` ou `confirmada` devolve
+`{ ja_finalizada: true }` sem reprocessar (aceite 9). Numa sessão que já
+transcreveu mas ainda não extraiu, a segunda chamada **é** o retry da extração —
+é por ela que se recupera um `waitUntil` que morreu no meio.
 
 ### 6.1 Concorrência no manifest
 
@@ -512,6 +537,7 @@ sessoes/<id>/chunk_000.webm     áudio do bloco gravado no navegador
 sessoes/<id>/chunk_000.opus     áudio importado — a extensão é a do arquivo de origem
 sessoes/<id>/chunk_000.json     transcrição do bloco, offsets relativos, modelo, granularidade
 sessoes/<id>/transcricao.json   final, offsets absolutos
+sessoes/<id>/extracao.json      proposta: átomos ancorados, entidades candidatas, procedência
 _smoke/                         objetos temporários do `pnpm smoke`, apagados no fim
 ```
 
@@ -532,8 +558,8 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/sessoes` | cria `:Sessao {status:'gravando'}` | devolve `id` |
 | `POST /api/sessoes/:id/chunks/:i/url` | presigned PUT de 5 min | corpo `{ext?}`; 415 fora da lista; o áudio não passa por aqui |
 | `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT)` | corpo `{ext?, duracao_s?}`; `maxDuration = 300` |
-| `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha em `waitUntil` | `ja_finalizada` na segunda chamada |
-| `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s, `force-dynamic` |
+| `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha **e extrai** em `waitUntil` | `ja_finalizada` a partir de `em_revisao`; antes disso, é o retry da extração |
+| `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s, `force-dynamic`; `completa` é sobre a transcrição, não sobre a sessão |
 | `GET /api/sessoes/abertas` | sessões não finalizadas com pelo menos um bloco | alimenta o chip |
 | `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
@@ -616,10 +642,15 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Sessão importada não se distingue de gravada no grafo.** `:Sessao` não tem
   `origem`; quem sabe é o `ext` no manifest, no R2. Acrescentar o campo é
   migration nova, e nada hoje lê essa distinção.
-- **A extração não está ligada.** `extracao.ts`, `offsets.ts` e `entidades.ts`
-  existem e são testados, mas nada os chama. Ligar é: gatilho no
-  `finalizarSessao`, estados `extraindo`/`em_revisao`/`confirmada`,
-  `extracao.json` no R2, tela de revisão e confirmar.
+- **Ninguém lê a proposta.** `extracao.json` é gravado e fica lá: falta a tela de
+  revisão, o player, a rota de áudio por trecho e o confirmar. Até isso existir,
+  uma sessão termina em `em_revisao` e não há como levá-la a `confirmada`.
+- **`em_revisao` não aparece na home.** Fora de `STATUS_ABERTOS` de propósito
+  (seção 5): o chip só sabe oferecer "retomar a gravação". Enquanto for assim,
+  uma sessão extraída só é alcançável pela URL dela.
+- **A extração roda no mesmo `waitUntil` da transcrição.** Em dev isso é o mesmo
+  processo: fechar a janela do servidor no meio mata o job e a sessão fica em
+  `extraindo`. O retry é chamar `/finalizar` de novo.
 - **A resolução nunca rodou contra um grafo com entidades.** O banco tem zero
   `:Entidade`, então todo caminho de "já conhecida" só foi exercitado em teste
   com o Neo4j mockado.

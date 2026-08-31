@@ -8,6 +8,9 @@ export const STATUS_SESSAO = [
   "finalizando",
   "transcrevendo",
   "transcrito",
+  "extraindo",
+  "em_revisao",
+  "confirmada",
   "abandonada",
   "erro",
 ] as const;

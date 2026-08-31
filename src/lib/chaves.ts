@@ -6,12 +6,20 @@
  *   sessoes/<id>/chunk_000.opus   (arquivo importado — a extensão é a de origem)
  *   sessoes/<id>/chunk_000.json
  *   sessoes/<id>/transcricao.json
+ *   sessoes/<id>/extracao.json
  */
 import { EXT_GRAVACAO, extensaoAceita } from "./audio";
 
 export const prefixoSessao = (id: string) => `sessoes/${id}`;
 export const chaveManifest = (id: string) => `${prefixoSessao(id)}/manifest.json`;
 export const chaveTranscricao = (id: string) => `${prefixoSessao(id)}/transcricao.json`;
+
+/**
+ * A proposta de extração. A existência deste objeto é a trava de idempotência
+ * da extração: se ele está lá, não se chama o modelo de novo nem se sobrescreve
+ * proposta que já pode ter sido revisada.
+ */
+export const chaveExtracao = (id: string) => `${prefixoSessao(id)}/extracao.json`;
 
 export function indiceChunk(i: number): string {
   if (!Number.isInteger(i) || i < 0 || i > 999_999) {

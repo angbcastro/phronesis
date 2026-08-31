@@ -12,9 +12,12 @@ export const maxDuration = 300;
  *
  * Marca `finalizando`, responde na hora e fecha a sessão em `waitUntil`:
  * esperar os blocos pendentes, concatenar com offsets absolutos, gravar
- * `transcricao.json` e ir para `transcrito`. A tela acompanha por polling.
+ * `transcricao.json` e emendar na extração, que grava `extracao.json` e deixa
+ * a sessão em `em_revisao`. A tela acompanha por polling.
  *
- * Chamar duas vezes não reprocessa nada em cima do resultado pronto.
+ * Chamar duas vezes não reprocessa nada em cima do resultado pronto. Numa
+ * sessão que já transcreveu mas ainda não extraiu, a segunda chamada é o retry
+ * da extração — é por aqui que se recupera um `waitUntil` perdido.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const p = parametros(await ctx.params);
@@ -24,8 +27,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const sessao = await buscarSessao(id);
   if (!sessao) return erro("sessão não encontrada", 404);
 
-  if (sessao.status === "transcrito") {
-    return NextResponse.json({ status: "transcrito", ja_finalizada: true });
+  if (sessao.status === "em_revisao" || sessao.status === "confirmada") {
+    return NextResponse.json({ status: sessao.status, ja_finalizada: true });
   }
 
   const corpo = (await req.json().catch(() => ({}))) as { duracao_s?: number };

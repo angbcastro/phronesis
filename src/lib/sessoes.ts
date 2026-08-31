@@ -5,6 +5,7 @@
  */
 import { query, queryUm } from "./neo4j";
 import { chaveTranscricao, prefixoSessao } from "./chaves";
+import { STATUS_ABERTOS } from "./estados";
 import type { Sessao, StatusSessao } from "./tipos";
 
 /** id em base36: ordenável por tempo e casa com `idValido`. */
@@ -76,12 +77,16 @@ export async function atualizarSessao(
 
 /** Sessões não finalizadas, para o chip de recuperação da home. */
 export async function sessoesAbertas(): Promise<Sessao[]> {
+  // A lista vem de `estados.ts`: escrita à mão aqui, divergiria da predicada
+  // na primeira vez que um estado novo aparecesse — foi o que a slice 2 quase
+  // fez com `em_revisao`.
   const r = await query<{ sessao: Sessao }>(
     `MATCH (s:Sessao)
-     WHERE s.status IN ['gravando', 'abandonada', 'erro']
+     WHERE s.status IN $abertos
      RETURN s { .* } AS sessao
      ORDER BY s.iniciada_em DESC
      LIMIT 10`,
+    { abertos: STATUS_ABERTOS },
   );
   return r.map((l) => l.sessao);
 }

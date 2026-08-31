@@ -4,9 +4,10 @@ Diário falado, single-user. Ver `Specs/visao.md` para o produto, `ARCHITECTURE.
 para como o sistema funciona por dentro e `CLAUDE.md` para as regras
 invioláveis.
 
-**Estado: slice 1 — gravar (ou importar), subir, transcrever.** Nada de átomos,
-entidades, extração, perguntas, revisão, busca ou grafo. No Neo4j existe um único
-label: `:Sessao`.
+**Estado: gravar (ou importar), subir, transcrever e extrair.** A extração dispara
+sozinha no fim da transcrição e grava a proposta no R2. Falta a revisão e o
+confirmar — nada de perguntas, busca ou grafo de conteúdo, e no Neo4j o único
+label que o código escreve continua sendo `:Sessao`.
 
 ## Rodar
 

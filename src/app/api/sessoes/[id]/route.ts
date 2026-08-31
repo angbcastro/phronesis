@@ -4,6 +4,7 @@ import { carregarManifest } from "@/lib/manifest";
 import { transcricaoParcial } from "@/lib/pipeline";
 import { getJson } from "@/lib/r2";
 import { buscarSessao } from "@/lib/sessoes";
+import { temTranscricao } from "@/lib/estados";
 import { erro, parametros } from "@/lib/rotas";
 import type { Transcricao } from "@/lib/tipos";
 
@@ -32,7 +33,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     proximo_chunk: manifest.chunks.reduce((max, c) => Math.max(max, c.i + 1), 0),
   };
 
-  if (sessao.status === "transcrito") {
+  // `completa` é sobre a transcrição, não sobre a sessão: em `extraindo` e
+  // `em_revisao` o texto já está pronto e a tela de leitura pode parar o
+  // polling — a extração corre atrás dela.
+  if (temTranscricao(sessao.status)) {
     const pronta = await getJson<Transcricao>(chaveTranscricao(p.id));
     if (pronta) {
       return NextResponse.json({
