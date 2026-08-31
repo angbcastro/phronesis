@@ -191,3 +191,109 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: #fff;
   font-size: 1rem;
 }
+
+/* ---- revisar ---- */
+
+.revisao {
+  width: 100%;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.revisao header h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem; }
+.revisao header p { margin: 0; }
+
+.atomos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+
+.atomo {
+  background: var(--fundo-alto);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  padding: 0.85rem 0.9rem;
+  transition: opacity 0.15s;
+}
+.atomo.fora { opacity: 0.4; }
+
+.atomo .linha { display: flex; gap: 0.7rem; align-items: flex-start; }
+.atomo input[type="checkbox"] { margin-top: 0.3rem; width: 1.1rem; height: 1.1rem; accent-color: var(--acento); flex: none; }
+.atomo .corpo { flex: 1; min-width: 0; }
+
+.atomo .tipo {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: var(--texto-fraco);
+}
+.atomo .corpo > p { margin: 0.2rem 0 0; line-height: 1.45; cursor: text; }
+.atomo .meta { font-size: 0.82rem; color: var(--texto-fraco); }
+
+.trechos { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+.ouvir {
+  background: none;
+  border: 1px solid var(--linha);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--texto-fraco);
+}
+.ouvir:hover { color: var(--texto); border-color: var(--texto-fraco); }
+.sem-ancora { font-size: 0.78rem; color: var(--acento); opacity: 0.8; }
+
+.editor { margin-top: 0.7rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.editor textarea,
+.editor input,
+.editor select {
+  font: inherit;
+  color: inherit;
+  background: var(--fundo);
+  border: 1px solid var(--linha);
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+  width: 100%;
+}
+.editor .campos { display: flex; gap: 0.5rem; align-items: center; }
+.editor .campos select { width: auto; }
+.editor .campos .fraco { background: none; border: none; color: var(--texto-fraco); margin-left: auto; }
+
+.entidades { display: flex; flex-direction: column; gap: 0.35rem; }
+.entidades h2 { font-size: 0.95rem; font-weight: 600; margin: 0.5rem 0 0; }
+.entidades p { margin: 0 0 0.35rem; }
+.entidade { display: flex; align-items: center; gap: 0.6rem; font-size: 0.92rem; }
+.entidade input { accent-color: var(--acento); }
+.entidade.travada { opacity: 0.65; }
+.entidade .meta { font-size: 0.8rem; color: var(--texto-fraco); }
+
+.revisao footer {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(to top, var(--fundo) 65%, transparent);
+  padding-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+.confirmar {
+  width: 100%;
+  background: var(--acento);
+  color: #fff;
+  border: none;
+  border-radius: var(--raio);
+  padding: 0.9rem 1rem;
+  font-weight: 600;
+}
+.confirmar:disabled { opacity: 0.6; cursor: default; }
+
+.revisar {
+  display: inline-block;
+  margin-top: 1.25rem;
+  background: var(--acento);
+  color: #fff;
+  text-decoration: none;
+  border-radius: var(--raio);
+  padding: 0.7rem 1.1rem;
+  font-weight: 600;
+}

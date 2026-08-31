@@ -10,6 +10,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { acordar, aguardarFilaVazia } from "@/client/fila";
+import { terminouDeProcessar } from "@/lib/estados";
+import type { StatusSessao } from "@/lib/tipos";
 
 interface Estado {
   status: string;
@@ -39,7 +41,13 @@ export function Leitura({ id }: { id: string }) {
     /** Os blocos que ainda não subiram têm que chegar antes de finalizar. */
     async function garantirFinalizacao(atual: Estado) {
       if (finalizou.current) return;
-      if (["finalizando", "transcrevendo", "transcrito"].includes(atual.status)) return;
+      if (
+        ["finalizando", "transcrevendo", "transcrito", "extraindo", "em_revisao", "confirmada"].includes(
+          atual.status,
+        )
+      ) {
+        return;
+      }
       finalizou.current = true;
 
       acordar();
@@ -61,7 +69,9 @@ export function Leitura({ id }: { id: string }) {
         setEstado(atual);
         setFalhou(atual.status === "erro");
         void garantirFinalizacao(atual);
-        if (atual.completa) return; // pronto: para o polling
+        // Não para em `completa`: a transcrição fica pronta antes da extração,
+        // e é a extração que destrava o link para a revisão.
+        if (terminouDeProcessar(atual.status as StatusSessao)) return;
       }
       timer = setTimeout(volta, INTERVALO_POLL_MS);
     }
@@ -87,6 +97,14 @@ export function Leitura({ id }: { id: string }) {
         <p className="aguardando">
           A transcrição falhou. O áudio está inteiro no servidor — dá para tentar de novo.
         </p>
+      )}
+
+      {estado?.status === "extraindo" && <p className="aguardando">lendo o que você disse…</p>}
+
+      {estado?.status === "em_revisao" && (
+        <Link className="revisar" href={`/sessao/${id}/revisar`}>
+          revisar o que eu entendi
+        </Link>
       )}
 
       <Link className="voltar" href="/">

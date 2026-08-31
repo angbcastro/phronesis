@@ -47,6 +47,30 @@ export async function urlPresignadaPut(
   };
 }
 
+/**
+ * URL presigned para o navegador fazer GET direto do áudio.
+ *
+ * O áudio não passa por function nem na volta (regra 1): a rota assina, o
+ * navegador busca no R2. Mesma validade de 5 min do PUT — a URL vive dentro de
+ * uma sessão de revisão, não é para ser guardada.
+ */
+export async function urlPresignadaGet(
+  key: string,
+  validadeS: number = VALIDADE_PRESIGN_S,
+): Promise<{ url: string; expira_em: string }> {
+  const url = new URL(urlObjeto(key));
+  url.searchParams.set("X-Amz-Expires", String(validadeS));
+
+  const assinada = await cliente().sign(new Request(url, { method: "GET" }), {
+    aws: { signQuery: true },
+  });
+
+  return {
+    url: assinada.url,
+    expira_em: new Date(Date.now() + validadeS * 1000).toISOString(),
+  };
+}
+
 export interface ObjetoTexto {
   texto: string;
   etag: string | null;

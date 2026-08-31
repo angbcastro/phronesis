@@ -12,10 +12,14 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-1.md`.
 transcrição, a extração dispara sozinha, grava a proposta em `extracao.json` e
 deixa a sessão em `em_revisao` (seções 4.6 e 5).
 
-**Falta a revisão e o confirmar.** A proposta existe no R2 e ninguém a lê ainda:
-não há tela de revisão, player, nem rota de confirmação. Nenhum código escreve no
-grafo nada além de `:Sessao` — `:Atomo` e `:Entidade` continuam vazios (migration
-002, seção 8), e a resolução de entidade só lê.
+**A slice 2 fecha o caminho:** a revisão existe, com player por trecho, e o
+confirmar grava `:Atomo` e `:Entidade` no grafo (seções 4.7 e 8). Uma sessão vai
+de `gravando` a `confirmada` sem passar por nenhuma tela intermediária que eu
+tenha de procurar.
+
+O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
+ritual e as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) —
+tudo slice 3.
 
 ---
 
@@ -60,10 +64,11 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   stt.ts          transcrição — pede o modelo a modelos.ts
   vocabulario.ts  nomes próprios → keyterms do STT
   transcricao.ts  offsets absolutos, prefixo contíguo, concatenação
-  texto.ts        normalização em um lugar só: offsets e nome_normalizado
+  texto.ts        normalização em um lugar só: offsets e nome_normalizado (client)
   extracao.ts     átomos a partir da transcrição: prompt, JSON estrito, procedência
   offsets.ts      trecho do modelo → segundo do áudio (modelo não dá timestamp)
   entidades.ts    resolve entidade citada contra o grafo — só leitura
+  atomos.ts       escreve :Atomo e :Entidade — só o confirmar chama
   pipeline.ts     transcrever bloco / finalizar sessão (o orquestrador)
   auth.ts         magic link HMAC, cookie httpOnly
   backoff.ts      backoff exponencial com jitter                          (client)
@@ -77,7 +82,8 @@ src/client/       navegador
   fila.ts         upload serial com retry, observável pela UI
 
 src/components/   Gravacao (gravar), Importacao (subir arquivo),
-                  ChipRecuperacao (retomar), Leitura (ler)
+                  ChipRecuperacao (retomar ou revisar), Leitura (ler),
+                  Revisao (aprovar, editar, escutar, confirmar)
 src/app/api/      as 6 rotas da slice + 2 de auth
 src/middleware.ts porta única: sem cookie válido nada responde
 db/migrations/    definição canônica do schema
@@ -385,6 +391,36 @@ dessa lista: entidade que o modelo listou e nenhum átomo cita não entra, seria
 **`"eu"` é uma `:Pessoa` como qualquer outra** — decisão tomada, não acidente.
 Um átomo sobre quem fala aponta `sobre: "eu"`, e o confirmar criará o nó.
 
+### 4.7 Revisão e confirmação
+
+A tela mais difícil de acertar, pela própria visão (§6): tem de mostrar muita
+coisa e ser resolvível em menos de um minuto. O desenho segue disso — **abre com
+tudo aprovado**. Desmarcar é um toque, editar são dois (tocar no texto abre o
+editor de texto, tipo e sujeito).
+
+O player é o que torna a revisão confiável: escuto antes de aprovar. Cada âncora
+do átomo vira um botão `▶ mm:ss`; átomo sem âncora nenhuma mostra "sem áudio" em
+destaque, porque trecho que não existe na transcrição costuma ser afirmação
+inventada. `localizarNoAudio` traduz o segundo absoluto em "bloco N, segundo M"
+pegando o último bloco que começa antes dele — funciona igual para gravação (um
+bloco a cada 30 s) e para importação (um bloco só), sem caso especial.
+
+As entidades aparecem com "conhecida (N sessões)" ou "nova, citada Nx", e
+desmarcar deixa a entidade só no texto do átomo. **Entidade que é sujeito de um
+átomo aprovado fica travada**: sem ela o átomo ficaria sem `:SOBRE`, o que o
+contrato do schema não admite.
+
+#### O que o cliente pode mandar, e o que não pode
+
+`POST /api/sessoes/:id/confirmar` recebe quais átomos foram aprovados e como
+foram editados — texto, tipo, sujeito, menções. **Procedência não vem no corpo.**
+`id`, offsets, âncoras, `prompt_version` e `modelo` são relidos de
+`extracao.json` pelo índice do átomo. Se viessem do navegador, seriam uma
+afirmação dele, e átomo com procedência falsa é pior que átomo nenhum.
+
+Entidade só é gravada se algum átomo aprovado de fato a usa: aprovar na tela e
+depois rejeitar todos os átomos dela não pode deixar nó órfão.
+
 ## 5. Estados da sessão
 
 ```
@@ -406,14 +442,20 @@ significa para as telas:
 |---|---|---|
 | `temTranscricao` | `transcrito`, `extraindo`, `em_revisao`, `confirmada` | a leitura para o polling; a extração corre atrás |
 | `estaPendenteDeRevisao` | `em_revisao` | tem proposta esperando |
-| `estaAberta` / `STATUS_ABERTOS` | `gravando`, `abandonada`, `erro` | o chip de recuperação |
+| `estaAberta` / `STATUS_ABERTOS` | `gravando`, `abandonada`, `erro`, `em_revisao` | o chip da home |
+| `terminouDeProcessar` | `em_revisao`, `confirmada`, `erro` | a leitura para o polling |
 
-`em_revisao` **ainda não entra em `STATUS_ABERTOS`**, embora a spec peça que a
-home a ofereça: o chip de hoje só sabe dizer "retomar", e retomar a gravação de
-uma sessão que espera revisão é a coisa errada. Entra junto com a tela de
-revisão. `sessoesAbertas()` passou a receber a lista de `estados.ts` por
-parâmetro em vez de repeti-la no Cypher — escrita à mão nos dois lugares, ela
-divergiria no primeiro estado novo, que foi exatamente o que quase aconteceu.
+`em_revisao` entra em `STATUS_ABERTOS`, e o chip decide o verbo pelo status:
+"retomar" para gravação interrompida, "revisar" para proposta esperando. Oferecer
+"retomar" numa sessão já extraída mandaria gravar por cima do que está pronto.
+`sessoesAbertas()` recebe a lista de `estados.ts` por parâmetro em vez de
+repeti-la no Cypher — escrita à mão nos dois lugares, ela divergiria no primeiro
+estado novo, que foi exatamente o que quase aconteceu.
+
+`terminouDeProcessar` existe porque `completa` não serve para parar o polling da
+leitura: `completa` é sobre a transcrição e fica verdadeiro em `transcrito`, ou
+seja, antes de a extração acabar — a tela nunca veria o link para a revisão
+aparecer.
 
 A guarda real da idempotência está no Cypher: `atualizarSessao(id, mudança,
 sePartirDe)` só grava se o status atual estiver na lista, então um segundo
@@ -456,7 +498,9 @@ Três travas independentes:
 | `extracao.json` existir | `pipeline.extrairSessao` | não rechama o modelo nem sobrescreve proposta que eu já posso ter revisado |
 | `If-None-Match: *` no PUT da proposta | `pipeline.extrairSessao` | dois workers na mesma sessão geram uma proposta só: quem chega em segundo usa a do primeiro |
 | entrada no manifest por `i` | `manifest.registrarChunk` | reenviar o mesmo bloco não duplica nem reabre bloco transcrito |
-| status na cláusula `WHERE` | `sessoes.atualizarSessao` | transição já feita não volta atrás |
+| `id` do átomo = `<sessao_id>-<índice>` | `atomos.gravarAtomos` (`MERGE`) | confirmar duas vezes não duplica átomo |
+| `nome_normalizado` único (constraint) | `atomos.gravarEntidades` (`MERGE`) | duas menções à mesma pessoa viram um nó, mesmo em corrida |
+| status na cláusula `WHERE` | `sessoes.atualizarSessao` | transição já feita não volta atrás; confirmar duas vezes não reprocessa |
 
 **A única saída da trava é `extrairSessao(id, { forcar: true })`**, exposta por
 `POST /api/sessoes/:id/extrair` com `{"forcar": true}`. Ela existe para calibrar
@@ -518,6 +562,12 @@ de dias, sequência ou lembrete.
   erro, porque a mecânica de upload é invisível.
 - `idValido()` aceita só o formato que este sistema gera (`^[0-9a-z]{8,40}$`),
   barrando path traversal nas chaves do R2.
+- **O áudio também não passa por function na volta** (regra 1): a rota
+  `/chunks/:i/audio` assina um GET presigned de 5 min e o navegador busca os
+  bytes direto no R2. A rota confere que a chave existe antes de assinar — URL
+  para objeto inexistente faria o `<audio>` falhar calado.
+- **O confirmar não aceita procedência do cliente** (4.7): offsets, âncoras,
+  `prompt_version` e `modelo` são relidos do R2.
 
 ## 8. Neo4j
 
@@ -530,8 +580,9 @@ o valor de `NEO4J_DATABASE` no arquivo de credenciais. Errar esse segmento dá
 `fields`/`values` da resposta em objetos e transforma `errors[0]` em
 `Neo4jError`.
 
-A resolução de entidade (4.6) **lê** `:Entidade`, e é a única coisa que consulta
-o schema da slice 2. O único label que o código escreve hoje:
+`atomos.ts` escreve `:Atomo` e `:Entidade`, e **só o confirmar o chama** — antes
+da revisão o grafo não recebe conteúdo nenhum (regra 5). A resolução de entidade
+(4.6) só lê. Labels que o código escreve:
 
 ```
 (:Sessao { id, iniciada_em, duracao_s, status, audio_key,
@@ -545,9 +596,13 @@ essa regra vale para átomo e entidade.
 ### 8.1 Schema da slice 2, aplicado e vazio
 
 A migration `002_atomo_entidade.cypher` já rodou: `:Atomo` e `:Entidade` têm
-constraint e índice no Aura, e **nenhum nó**. Nada escreve neles ainda; quem vai
-escrever é o confirmar da revisão (`Specs/slice-2.md`). O que já existe é a
-leitura: `entidades.ts` consulta `:Entidade` por `nome_normalizado`.
+constraint e índice no Aura. Quem escreve neles é o confirmar da revisão, por
+`atomos.ts`; `entidades.ts` só lê, por `nome_normalizado`.
+
+Neo4j não aceita label vindo de parâmetro e o projeto não usa APOC, então
+`gravarEntidades` roda **uma consulta por tipo**, com o label literal na string.
+É seguro porque o valor sai de `TIPOS_ENTIDADE`, constante fechada, e nunca do
+cliente.
 
 Depois da migration 003 o contrato de `:Atomo` é:
 
@@ -618,6 +673,9 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha **e extrai** em `waitUntil` | `ja_finalizada` a partir de `em_revisao`; antes disso, é o retry da extração |
 | `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s, `force-dynamic`; `completa` é sobre a transcrição, não sobre a sessão |
 | `POST /api/sessoes/:id/extrair` | dispara a extração de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` reprocessa e sobrescreve |
+| `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco |
+| `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
+| `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo | `ja_confirmada` na segunda; procedência relida do R2, não do corpo |
 | `GET /api/sessoes/abertas` | sessões não finalizadas com pelo menos um bloco | alimenta o chip |
 | `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
@@ -629,7 +687,8 @@ Todas com `runtime = "nodejs"`.
 | Rota | Componente | O que mostra |
 |---|---|---|
 | `/` | `Gravacao` + `Importacao` + `ChipRecuperacao` | botão "Como foi seu dia?", link "ou subir um áudio que já gravei"; gravando: timer e um ponto de "salvo" — nada mais |
-| `/sessao/:id` | `Leitura` | processamento com texto aparecendo em pedaços, depois a transcrição inteira |
+| `/sessao/:id` | `Leitura` | processamento com texto em pedaços, a transcrição inteira e o link para revisar |
+| `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, editar, escutar cada trecho, confirmar |
 | `/entrar` | página de login | pede o e-mail permitido |
 
 `Leitura` é quem dispara `finalizar`, uma vez só (`useRef`), depois de garantir a
@@ -700,12 +759,15 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Sessão importada não se distingue de gravada no grafo.** `:Sessao` não tem
   `origem`; quem sabe é o `ext` no manifest, no R2. Acrescentar o campo é
   migration nova, e nada hoje lê essa distinção.
-- **Ninguém lê a proposta.** `extracao.json` é gravado e fica lá: falta a tela de
-  revisão, o player, a rota de áudio por trecho e o confirmar. Até isso existir,
-  uma sessão termina em `em_revisao` e não há como levá-la a `confirmada`.
-- **`em_revisao` não aparece na home.** Fora de `STATUS_ABERTOS` de propósito
-  (seção 5): o chip só sabe oferecer "retomar a gravação". Enquanto for assim,
-  uma sessão extraída só é alcançável pela URL dela.
+- **A revisão nunca foi usada numa sessão de verdade.** Ela foi escrita antes de
+  o prompt `extracao-3` rodar uma vez sequer, então o "menos de 60 s" da visão é
+  hipótese, não medição.
+- **Editar não muda a procedência.** Reescrever o texto de um átomo mantém os
+  offsets do trecho original — é o certo, mas quer dizer que um texto muito
+  editado aponta para um áudio que já não o sustenta palavra por palavra.
+- **Não há como desfazer um confirmar.** `confirmada` não tem transição de saída
+  e nada apaga átomo (regra 6). Corrigir depois de confirmar depende de edição
+  no grafo, que não existe nesta slice.
 - **A extração roda no mesmo `waitUntil` da transcrição.** Em dev isso é o mesmo
   processo: fechar a janela do servidor no meio mata o job e a sessão fica em
   `extraindo`. O retry é chamar `/finalizar` de novo.

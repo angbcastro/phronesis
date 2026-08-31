@@ -8,6 +8,7 @@ import {
   foiAbandonada,
   podeIrPara,
   temTranscricao,
+  terminouDeProcessar,
 } from "@/lib/estados";
 
 describe("transições", () => {
@@ -107,11 +108,19 @@ describe("o que cada estado significa para as telas", () => {
     }
   });
 
-  it("em_revisao é pendência de revisão, não de gravação", () => {
+  it("em_revisao é pendência de revisão, e agora aparece no chip", () => {
     expect(estaPendenteDeRevisao("em_revisao")).toBe(true);
-    // Ainda fora do chip: ele só sabe oferecer "retomar a gravação", que é a
-    // coisa errada para uma sessão esperando revisão.
-    expect(estaAberta("em_revisao")).toBe(false);
-    expect(STATUS_ABERTOS).toEqual(["gravando", "abandonada", "erro"]);
+    expect(estaAberta("em_revisao")).toBe(true);
+    expect(STATUS_ABERTOS).toEqual(["gravando", "abandonada", "erro", "em_revisao"]);
+  });
+
+  it("a leitura só para o polling quando nada mais muda sozinho", () => {
+    // Parar em `transcrito` faria a tela nunca ver a extração terminar, e o
+    // link para a revisão nunca apareceria.
+    expect(terminouDeProcessar("transcrito")).toBe(false);
+    expect(terminouDeProcessar("extraindo")).toBe(false);
+    expect(terminouDeProcessar("em_revisao")).toBe(true);
+    expect(terminouDeProcessar("confirmada")).toBe(true);
+    expect(terminouDeProcessar("erro")).toBe(true);
   });
 });

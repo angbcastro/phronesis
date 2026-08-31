@@ -46,14 +46,22 @@ export const temTranscricao = (s: StatusSessao): boolean =>
 export const estaPendenteDeRevisao = (s: StatusSessao): boolean => s === "em_revisao";
 
 /**
- * Sessão que o chip de recuperação deve oferecer para **retomar a gravação**.
- *
- * `em_revisao` ainda não entra: pela spec ela deveria aparecer na home, mas o
- * chip de hoje só sabe oferecer "retomar" — e retomar a gravação de uma sessão
- * que está esperando revisão é a coisa errada. Entra junto com a tela de
- * revisão, que é quem sabe o que oferecer.
+ * Nada mais vai mudar sozinho: ou tem proposta esperando, ou acabou, ou falhou.
+ * É onde a tela de leitura pode parar o polling — parar em `transcrito`, como
+ * `completa` sugere, faria a tela nunca ver a extração terminar.
  */
-export const STATUS_ABERTOS: StatusSessao[] = ["gravando", "abandonada", "erro"];
+export const terminouDeProcessar = (s: StatusSessao): boolean =>
+  s === "em_revisao" || s === "confirmada" || s === "erro";
+
+/**
+ * Sessão pendente, que o chip da home deve oferecer.
+ *
+ * `em_revisao` entrou junto com a tela de revisão: sessão extraída e não
+ * confirmada é exatamente o que a home deve oferecer, e agora existe para onde
+ * mandar. O chip decide o verbo pelo status — "retomar" para gravação
+ * interrompida, "revisar" para proposta esperando.
+ */
+export const STATUS_ABERTOS: StatusSessao[] = ["gravando", "abandonada", "erro", "em_revisao"];
 
 export const estaAberta = (s: StatusSessao): boolean => STATUS_ABERTOS.includes(s);
 

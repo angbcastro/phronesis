@@ -8,7 +8,7 @@ Leitura obrigatória no começo de qualquer tarefa:
 |---|---|
 | este arquivo | regras do projeto — **vence em qualquer conflito** |
 | `ARCHITECTURE.md` | o sistema como ele é hoje — e que você atualiza junto com o código |
-| `Specs/slice-1.md` | escopo e critérios de aceite da fatia atual |
+| `Specs/slice-x.md` | escopo e critérios de aceite da fatia atual "x" |
 | `db/migrations/` | definição canônica do schema — nunca inferir label ou propriedade do código |
 
 ## Stack (decidida — não propor alternativas)

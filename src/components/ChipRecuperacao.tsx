@@ -11,6 +11,7 @@ import Link from "next/link";
 
 interface SessaoAberta {
   id: string;
+  status: string;
   duracao_s: number;
   chunks_total: number;
   proximo_chunk: number;
@@ -55,6 +56,29 @@ export function ChipRecuperacao({
   }, []);
 
   if (!sessao) return null;
+
+  // Sessão extraída não se retoma nem se reprocessa: o que falta nela é a minha
+  // revisão. Oferecer "retomar" aqui seria mandar gravar por cima do que já
+  // está pronto.
+  if (sessao.status === "em_revisao") {
+    return (
+      <div className="chip">
+        <p>sessão de {minutos(sessao.duracao_s)} min esperando revisão</p>
+        <Link href={`/sessao/${sessao.id}/revisar`} style={{ color: "inherit" }}>
+          revisar
+        </Link>
+        <button
+          className="fraco"
+          onClick={() => {
+            dispensar(sessao.id);
+            setSessao(null);
+          }}
+        >
+          depois
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="chip">
