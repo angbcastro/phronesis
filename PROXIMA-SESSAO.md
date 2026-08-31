@@ -1,85 +1,98 @@
-# Checkpoint — 2026-08-31 (sessões 5 e 6)
+# Checkpoint — 2026-08-31 (sessão 7)
 
-Documento de trabalho, não de arquitetura. **A slice 2 fechou e a slice 3 está
-construída, faltando o uso.** Apagar quando a slice 4 começar.
+Documento de trabalho, não de arquitetura. **A slice 4 está construída e
+commitada (`42612c8`), e ainda não foi exercitada contra um caso real.**
+Apagar quando a slice 5 começar.
 
 Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
-sistema funciona hoje) e `Specs/slice-3.md` (o que a slice 3 tem que ser). Este
+sistema funciona hoje) e `Specs/slice-4.md` (o que a slice 4 tem que ser). Este
 arquivo só diz o que fazer a seguir.
 
 ---
 
-## -1. O que a sessão 6 descobriu sobre o STT
+## 0. O que está pronto
 
-Uma troca de modelo pedida, testada e **revertida no mesmo dia**. Fica aqui para
-ninguém repetir o teste daqui a três meses achando que é ideia nova.
+Os cinco passos da ordem de construção da spec, mais o que apareceu no caminho.
 
-`google/gemini-3.5-transcribe` transcreve melhor que o `xai/grok-stt` e custa
-pouco — e **não devolve timestamp nenhum**. Sem tempo não há procedência: todo
-átomo nasceria com `inicios_s`, `fins_s` e `ancoras` vazios, e o player da
-revisão sumiria de todos os itens. A medição varreu 16 modelos do Gateway
-(§4.2.1 do `ARCHITECTURE.md`); sobrou um só com tempo por palavra e sem rate
-limit, e é o que já estava lá. Deepgram, AssemblyAI, ElevenLabs e Groq não estão
-neste Gateway.
+| Passo | Onde |
+|---|---|
+| três campos de perfil + UI | `src/lib/perfil.ts`, `/entidades` |
+| agente 2, resolução por menção | `src/lib/resolucao.ts` (`resolucao-1`) |
+| seletor pesquisável | `src/components/Revisao.tsx` |
+| `:PERFILA` gravado no confirmar | `src/lib/atomos.ts` |
+| agente 3, rascunho de perfil | `src/lib/perfil.ts` (`perfil-1`) |
 
-**O `keyterm` funciona** — isso era dúvida e virou medida. Mesmo bloco, mesma
-chamada, só a lista mudando: sem lista sai "Porto Alegre", com `["Portalegre"]`
-sai "Portalegre", e um termo irrelevante no controle não se injeta na saída.
+390 testes, typecheck limpo. `ARCHITECTURE.md` acompanha: §4.8 e §4.9 novas,
+§8.3 nova, §4.6 reescrita.
 
-Custo declarado: no bloco de teste o grok escreveu "a secretária está
-funcionando" onde os outros ouviram "isso aqui tá funcionando". Era um teste de
-microfone de 24/08, e as sessões reais dele produziram extração boa — mas
-transcrição estranha numa sessão de verdade tem aqui a primeira suspeita, e não
-há para onde correr dentro deste Gateway.
+**A migration 005 vai proposta e não foi rodada.** Zero statements, como a 003 —
+aplicá-la é um no-op e o código já funciona sem ela. Ela existe porque
+`db/migrations/` é a definição canônica do schema.
 
----
-
-## 0. O buraco fechou
-
-Duas sessões confirmadas, oito átomos no grafo, conferidos por Cypher:
-
-```
-:Sessao 8   :Atomo 8   :Entidade 2 (as duas também :Pessoa)
-:GEROU 8    :SOBRE 8   :MENCIONA 5
-zero átomo sem :SOBRE, zero átomo sem sessão
-```
-
-O que a passagem pelo banco de verdade provou, e que antes só tinha teste com
-Neo4j mockado:
-
-- o `MERGE` com label literal por tipo funciona no Aura Free — `:Entidade` sai
-  com os dois labels (`Entidade` + `Pessoa`);
-- `inicios_s`/`fins_s` gravam como lista de float, com a precisão que o STT
-  devolve (`18.672`, `112.912`);
-- todo átomo carrega `prompt_version: "extracao-5"`, `modelo:
-  "zai/glm-5.3-flash"`, `status: "ativo"`, `criado_em` e `valido_em` (que é o
-  `iniciada_em` da sessão, não a hora do confirmar — é o certo: a afirmação vale
-  do dia em que foi falada).
-
-Para reconferir a qualquer momento, no console do Aura:
-
-```cypher
-MATCH (s:Sessao)-[:GEROU]->(a:Atomo)-[:SOBRE]->(e:Entidade)
-RETURN a.tipo, a.texto, e.nome, a.inicios_s, a.prompt_version, a.modelo
-```
-
-**Continua sem desfazer.** `confirmada` não tem transição de saída e nada apaga
-átomo (regra 6).
+**`resolucao-1` e `perfil-1` nunca rodaram de verdade.** Enquanto isso for
+verdade, editar esses prompts não precisa subir o número: não há saída anterior
+de que distinguir. A partir da primeira sessão que os exercitar, sobe.
 
 ---
 
-## 1. Estado das sessões
+## 1. O passo zero está pela metade — e do jeito que está, não funciona
+
+O grafo hoje:
+
+```
+Isinha             6 átomo(s)  2 sessão(ões)   sem perfil
+eu                 7 átomo(s)  2 sessão(ões)   sem perfil
+Raffael do Vale    0 átomo(s)  0 sessão(ões)   sem perfil   ← semeado, nunca falado
+```
+
+Falta o Rapha, faltam os perfis — e tem um problema pior, que eu medi rodando a
+camada de string de verdade contra o nome que está lá:
+
+```
+"Rafa"   x "Raffael do Vale" → NADA (vira entidade nova)
+"Raffa"  x "Raffael do Vale" → NADA
+"Rapha"  x "Raffael do Vale" → NADA
+"Raffael" x "Raffael do Vale" → 0.8, compartilham "raffael"
+```
+
+**O nome semeado tem que ser a forma que eu falo, não a forma do documento.**
+`proximidade()` casa palavra inteira ou distância de até 2 letras; "Rafa" e
+"Raffael" não são nem uma coisa nem outra. Então, hoje, dizer "Rafa" numa sessão
+não encontra o `Raffael do Vale`: não há candidato, o agente 2 **não é chamado**,
+e nasce uma entidade nova solta.
+
+E aí vem o risco de verdade: com os dois semeados por nome completo, uma sessão
+que fale dos dois como "Rafa" cria **um nó só**, com os átomos dos dois
+misturados — que é exatamente o que esta slice não sabe desfazer.
+
+As formas curtas, entre si, casam bem:
+
+```
+"Rafa" x "Raffa" → 0.8    "Rafa" x "Rapha" → 0.6    "Raffa" x "Rapha" → 0.6
+```
+
+**O conserto:** o nome de exibição precisa conter, como palavra, o que eu falo.
+`Raffa` funciona. `Raffa do Vale` funciona (compartilha a palavra "raffa").
+`Raffael do Vale` não funciona. Renomear em `/entidades` resolve — e a grafia
+velha fica como alias, sem perder nada.
+
+---
+
+## 2. Estado das sessões
 
 | id | estado | o que fazer |
 |---|---|---|
-| `mtgo3kaf5s5n3p3p521b` | **confirmada** | 4 átomos no grafo (Isinha, "eu") |
-| `mth9xtoo5t35000z0t2v` | **confirmada** | 4 átomos no grafo |
-| `mtgn3zf72s023o3r281k` | em_revisao | proposta esperando — reextrair com `extracao-5` e julgar |
-| `mtgle3st3m6f510w6j3i` | em_revisao | idem; proposta antiga, de uma âncora só |
-| `mtgeskkd…`, `mtgeoq7a…` | transcrito | nunca extraídas — a extração automática ainda não existia |
+| `mthu6r1y5h104f1w2x68` | **em_revisao** | 526 s, a mais longa até hoje e a primeira pelo caminho novo — proposta esperando julgamento |
+| `mth9xtoo5t35000z0t2v` | confirmada | 4 átomos no grafo |
+| `mtgo3kaf5s5n3p3p521b` | confirmada | 4 átomos (Isinha, "eu") |
+| `mtgn3zf72s023o3r281k` | em_revisao | proposta antiga, formato pré-slice-4 — abre, mas reextrair devolve o formato novo |
+| `mtgle3st3m6f510w6j3i` | em_revisao | idem, de uma âncora só |
+| `mtgeskkd…`, `mtgeoq7a…` | transcrito | nunca extraídas — trazem entidade nova, que é o que dá material |
 | `mt7yxsg7…`, `mt7dlh0q…` | transcrito | teste de microfone, sem valor de conteúdo |
 
-Reextrair é pelo botão na lista de **áudios** (link no rodapé da home), ou:
+Totais no grafo: 8 átomos, 3 entidades, **0 arestas `:PERFILA`**.
+
+Reextrair é pelo botão na lista de **áudios**, ou:
 
 ```js
 await fetch('/api/sessoes/<id>/extrair', {
@@ -88,69 +101,30 @@ await fetch('/api/sessoes/<id>/extrair', {
 }).then(r => r.json())
 ```
 
+`forcar` refaz extração **e** resolução — as duas estão sob a mesma trava.
+
 ---
 
-## 2. O que mudou nesta sessão
+## 3. O que a sessão 7 descobriu
 
-**A transcrição saiu da jornada.** Era ela que a gravação abria, e dela saía um
-link que eu tinha de clicar para revisar. Agora:
+**A sessão de 526 s caiu na falha do modelo de raciocínio** e se recuperou
+sozinha na segunda tentativa. O log dizia só "Vieram 0 caractere(s)", que não
+distingue duas causas com consertos opostos. Agora `diagnostico()` (em
+`modelos.ts`, usado pelos três agentes) põe `finishReason`, tokens e o tamanho
+do texto e do pensamento no log das duas tentativas:
 
-| Rota | Tela | Papel |
+| O que aparece | O que houve | Conserto |
 |---|---|---|
-| `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem texto; ao ver `em_revisao` faz `replace` para a revisão |
-| `/sessao/:id/revisar` | `Revisao` | inalterada |
-| `/sessao/:id/transcricao` | `Leitura` | o texto literal, sem finalizar nada e sem redirecionar |
+| `finishReason=length`, `raciocinio` no teto | o pensamento comeu o orçamento | subir o teto de saída, ou trocar de modelo pela env |
+| `finishReason=stop`, saída sobrando, `pensamento` grande, `texto=0` | o JSON foi para a parte de raciocínio | ler `reasoningText` quando o texto vier vazio |
 
-Na lista de áudios, cada sessão com transcrição pronta ganhou um botão
-**transcrição** ao lado de **reextrair**. `destino()` manda a linha para onde
-ainda há o que fazer: revisão se há proposta, transcrição se o texto está
-inteiro, processamento no resto.
+A segunda linha é a que dói: nela a repetição automática **mascara** o problema e
+ele volta na sessão seguinte. Vale olhar o log na próxima ocorrência antes de
+mexer em qualquer número.
 
-`Processando` é quem chama `/finalizar` agora — a garantia de fila vazia veio
-junto, intacta. `Leitura` só lê.
-
-## 2.1 O que a sessão 6 construiu (slice 3)
-
-**Metade A — o vocabulário vem do grafo.** União com `config/vocabulario.txt`,
-arquivo primeiro, ordenado por número de sessões, cache de 5 min. Grafo fora do
-ar cai no arquivo em vez de derrubar a transcrição. `eu`, pronome e palavra
-comum não viram keyterm — ensinar o STT a ouvir "casa" com mais força piora tudo
-em troca de nada. O **nome da opção** virou mapa por provedor em `modelos.ts`:
-provedor desconhecido não recebe opção nenhuma, que é o padrão seguro.
-
-**Metade B — `/entidades`.** A primeira janela para dentro do grafo. Lista o que
-entrou, e conserta: fundir duas grafias, renomear. "Procurar duplicatas" é um
-botão, porque a camada de string é de graça e a que julga é chamada de modelo.
-
-**A ideia que carrega a slice: fundir é criar alias.** O perdedor fica com
-`status='fundida'` e `:FUNDIDA_EM`; as arestas migram; e como ele mantém o
-`nome_normalizado`, a grafia morta nunca renasce — dita de novo, resolve até o
-vencedor. Renomear é o mesmo mecanismo consigo mesma, o que fecha o limite do
-"meu pai". Migration 004 aplicada (um índice; sem migração de dado, de
-propósito).
-
----
-
-## 3. O prompt está em `extracao-5`
-
-Mora em `src/lib/extracao.ts`, na constante `INSTRUCOES`. Cinco versões em um dia,
-e cada mudança sobe o número — é o que vai gravado em todo átomo.
-
-O que a calibração produziu, e que não se deve desfazer sem motivo:
-
-- 10 a 20 átomos numa sessão de 15 min; o `extracao-1` fazia ~150 e matava a
-  revisão de 60 s;
-- trivialidade do dia colapsa num átomo `ROTINA`;
-- `texto` é frase limpa com as palavras de quem falou, `trechos` são literais;
-- `SENTIMENTO`, `APRENDIZADO` e `ROTINA` são sempre `sobre: "eu"`;
-- nome de entidade é nome — procurar na transcrição inteira antes de devolver
-  pronome;
-- não comentar a transcrição; lista vazia é resposta legítima.
-
-**`zai/glm-5.3-flash` é modelo de raciocínio** e chegou a gastar 1720 tokens
-pensando para 122 de texto. Daí o `maxOutputTokens: 8000`, a segunda tentativa
-automática e a resposta crua na mensagem de erro. Se voltar a falhar, o log
-`[extracao]` agora diz o que veio.
+**Transcrição longa começou a morder.** 526 s é quase o triplo das anteriores, e
+foi a primeira a estourar. O limite já estava listado como hipótese; agora é
+observação.
 
 ---
 
@@ -158,67 +132,68 @@ automática e a resposta crua na mensagem de erro. Se voltar a falhar, o log
 
 | Decisão | Por quê |
 |---|---|
-| Qualidade da extração é avaliada à mão, na revisão | não existe gabarito rotulado, fixture nem percentual de recall — não inventar nenhum dos três |
-| `"eu"` é uma `:Pessoa` como qualquer outra | decidido explicitamente |
-| Átomo sem âncora aparece sem player, não é descartado | diverge do critério 3 da spec, de propósito: offset plausível é procedência falsa |
-| Um átomo junta o mesmo assunto dito em momentos distintos | daí as âncoras múltiplas |
-| Renomear entidade só vale para entidade nova | o grafo vence sobre o extrator |
-| A correção de nome acontece na lista de entidades, não átomo por átomo | um toque conserta todos os átomos que apontam para ela |
+| Dois agentes, e o `extracao-5` não muda | cinco versões de calibração produziram algo que presta; a desambiguação não é problema dele |
+| A atribuição é por menção, não por sessão | dois "Rafa" na mesma sessão podem ser duas pessoas |
+| Sessão sem ambiguidade não chama o agente 2 | e por isso não paga nada — critério 5 da spec |
+| Dúvida destaca, não trava | o pior caso é uma atribuição trocada, que eu conserto; o pronome trava porque o pior caso lá é um nó chamado "ela" |
+| O fallback nunca é o nome parecido | duas entidades a mais é grafo sujo; fundir duas pessoas não tem desfazer |
+| O agente 3 nunca escreve | o perfil é o que o agente 2 lê para desambiguar; erro ali se realimenta |
+| A marca de perfil é aresta, não propriedade | ela precisa dizer de **quem** é a informação |
+| `contexto` é largo | quem a pessoa é para mim **e** qualquer outro contexto relevante sobre ela |
+| Qualidade de resolução se avalia à mão, na revisão | sem gabarito, sem fixture, sem percentual |
 
 ---
 
 ## 5. O que vai morder
 
+- **Sessão sem ambiguidade nenhuma não marca perfil.** Quem aponta `:PERFILA` é o
+  agente 2, e ele só é chamado quando alguma menção precisa de julgamento. Com o
+  grafo como está, "o Rapha sabe produzir evento" não vira aresta, e o agente 3
+  não tem de onde rascunhar. É consequência do critério 5, está registrada em
+  `ARCHITECTURE.md` §14, e a saída — se incomodar — é chamar o agente também
+  quando houver átomo com cara de perfil.
+- **O agente 2 só vê os candidatos da menção, não o grafo inteiro.** Apelido sem
+  letra em comum com o nome do nó nunca chega ao prompt. É o §1 acima, em forma
+  geral.
 - **`pnpm build` com o dev server de pé quebra o `.next`.** Os dois compartilham
-  o diretório. Aconteceu uma vez e derrubou o app.
+  o diretório.
 - **`waitUntil` em dev roda no mesmo processo.** Fechar a janela do servidor no
-  meio da extração mata o job; a sessão fica em `extraindo` e o retry é
-  `/finalizar` de novo, ou o botão da lista de áudios.
-- **Instância Aura Free pausa sozinha** e o hostname deixa de resolver em DNS —
-  o sintoma é `ENOTFOUND`, não timeout. Despausar no console resolve.
-- **Nome descritivo não é pronome.** "meu pai" e "minha mãe" viraram entidades com
-  esse nome. É defensável, mas se o nome próprio aparecer em outra sessão o grafo
-  terá as duas. **Decisão em aberto:** fazer descritivo pedir nome também?
-- **`config/vocabulario.txt` ainda tem três nomes.** "rafa" saiu em minúscula por
-  isso. Nome que não está lá sai grafado errado, e encher depois não conserta o
-  que já foi transcrito.
+  meio mata o job; a sessão fica em `extraindo` e o retry é `/finalizar` de novo.
+- **Instância Aura Free pausa sozinha** — o sintoma é `ENOTFOUND`, não timeout.
+- **`config/vocabulario.txt` ainda tem três nomes.** O que o grafo conhece entra
+  sozinho, mas nome que nunca foi falado só entra por ali.
+- **Não há como separar um nó que conflacionou duas pessoas.** É a razão de o
+  passo zero existir.
 
 ---
 
 ## 6. Próximos passos, em ordem
 
-**A slice 3 está construída** (`Specs/slice-3.md`) e **a slice 4 tem spec**
-(`Specs/slice-4.md` — identidade por contexto). O que falta na 3 é uso: a
-mecânica foi validada contra o Aura, mas o grafo não tem duplicata nenhuma para
-o `duplicatas-1` julgar, então a qualidade da proposta é a única parte que
-continua sem medida.
-
-0. **Implementar a slice 4**, na ordem que a spec fixa — os três campos de
-   perfil primeiro, o agente de resolução depois. Parar no passo 3 já resolve o
-   caso do Raffa/Rapha; do 4 em diante é o perfil se mantendo sozinho.
-   Migration 005 vai proposta e precisa da sua aprovação antes de rodar.
-1. **Abrir `/entidades`** — link no rodapé da home, ao lado de "áudios". Hoje
-   ela lista `Isinha` (6 átomos, 2 sessões) e `eu` (7 átomos, 2 sessões). É a
-   primeira janela para dentro do grafo que este sistema tem. **Cadastrar ali o
-   Raffa e o Rapha antes de falar deles numa sessão** é o passo zero da slice 4:
-   nó já conflacionado não tem como separar depois.
-2. **Reextrair as duas sessões em `em_revisao`** com o `extracao-5` e julgar a
-   saída na revisão. É a única medida de qualidade que existe — e as sessões
-   nunca extraídas (`mtgeskkd`, `mtgeoq7a`) trazem entidade nova, que é o que
-   dá material para a busca de duplicatas ter o que fazer.
-3. **Encher o `config/vocabulario.txt`** com os nomes próprios que você fala.
-   Ele não deixa de existir na slice 3 — continua sendo o único jeito de
-   ensinar um nome **antes** de falá-lo pela primeira vez, que é justamente
-   quando o STT mais erra. O que o grafo já conhece entra sozinho.
-4. **Bancada de comparação de modelos** (pedida e adiada duas vezes): rodar o
-   **fluxo de extração** de uma mesma transcrição em até três modelos ao mesmo
-   tempo, comparar e escolher. Só extração, não STT. O desenho discutido foi uma
-   pasta e um namespace de rota próprios (`src/laboratorio/`, `/laboratorio`), com
-   regra de mão única — o laboratório importa do principal, o principal nunca
-   importa do laboratório, com um teste travando a direção. Nada de escrita no
-   grafo nem nas chaves de sessão do R2. O `pnpm-workspace.yaml` **não** declara
-   `packages:`, então separar em pacote exigiria mover `src/` para `apps/web/` —
-   mexer no projeto inteiro para isolar a bancada dele.
+1. **Consertar e completar o passo zero**, que é pré-requisito de todo o resto:
+   renomear `Raffael do Vale` para a forma que eu falo (`Raffa`, ou `Raffa do
+   Vale`), criar o `Rapha`, e **escrever o perfil dos dois** — principalmente
+   `fizemos juntos`, que é o desambiguador mais forte. Sem perfil, o agente 2
+   é chamado e não tem com o que decidir.
+2. **Julgar a proposta da `mthu6r1y5h104f1w2x68`**, que está esperando. É a
+   primeira sessão pelo caminho novo. Se nenhum átomo aparecer destacado, é
+   porque nenhuma menção foi ambígua e o agente 2 não foi chamado — o que é o
+   esperado com o grafo como está.
+3. **Gravar a sessão do teste**: falar do Raffa e do Rapha na mesma sessão, com
+   contexto que os separe ("call para fechar o evento" / "slackline no parque").
+   É o critério 2 da spec, e o único caso de que eu sei a resposta. Se os dois
+   átomos caem em nós diferentes, a resolução presta; se caem no mesmo, o que se
+   ajusta é o `resolucao-1`.
+4. **Aprovar a migration 005** — no-op, mas fecha a regra.
+5. **Reextrair as sessões antigas** (`mtgn3zf7`, `mtgle3st`) com o formato novo,
+   e extrair as que nunca foram (`mtgeskkd`, `mtgeoq7a`) — trazem entidade nova,
+   que é material para a busca de duplicatas e para o perfil.
+6. **Encher o `config/vocabulario.txt`** com os nomes próprios que eu falo.
+7. **Bancada de comparação de modelos** (pedida e adiada três vezes): rodar o
+   fluxo de extração de uma mesma transcrição em até três modelos ao mesmo tempo.
+   Desenho discutido: pasta e namespace próprios (`src/laboratorio/`,
+   `/laboratorio`), regra de mão única — o laboratório importa do principal, o
+   principal nunca importa do laboratório, com um teste travando a direção. Nada
+   de escrita no grafo nem nas chaves de sessão do R2.
 
 ---
 
@@ -226,16 +201,15 @@ continua sem medida.
 
 As 2-4 perguntas do ritual, `:ATUALIZA`/`:CONTRADIZ`/`:CONFIRMA` entre átomos,
 busca, tela Perguntar, `:Foco`, visualização de grafo e deduplicação de **átomo**
-(a de entidade ficou pronta na slice 3). **Não existem e não devem ser
-construídos agora** — todos dependem de material acumulado que ainda não existe.
-
-Eram "slice 4" até a identidade por contexto entrar na frente, e a ordem faz
-sentido: pergunta boa precisa saber de quem se está falando.
+(a de entidade ficou na slice 3). Todos dependem de material acumulado — e uma
+pergunta boa precisa saber de quem se está falando, que é o que a slice 4
+entrega.
 
 Também fora, e sem previsão:
 
 - **Desfazer uma fusão.** Migrar as arestas de volta exigiria saber quais eram de
   quem, e isso não é gravado. O que protege é a fusão nunca ser automática.
-- **Separar um nó que já conflacionou duas pessoas.** A máquina de fusão junta,
-  não divide, e mover átomo entre entidades não existe. É por isso que o Raffa e
-  o Rapha têm que ser cadastrados **antes** da primeira menção.
+- **Separar um nó que já conflacionou duas pessoas.** A máquina junta, não
+  divide. É por isso que o passo zero vem antes de falar.
+- **Editar a marca de perfil na revisão.** Ela aparece e some com o átomo, mas
+  não dá para trocar o campo. Se o agente errar muito, ajusta-se o `resolucao-1`.
