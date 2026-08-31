@@ -1,5 +1,7 @@
 /**
- * Escrita de higiene no grafo: fundir, renomear, recusar.
+ * Escrita de manutenção de entidade: fundir, renomear, trocar tipo, criar,
+ * recusar. É o par de `atomos.ts` — lá o grafo recebe o que a revisão aprovou,
+ * aqui ele recebe as correções que eu faço depois, em `/entidades`.
  *
  * **Fundir é criar alias, não apagar** (regra 6). O nó perdedor fica, ganha
  * `status = 'fundida'` e uma aresta `:FUNDIDA_EM` para o vencedor; as arestas
@@ -19,7 +21,9 @@
  */
 import { query } from "./neo4j";
 import { novoId } from "./sessoes";
-import { normalizarNome } from "./texto";
+import { ehPronome, normalizarNome } from "./texto";
+import { TIPOS_ENTIDADE } from "./tipos";
+import type { TipoEntidade } from "./tipos";
 
 export const STATUS_ENTIDADE_ATIVA = "ativa";
 export const STATUS_ENTIDADE_FUNDIDA = "fundida";
@@ -34,7 +38,8 @@ export class FusaoError extends Error {
 export interface ResultadoFusao {
   vencedora: string;
   perdedora: string;
-  atomos_migrados: number;
+  /** Arestas :SOBRE + :MENCIONA movidas. Um átomo com as duas conta duas vezes. */
+  arestas_migradas: number;
 }
 
 /**
@@ -69,7 +74,7 @@ export async function fundir(
   if (!linha?.v) throw new FusaoError(`"${chaveVencedora}" não está no grafo`);
   if (!linha?.p) throw new FusaoError(`"${chavePerdedora}" não está no grafo`);
   if (linha.jaFundida) {
-    return { vencedora, perdedora, atomos_migrados: 0 };
+    return { vencedora, perdedora, arestas_migradas: 0 };
   }
 
   // Migra o que aponta para a perdedora. Uma consulta por tipo de aresta, com o
@@ -115,7 +120,7 @@ export async function fundir(
     },
   );
 
-  return { vencedora, perdedora, atomos_migrados: migrados };
+  return { vencedora, perdedora, arestas_migradas: migrados };
 }
 
 /**
@@ -156,11 +161,17 @@ export async function renomear(chaveAtual: string, nomeNovo: string): Promise<vo
 
   // O nó assume o nome novo, e nasce um alias com a grafia velha apontando para
   // ele. O alias precisa de id próprio: `entidade_id` é constraint única.
+  //
+  // O nome do alias sai de `e.nome`, lido antes do SET — e **não** do argumento.
+  // Quem chama passa a chave normalizada (é o que a tela tem em mãos), então
+  // usar o argumento gravava "zztestefusao" onde devia estar "ZZTesteFusao", e
+  // a lista mostrava a chave crua como histórico do nome.
   await query(
     `MATCH (e:Entidade { nome_normalizado: $atual })
+     WITH e, e.nome AS nomeVelho
      SET e.nome = $novo, e.nome_normalizado = $chaveNova
      CREATE (alias:Entidade {
-       id: $idAlias, nome: $nomeVelho, nome_normalizado: $atual,
+       id: $idAlias, nome: nomeVelho, nome_normalizado: $atual,
        criado_em: $agora, status: $fundida, fundida_em: $agora
      })
      MERGE (alias)-[:FUNDIDA_EM]->(e)`,
@@ -168,12 +179,101 @@ export async function renomear(chaveAtual: string, nomeNovo: string): Promise<vo
       atual,
       chaveNova,
       novo,
-      nomeVelho: chaveAtual,
       idAlias: novoId(),
       agora: new Date().toISOString(),
       fundida: STATUS_ENTIDADE_FUNDIDA,
     },
   );
+}
+
+/**
+ * Troca o label de tipo de uma entidade.
+ *
+ * Existe porque o tipo só era editável enquanto a entidade era **nova**, na
+ * primeira revisão em que aparecia: depois disso ela vira `conhecida`, a
+ * revisão a mostra como texto fixo (o grafo vence sobre o extrator) e não havia
+ * mais como consertar. "Rodozanco" nascido `:Pessoa` por um palpite errado do
+ * extrator ficava `:Pessoa` para sempre — e label errado é exatamente o grafo
+ * apodrecido que esta parte do sistema existe para evitar.
+ *
+ * Uma consulta por tipo alvo, com os labels literais: Neo4j não aceita label
+ * vindo de parâmetro, e o valor sai de `TIPOS_ENTIDADE`, constante fechada,
+ * nunca do cliente. Mesmo padrão de `statementDeEntidade` em `atomos.ts`.
+ *
+ * `:Entidade` nunca é removido — é ele que carrega a constraint de
+ * `nome_normalizado` e é por ele que toda leitura encontra o nó.
+ */
+function statementDeTipo(tipo: TipoEntidade): string {
+  if (!TIPOS_ENTIDADE.includes(tipo)) throw new FusaoError(`Tipo inválido: ${tipo}`);
+  const outros = TIPOS_ENTIDADE.filter((t) => t !== tipo);
+  const remocao = outros.length > 0 ? `\n     REMOVE ${outros.map((t) => `e:${t}`).join(", ")}` : "";
+  return `MATCH (e:Entidade { nome_normalizado: $chave })
+     SET e:${tipo}${remocao}
+     RETURN e.id AS id`;
+}
+
+export async function trocarTipo(chaveOuNome: string, tipo: TipoEntidade): Promise<void> {
+  const chave = normalizarNome(chaveOuNome);
+  if (chave === "") throw new FusaoError("trocar o tipo exige a entidade");
+  if (!TIPOS_ENTIDADE.includes(tipo)) throw new FusaoError(`Tipo inválido: ${tipo}`);
+
+  const r = await query<{ id: string }>(statementDeTipo(tipo), { chave });
+  if (r.length === 0) throw new FusaoError(`"${chaveOuNome}" não está no grafo`);
+}
+
+/**
+ * Cria uma entidade à mão, antes de ela ser falada.
+ *
+ * **Cria nó órfão de propósito** — entidade sem átomo nenhum apontando para
+ * ela. O confirmar da revisão evita isso com cuidado (aprovar uma entidade e
+ * depois rejeitar todos os átomos dela não pode deixar lixo no grafo), mas ali
+ * o órfão seria acidente; aqui é o pedido. A diferença aparece na tela: a lista
+ * mostra `0 átomo(s)`, e é isso mesmo até a primeira vez que eu falar o nome.
+ *
+ * O ganho é duplo, e o segundo é o que importa: o nome entra no vocabulário do
+ * STT **antes** da primeira menção — que é justamente quando o transcritor mais
+ * erra —, e quando ele finalmente for falado a resolução acha a entidade já
+ * pronta, com o tipo que eu escolhi, em vez do palpite do extrator.
+ */
+export async function criarEntidade(
+  nome: string,
+  tipo: TipoEntidade,
+): Promise<{ id: string; nome: string; tipo: TipoEntidade }> {
+  const limpo = nome.trim();
+  const chave = normalizarNome(limpo);
+
+  if (chave === "") throw new FusaoError("o nome não pode ser vazio");
+  if (ehPronome(chave)) throw new FusaoError(`"${limpo}" é um pronome, não um nome`);
+  if (!TIPOS_ENTIDADE.includes(tipo)) throw new FusaoError(`Tipo inválido: ${tipo}`);
+
+  // A constraint de `nome_normalizado` recusaria de qualquer jeito; conferir
+  // antes é o que permite dizer *por que*, inclusive quando o nome colide com
+  // uma grafia já fundida em outra coisa.
+  const existente = await query<{ nome: string; fundida: boolean }>(
+    `MATCH (e:Entidade { nome_normalizado: $chave })
+     OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
+     RETURN coalesce(v.nome, e.nome) AS nome, v IS NOT NULL AS fundida`,
+    { chave },
+  );
+  if (existente.length > 0) {
+    const { nome: atual, fundida } = existente[0];
+    throw new FusaoError(
+      fundida
+        ? `"${limpo}" já existe no grafo, como grafia de "${atual}"`
+        : `"${atual}" já está no grafo`,
+    );
+  }
+
+  const id = novoId();
+  await query(
+    `CREATE (e:Entidade:${tipo} {
+       id: $id, nome: $nome, nome_normalizado: $chave,
+       criado_em: $agora, status: $ativa
+     })`,
+    { id, nome: limpo, chave, agora: new Date().toISOString(), ativa: STATUS_ENTIDADE_ATIVA },
+  );
+
+  return { id, nome: limpo, tipo };
 }
 
 /**

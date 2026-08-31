@@ -398,6 +398,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .par p { margin: 0; }
 
+/* Semear uma entidade antes de falar o nome, e a busca de duplicatas. */
+.criar-entidade { margin: 0.6rem 0 0.2rem; flex-wrap: wrap; }
+.criar-entidade .campo-nome { width: 12rem; }
+
+.campo-nome.tipo { width: auto; color: var(--texto-fraco); }
+
 .campo-nome {
   background: none;
   border: 1px solid var(--linha);

@@ -1,7 +1,11 @@
 /**
- * Escrita do conteúdo no grafo. **É o único módulo que cria `:Atomo` e
- * `:Entidade`**, e só é chamado pelo confirmar — nada entra antes da revisão
- * (regra 5).
+ * Escrita do conteúdo no grafo. **É o único módulo que cria `:Atomo`**, e só é
+ * chamado pelo confirmar — nenhum átomo entra antes da revisão (regra 5).
+ *
+ * `:Entidade` também nasce aqui, mas não só: `fusao.ts` cria uma quando eu
+ * semeio um nome à mão em `/entidades`, antes de falá-lo pela primeira vez.
+ * Isso não fura a regra 5 — o que ela proíbe é o **pipeline** gravar sem passar
+ * por mim, e semear é literalmente eu digitando e apertando criar.
  *
  * Três travas de idempotência trabalham juntas (regra 4):
  *

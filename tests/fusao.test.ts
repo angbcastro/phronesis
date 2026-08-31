@@ -12,11 +12,13 @@ vi.mock("@/lib/neo4j", () => ({ query: vi.fn(async () => []) }));
 import { query } from "@/lib/neo4j";
 import {
   chaveDoPar,
+  criarEntidade,
   fundir,
   FusaoError,
   marcarDistintas,
   renomear,
   STATUS_ENTIDADE_FUNDIDA,
+  trocarTipo,
 } from "@/lib/fusao";
 
 const consulta = vi.mocked(query);
@@ -58,7 +60,7 @@ describe("fundir", () => {
     const cypher = todoCypher();
     expect(cypher).toContain("MERGE (a)-[:SOBRE]->(v)");
     expect(cypher).toContain("MERGE (a)-[:MENCIONA]->(v)");
-    expect(r.atomos_migrados).toBe(4); // 2 por tipo, no mock
+    expect(r.arestas_migradas).toBe(4); // 2 por tipo, no mock
   });
 
   it("normaliza os dois lados — a chave é que casa, não a grafia", async () => {
@@ -77,7 +79,7 @@ describe("fundir", () => {
     });
 
     const r = await fundir("Exxmed", "Exx Med");
-    expect(r.atomos_migrados).toBe(0);
+    expect(r.arestas_migradas).toBe(0);
     expect(todoCypher()).not.toContain("MERGE (a)-[:SOBRE]->(v)");
   });
 
@@ -138,5 +140,75 @@ describe("recusar um par", () => {
 describe("chave do par", () => {
   it("não depende da ordem — senão a recusa só valeria num sentido", () => {
     expect(chaveDoPar("a", "b")).toBe(chaveDoPar("b", "a"));
+  });
+});
+
+describe("trocar o tipo", () => {
+  it("põe o label novo e tira os outros, sem tocar em :Entidade", async () => {
+    // :Entidade carrega a constraint de nome_normalizado e é por ele que toda
+    // leitura encontra o nó — removê-lo sumiria com a entidade.
+    consulta.mockResolvedValue([{ id: "id-1" }] as never);
+    await trocarTipo("rodozanco", "Projeto");
+
+    const cypher = todoCypher();
+    expect(cypher).toContain("SET e:Projeto");
+    expect(cypher).toContain("REMOVE e:Pessoa, e:Objetivo");
+    expect(cypher).not.toMatch(/REMOVE[^\n]*e:Entidade/);
+  });
+
+  it("entidade que não existe estoura em vez de virar no-op silencioso", async () => {
+    consulta.mockResolvedValue([] as never);
+    await expect(trocarTipo("fantasma", "Pessoa")).rejects.toThrow(/não está no grafo/);
+  });
+
+  it("recusa tipo fora da constante fechada — é label literal no Cypher", async () => {
+    await expect(trocarTipo("isinha", "Fantasma" as never)).rejects.toThrow(/Tipo inválido/);
+  });
+});
+
+describe("criar entidade à mão", () => {
+  it("nasce ativa, com o label do tipo escolhido", async () => {
+    consulta.mockResolvedValue([] as never);
+    const r = await criarEntidade("Rodozanco", "Projeto");
+
+    expect(r.nome).toBe("Rodozanco");
+    expect(todoCypher()).toContain("CREATE (e:Entidade:Projeto");
+    const params = consulta.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(params.chave).toBe("rodozanco");
+    expect(params.ativa).toBe("ativa");
+  });
+
+  it("recusa nome que já está no grafo", async () => {
+    consulta.mockResolvedValue([{ nome: "Isinha", fundida: false }] as never);
+    await expect(criarEntidade("isinha", "Pessoa")).rejects.toThrow(/já está no grafo/);
+  });
+
+  it("recusa nome que é grafia já fundida, e diz em quem", async () => {
+    // Sem isso o erro seria a violação de constraint, que não explica nada.
+    consulta.mockResolvedValue([{ nome: "Exxmed", fundida: true }] as never);
+    await expect(criarEntidade("Exx Med", "Projeto")).rejects.toThrow(/grafia de "Exxmed"/);
+  });
+
+  it("recusa pronome, como o confirmar", async () => {
+    await expect(criarEntidade("ela", "Pessoa")).rejects.toThrow(/pronome/);
+  });
+
+  it("recusa nome vazio", async () => {
+    await expect(criarEntidade("   ", "Pessoa")).rejects.toThrow(FusaoError);
+  });
+});
+
+describe("o nome que o alias guarda", () => {
+  it("vem do nó, não do argumento — a tela passa a chave normalizada", async () => {
+    // Passando a chave crua como nome do alias, a lista mostrava
+    // "zztestefusao" onde devia estar "ZZTesteFusao". Peguei isso rodando o
+    // fluxo de verdade contra o Aura, não nos testes.
+    await renomear("meu pai", "Antônio");
+    const cypher = todoCypher();
+    expect(cypher).toContain("WITH e, e.nome AS nomeVelho");
+    expect(cypher).toContain("nome: nomeVelho");
+    // O nome velho não pode mais viajar como parâmetro.
+    const params = consulta.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(params.nomeVelho).toBeUndefined();
   });
 });

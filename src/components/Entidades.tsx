@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ehPronome, normalizarNome } from "@/lib/texto";
+import { TIPOS_ENTIDADE } from "@/lib/tipos";
 import type { TipoEntidade } from "@/lib/tipos";
 
 interface Entidade {
@@ -50,6 +51,8 @@ export function Entidades() {
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
   const [rascunho, setRascunho] = useState("");
+  const [nomeNovo, setNomeNovo] = useState("");
+  const [tipoNovo, setTipoNovo] = useState<TipoEntidade>("Pessoa");
 
   const carregar = useCallback(async () => {
     const r = await fetch("/api/entidades", { cache: "no-store" }).catch(() => null);
@@ -105,6 +108,47 @@ export function Entidades() {
     setPares((ps) => (ps ?? []).filter((p) => !(p.a === par.a && p.b === par.b)));
   }
 
+  /**
+   * O tipo não era editável depois da primeira revisão — a entidade vira
+   * `conhecida` e a revisão a mostra fixa. Aqui é onde o label errado tem
+   * conserto.
+   */
+  async function trocarTipo(chave: string, tipo: TipoEntidade) {
+    setOcupado(chave);
+    setFalha(null);
+    const r = await fetch("/api/entidades/tipo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chave, tipo }),
+    }).catch(() => null);
+    setOcupado(null);
+    if (!r?.ok) {
+      setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
+      return;
+    }
+    void carregar();
+  }
+
+  /** Semear: o nome entra no vocabulário do STT antes da primeira menção. */
+  async function criar() {
+    const nome = nomeNovo.trim();
+    if (nome === "") return;
+    setOcupado("criar");
+    setFalha(null);
+    const r = await fetch("/api/entidades/criar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nome, tipo: tipoNovo }),
+    }).catch(() => null);
+    setOcupado(null);
+    if (!r?.ok) {
+      setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
+      return;
+    }
+    setNomeNovo("");
+    void carregar();
+  }
+
   async function salvarNome(chave: string) {
     const nome = rascunho.trim();
     if (nome === "" || ehPronome(normalizarNome(nome))) return;
@@ -136,9 +180,36 @@ export function Entidades() {
 
       {falha && <p className="aviso">{falha}</p>}
 
-      <button className="reextrair" onClick={() => void procurar()} disabled={procurando}>
-        {procurando ? "olhando…" : "procurar duplicatas"}
-      </button>
+      <div className="acoes-sessao criar-entidade">
+        <input
+          className="campo-nome"
+          placeholder="nome que eu ainda vou falar"
+          value={nomeNovo}
+          onChange={(ev) => setNomeNovo(ev.target.value)}
+          onKeyDown={(ev) => ev.key === "Enter" && void criar()}
+        />
+        <select
+          className="campo-nome"
+          value={tipoNovo}
+          onChange={(ev) => setTipoNovo(ev.target.value as TipoEntidade)}
+        >
+          {TIPOS_ENTIDADE.map((t) => (
+            <option key={t} value={t}>
+              {t.toLowerCase()}
+            </option>
+          ))}
+        </select>
+        <button
+          className="reextrair"
+          disabled={ocupado === "criar" || nomeNovo.trim() === ""}
+          onClick={() => void criar()}
+        >
+          criar
+        </button>
+        <button className="reextrair" onClick={() => void procurar()} disabled={procurando}>
+          {procurando ? "olhando…" : "procurar duplicatas"}
+        </button>
+      </div>
 
       {pares?.length === 0 && (
         <p className="aguardando">nenhuma duplicata — o grafo está limpo.</p>
@@ -189,7 +260,9 @@ export function Entidades() {
             <span className="quando">
               <span>{e.nome}</span>
               <span className="meta">
-                {e.tipo.toLowerCase()} · {e.atomos} átomo(s) · {e.sessoes} sessão(ões)
+                {/* O tipo saiu daqui: agora ele é o select ao lado, editável. */}
+                {e.atomos} átomo(s) · {e.sessoes} sessão(ões)
+                {e.atomos === 0 && " · ainda não falada"}
                 {e.aliases.length > 0 && ` · antes: ${e.aliases.join(", ")}`}
               </span>
             </span>
@@ -216,6 +289,21 @@ export function Entidades() {
               </span>
             ) : (
               <div className="acoes-sessao">
+                <select
+                  className="campo-nome tipo"
+                  value={e.tipo}
+                  disabled={ocupado === e.nome_normalizado}
+                  aria-label={`tipo de ${e.nome}`}
+                  onChange={(ev) =>
+                    void trocarTipo(e.nome_normalizado, ev.target.value as TipoEntidade)
+                  }
+                >
+                  {TIPOS_ENTIDADE.map((t) => (
+                    <option key={t} value={t}>
+                      {t.toLowerCase()}
+                    </option>
+                  ))}
+                </select>
                 <button
                   className="reextrair"
                   onClick={() => {

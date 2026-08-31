@@ -725,9 +725,16 @@ o valor de `NEO4J_DATABASE` no arquivo de credenciais. Errar esse segmento dá
 `fields`/`values` da resposta em objetos e transforma `errors[0]` em
 `Neo4jError`.
 
-`atomos.ts` escreve `:Atomo` e `:Entidade`, e **só o confirmar o chama** — antes
-da revisão o grafo não recebe conteúdo nenhum (regra 5). A resolução de entidade
-(4.6) só lê. Labels que o código escreve:
+Dois módulos escrevem conteúdo, e a divisão importa:
+
+| Módulo | Escreve | Quem chama |
+|---|---|---|
+| `atomos.ts` | `:Atomo` e `:Entidade` | **só o confirmar** — nenhum átomo entra antes da revisão (regra 5) |
+| `fusao.ts` | `:Entidade` — funde, renomeia, troca tipo, cria | só as rotas de `/entidades`, com um toque meu em cada uma |
+
+A regra 5 é sobre o **pipeline** não gravar sozinho. `fusao.ts` é o contrário
+disso: é eu corrigindo à mão o que o pipeline deixou torto. A resolução de
+entidade (4.6) continua só lendo. Labels que o código escreve:
 
 ```
 (:Sessao { id, iniciada_em, duracao_s, status, audio_key,
@@ -829,6 +836,20 @@ descartada, o sujeito vence.
 grafia velha nasce como alias apontando para ele. É o que fecha o limite da
 slice 2 — renomear entidade existente criava um segundo nó.
 
+**O tipo também se conserta.** Ele só era editável enquanto a entidade era
+`nova`, na primeira revisão em que aparecia; depois disso ela vira `conhecida`,
+a revisão a mostra fixa (o grafo vence sobre o extrator) e o label errado ficava
+para sempre. `trocarTipo` põe o label novo e remove os outros, uma consulta com
+labels literais — `:Entidade` nunca sai, porque é ele que carrega a constraint.
+
+**Semear é criar entidade antes de falá-la.** `/entidades` deixa criar nome e
+tipo à mão, e o nó nasce **órfão de propósito** — zero átomos, e a lista mostra
+"ainda não falada". O confirmar evita órfão com cuidado, porque lá seria
+acidente; aqui é o pedido. O ganho é que o nome entra no vocabulário do STT
+**antes** da primeira menção, que é quando o transcritor mais erra, e quando ele
+enfim for falado a resolução acha a entidade pronta com o tipo que eu escolhi,
+em vez do palpite do extrator.
+
 `status` ausente conta como ativa (`coalesce` em toda leitura). A 004 **não
 migra dado** de propósito: preencher agora arrumaria os nós de hoje e não o que
 um deploy antigo criasse amanhã. A defesa tem que estar na leitura.
@@ -880,6 +901,8 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/entidades/fundir` | `{vencedora, perdedora}` — migra arestas, marca alias | idempotente pela guarda de `status` |
 | `POST /api/entidades/distintas` | `{a, b}` — a recusa que impede a pergunta de voltar | |
 | `POST /api/entidades/renomear` | `{chave, nome}` — grafia velha vira alias | recusa pronome, como o confirmar |
+| `POST /api/entidades/tipo` | `{chave, tipo}` — troca o label | o tipo só era editável enquanto a entidade era nova |
+| `POST /api/entidades/criar` | `{nome, tipo}` — semeia um nome antes de falá-lo | cria nó órfão de propósito |
 | `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
 
@@ -898,9 +921,11 @@ Todas com `runtime = "nodejs"`.
 | `/entrar` | página de login | pede o e-mail permitido |
 
 `/entidades` é a única janela para dentro do grafo — até ela existir, saber o
-que tinha lá dentro exigia rodar Cypher por fora. Procurar duplicatas é um
-botão, não algo que acontece ao abrir: a camada de string é de graça, a que
-julga é uma chamada de modelo, e manutenção que cobra sozinha vira cobrança.
+que tinha lá dentro exigia rodar Cypher por fora. Cada linha traz um `select` de
+tipo (editável) e um botão de renomear; no topo, um campo para semear um nome
+novo. Procurar duplicatas é um botão, não algo que acontece ao abrir: a camada
+de string é de graça, a que julga é uma chamada de modelo, e manutenção que
+cobra sozinha vira cobrança.
 Ela não é painel da revisão de propósito — a revisão só vê as entidades da
 sessão atual, e o orçamento dela é 60 s (visão §8).
 
@@ -1020,11 +1045,21 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   quais eram de quem, e isso não é gravado. O que protege é a fusão nunca ser
   automática: o modelo propõe, eu confirmo. Recusar, sim, é reversível — a
   aresta `:DISTINTA_DE` se apaga à mão no console.
-- **A qualidade da proposta de duplicata não foi medida.** O grafo tem duas
-  entidades e nenhuma duplicata real, então `duplicatas-1` nunca julgou um par
-  de verdade. A mecânica está validada (as consultas rodaram contra o Aura); o
-  julgamento só se avalia quando houver duplicata, e aí é à mão, na tela, como
-  toda qualidade de modelo neste sistema.
+- **Sem átomo, o julgamento de duplicata tende ao NÃO.** Medido: um par de
+  entidades semeadas com grafias equivalentes ("ZZTesteFusao" / "ZZ Teste
+  Fusao") foi encontrado pela camada de string e **recusado** pelo modelo — sem
+  átomo nenhum ele não tem contexto, e o prompt manda responder NÃO na dúvida.
+  É o viés certo, mas quer dizer que **duplicata entre entidades semeadas não é
+  proposta**; para essas, fundir é ir direto no par. Duplicata vinda de sessões
+  reais tem os textos dos átomos como contexto, que é o caso para o qual o
+  prompt foi escrito.
+- **A qualidade da proposta em caso real não foi medida.** O grafo não tem
+  duplicata vinda de sessão, então `duplicatas-1` nunca julgou um par com
+  contexto de verdade. A mecânica, sim, está validada ponta a ponta.
+- **Fundir não é atômico.** São quatro consultas pela Query API, sem transação
+  entre elas. Cair no meio deixa as arestas migradas e o perdedor sem alias — um
+  nó de zero átomos aparecendo na lista. **Refazer a fusão cura**: a segunda
+  passada não acha aresta para migrar e marca o alias.
 - **Não há como desfazer um confirmar.** `confirmada` não tem transição de saída
   e nada apaga átomo (regra 6). Corrigir depois de confirmar depende de edição
   no grafo, que não existe nesta slice.

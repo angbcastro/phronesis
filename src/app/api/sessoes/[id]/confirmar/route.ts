@@ -35,8 +35,11 @@ interface Corpo {
 }
 
 /**
- * POST /api/sessoes/:id/confirmar — **o único lugar que escreve conteúdo no
- * grafo** (regra 5).
+ * POST /api/sessoes/:id/confirmar — **o único lugar por onde conteúdo extraído
+ * entra no grafo** (regra 5). Nenhum átomo nasce fora daqui.
+ *
+ * As rotas de `/entidades` também escrevem, mas outra coisa: correção manual de
+ * entidade, digitada por mim. A regra 5 é sobre o pipeline não gravar sozinho.
  *
  * O que o cliente pode mandar: quais átomos aprovou e como editou texto, tipo,
  * sujeito e menções. O que ele **não** manda: procedência. `id`, offsets,
