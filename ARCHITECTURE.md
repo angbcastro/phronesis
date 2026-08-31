@@ -243,7 +243,7 @@ algum dos quatro pontos da tabela for furado. É o que sustenta a promessa de
 "uma chave, um lugar para ver custo" quando a extração chegar.
 
 **Hoje passam por aqui o STT e a extração** — `modeloStt()` (padrão
-`xai/grok-stt`, trocável por `STT_MODEL`) e `modeloExtracao()` (padrão
+`google/gemini-3.5-transcribe`, trocável por `STT_MODEL`) e `modeloExtracao()` (padrão
 `zai/glm-5.3-flash`, trocável por `EXTRACAO_MODEL`). Deduplicação é slice 3 e não
 existe: o que existe é a porta por onde ela vai passar, e a guarda que impede que
 passe por fora.
@@ -273,6 +273,15 @@ prática a precisão é por palavra e o campo a subdeclara. Subdeclarar é o lad
 seguro do erro, e nada foi mudado: reclassificar depende de decidir se
 "um segmento de uma palavra" conta como timestamp por palavra, o que é escolha
 de produto, não de implementação.
+
+**Esta observação é sobre o padrão anterior.** Em 2026-08-31 o padrão passou a
+ser `google/gemini-3.5-transcribe`, e tudo o que o parágrafo acima afirma vale
+para `xai/grok-stt`, não para o que roda hoje: se o Google expõe
+`providerMetadata`, com que granularidade, e se os `segments` continuam vindo de
+uma palavra cada — nada disso foi medido. O código não muda por isso: `stt.ts`
+já tenta `palavrasDoMetadata()` e cai para `palavrasDosSegmentos()`, registrando
+qual dos dois usou. A primeira transcrição real com o modelo novo é que diz, e o
+campo `granularidade` do bloco é onde a resposta aparece.
 
 ### 4.4 Vocabulário
 
@@ -793,7 +802,7 @@ transcrição se o texto já está inteiro, processamento no resto.
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
 AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, deduplicação
-STT_MODEL                 opcional; padrão xai/grok-stt
+STT_MODEL                 opcional; padrão google/gemini-3.5-transcribe
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 AUTH_SECRET, ALLOWED_EMAIL
 ```
@@ -852,10 +861,13 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **A importação aceita `opus`, `ogg`, `m4a`, `mp3`, `wav` e `webm`** — a lista
   está em `audio.ts`. `.mp4` ficou de fora de propósito: quase sempre é vídeo, e
   o pipeline manda os bytes crus para o STT. Teto de 25 MB e 30 min.
-- **Não foi conferido se o `xai/grok-stt` aceita Ogg/Opus, M4A, MP3 e WAV.** Até
-  agora ele só recebeu `audio/webm`. Se recusar algum, a saída seria converter, e
-  conversão de áudio não cabe em function serverless — a alternativa real é
-  estreitar a lista. Descobre-se no primeiro arquivo de cada tipo.
+- **Não foi conferido que formatos o modelo de STT aceita.** A lista de
+  importação promete Ogg/Opus, M4A, MP3 e WAV; o padrão anterior
+  (`xai/grok-stt`) só chegou a receber `audio/webm`, e o padrão novo
+  (`google/gemini-3.5-transcribe`) ainda não recebeu nada. Se recusar algum, a
+  saída seria converter, e conversão de áudio não cabe em function serverless —
+  a alternativa real é estreitar a lista. Descobre-se no primeiro arquivo de
+  cada tipo.
 - **Sessão importada não se distingue de gravada no grafo.** `:Sessao` não tem
   `origem`; quem sabe é o `ext` no manifest, no R2. Acrescentar o campo é
   migration nova, e nada hoje lê essa distinção.
@@ -881,10 +893,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **A extração roda no mesmo `waitUntil` da transcrição.** Em dev isso é o mesmo
   processo: fechar a janela do servidor no meio mata o job e a sessão fica em
   `extraindo`. O retry é chamar `/finalizar` de novo.
-- **A resolução mal rodou contra um grafo com entidades.** O banco tem duas
-  (`eu` e uma pessoa), as duas criadas no mesmo confirmar. O caminho de "já
-  conhecida" com o grafo cheio — e a entidade conhecida travada contra renome —
-  ainda é mais teste com Neo4j mockado do que uso.
+- **A resolução rodou contra um grafo com entidades, uma vez.** As duas
+  entidades nasceram às 13:28:17 e a sessão seguinte só começou às 13:28:37, então
+  a extração dela encontrou as duas já lá e o caminho de "já conhecida"
+  funcionou de verdade — o segundo confirmar reaproveitou os nós em vez de criar
+  novos. O que continua sem uso é o grafo **cheio**: com duas entidades, nada
+  disputa nome parecido.
 - **`zai/glm-5.3-flash` é modelo de raciocínio.** Ele chegou a gastar 1720 tokens
   pensando para 122 de texto, daí `maxOutputTokens: 8000` e a segunda tentativa
   automática. Trocar é `EXTRACAO_MODEL`, sem tocar em código.
@@ -897,11 +911,18 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Não haverá medida automática da qualidade da extração.** A avaliação é à mão,
   na tela de revisão; sem gabarito rotulado nem percentual de recall, regressão de
   prompt não aparece em teste — só na revisão seguinte.
-- **O `keyterm` do STT nunca foi conferido de verdade.** `xai/grok-stt` pelo
-  Gateway aceita webm/opus e devolve timestamp por palavra — é o que sustenta as
-  âncoras, com precisão de milissegundo. Se o vocabulário de fato muda a grafia,
-  ninguém mediu; o sintoma seria nome próprio que continua saindo errado mesmo
-  depois de entrar em `config/vocabulario.txt`.
+- **O `keyterm` provavelmente não existe no provedor novo.** `stt.ts` monta
+  `providerOptions: { [provedorDe(modelo)]: { keyterm: termos } }` — a chave do
+  mapa segue o provedor, mas o **nome da opção não**. `keyterm` é vocabulário de
+  xAI/Deepgram; com o padrão em `google/gemini-3.5-transcribe` o que sai é
+  `{ google: { keyterm: [...] } }`, e as duas saídas possíveis são ruins: ou o
+  provedor ignora em silêncio e o vocabulário deixa de ter efeito nenhum, ou
+  recusa a opção desconhecida e **derruba a transcrição**. Nada disso foi medido
+  — nem com o provedor anterior, onde a opção ao menos tinha o nome certo.
+  Sintoma do primeiro caso: nome próprio que continua saindo errado mesmo depois
+  de entrar em `config/vocabulario.txt`. Do segundo: `SttError` em todo bloco.
+  **É o primeiro a conferir**, e é o pré-requisito da metade A da slice 3 —
+  gerar a lista do grafo não vale nada se ela não chega ao modelo.
 - **Deduplicação não existe** (slice 3). A extração já passa por `modelos.ts` e
   `tests/gateway.test.ts` impede que qualquer chamada nova fure a porta, mas nada
   compara um átomo novo com os que já estão no grafo: dizer a mesma coisa em duas

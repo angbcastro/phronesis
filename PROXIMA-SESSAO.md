@@ -143,11 +143,20 @@ automática e a resposta crua na mensagem de erro. Se voltar a falhar, o log
 
 ## 6. Próximos passos, em ordem
 
-1. **Reextrair as duas sessões em `em_revisao`** com o `extracao-5` e julgar a
+**A slice 3 tem spec: `Specs/slice-3.md` — higiene do grafo.** Vocabulário do
+STT gerado das entidades, mais deduplicação semântica de entidade. Ela começa
+por um pré-requisito, e ele vale ler antes de qualquer coisa:
+
+1. **Conferir se o vocabulário chega ao modelo** (critério zero da spec). O
+   padrão de STT virou `google/gemini-3.5-transcribe`, e `stt.ts` manda a opção
+   com o nome `keyterm`, que é vocabulário de xAI/Deepgram. Ou o Google ignora
+   em silêncio, ou recusa e derruba a transcrição. `pnpm smoke` tem a sonda.
+2. **Reextrair as duas sessões em `em_revisao`** com o `extracao-5` e julgar a
    saída na revisão. É a única medida de qualidade que existe.
-2. **Encher o `config/vocabulario.txt`** com os nomes próprios que você fala.
-   ("rafa" saiu em minúscula por não estar lá.)
-3. **Bancada de comparação de modelos** (pedida e adiada duas vezes): rodar o
+3. **Encher o `config/vocabulario.txt`** com os nomes próprios que você fala.
+   ("rafa" saiu em minúscula por não estar lá.) Ele não deixa de existir na
+   slice 3 — vira o override manual por cima do que o grafo gera.
+4. **Bancada de comparação de modelos** (pedida e adiada duas vezes): rodar o
    **fluxo de extração** de uma mesma transcrição em até três modelos ao mesmo
    tempo, comparar e escolher. Só extração, não STT. O desenho discutido foi uma
    pasta e um namespace de rota próprios (`src/laboratorio/`, `/laboratorio`), com
@@ -159,9 +168,9 @@ automática e a resposta crua na mensagem de erro. Se voltar a falhar, o log
 
 ---
 
-## 7. Fora de escopo (slice 3)
+## 7. Fora de escopo (slice 4)
 
 As 2-4 perguntas do ritual, `:ATUALIZA`/`:CONTRADIZ`/`:CONFIRMA` entre átomos,
-busca, tela Perguntar, `:Foco`, visualização de grafo, deduplicação semântica e
-vocabulário gerado das entidades. **Não existem e não devem ser construídos
-agora.**
+busca, tela Perguntar, `:Foco`, visualização de grafo e deduplicação de **átomo**
+(a de entidade é a slice 3). **Não existem e não devem ser construídos agora** —
+todos dependem de material acumulado que ainda não existe.

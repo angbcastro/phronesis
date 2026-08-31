@@ -32,7 +32,7 @@ export const URL_GATEWAY = "https://ai-gateway.vercel.sh/v4/ai";
 /** O Gateway endereça modelo como `provedor/modelo`. */
 const PADRAO_ID = /^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9._-]*$/i;
 
-export const MODELO_STT_PADRAO = "xai/grok-stt";
+export const MODELO_STT_PADRAO = "google/gemini-3.5-transcribe";
 
 export class ModeloError extends Error {
   constructor(message: string) {
@@ -55,7 +55,7 @@ export function validarIdDeModelo(id: string): string {
   return limpo;
 }
 
-/** `xai/grok-stt` → `xai`. É a chave de `providerOptions`. */
+/** `google/gemini-3.5-transcribe` → `google`. É a chave de `providerOptions`. */
 export function provedorDe(id: string): string {
   return validarIdDeModelo(id).split("/")[0].toLowerCase();
 }
