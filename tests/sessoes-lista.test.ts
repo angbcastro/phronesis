@@ -1,12 +1,14 @@
 /**
  * A lista de áudios — a porta de serviço de onde se força uma re-extração.
  *
- * O que importa testar aqui é para onde cada sessão leva e quais delas podem
- * ser reextraídas: reextrair uma sessão já confirmada produziria uma proposta
- * que ninguém pode confirmar, porque `confirmada` não volta para `em_revisao`.
+ * O que importa testar aqui é para onde cada sessão leva, quais delas podem ser
+ * reextraídas — reextrair uma sessão já confirmada produziria uma proposta que
+ * ninguém pode confirmar, porque `confirmada` não volta para `em_revisao` — e
+ * quais têm transcrição para ler, já que essa tela saiu da jornada de gravar e
+ * agora só se alcança daqui.
  */
 import { describe, expect, it } from "vitest";
-import { destino, duracao, podeReextrair, quando } from "@/components/Sessoes";
+import { destino, duracao, podeLerTranscricao, podeReextrair, quando } from "@/components/Sessoes";
 
 const sessao = (status: string, extra: Record<string, unknown> = {}) => ({
   id: "mtgn3zf7",
@@ -51,9 +53,32 @@ describe("para onde a sessão leva", () => {
     expect(destino(sessao("em_revisao"))).toBe("/sessao/mtgn3zf7/revisar");
   });
 
-  it("o resto abre na leitura", () => {
-    expect(destino(sessao("transcrito"))).toBe("/sessao/mtgn3zf7");
-    expect(destino(sessao("confirmada"))).toBe("/sessao/mtgn3zf7");
+  it("com transcrição pronta e nada pendente, abre no texto literal", () => {
+    expect(destino(sessao("transcrito"))).toBe("/sessao/mtgn3zf7/transcricao");
+    expect(destino(sessao("confirmada"))).toBe("/sessao/mtgn3zf7/transcricao");
+  });
+
+  it("ainda processando (ou quebrada) abre na tela de processamento", () => {
+    // É lá que se vê em que passo parou — e, no caso de `gravando`, é lá que a
+    // finalização é disparada.
+    for (const s of ["gravando", "finalizando", "transcrevendo", "abandonada", "erro"]) {
+      expect(destino(sessao(s)), s).toBe("/sessao/mtgn3zf7");
+    }
+  });
+});
+
+describe("o botão de transcrição", () => {
+  it("aparece quando o texto inteiro já está no R2", () => {
+    for (const s of ["transcrito", "extraindo", "em_revisao", "confirmada"]) {
+      expect(podeLerTranscricao(sessao(s)), s).toBe(true);
+    }
+  });
+
+  it("não aparece antes de a transcrição existir", () => {
+    // Texto crescendo é a tela de processamento, não esta.
+    for (const s of ["gravando", "finalizando", "transcrevendo", "abandonada", "erro"]) {
+      expect(podeLerTranscricao(sessao(s)), s).toBe(false);
+    }
   });
 });
 

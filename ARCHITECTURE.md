@@ -2,20 +2,25 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-1.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-2.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
 > arquivo no mesmo commit. Ver "Manutenção deste arquivo" no fim.
 
-**Estado: gravar (ou importar), subir, transcrever e extrair.** Terminada a
-transcrição, a extração dispara sozinha, grava a proposta em `extracao.json` e
-deixa a sessão em `em_revisao` (seções 4.6 e 5).
+**Estado: a slice 2 está fechada e validada no grafo.** Gravar (ou importar),
+subir, transcrever, extrair, revisar, confirmar. Terminada a transcrição, a
+extração dispara sozinha, grava a proposta em `extracao.json` e deixa a sessão
+em `em_revisao` (seções 4.6 e 5); o confirmar da revisão grava `:Atomo` e
+`:Entidade` no Neo4j (seções 4.7 e 8). Sessões reais já foram confirmadas e os
+átomos conferidos no banco, com âncoras, `prompt_version` e `modelo`.
 
-**A slice 2 fecha o caminho:** a revisão existe, com player por trecho, e o
-confirmar grava `:Atomo` e `:Entidade` no grafo (seções 4.7 e 8). Uma sessão vai
-de `gravando` a `confirmada` sem passar por nenhuma tela intermediária que eu
-tenha de procurar.
+**A jornada não passa pela transcrição.** Parar de falar leva à tela de
+processamento, e dela a revisão abre sozinha quando a proposta fica pronta. O
+texto literal é porta de serviço: mora em `/sessao/:id/transcricao` e se alcança
+pelo botão "transcrição" na lista de áudios (seção 11). Ler quinze minutos de
+transcrição no meio do caminho é o atrito que mata o ritual — a transcrição é
+insumo do extrator, não coisa que eu leio todo dia.
 
 O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
 ritual e as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) —
@@ -30,7 +35,7 @@ tudo slice 3.
 │ MediaRecorder           │   │ middleware (auth)   │   │ Cloudflare R2        │
 │ IndexedDB (blocos)      │   │ App Router /api/*   │   │  áudio + JSON        │
 │ fila de upload          │   │ waitUntil (STT)     │   │ Neo4j Aura (HTTP)    │
-│ React (3 telas)         │   │                     │   │  só :Sessao          │
+│ React (5 telas)         │   │                     │   │  :Sessao + conteúdo  │
 └──────────┬──────────────┘   └──────────┬──────────┘   │ Vercel AI Gateway    │
            │                             │              │  → modelo de STT     │
            │  PUT presigned (áudio)      │              └──────────────────────┘
@@ -43,7 +48,7 @@ Três planos de dado, cada um com uma responsabilidade única:
 |---|---|---|
 | IndexedDB (navegador) | bloco de áudio até o PUT confirmar | fechar a aba no meio da gravação não pode perder fala |
 | Cloudflare R2 | áudio, manifest, transcrição de bloco, transcrição final | blob e texto grande não pertencem ao grafo |
-| Neo4j Aura | nó `:Sessao` com estado e **chaves** do R2 | o grafo é para relação, não para conteúdo |
+| Neo4j Aura | `:Sessao` com estado e **chaves** do R2; `:Atomo` e `:Entidade` a partir do confirmar | o grafo é para relação e afirmação, não para blob nem para texto corrido |
 
 O áudio **nunca** atravessa uma function da Vercel (regra inviolável 1): o
 navegador pede uma URL presigned e faz `PUT` direto no bucket.
@@ -82,8 +87,10 @@ src/client/       navegador
   fila.ts         upload serial com retry, observável pela UI
 
 src/components/   Gravacao (gravar), Importacao (subir arquivo),
-                  ChipRecuperacao (retomar ou revisar), Leitura (ler),
-                  Revisao (aprovar, editar, escutar, confirmar)
+                  ChipRecuperacao (retomar ou revisar),
+                  Processando (fechar a sessão e esperar; leva à revisão),
+                  Revisao (aprovar, editar, escutar, confirmar),
+                  Leitura (a transcrição literal — porta de serviço)
 src/app/api/      as 6 rotas da slice + 2 de auth
 src/middleware.ts porta única: sem cookie válido nada responde
 db/migrations/    definição canônica do schema
@@ -108,13 +115,16 @@ loop a cada 30 s:
                                       waitUntil(transcrever) ─────▶ STT
                                                                     chunk_NNN.json
   apaga do IndexedDB                  (só depois do PUT confirmado)
-parar ──▶ /sessao/:id
+parar ──▶ /sessao/:id            (Processando: não mostra a transcrição)
   espera a fila esvaziar
   POST /finalizar ──────────────────▶ status = finalizando, responde na hora
                                       waitUntil: espera pendentes,
                                       concatena offsets ──────────▶ transcricao.json
                                       status = transcrito
-  GET /api/sessoes/:id a cada 2 s ──▶ texto parcial → texto completo
+                                      waitUntil: extrai ──────────▶ extracao.json
+                                      status = em_revisao
+  GET /api/sessoes/:id a cada 2 s ──▶ acompanha o status
+  em_revisao ──▶ /sessao/:id/revisar   (replace: o corredor não volta)
 ```
 
 ### 3.0 O caminho curto: arquivo importado
@@ -134,8 +144,9 @@ PUT ─────────────────────────�
 POST /chunks/0/pronto {ext,duracao} ▶ HEAD, manifest += bloco com ext
                                       waitUntil(transcrever) ─────▶ STT
 sessionStorage duracao:<id>
-▶ /sessao/:id   (daqui em diante é o mesmo caminho da gravação: a `Leitura`
-                 chama /finalizar com a duração e faz o polling de 2 s)
+▶ /sessao/:id   (daqui em diante é o mesmo caminho da gravação: `Processando`
+                 chama /finalizar com a duração, faz o polling de 2 s e abre a
+                 revisão sozinho)
 ```
 
 **Por que um bloco só.** `offsetDoBloco(0)` é zero, então os timestamps que o STT
@@ -179,7 +190,7 @@ teto 30 s) e o bloco continua no depósito. `window.addEventListener("online")`
 acorda a fila. Rede caindo por um minuto atrasa a subida e não perde bloco
 (aceite 4).
 
-Antes de finalizar, `Leitura` chama `aguardarFilaVazia()` — nenhuma sessão é
+Antes de finalizar, `Processando` chama `aguardarFilaVazia()` — nenhuma sessão é
 fechada com bloco ainda por subir.
 
 ## 4. Transcrição
@@ -659,10 +670,14 @@ da revisão o grafo não recebe conteúdo nenhum (regra 5). A resolução de ent
 confirmação não conflita com a regra 5 (nada entra no grafo sem aprovação) —
 essa regra vale para átomo e entidade.
 
-### 8.1 Schema da slice 2, aplicado e vazio
+### 8.1 Schema da slice 2, aplicado e em uso
 
 A migration `002_atomo_entidade.cypher` já rodou: `:Atomo` e `:Entidade` têm
-constraint e índice no Aura. Quem escreve neles é o confirmar da revisão, por
+constraint e índice no Aura, e o grafo já recebeu conteúdo de sessões reais —
+átomos com as duas listas de offsets, `ancoras`, `status`, `prompt_version` e
+`modelo`, ligados por `:GEROU`, `:SOBRE` e `:MENCIONA`. O `MERGE` com label
+literal por tipo, a constraint de `nome_normalizado` e as listas paralelas como
+float foram conferidos contra o Aura, não só contra o banco mockado. Quem escreve neles é o confirmar da revisão, por
 `atomos.ts`; `entidades.ts` só lê, por `nome_normalizado`.
 
 Neo4j não aceita label vindo de parâmetro e o projeto não usa APOC, então
@@ -753,12 +768,24 @@ Todas com `runtime = "nodejs"`.
 | Rota | Componente | O que mostra |
 |---|---|---|
 | `/` | `Gravacao` + `Importacao` + `ChipRecuperacao` | botão "Como foi seu dia?", link "ou subir um áudio que já gravei"; gravando: timer e um ponto de "salvo" — nada mais |
-| `/sessao/:id` | `Leitura` | processamento com texto em pedaços, a transcrição inteira e o link para revisar |
+| `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; abre a revisão sozinho |
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, editar, escutar cada trecho, confirmar |
+| `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
+| `/sessoes` | `Sessoes` | lista de áudios: abrir, ler a transcrição, forçar re-extração |
 | `/entrar` | página de login | pede o e-mail permitido |
 
-`Leitura` é quem dispara `finalizar`, uma vez só (`useRef`), depois de garantir a
-fila vazia — e faz o polling de 2 s até `completa`.
+`Processando` é quem dispara `finalizar`, uma vez só (`useRef`), depois de
+garantir a fila vazia; faz o polling de 2 s e, ao ver `em_revisao`, troca a URL
+por `/sessao/:id/revisar` com `replace` — voltar de um corredor já atravessado
+não faz sentido, o botão de voltar tem que sair da sessão.
+
+**A transcrição saiu da jornada.** Ela era a tela que a gravação abria, com o
+texto inteiro e um link para revisar; agora é `/sessao/:id/transcricao`, sem
+finalizar nada e sem redirecionar, alcançável pelo botão "transcrição" na lista
+de áudios, ao lado de "reextrair". Serve para conferir o literal — um nome que o
+STT grafou errado, um trecho que ele comeu. `destino()` em `Sessoes` manda cada
+linha para onde ainda há o que fazer: revisão se há proposta esperando,
+transcrição se o texto já está inteiro, processamento no resto.
 
 ## 12. Ambiente
 
@@ -805,6 +832,13 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   webm/opus, se vêm timestamps por palavra e se o `keyterm` passa adiante.
 - Qualidade de extração (slice 2) não tem teste automático: a avaliação é à mão,
   na tela de revisão, sessão real por sessão real. Ver `Specs/slice-2.md`.
+- O que o confirmar de fato escreveu se confere por Cypher, à mão, no console do
+  Aura — não há tela de grafo nesta slice:
+
+  ```cypher
+  MATCH (s:Sessao)-[:GEROU]->(a:Atomo)-[:SOBRE]->(e:Entidade)
+  RETURN a.tipo, a.texto, e.nome, a.inicios_s, a.prompt_version, a.modelo
+  ```
 
 ## 14. Limites conhecidos
 
@@ -825,9 +859,9 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Sessão importada não se distingue de gravada no grafo.** `:Sessao` não tem
   `origem`; quem sabe é o `ext` no manifest, no R2. Acrescentar o campo é
   migration nova, e nada hoje lê essa distinção.
-- **A revisão nunca foi usada numa sessão de verdade.** Ela foi escrita antes de
-  o prompt `extracao-3` rodar uma vez sequer, então o "menos de 60 s" da visão é
-  hipótese, não medição.
+- **O "menos de 60 s" da revisão continua sem medição.** A tela já foi usada em
+  sessões reais e o caminho inteiro fecha, mas ninguém cronometrou uma revisão de
+  sessão de 15 min.
 - **Editar não muda a procedência.** Reescrever o texto de um átomo mantém os
   offsets do trecho original — é o certo, mas quer dizer que um texto muito
   editado aponta para um áudio que já não o sustenta palavra por palavra.
@@ -847,30 +881,31 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **A extração roda no mesmo `waitUntil` da transcrição.** Em dev isso é o mesmo
   processo: fechar a janela do servidor no meio mata o job e a sessão fica em
   `extraindo`. O retry é chamar `/finalizar` de novo.
-- **A resolução nunca rodou contra um grafo com entidades.** O banco tem zero
-  `:Entidade`, então todo caminho de "já conhecida" só foi exercitado em teste
-  com o Neo4j mockado.
-- **`zai/glm-5.3-flash` nunca foi chamado de verdade.** O id passa na validação
-  de formato, mas se o Gateway não o conhecer a extração falha na primeira
-  chamada real — o conserto é `EXTRACAO_MODEL`, sem tocar em código.
-- **O prompt `extracao-3` nunca rodou.** Os critérios vieram de uma calibração
-  contra uma sessão de 45 s; o alvo de 10 a 20 átomos por 15 min é uma aposta que
-  só a primeira sessão longa confirma ou derruba.
+- **A resolução mal rodou contra um grafo com entidades.** O banco tem duas
+  (`eu` e uma pessoa), as duas criadas no mesmo confirmar. O caminho de "já
+  conhecida" com o grafo cheio — e a entidade conhecida travada contra renome —
+  ainda é mais teste com Neo4j mockado do que uso.
+- **`zai/glm-5.3-flash` é modelo de raciocínio.** Ele chegou a gastar 1720 tokens
+  pensando para 122 de texto, daí `maxOutputTokens: 8000` e a segunda tentativa
+  automática. Trocar é `EXTRACAO_MODEL`, sem tocar em código.
+- **O alvo de 10 a 20 átomos por 15 min ainda é aposta.** O prompt está em
+  `extracao-5` e as sessões julgadas até agora são curtas; a primeira sessão longa
+  confirma ou derruba o número.
 - **Transcrição longa pode truncar a resposta da extração.** Não há corte em
   pedaços nem limite de saída declarado; JSON truncado vira `ExtracaoError` na
   primeira sessão em que acontecer.
 - **Não haverá medida automática da qualidade da extração.** A avaliação é à mão,
   na tela de revisão; sem gabarito rotulado nem percentual de recall, regressão de
   prompt não aparece em teste — só na revisão seguinte.
-- A troca do Whisper direto pelo AI Gateway **ainda não foi validada contra o
-  serviço** — falta rodar `pnpm smoke` com `.env.local` preenchido. A porta e a
-  guarda estão de pé e testadas; o que não foi conferido de verdade é se
-  `xai/grok-stt` aceita webm/opus, devolve timestamp por palavra e respeita
-  `keyterm`.
-- **Extração e deduplicação não existem** (slice 2 e 3). `modelos.ts` é a porta
-  por onde vão passar e `tests/gateway.test.ts` impede que passem por fora, mas
-  nenhuma linha delas foi escrita — construir adiantado o que a slice atual não
-  usa é proibido.
+- **O `keyterm` do STT nunca foi conferido de verdade.** `xai/grok-stt` pelo
+  Gateway aceita webm/opus e devolve timestamp por palavra — é o que sustenta as
+  âncoras, com precisão de milissegundo. Se o vocabulário de fato muda a grafia,
+  ninguém mediu; o sintoma seria nome próprio que continua saindo errado mesmo
+  depois de entrar em `config/vocabulario.txt`.
+- **Deduplicação não existe** (slice 3). A extração já passa por `modelos.ts` e
+  `tests/gateway.test.ts` impede que qualquer chamada nova fure a porta, mas nada
+  compara um átomo novo com os que já estão no grafo: dizer a mesma coisa em duas
+  sessões cria dois átomos.
 - `scripts/smoke.ts` roda solto no node e não importa de `src/`, então repete o
   id de modelo padrão. O teste "o smoke usa o mesmo modelo padrão que a lib"
   existe para as duas cópias não divergirem.

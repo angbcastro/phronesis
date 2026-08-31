@@ -381,7 +381,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .lista-sessoes .quando:hover span:first-child { text-decoration: underline; }
 .lista-sessoes .meta { font-size: 0.8rem; color: var(--texto-fraco); }
 
+/* As ações da linha: ler a transcrição e forçar a re-extração, lado a lado. */
+.acoes-sessao { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+
 .reextrair {
+  display: inline-block;
+  text-decoration: none;
   background: none;
   border: 1px solid var(--linha);
   border-radius: 999px;

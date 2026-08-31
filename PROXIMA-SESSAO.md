@@ -1,8 +1,8 @@
-# Checkpoint — 2026-08-31 (sessão 4)
+# Checkpoint — 2026-08-31 (sessão 5)
 
-Documento de trabalho, não de arquitetura. **A slice 2 está construída de ponta a
-ponta e nunca foi validada até o fim: o grafo tem zero átomos.** Apagar quando a
-slice 2 estiver validada.
+Documento de trabalho, não de arquitetura. **A slice 2 fechou: o caminho inteiro
+rodou contra o Aura e o grafo tem átomos de verdade.** Apagar quando a slice 3
+começar.
 
 Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
 sistema funciona hoje) e `Specs/slice-2.md` (o que a slice 2 tem que ser). Este
@@ -10,36 +10,37 @@ arquivo só diz o que fazer a seguir.
 
 ---
 
-## 0. O buraco: nada nunca foi confirmado
+## 0. O buraco fechou
+
+Duas sessões confirmadas, oito átomos no grafo, conferidos por Cypher:
 
 ```
-MATCH (a:Atomo) RETURN count(a)   →   0
-MATCH (e:Entidade) RETURN count(e) →  0
+:Sessao 8   :Atomo 8   :Entidade 2 (as duas também :Pessoa)
+:GEROU 8    :SOBRE 8   :MENCIONA 5
+zero átomo sem :SOBRE, zero átomo sem sessão
 ```
 
-Todo o caminho existe — extração, âncoras, resolução de entidade, tela de
-revisão, player, confirmar — e **o confirmar nunca rodou contra o Neo4j de
-verdade**. Ele tem 12 testes com o banco mockado, o que garante a forma do Cypher
-e nada sobre o comportamento do Aura.
+O que a passagem pelo banco de verdade provou, e que antes só tinha teste com
+Neo4j mockado:
 
-**É o primeiro teste da próxima sessão**, e ele descobre de uma vez:
+- o `MERGE` com label literal por tipo funciona no Aura Free — `:Entidade` sai
+  com os dois labels (`Entidade` + `Pessoa`);
+- `inicios_s`/`fins_s` gravam como lista de float, com a precisão que o STT
+  devolve (`18.672`, `112.912`);
+- todo átomo carrega `prompt_version: "extracao-5"`, `modelo:
+  "zai/glm-5.3-flash"`, `status: "ativo"`, `criado_em` e `valido_em` (que é o
+  `iniciada_em` da sessão, não a hora do confirmar — é o certo: a afirmação vale
+  do dia em que foi falada).
 
-- se o `MERGE` com label literal por tipo funciona no Aura Free (`atomos.ts`
-  roda uma consulta por tipo porque Neo4j não aceita label por parâmetro);
-- se a constraint de `nome_normalizado` único se comporta como esperado;
-- se as listas paralelas `inicios_s`/`fins_s`/`ancoras` gravam como float;
-- se confirmar duas vezes de fato não duplica.
-
-Depois de confirmar uma sessão, conferir à mão:
+Para reconferir a qualquer momento, no console do Aura:
 
 ```cypher
 MATCH (s:Sessao)-[:GEROU]->(a:Atomo)-[:SOBRE]->(e:Entidade)
-RETURN a.tipo, a.texto, e.nome, a.inicios_s, a.prompt_version
+RETURN a.tipo, a.texto, e.nome, a.inicios_s, a.prompt_version, a.modelo
 ```
 
-**Atenção: não há como desfazer um confirmar.** `confirmada` não tem transição de
-saída e nada apaga átomo (regra 6). Confirme primeiro a sessão de teste curta
-(`mtgle3st3m6f510w6j3i`, 44 s), não a longa.
+**Continua sem desfazer.** `confirmada` não tem transição de saída e nada apaga
+átomo (regra 6).
 
 ---
 
@@ -47,13 +48,14 @@ saída e nada apaga átomo (regra 6). Confirme primeiro a sessão de teste curta
 
 | id | estado | o que fazer |
 |---|---|---|
-| `mtgo3kaf5s5n3p3p521b` | **erro** | falhou na extração *antes* do conserto; reextrair pela lista de áudios |
-| `mtgn3zf72s023o3r281k` | em_revisao | proposta do `extracao-3`, com "ela" como entidade; reextrair para ver o `extracao-5` |
-| `mtgle3st3m6f510w6j3i` | em_revisao | proposta antiga (`extracao-2`, uma âncora só); boa candidata para o primeiro confirmar |
+| `mtgo3kaf5s5n3p3p521b` | **confirmada** | 4 átomos no grafo (Isinha, "eu") |
+| `mth9xtoo5t35000z0t2v` | **confirmada** | 4 átomos no grafo |
+| `mtgn3zf72s023o3r281k` | em_revisao | proposta esperando — reextrair com `extracao-5` e julgar |
+| `mtgle3st3m6f510w6j3i` | em_revisao | idem; proposta antiga, de uma âncora só |
 | `mtgeskkd…`, `mtgeoq7a…` | transcrito | nunca extraídas — a extração automática ainda não existia |
 | `mt7yxsg7…`, `mt7dlh0q…` | transcrito | teste de microfone, sem valor de conteúdo |
 
-Reextrair é pelo link **áudios** no rodapé da home, ou:
+Reextrair é pelo botão na lista de **áudios** (link no rodapé da home), ou:
 
 ```js
 await fetch('/api/sessoes/<id>/extrair', {
@@ -64,25 +66,24 @@ await fetch('/api/sessoes/<id>/extrair', {
 
 ---
 
-## 2. O que foi construído nesta sessão
+## 2. O que mudou nesta sessão
 
-Oito commits, de `d79c54a` a `00d798a`. `pnpm test` 248/248, `pnpm typecheck`
-limpo, working tree limpo.
+**A transcrição saiu da jornada.** Era ela que a gravação abria, e dela saía um
+link que eu tinha de clicar para revisar. Agora:
 
-| | |
-|---|---|
-| Extração | job pelo Gateway, JSON estrito, `prompt_version` e `modelo` em todo átomo |
-| Offsets | o modelo devolve o trecho, o código acha o segundo; 1..n âncoras por átomo |
-| Entidades | casamento por `nome_normalizado`, só leitura; pronome pede nome na revisão |
-| Pipeline | a extração dispara sozinha no fim da transcrição; proposta em `extracao.json` |
-| Revisão | `/sessao/:id/revisar` — aprovar, editar, escutar cada trecho, confirmar |
-| Confirmar | única porta de escrita no grafo; procedência relida do R2, não do corpo |
-| Lista de áudios | `/sessoes` — todos os áudios, com re-extração forçada |
+| Rota | Tela | Papel |
+|---|---|---|
+| `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem texto; ao ver `em_revisao` faz `replace` para a revisão |
+| `/sessao/:id/revisar` | `Revisao` | inalterada |
+| `/sessao/:id/transcricao` | `Leitura` | o texto literal, sem finalizar nada e sem redirecionar |
 
-**Migration 003 escrita e nunca rodada.** Ela tem **zero statements**: nada do que
-mudou (tipos `DECISAO`/`ROTINA`, âncoras em lista) é declarável no Aura Free.
-Rodar `pnpm migrate` com ela é no-op. Ela existe porque `db/migrations/` é a
-definição canônica do schema.
+Na lista de áudios, cada sessão com transcrição pronta ganhou um botão
+**transcrição** ao lado de **reextrair**. `destino()` manda a linha para onde
+ainda há o que fazer: revisão se há proposta, transcrição se o texto está
+inteiro, processamento no resto.
+
+`Processando` é quem chama `/finalizar` agora — a garantia de fila vazia veio
+junto, intacta. `Leitura` só lê.
 
 ---
 
@@ -142,13 +143,11 @@ automática e a resposta crua na mensagem de erro. Se voltar a falhar, o log
 
 ## 6. Próximos passos, em ordem
 
-1. **Confirmar uma sessão de verdade** — seção 0. Fecha a slice 2.
-2. **Reextrair as sessões em `erro` e `em_revisao`** com o `extracao-5` e julgar a
+1. **Reextrair as duas sessões em `em_revisao`** com o `extracao-5` e julgar a
    saída na revisão. É a única medida de qualidade que existe.
-3. **Encher o `config/vocabulario.txt`** com os nomes próprios que você fala.
-4. **Revisar `ARCHITECTURE.md` inteiro** — ao fechar uma slice, o `CLAUDE.md` pede
-   isso. O cabeçalho declara qual slice está no ar.
-5. **Bancada de comparação de modelos** (pedida e adiada nesta sessão): rodar o
+2. **Encher o `config/vocabulario.txt`** com os nomes próprios que você fala.
+   ("rafa" saiu em minúscula por não estar lá.)
+3. **Bancada de comparação de modelos** (pedida e adiada duas vezes): rodar o
    **fluxo de extração** de uma mesma transcrição em até três modelos ao mesmo
    tempo, comparar e escolher. Só extração, não STT. O desenho discutido foi uma
    pasta e um namespace de rota próprios (`src/laboratorio/`, `/laboratorio`), com

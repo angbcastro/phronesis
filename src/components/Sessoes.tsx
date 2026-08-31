@@ -3,9 +3,10 @@
 /**
  * Lista de áudios — a porta de serviço.
  *
- * Existe para uma coisa: achar uma sessão e forçar a re-extração dela. É como
- * se calibra o prompt sem gravar áudio novo, já que a trava de idempotência
- * impede reprocessar uma sessão que já tem proposta.
+ * Existe para duas coisas: achar uma sessão e forçar a re-extração dela — é
+ * como se calibra o prompt sem gravar áudio novo, já que a trava de
+ * idempotência impede reprocessar uma sessão que já tem proposta — e ler a
+ * transcrição literal, que saiu da jornada de gravar e mora aqui.
  *
  * Fica atrás de um link discreto de propósito. A tela de gravar é "um botão,
  * um timer, um jeito de parar — idealmente nada mais" (`Specs/visao.md` §6), e
@@ -14,6 +15,8 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { temTranscricao } from "@/lib/estados";
+import type { StatusSessao } from "@/lib/tipos";
 
 interface Sessao {
   id: string;
@@ -38,10 +41,26 @@ export const quando = (iso: string): string => {
 export const duracao = (s: number): string =>
   s >= 60 ? `${Math.round(s / 60)} min` : `${Math.max(1, Math.round(s))} s`;
 
-/** Para onde a sessão leva quando eu clico nela. */
+/**
+ * Para onde a sessão leva quando eu clico nela.
+ *
+ * Sempre para o lugar onde ainda há o que fazer: revisar, se tem proposta
+ * esperando; ler a transcrição, se ela já existe e não há mais nada pendente;
+ * e a tela de processamento no resto — sessão travada em `transcrevendo` ou em
+ * `erro` é ali que se vê o que aconteceu.
+ */
 export function destino(s: Sessao): string {
-  return s.status === "em_revisao" ? `/sessao/${s.id}/revisar` : `/sessao/${s.id}`;
+  if (s.status === "em_revisao") return `/sessao/${s.id}/revisar`;
+  if (temTranscricao(s.status as StatusSessao)) return `/sessao/${s.id}/transcricao`;
+  return `/sessao/${s.id}`;
 }
+
+/**
+ * A transcrição literal só se oferece quando ela está inteira no R2. Enquanto
+ * a sessão transcreve, o texto ainda está crescendo e quem clica na linha cai
+ * na tela de processamento, que é onde essa espera acontece.
+ */
+export const podeLerTranscricao = (s: Sessao): boolean => temTranscricao(s.status as StatusSessao);
 
 /**
  * Uma sessão já confirmada não se re-extrai: os átomos dela estão no grafo e o
@@ -105,7 +124,7 @@ export function Sessoes() {
         <h1>áudios</h1>
         <p className="aguardando">
           {sessoes ? `${sessoes.length} sessão(ões)` : "…"} — reextrair chama o modelo de novo e
-          sobrescreve a proposta atual
+          sobrescreve a proposta atual; transcrição abre o texto literal
         </p>
       </header>
 
@@ -122,27 +141,35 @@ export function Sessoes() {
               </span>
             </Link>
 
-            {podeReextrair(s) ? (
-              <button
-                className={armado === s.id ? "reextrair armado" : "reextrair"}
-                disabled={rodando === s.id}
-                onClick={() => void reextrair(s.id)}
-                onBlur={() => armado === s.id && setArmado(null)}
-              >
-                {rodando === s.id ? "…" : armado === s.id ? "sobrescrever?" : "reextrair"}
-              </button>
-            ) : (
-              <span
-                className="meta"
-                title={
-                  s.status === "confirmada"
-                    ? "já está no grafo — desfazer um confirmar não existe"
-                    : "ainda não tem transcrição"
-                }
-              >
-                —
-              </span>
-            )}
+            <div className="acoes-sessao">
+              {podeLerTranscricao(s) && (
+                <Link className="reextrair" href={`/sessao/${s.id}/transcricao`}>
+                  transcrição
+                </Link>
+              )}
+
+              {podeReextrair(s) ? (
+                <button
+                  className={armado === s.id ? "reextrair armado" : "reextrair"}
+                  disabled={rodando === s.id}
+                  onClick={() => void reextrair(s.id)}
+                  onBlur={() => armado === s.id && setArmado(null)}
+                >
+                  {rodando === s.id ? "…" : armado === s.id ? "sobrescrever?" : "reextrair"}
+                </button>
+              ) : (
+                <span
+                  className="meta"
+                  title={
+                    s.status === "confirmada"
+                      ? "já está no grafo — desfazer um confirmar não existe"
+                      : "ainda não tem transcrição"
+                  }
+                >
+                  —
+                </span>
+              )}
+            </div>
           </li>
         ))}
       </ul>

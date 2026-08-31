@@ -1,16 +1,19 @@
 "use client";
 
 /**
- * Tela de processamento e leitura.
+ * Tela de transcrição — porta de serviço, fora da jornada padrão.
  *
- * A transcrição aparece em pedaços conforme fica pronta — cada bloco foi
- * transcrito assim que subiu, então ao parar só falta o último. Quando
- * termina, é só o texto na tela: nesta slice não há ação seguinte.
+ * Mostra o texto do que foi falado, em pedaços conforme fica pronto. **Não é
+ * por aqui que a gravação passa**: quem grava vai de `Processando` direto para
+ * a revisão. Esta tela existe para quando eu quero conferir a transcrição
+ * literal — checar um nome que saiu errado, ver se o STT comeu um trecho — e
+ * se chega a ela pelo botão "transcrição" na lista de áudios.
+ *
+ * Por isso ela não finaliza sessão nem redireciona para lugar nenhum: só lê.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { acordar, aguardarFilaVazia } from "@/client/fila";
-import { terminouDeProcessar } from "@/lib/estados";
+import { temTranscricao } from "@/lib/estados";
 import type { StatusSessao } from "@/lib/tipos";
 
 interface Estado {
@@ -25,53 +28,23 @@ const INTERVALO_POLL_MS = 2000;
 
 export function Leitura({ id }: { id: string }) {
   const [estado, setEstado] = useState<Estado | null>(null);
-  const [falhou, setFalhou] = useState(false);
-  const finalizou = useRef(false);
 
   useEffect(() => {
     let vivo = true;
     let timer: ReturnType<typeof setTimeout>;
 
-    async function buscar(): Promise<Estado | null> {
-      const r = await fetch(`/api/sessoes/${id}`, { cache: "no-store" });
-      if (!r.ok) return null;
-      return (await r.json()) as Estado;
-    }
-
-    /** Os blocos que ainda não subiram têm que chegar antes de finalizar. */
-    async function garantirFinalizacao(atual: Estado) {
-      if (finalizou.current) return;
-      if (
-        ["finalizando", "transcrevendo", "transcrito", "extraindo", "em_revisao", "confirmada"].includes(
-          atual.status,
-        )
-      ) {
-        return;
-      }
-      finalizou.current = true;
-
-      acordar();
-      await aguardarFilaVazia();
-
-      const guardada = sessionStorage.getItem(`duracao:${id}`);
-      await fetch(`/api/sessoes/${id}/finalizar`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(guardada ? { duracao_s: Number(guardada) } : {}),
-      }).catch(() => setFalhou(true));
-    }
-
     async function volta() {
-      const atual = await buscar();
+      const r = await fetch(`/api/sessoes/${id}`, { cache: "no-store" }).catch(() => null);
       if (!vivo) return;
 
-      if (atual) {
+      if (r?.ok) {
+        const atual = (await r.json()) as Estado;
+        if (!vivo) return;
         setEstado(atual);
-        setFalhou(atual.status === "erro");
-        void garantirFinalizacao(atual);
-        // Não para em `completa`: a transcrição fica pronta antes da extração,
-        // e é a extração que destrava o link para a revisão.
-        if (terminouDeProcessar(atual.status as StatusSessao)) return;
+        // O texto é o que interessa aqui; quando ele está inteiro, para de
+        // perguntar. A extração continua atrás, e não muda nada nesta tela.
+        if (atual.completa || temTranscricao(atual.status as StatusSessao)) return;
+        if (atual.status === "erro") return;
       }
       timer = setTimeout(volta, INTERVALO_POLL_MS);
     }
@@ -93,13 +66,11 @@ export function Leitura({ id }: { id: string }) {
 
       {!estado?.completa && texto && <p className="aguardando">…</p>}
 
-      {falhou && (
+      {estado?.status === "erro" && (
         <p className="aguardando">
           A transcrição falhou. O áudio está inteiro no servidor — dá para tentar de novo.
         </p>
       )}
-
-      {estado?.status === "extraindo" && <p className="aguardando">lendo o que você disse…</p>}
 
       {estado?.status === "em_revisao" && (
         <Link className="revisar" href={`/sessao/${id}/revisar`}>
@@ -107,7 +78,7 @@ export function Leitura({ id }: { id: string }) {
         </Link>
       )}
 
-      <Link className="voltar" href="/">
+      <Link className="voltar" href="/sessoes">
         voltar
       </Link>
     </main>

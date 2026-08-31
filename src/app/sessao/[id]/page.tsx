@@ -1,6 +1,6 @@
-import { Leitura } from "@/components/Leitura";
+import { Processando } from "@/components/Processando";
 
 export default async function PaginaSessao({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <Leitura id={id} />;
+  return <Processando id={id} />;
 }

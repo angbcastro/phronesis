@@ -1,0 +1,125 @@
+"use client";
+
+/**
+ * Tela de processamento — o corredor entre parar de falar e revisar.
+ *
+ * Ela não mostra a transcrição. A transcrição é insumo do extrator, não coisa
+ * que eu leio: parar aqui para ler quinze minutos de texto é exatamente o
+ * atrito que mata o ritual. O que esta tela faz é fechar a sessão (esperar a
+ * fila esvaziar e chamar `/finalizar`), dizer em que passo o sistema está e
+ * **ir sozinha para a revisão** quando a proposta fica pronta.
+ *
+ * Quem quiser ler o texto vai pela lista de áudios — `/sessao/:id/transcricao`.
+ */
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { acordar, aguardarFilaVazia } from "@/client/fila";
+import { terminouDeProcessar } from "@/lib/estados";
+import type { StatusSessao } from "@/lib/tipos";
+
+interface Estado {
+  status: string;
+  completa: boolean;
+}
+
+const INTERVALO_POLL_MS = 2000;
+
+/** O que dizer em cada passo. Um verbo, sem barra de progresso. */
+export function legenda(status: string | undefined, completa: boolean): string {
+  if (status === "extraindo") return "lendo o que você disse…";
+  if (completa || status === "transcrito") return "lendo o que você disse…";
+  if (status === "finalizando") return "guardando o áudio…";
+  return "transcrevendo…";
+}
+
+export function Processando({ id }: { id: string }) {
+  const router = useRouter();
+  const [estado, setEstado] = useState<Estado | null>(null);
+  const [falhou, setFalhou] = useState(false);
+  const finalizou = useRef(false);
+
+  useEffect(() => {
+    let vivo = true;
+    let timer: ReturnType<typeof setTimeout>;
+
+    async function buscar(): Promise<Estado | null> {
+      const r = await fetch(`/api/sessoes/${id}`, { cache: "no-store" });
+      if (!r.ok) return null;
+      return (await r.json()) as Estado;
+    }
+
+    /** Os blocos que ainda não subiram têm que chegar antes de finalizar. */
+    async function garantirFinalizacao(atual: Estado) {
+      if (finalizou.current) return;
+      if (
+        ["finalizando", "transcrevendo", "transcrito", "extraindo", "em_revisao", "confirmada"].includes(
+          atual.status,
+        )
+      ) {
+        return;
+      }
+      finalizou.current = true;
+
+      acordar();
+      await aguardarFilaVazia();
+
+      const guardada = sessionStorage.getItem(`duracao:${id}`);
+      await fetch(`/api/sessoes/${id}/finalizar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(guardada ? { duracao_s: Number(guardada) } : {}),
+      }).catch(() => setFalhou(true));
+    }
+
+    async function volta() {
+      const atual = await buscar();
+      if (!vivo) return;
+
+      if (atual) {
+        setEstado(atual);
+        setFalhou(atual.status === "erro");
+        void garantirFinalizacao(atual);
+
+        // A porta da frente: a proposta ficou pronta, a revisão abre sozinha.
+        // `replace` porque voltar para um corredor já atravessado não faz
+        // sentido — o botão de voltar tem que sair da sessão, não reentrar.
+        if (atual.status === "em_revisao") {
+          router.replace(`/sessao/${id}/revisar`);
+          return;
+        }
+        if (terminouDeProcessar(atual.status as StatusSessao)) return;
+      }
+      timer = setTimeout(volta, INTERVALO_POLL_MS);
+    }
+
+    void volta();
+    return () => {
+      vivo = false;
+      clearTimeout(timer);
+    };
+  }, [id, router]);
+
+  const status = estado?.status;
+
+  return (
+    <main className="leitura">
+      <h1>{status === "confirmada" ? "já está no grafo" : "um instante"}</h1>
+
+      {status === "confirmada" ? (
+        <p className="aguardando">Essa sessão já foi confirmada — os átomos dela estão no Neo4j.</p>
+      ) : falhou ? (
+        <p className="aguardando">
+          Alguma coisa falhou no meio do caminho. O áudio está inteiro no servidor — dá para tentar
+          de novo pela lista de <Link href="/sessoes">áudios</Link>.
+        </p>
+      ) : (
+        <p className="aguardando">{legenda(status, estado?.completa ?? false)}</p>
+      )}
+
+      <Link className="voltar" href="/">
+        voltar
+      </Link>
+    </main>
+  );
+}
