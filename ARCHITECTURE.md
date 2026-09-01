@@ -100,6 +100,7 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   entidades.ts    catálogo do grafo + a visão agregada da revisão — só leitura
   referencias.ts  lê os dois formatos de proposta (antes e depois da 4)  (client)
   catalogo.ts     busca de entidade no navegador: trecho, acento, alias (client)
+  tipografia.ts   qual tela é ritual e qual é gestão — a regra da fonte  (client)
   atomos.ts       escreve :Atomo, :Entidade e :PERFILA — só o confirmar chama
   pipeline.ts     transcrever bloco / finalizar sessão (o orquestrador)
   auth.ts         magic link HMAC, cookie httpOnly
@@ -117,7 +118,9 @@ src/client/       navegador
 
 src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Gravacao (a tela de gravar), BotaoGravar (o círculo, o halo,
-                  as ondas laterais e o selo de REC), Importacao (subir arquivo),
+                  as ondas laterais e o selo de REC), Gestao (a engrenagem e a
+                  gaveta), Importacao (subir arquivo — item da gaveta),
+                  Tipografia (a classe da fonte, conforme a rota),
                   Processando (fechar a sessão e esperar; leva à revisão),
                   Revisao (aprovar, editar, escutar, confirmar),
                   SeletorEntidade (a barra pesquisável de entidade, nos dois
@@ -1226,13 +1229,32 @@ Todas com `runtime = "nodejs"`.
 
 | Rota | Componente | O que mostra |
 |---|---|---|
-| `/` | `Gravacao` + `BotaoGravar` + `Importacao` | o círculo "Como foi seu dia?", link "ou subir um áudio que já gravei", e as portas "sessões · entidades" — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo" |
+| `/` | `Gravacao` + `BotaoGravar` + `Gestao` | o círculo "Como foi seu dia?" e uma engrenagem discreta no canto — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo" |
 | `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; abre a revisão sozinho |
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, editar, escutar cada trecho, resolver a dúvida de quem é, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, escrever o perfil |
 | `/entrar` | página de login | pede o e-mail permitido |
+
+**Em `/` a porta de serviço inteira é uma engrenagem no meio da borda
+esquerda** — sessões, entidades e subir um áudio, num menu lateral (`Gestao`).
+Ela fica na altura do círculo, na margem, e **não** no canto superior esquerdo:
+aquele canto é da `Marca`, a volta ao início. Um segundo significado ali faria o
+canto querer dizer duas coisas conforme a tela. Eram
+três controles soltos na tela — o link de importar logo abaixo do círculo e as
+duas portas no rodapé —, e três coisas para ler antes de falar. Virar um
+**aproxima** a tela do "um botão, um timer, um jeito de parar — idealmente nada
+mais" da visão §6, em vez de afastá-la: o que sobra no caminho do olho é o
+círculo.
+
+A gaveta entra pela esquerda em 220 ms na mesma curva das ondas, fecha no véu, no
+`Esc` e ao navegar, e o foco entra nela ao abrir e volta para a engrenagem ao
+fechar. **Clicar em "subir um áudio" não a fecha**, de propósito: o botão vira
+"subindo o áudio…" e a recusa de formato aparece logo abaixo — os dois precisam
+ficar visíveis onde eu cliquei. Ela some sozinha quando o upload termina e a rota
+troca. A engrenagem só existe com a gravação parada, como os três links que ela
+substituiu: navegar para fora no meio de uma gravação a mataria.
 
 Em toda tela dessa tabela menos `/` e `/entrar`, `Marca` fica fixa no canto
 superior esquerdo e leva a `/`. É **só o ponto terracota** — o nome do projeto
@@ -1251,13 +1273,13 @@ gravando, o timer, o "salvo" e o "parar".
 O palco é um grid de uma célula com tudo empilhado (`.palco > * { grid-area: 1/1 }`):
 
 - **o halo** (`.brilho`) é um disco terracota atrás do botão, do mesmo tamanho:
-  parado ele some por baixo, e ao respirar (escala 1 → 1,03 e raio 20 px →
-  35 px, 4,5 s `ease-in-out alternate`) aparece só a borda. O círculo cresce
+  parado ele some por baixo, e ao respirar (escala 1 → 1,036 e raio 24 px →
+  42 px, 3,75 s `ease-in-out alternate`) aparece só a borda. O círculo cresce
   como peça só, com o texto parado no meio. O `background` dele não é
   decoração: sombra externa recorta a própria border-box, e sem fundo o anel
   entre o botão e a borda do halo ficava sem sombra **e** sem fundo — um anel
   preto pulsando em volta do círculo;
-- **o círculo** é o botão, 220 px (`min(72vw, 220px)`, o `min` só para não
+- **o círculo** é o botão, 264 px (`min(72vw, 264px)`, o `min` só para não
   estourar aparelho estreito), terracota, texto branco de 18 px/500;
 - **as ondas** são **três de cada lado**, num `<canvas>` absoluto. O bloco que o contém vira a própria
   célula do grid, ou seja a faixa vertical do círculo — é o que põe o eixo da
@@ -1267,6 +1289,22 @@ O palco é um grid de uma célula com tudo empilhado (`.palco > * { grid-area: 1
   `<button>`: o botão fica `disabled` durante a gravação e levaria o selo junto
   para fora do alcance de um leitor de tela. Entra deslizando 8 px, no mesmo
   tempo e na mesma curva das ondas.
+
+**O círculo cresceu 20% e a respiração junto** — 220 px → 264 px, 4,5 s →
+3,75 s, e a amplitude (escala e raio do halo) 20% maior nas duas pontas. **O
+`72vw` não cresceu**, e isso é deliberado: ele não é tamanho, é guarda. Num
+aparelho de 320 px é ele quem impede o círculo de encostar nas bordas; crescê-lo
+junto poria o círculo em 82% da largura da tela. Com `min(72vw, 264px)`, aparelho
+normal ganha os 20% e aparelho estreito continua protegido — lá o círculo
+simplesmente não cresce.
+
+Efeito colateral a conhecer: as ondas nascem na borda do círculo e correm até a
+borda da tela (`percurso = largura / 2 - raio`), então **o círculo maior encurta
+a corrida delas**. Num celular de 390 px o percurso cai de ~65 px para ~43 px. O
+`raio` é medido em tempo de execução (`circulo.current.offsetWidth / 2`), então
+nada quebra e `onda.ts` não muda — mas três camadas com 3 a 4,25 ciclos cada
+nesse espaço ficam mais apertadas. Se incomodar, o conserto é sangrar `.palco`
+para a largura inteira com margem negativa de `1.25rem`, recuperando 40 px.
 
 **Canvas, e não SVG animado**, porque a onda segue o microfone a 60 quadros por
 segundo e reconstruir um path do DOM nessa cadência engasga no celular — que é
@@ -1320,7 +1358,7 @@ componente — quem precisa de uma variação usa `color-mix()` sobre o token.
 | `--glow` | `rgba(214,90,49,.55)` | o halo do botão de gravar |
 | `--status` | `#ffffff` a 0,7 | texto de status e ícone |
 | `--rec` | `#ff4d3d` | o ponto vermelho do selo de REC |
-| `--circulo` | `min(72vw, 220px)` | diâmetro do botão de gravar |
+| `--circulo` | `min(72vw, 264px)` | diâmetro do botão de gravar |
 | `--ok` | `#6aa84f` | o ponto de "salvo" |
 
 `--fundo` e `--acento` mudaram de `#0f0f10` e `#d8613c` para os valores acima
@@ -1333,6 +1371,38 @@ gravar foi desenhado sobre `#0d0d0d` — halo terracota sobre papel é outro
 efeito, não o mesmo mais claro. `:root` declara `color-scheme: dark`, sem o que
 o navegador desenharia os controles nativos (input, select, checkbox, barra de
 rolagem) no tema claro do sistema em cima do fundo escuro.
+
+### 11.3 Tipografia
+
+Duas fontes, uma por natureza de tela:
+
+| | Fonte | Telas |
+|---|---|---|
+| ritual | **Nunito** | `/`, `/sessao/:id`, `/sessao/:id/revisar` |
+| gestão | **Inter** | `/sessao/:id/transcricao`, `/sessoes`, `/entidades`, `/entrar` |
+
+Ritual é o que eu faço todo dia — falar, esperar processar, revisar. Gestão é
+manutenção, e a transcrição literal está com ela de propósito: é porta de
+serviço, não parte do ritual.
+
+**A regra é por rota, não por classe CSS** (`src/lib/tipografia.ts`,
+`ehRitual`). Não é preferência: `Processando` e a `Revisao` ainda carregando
+renderizam `<main className="leitura">`, a mesma classe da tela de transcrição.
+Pendurar a fonte na classe daria Nunito à transcrição **e** trocaria a fonte da
+revisão no meio do carregamento. A rota não tem essa colisão, e tela nova nasce
+com a fonte certa sem ninguém lembrar de marcá-la. Mesma forma de `mostraMarca`,
+e fixada igual, por `tests/tipografia.test.ts` — o `$` dos padrões é o que impede
+`/sessao/x/transcricao` de casar com o do corredor.
+
+`Tipografia` (client) põe a classe `.ritual` ou `.gestao` em volta de
+`{children}` no layout raiz. `usePathname()` resolve no SSR, então a classe já
+vem no HTML e não há troca de fonte no primeiro quadro.
+
+As duas fontes vêm de `next/font/google` no layout raiz, como variáveis CSS
+(`--fonte-ritual`, `--fonte-gestao`). Elas são **baixadas na build e servidas do
+próprio domínio**: nenhuma requisição a terceiros em tempo de execução, nada a
+acrescentar na fronteira de segurança, e nenhum salto de layout. O stack do
+sistema, que era a fonte do `body`, virou `--sistema` e é o fallback das duas.
 
 `/entidades` é a única janela para dentro do grafo — até ela existir, saber o
 que tinha lá dentro exigia rodar Cypher por fora. Cada linha traz um `select` de
@@ -1389,6 +1459,10 @@ chama no resto do sistema (`:Sessao`, `/sessoes`, `sessao_id`). Áudio é o
 arquivo; sessão é o que eu abro ali.
 
 ## 12. Ambiente
+
+`next build` passa a precisar de **rede**: `next/font/google` busca Inter e
+Nunito na hora da build para servi-las do próprio domínio (§11.3). Em tempo de
+execução não há requisição a terceiros.
 
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD

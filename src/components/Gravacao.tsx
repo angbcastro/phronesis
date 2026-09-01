@@ -7,7 +7,7 @@
  * gravando não são duas telas, são a mesma tela com o círculo no centro; é o
  * que dá continuidade à transição em vez de um corte.
  *
- * O que muda em volta dele: parado, as portas de serviço; gravando, o timer, o
+ * O que muda em volta dele: parado, a engrenagem no canto; gravando, o timer, o
  * ponto de "salvo" e o "parar". A mecânica de upload continua invisível — sem
  * contador de blocos, sem barra de progresso. A onda lateral do botão mostra o
  * microfone, não a fila.
@@ -17,15 +17,19 @@
  * 12 min esperando revisão". Cobrança na tela onde eu passo o tempo é a forma de
  * morte que `Specs/visao.md` §6 descreve. O que falta revisar se lê na lista de
  * sessões, pela cor, no lugar onde eu já vou procurar.
+ *
+ * E os três controles que sobravam — subir um áudio, sessões, entidades —
+ * viraram um só: a engrenagem da `Gestao`, no meio da borda esquerda. O canto
+ * superior esquerdo é da `Marca`, e continua sendo só dela. Ela sai do caminho
+ * do olho, que vai direto ao círculo.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Gravador, suportado } from "@/client/gravador";
 import { acordar, enfileirar, observarFila, type EstadoFila } from "@/client/fila";
 import { guardarSessaoAtual, limparSessaoAtual } from "@/client/deposito";
 import { BotaoGravar } from "./BotaoGravar";
-import { Importacao } from "./Importacao";
+import { Gestao } from "./Gestao";
 
 type Fase = "parado" | "abrindo" | "gravando" | "encerrando";
 
@@ -141,19 +145,9 @@ export function Gravacao() {
           </button>
         </>
       ) : (
-        <>
-          <Importacao />
-          {/* Portas de serviço: discretas de propósito na tela de gravar, que é
-              onde eu passo o tempo e onde nada pode virar cobrança. */}
-          <span className="portas">
-            <Link className="link-sessoes" href="/sessoes">
-              sessões
-            </Link>
-            <Link className="link-sessoes" href="/entidades">
-              entidades
-            </Link>
-          </span>
-        </>
+        // Porta de serviço única, discreta de propósito: a tela de gravar é
+        // onde eu passo o tempo, e nada aqui pode virar cobrança.
+        <Gestao />
       )}
 
       {problema && <p className="aviso">{problema}</p>}

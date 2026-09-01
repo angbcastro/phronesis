@@ -22,8 +22,18 @@
   /* O halo do botão de gravar, e o diâmetro dele. 220px é o alvo; o `min`
      existe só para o círculo não estourar um aparelho estreito. */
   --glow: rgba(214, 90, 49, 0.55);
-  --circulo: min(72vw, 220px);
+  --circulo: min(72vw, 264px);
+
+  /* O stack do sistema, que era a fonte do corpo, virou o fallback das duas.
+     `--fonte-ritual` (Nunito) e `--fonte-gestao` (Inter) vêm do `next/font` no
+     layout raiz; qual delas vale em cada tela é `src/lib/tipografia.ts`. */
+  --sistema: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
+
+/* O embrulho que a `Tipografia` põe em volta da tela. Ritual é gravar, esperar
+   processar e revisar; gestão é todo o resto. */
+.ritual { font-family: var(--fonte-ritual), var(--sistema); }
+.gestao { font-family: var(--fonte-gestao), var(--sistema); }
 
 * { box-sizing: border-box; }
 
@@ -33,7 +43,7 @@ html, body {
   min-height: 100%;
   background: var(--fundo);
   color: var(--texto);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--fonte-gestao), var(--sistema);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -66,7 +76,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: grid;
   place-items: center;
   /* Folga vertical para o halo respirar sem ser cortado pelo overflow. */
-  padding: 1.25rem 0;
+  padding: 1.5rem 0;
 }
 .palco > * { grid-area: 1 / 1; }
 
@@ -102,14 +112,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
   aspect-ratio: 1;
   border-radius: 50%;
   background: var(--acento);
-  box-shadow: 0 0 20px var(--glow);
+  box-shadow: 0 0 24px var(--glow);
   pointer-events: none;
-  animation: respirar 4.5s ease-in-out infinite alternate;
+  animation: respirar 3.75s ease-in-out infinite alternate;
 }
 
+/* Com o círculo maior, a respiração acompanhou: 20% mais rápida (4,5 s → 3,75 s)
+   e 20% mais ampla, tanto na escala quanto no raio do halo. */
 @keyframes respirar {
-  from { transform: scale(1);    box-shadow: 0 0 20px var(--glow); }
-  to   { transform: scale(1.03); box-shadow: 0 0 35px var(--glow); }
+  from { transform: scale(1);     box-shadow: 0 0 24px var(--glow); }
+  to   { transform: scale(1.036); box-shadow: 0 0 42px var(--glow); }
 }
 
 .botao-gravar {
@@ -182,7 +194,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
    médio e o selo aparece sem deslizar. A onda continua, porque ali ela não é
    enfeite — é o retorno de que o microfone está ouvindo. */
 @media (prefers-reduced-motion: reduce) {
-  .brilho { animation: none; box-shadow: 0 0 28px var(--glow); }
+  .brilho { animation: none; box-shadow: 0 0 34px var(--glow); }
   .selo-rec { animation-duration: 1ms; }
 }
 
@@ -220,20 +232,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 0.85rem 2.5rem;
   font-size: 1rem;
 }
-
-/* ---- importar áudio já gravado ---- */
-
-.link-importar {
-  border: none;
-  background: transparent;
-  color: var(--texto-fraco);
-  font-size: 0.95rem;
-  padding: 0.25rem 0;
-  margin-top: -1rem;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.link-importar:disabled { opacity: 0.6; cursor: default; text-decoration: none; }
 
 /* ---- transcrição ---- */
 
@@ -541,17 +539,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* ---- sessões ---- */
 
-.link-sessoes {
-  color: var(--texto-fraco);
-  font-size: 0.82rem;
-  text-decoration: none;
-  opacity: 0.55;
-  margin-top: -0.75rem;
-}
-.link-sessoes:hover { opacity: 1; text-decoration: underline; }
-
-.portas { display: flex; gap: 1.2rem; align-items: center; }
-
 .sessoes {
   width: 100%;
   max-width: 34rem;
@@ -734,6 +721,116 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .marca:hover { opacity: 1; }
 .marca:active { transform: scale(0.92); }
 .marca:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; }
+
+/* ---- gestão: a engrenagem e a gaveta ---- */
+
+/* No meio da borda esquerda, e **não** no canto superior: aquele canto é da
+   marca, em toda tela onde ela aparece, e um segundo significado ali diluiria o
+   primeiro. Aqui ela fica na altura do círculo, na margem, como uma aba.
+
+   `0.5rem` de recuo e não `1rem`: num aparelho de 320 px o círculo começa a
+   45 px da borda, e o alvo de 40 px encostaria nele. Com este recuo o ícone
+   visível ainda folga.
+
+   O alvo de toque é o mesmo da marca — 40 px, que é o mínimo que se acerta num
+   celular. A discrição é a dos três links que ela substituiu: cinza a 0,55, que
+   acende no hover. Terracota aqui competiria com o círculo. */
+.engrenagem {
+  position: fixed;
+  top: 50%;
+  left: calc(0.5rem + env(safe-area-inset-left));
+  transform: translateY(-50%);
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  opacity: 0.55;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+.engrenagem svg { width: 18px; height: 18px; flex: none; fill: var(--texto-fraco); }
+.engrenagem:hover { opacity: 1; }
+.engrenagem:hover svg { fill: var(--texto); }
+/* O `translateY` do centramento entra em toda regra que mexe no transform —
+   sozinho, o `scale` jogaria a engrenagem para baixo ao ser tocada. */
+.engrenagem:active { transform: translateY(-50%) scale(0.92); }
+.engrenagem:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; }
+.engrenagem[aria-expanded="true"] { opacity: 1; }
+.engrenagem[aria-expanded="true"] svg { fill: var(--texto); }
+
+/* O véu escurece o que está atrás e fecha ao toque. `visibility` junto com a
+   opacidade: sem ela o véu invisível continuaria comendo os cliques da tela. */
+.veu {
+  position: fixed;
+  inset: 0;
+  z-index: 28;
+  background: color-mix(in srgb, var(--fundo) 72%, transparent);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 220ms cubic-bezier(0.16, 1, 0.3, 1), visibility 220ms;
+}
+.veu.aberto { opacity: 1; visibility: visible; }
+
+/* Entra pela esquerda, na mesma curva das ondas e do selo de REC. */
+.gaveta {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  height: 100dvh;
+  width: min(80vw, 17rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: calc(1.5rem + env(safe-area-inset-top)) 0.75rem
+    calc(1.5rem + env(safe-area-inset-bottom))
+    calc(0.75rem + env(safe-area-inset-left));
+  background: var(--fundo-alto);
+  border-right: 1px solid var(--linha);
+  transform: translateX(-100%);
+  visibility: hidden;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), visibility 220ms;
+}
+.gaveta.aberta { transform: translateX(0); visibility: visible; }
+
+.gaveta .titulo {
+  font-size: 0.78rem;
+  color: var(--texto-fraco);
+  padding: 0.35rem 0.6rem 0.75rem;
+}
+.gaveta hr { width: 100%; border: none; border-top: 1px solid var(--linha); margin: 0.5rem 0; }
+
+/* Um item é um item: link e botão têm a mesma cara, porque fazem a mesma
+   promessa — abrir alguma coisa. */
+.gaveta .item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  color: var(--texto);
+  font: inherit;
+  font-size: 0.95rem;
+  text-decoration: none;
+  padding: 0.6rem;
+  border-radius: 10px;
+}
+.gaveta .item:hover { background: color-mix(in srgb, var(--texto) 8%, transparent); }
+.gaveta .item:disabled { opacity: 0.6; cursor: default; }
+.gaveta .item:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
+.gaveta .aviso { margin: 0.35rem 0.6rem 0; font-size: 0.85rem; }
+
+/* Quem pediu menos movimento recebe a gaveta sem deslize — ela aparece. */
+@media (prefers-reduced-motion: reduce) {
+  .veu,
+  .gaveta { transition: opacity 1ms, visibility 1ms; }
+  .gaveta { transform: translateX(0); }
+  .gaveta:not(.aberta) { transform: translateX(-100%); }
+}
 
 /* Espaço para ela nas telas que ela cobre. `.leitura` já abre com 3.5rem. */
 .sessoes,

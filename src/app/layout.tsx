@@ -1,6 +1,18 @@
 import type { Metadata, Viewport } from "next";
+import { Inter, Nunito } from "next/font/google";
 import { Marca } from "@/components/Marca";
+import { Tipografia } from "@/components/Tipografia";
 import "./globals.css";
+
+/**
+ * Duas fontes, uma por natureza de tela — ver `src/lib/tipografia.ts`.
+ *
+ * `next/font/google` baixa na build e serve do próprio domínio: nenhuma
+ * requisição a terceiros em tempo de execução, e nenhum salto de layout quando
+ * a fonte chega. O preço é `next build` passar a precisar de rede.
+ */
+const gestao = Inter({ subsets: ["latin"], variable: "--fonte-gestao", display: "swap" });
+const ritual = Nunito({ subsets: ["latin"], variable: "--fonte-ritual", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Phronesis",
@@ -17,12 +29,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" className={`${gestao.variable} ${ritual.variable}`}>
       <body>
         {/* Fica no layout, não em cada tela: assim nenhuma tela nova nasce sem
             caminho de volta. Ela mesma decide onde não aparecer. */}
         <Marca />
-        {children}
+        <Tipografia>{children}</Tipografia>
       </body>
     </html>
   );

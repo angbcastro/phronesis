@@ -12,6 +12,10 @@
  * bloco gravado (regra 1). Não passa pelo IndexedDB: a fila local existe
  * para não perder fala quando a aba fecha no meio da gravação, e um
  * arquivo importado já está no disco de quem o escolheu.
+ *
+ * Mora dentro do menu de gestão (`Gestao`), como item. Clicar nele **não**
+ * fecha a gaveta de propósito: o rótulo vira "subindo o áudio…" e a recusa de
+ * formato aparece logo abaixo — os dois precisam estar visíveis onde eu cliquei.
  */
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -145,7 +149,7 @@ export function Importacao() {
           if (arquivo) void importar(arquivo);
         }}
       />
-      <button className="link-importar" onClick={() => entrada.current?.click()} disabled={ocupado}>
+      <button className="item" onClick={() => entrada.current?.click()} disabled={ocupado}>
         {fase === "parado" ? "ou subir um áudio que já gravei" : "subindo o áudio…"}
       </button>
       {problema && <p className="aviso">{problema}</p>}
