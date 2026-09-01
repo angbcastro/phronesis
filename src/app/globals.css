@@ -9,8 +9,13 @@
   --rec: #ff4d3d;
   --raio: 14px;
 
-  /* Sobre o terracota o texto é branco puro, nos dois temas: é a única
-     superfície do sistema que não usa --texto. */
+  /* Phronesis é um app escuro, e só. Sem isto o navegador desenharia os
+     controles nativos — input, select, checkbox, barra de rolagem — no tema
+     claro do sistema, em cima de um fundo #0d0d0d. */
+  color-scheme: dark;
+
+  /* Sobre o terracota o texto é branco puro: é a única superfície do sistema
+     que não usa --texto. */
   --sobre-acento: #ffffff;
   --status: rgba(255, 255, 255, 0.7);
 
@@ -18,19 +23,6 @@
      existe só para o círculo não estourar um aparelho estreito. */
   --glow: rgba(214, 90, 49, 0.55);
   --circulo: min(72vw, 220px);
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --fundo: #faf9f7;
-    --fundo-alto: #ffffff;
-    --texto: #17171a;
-    --texto-fraco: #6b6b72;
-    --linha: #e4e2dd;
-    /* 0.55 sobre papel vira mancha; o halo continua o mesmo, mais discreto. */
-    --glow: rgba(214, 90, 49, 0.28);
-    --status: rgba(23, 23, 26, 0.7);
-  }
 }
 
 * { box-sizing: border-box; }

@@ -1234,23 +1234,30 @@ falei.
 Um lugar só, no topo de `src/app/globals.css`. Nada de cor literal em regra de
 componente — quem precisa de uma variação usa `color-mix()` sobre o token.
 
-| Token | Escuro | Claro | Onde |
-|---|---|---|---|
-| `--fundo` | `#0d0d0d` | `#faf9f7` | fundo da tela |
-| `--fundo-alto` | `#1a1a1c` | `#ffffff` | cartão, campo, chip |
-| `--texto` / `--texto-fraco` | `#ececec` / `#8a8a8f` | `#17171a` / `#6b6b72` | texto e texto secundário |
-| `--linha` | `#2a2a2e` | `#e4e2dd` | borda |
-| `--acento` | `#d65a31` | igual | terracota: círculo, ondas, confirmar, destaque |
-| `--sobre-acento` | `#ffffff` | igual | texto **sobre** terracota — a única superfície que não usa `--texto` |
-| `--glow` | `rgba(214,90,49,.55)` | `rgba(214,90,49,.28)` | o halo do botão (0,55 sobre papel vira mancha) |
-| `--status` | `#fff` a 0,7 | `#17171a` a 0,7 | texto de status e ícone |
-| `--rec` | `#ff4d3d` | igual | o ponto vermelho do selo de REC |
-| `--circulo` | `min(72vw, 220px)` | igual | diâmetro do botão de gravar |
-| `--ok` | `#6aa84f` | igual | o ponto de "salvo" |
+| Token | Valor | Onde |
+|---|---|---|
+| `--fundo` | `#0d0d0d` | fundo da tela |
+| `--fundo-alto` | `#1a1a1c` | cartão, campo, chip |
+| `--texto` / `--texto-fraco` | `#ececec` / `#8a8a8f` | texto e texto secundário |
+| `--linha` | `#2a2a2e` | borda |
+| `--acento` | `#d65a31` | terracota: círculo, ondas, confirmar, destaque |
+| `--sobre-acento` | `#ffffff` | texto **sobre** terracota — a única superfície que não usa `--texto` |
+| `--glow` | `rgba(214,90,49,.55)` | o halo do botão de gravar |
+| `--status` | `#ffffff` a 0,7 | texto de status e ícone |
+| `--rec` | `#ff4d3d` | o ponto vermelho do selo de REC |
+| `--circulo` | `min(72vw, 220px)` | diâmetro do botão de gravar |
+| `--ok` | `#6aa84f` | o ponto de "salvo" |
 
 `--fundo` e `--acento` mudaram de `#0f0f10` e `#d8613c` para os valores acima
 quando o botão foi redesenhado; a diferença é pequena, e manter dois terracotas
 quase iguais no mesmo sistema seria pior que trocar o antigo.
+
+**Phronesis é escuro, e só.** O bloco `prefers-color-scheme: light` saiu: um
+segundo tema é uma segunda tela para manter certa a cada mudança, e o botão de
+gravar foi desenhado sobre `#0d0d0d` — halo terracota sobre papel é outro
+efeito, não o mesmo mais claro. `:root` declara `color-scheme: dark`, sem o que
+o navegador desenharia os controles nativos (input, select, checkbox, barra de
+rolagem) no tema claro do sistema em cima do fundo escuro.
 
 `/entidades` é a única janela para dentro do grafo — até ela existir, saber o
 que tinha lá dentro exigia rodar Cypher por fora. Cada linha traz um `select` de
@@ -1385,10 +1392,6 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   `tests/onda.test.ts` cobre a matemática da onda, e `tsc` mais `next build`
   passam; ninguém abriu a tela e olhou o halo respirar. Não há navegador
   automatizado no projeto, e o `middleware` exige cookie para chegar em `/`.
-- **O tema claro não foi desenhado para o botão novo.** Os tokens têm valor
-  claro e a tela não quebra, mas a especificação do círculo é sobre `#0D0D0D`:
-  o halo terracota sobre papel é um efeito diferente do que foi pedido. Decidir
-  entre ajustar o claro ou fixar o app em escuro está em aberto.
 - **Entrega do magic link**: não há provedor de e-mail configurado. O link sai no
   log do servidor e, fora de produção, no corpo da resposta. Único ponto a
   mexer: a função `entregar` em `src/app/api/auth/link/route.ts`.
