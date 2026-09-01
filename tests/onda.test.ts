@@ -5,6 +5,8 @@ import {
   amplitudePx,
   AMPLITUDE_MAX,
   AMPLITUDE_MIN,
+  CAMADAS,
+  CICLOS,
   comAlfa,
   envelope,
   nivelRms,
@@ -105,8 +107,70 @@ describe("altura da onda", () => {
 
   it("a crista viaja do círculo para fora conforme a fase avança", () => {
     // O ponto de fase nula caminha para t maior quando a fase cresce.
-    const cristaEm = (fase: number) => fase / (2 * Math.PI * 2.5);
+    const cristaEm = (fase: number) => fase / (2 * Math.PI * CICLOS);
     expect(cristaEm(1)).toBeGreaterThan(cristaEm(0));
+  });
+
+  it("mais ciclos põem mais cristas no mesmo percurso", () => {
+    const cruzamentos = (ciclos: number) => {
+      let n = 0;
+      let antes = alturaOnda(0.001, AMPLITUDE_MAX, 0, ciclos);
+      for (let t = 0.002; t < 0.999; t += 0.001) {
+        const agora = alturaOnda(t, AMPLITUDE_MAX, 0, ciclos);
+        if (antes < 0 !== agora < 0) n++;
+        antes = agora;
+      }
+      return n;
+    };
+    expect(cruzamentos(4.25)).toBeGreaterThan(cruzamentos(2.9));
+  });
+});
+
+describe("as três camadas", () => {
+  it("são três", () => {
+    expect(CAMADAS).toHaveLength(3);
+  });
+
+  it("nenhuma passa da amplitude do momento — 25px continua o teto", () => {
+    for (const c of CAMADAS) {
+      expect(c.amplitude).toBeGreaterThan(0);
+      expect(c.amplitude).toBeLessThanOrEqual(1);
+      for (let t = 0; t <= 1; t += 0.01) {
+        expect(Math.abs(alturaOnda(t, AMPLITUDE_MAX * c.amplitude, c.fase, c.ciclos))).toBeLessThanOrEqual(
+          AMPLITUDE_MAX,
+        );
+      }
+    }
+  });
+
+  it("uma linha principal e duas acompanhando, não três iguais", () => {
+    const amplitudes = CAMADAS.map((c) => c.amplitude);
+    expect(amplitudes[0]).toBeGreaterThan(amplitudes[1]);
+    expect(amplitudes[1]).toBeGreaterThan(amplitudes[2]);
+    const alfas = CAMADAS.map((c) => c.alfa);
+    expect(alfas[0]).toBeGreaterThan(alfas[1]);
+    expect(alfas[1]).toBeGreaterThan(alfas[2]);
+  });
+
+  it("os ciclos não estão em razão simples: as três nunca se realinham", () => {
+    // Se duas fechassem o mesmo desenho junto, o par piscaria como uma onda
+    // só, grossa. Nenhuma razão entre elas pode cair perto de um racional
+    // curto (1/2, 2/3, 3/4, 1, …) dentro da tolerância que o olho pega.
+    for (let i = 0; i < CAMADAS.length; i++) {
+      for (let j = i + 1; j < CAMADAS.length; j++) {
+        const razao = CAMADAS[i].ciclos / CAMADAS[j].ciclos;
+        for (let p = 1; p <= 4; p++) {
+          for (let q = 1; q <= 4; q++) {
+            expect(Math.abs(razao - p / q)).toBeGreaterThan(0.04);
+          }
+        }
+      }
+    }
+  });
+
+  it("as fases não nascem juntas", () => {
+    const fases = new Set(CAMADAS.map((c) => c.fase));
+    expect(fases.size).toBe(CAMADAS.length);
   });
 });
 

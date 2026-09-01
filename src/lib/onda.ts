@@ -61,15 +61,47 @@ export function envelope(t: number): number {
   return subida * descida;
 }
 
-/** Quantas cristas cabem no percurso. Poucas: a onda é leve, não um espectro. */
-export const CICLOS = 2.5;
+/** Quantas cristas cabem no percurso. Leve ainda, mas não um traço só. */
+export const CICLOS = 3.55;
 
 /**
  * Deslocamento vertical em px no ponto `t`. A fase entra subtraída para a
  * crista viajar do círculo para fora, e não o contrário.
  */
-export const alturaOnda = (t: number, amplitude: number, fase: number): number =>
-  envelope(t) * amplitude * Math.sin(2 * Math.PI * CICLOS * t - fase);
+export const alturaOnda = (
+  t: number,
+  amplitude: number,
+  fase: number,
+  ciclos: number = CICLOS,
+): number => envelope(t) * amplitude * Math.sin(2 * Math.PI * ciclos * t - fase);
+
+export interface Camada {
+  /** Fração da amplitude do momento. A primeira leva tudo. */
+  amplitude: number;
+  ciclos: number;
+  /** Defasagem fixa, em radianos, para as três não nascerem juntas. */
+  fase: number;
+  /** Opacidade da linha na saída do círculo. */
+  alfa: number;
+}
+
+/**
+ * As três linhas de cada lado.
+ *
+ * Os `ciclos` são propositalmente incomensuráveis entre si (3,55 · 4,25 · 3):
+ * em razão simples as três se realinhariam a cada poucos segundos e o conjunto
+ * piscaria como uma onda só, grossa. Estes três foram escolhidos por busca — a
+ * razão mais próxima de um racional curto ainda fica a 0,083 dele —, e é isso
+ * que o teste "os ciclos não estão em razão simples" protege.
+ *
+ * A amplitude decresce e a opacidade também: é uma linha principal com duas
+ * acompanhando, não três iguais disputando a mesma faixa.
+ */
+export const CAMADAS: readonly Camada[] = [
+  { amplitude: 1, ciclos: CICLOS, fase: 0, alfa: 1 },
+  { amplitude: 0.62, ciclos: 4.25, fase: 2.1, alfa: 0.68 },
+  { amplitude: 0.4, ciclos: 3, fase: 4.3, alfa: 0.46 },
+];
 
 /**
  * Quando não há microfone para ouvir — navegador sem Web Audio, permissão

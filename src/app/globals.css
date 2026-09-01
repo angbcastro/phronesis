@@ -88,12 +88,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .palco.gravando .ondas { opacity: 1; }
 
-/* O halo é um elemento próprio, não uma sombra no botão: assim ele respira
-   (escala + raio) sem arrastar o texto do círculo junto. */
+/* O disco que respira. Fica atrás do botão, do mesmo terracota e do mesmo
+   tamanho — parado ele desaparece por baixo dele, e ao escalar aparece só a
+   borda. É isso que faz o círculo crescer como uma peça só, com o texto
+   parado no meio.
+
+   O `background` não é decoração: sem ele o elemento é transparente, e sombra
+   externa recorta a própria border-box. Ao escalar, o anel entre o botão e a
+   borda do halo ficava sem sombra e sem fundo — um anel preto pulsando em
+   volta do círculo, que foi exatamente o que apareceu na tela. */
 .brilho {
   width: var(--circulo);
   aspect-ratio: 1;
   border-radius: 50%;
+  background: var(--acento);
   box-shadow: 0 0 20px var(--glow);
   pointer-events: none;
   animation: respirar 4.5s ease-in-out infinite alternate;
@@ -619,31 +627,30 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* ---- marca: o canto superior esquerdo, e a volta ao início ---- */
 
 /* Fixa, não no fluxo: numa revisão longa o caminho de volta não pode depender
-   de rolar até o rodapé. Discreta em repouso — ela é saída, não convite. */
+   de rolar até o rodapé. Só o ícone — o nome do projeto não informa nada a
+   quem já está dentro dele.
+
+   O ponto tem 16px mas o link tem 40px: sem isso o alvo de toque seria menor
+   que o mínimo confortável no celular, e este é um app de celular. */
 .marca {
   position: fixed;
-  top: calc(0.85rem + env(safe-area-inset-top));
-  left: calc(1.25rem + env(safe-area-inset-left));
+  top: calc(0.6rem + env(safe-area-inset-top));
+  left: calc(1rem + env(safe-area-inset-left));
   z-index: 20;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.3rem 0.55rem 0.3rem 0.35rem;
-  border-radius: 999px;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
   text-decoration: none;
-  color: var(--texto-fraco);
-  font-size: 0.82rem;
-  letter-spacing: 0.06em;
-  /* O fundo acompanha a tela para o texto que rola por baixo não atravessar. */
-  background: color-mix(in srgb, var(--fundo) 82%, transparent);
-  backdrop-filter: blur(6px);
-  transition: color 140ms ease, opacity 140ms ease;
+  opacity: 0.75;
+  transition: opacity 140ms ease, transform 140ms ease;
 }
-.marca svg { width: 13px; height: 13px; flex: none; fill: var(--acento); }
-.marca span { line-height: 1; }
-.marca:hover { color: var(--texto); }
-.marca:active { opacity: 0.7; }
-.marca:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.marca svg { width: 16px; height: 16px; flex: none; fill: var(--acento); }
+.marca:hover { opacity: 1; }
+.marca:active { transform: scale(0.92); }
+.marca:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; }
 
 /* Espaço para ela nas telas que ela cobre. `.leitura` já abre com 3.5rem. */
 .sessoes,

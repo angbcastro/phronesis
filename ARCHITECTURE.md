@@ -1175,7 +1175,10 @@ Todas com `runtime = "nodejs"`.
 | `/entrar` | página de login | pede o e-mail permitido |
 
 Em toda tela dessa tabela menos `/` e `/entrar`, `Marca` fica fixa no canto
-superior esquerdo e leva a `/`.
+superior esquerdo e leva a `/`. É **só o ponto terracota** — o nome do projeto
+não informa nada a quem já está dentro dele. O ponto tem 16 px, mas o link tem
+40 px: alvo de toque menor que isso não se acerta num celular, e este é um app
+de celular.
 
 ### 11.1 O botão de gravar
 
@@ -1187,12 +1190,16 @@ gravando, o timer, o "salvo" e o "parar".
 
 O palco é um grid de uma célula com tudo empilhado (`.palco > * { grid-area: 1/1 }`):
 
-- **o halo** (`.brilho`) é um elemento próprio, não uma sombra no botão — assim
-  ele respira (escala 1 → 1,03 e raio 20 px → 35 px, 4,5 s `ease-in-out
-  alternate`) sem arrastar o texto do círculo junto;
+- **o halo** (`.brilho`) é um disco terracota atrás do botão, do mesmo tamanho:
+  parado ele some por baixo, e ao respirar (escala 1 → 1,03 e raio 20 px →
+  35 px, 4,5 s `ease-in-out alternate`) aparece só a borda. O círculo cresce
+  como peça só, com o texto parado no meio. O `background` dele não é
+  decoração: sombra externa recorta a própria border-box, e sem fundo o anel
+  entre o botão e a borda do halo ficava sem sombra **e** sem fundo — um anel
+  preto pulsando em volta do círculo;
 - **o círculo** é o botão, 220 px (`min(72vw, 220px)`, o `min` só para não
   estourar aparelho estreito), terracota, texto branco de 18 px/500;
-- **as ondas** são um `<canvas>` absoluto. O bloco que o contém vira a própria
+- **as ondas** são **três de cada lado**, num `<canvas>` absoluto. O bloco que o contém vira a própria
   célula do grid, ou seja a faixa vertical do círculo — é o que põe o eixo da
   onda no centro dele sem número mágico. Some e aparece por opacidade em 400 ms
   com `cubic-bezier(.16,1,.3,1)`;
@@ -1219,6 +1226,14 @@ desenhável que dá para testar sem canvas, sem microfone e sem navegador
 estalo —, passa por média móvel exponencial, e a amplitude fica entre 15 px e
 25 px. `envelope()` zera nas duas pontas: encostada no círculo a linha seria
 cortada por ele, e na ponta precisa sumir em vez de ser decepada.
+
+`CAMADAS` são as três linhas: amplitude e opacidade decrescentes — uma
+principal com duas acompanhando, não três iguais disputando a faixa. Os ciclos
+(3,55 · 4,25 · 3) foram **escolhidos por busca**, não a olho: em razão simples
+as três se realinhariam a cada poucos segundos e o conjunto piscaria como uma
+onda só, grossa. A razão mais próxima de um racional curto fica a 0,083 dele, e
+o teste "os ciclos não estão em razão simples" é o que impede alguém de mexer
+nesses números sem perceber.
 
 `prefers-reduced-motion` para o halo no estado médio e tira o deslize do selo.
 A onda continua, porque ali ela não é enfeite: é o retorno de que o microfone

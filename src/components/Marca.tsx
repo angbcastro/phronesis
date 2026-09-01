@@ -33,7 +33,6 @@ export function Marca() {
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <circle cx="12" cy="12" r="7" />
       </svg>
-      <span>phronesis</span>
     </Link>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * O botão central de gravar: o círculo, o brilho que respira, as ondas
- * laterais e o selo de REC.
+ * O botão central de gravar: o círculo, o brilho que respira, as três ondas
+ * de cada lado e o selo de REC.
  *
  * É um componente só, e ele **não troca de árvore** entre parado e gravando —
  * é o mesmo círculo, o mesmo canvas, o mesmo nó do DOM. É isso que permite a
@@ -22,6 +22,7 @@ import {
   ALFA_PONTA,
   alturaOnda,
   amplitudePx,
+  CAMADAS,
   comAlfa,
   nivelRms,
   nivelSimulado,
@@ -42,7 +43,7 @@ interface Props {
 const PASSO_PX = 2;
 
 /** Velocidade da crista viajando para fora, em radianos por segundo. */
-const VELOCIDADE = 2.2;
+const VELOCIDADE = 3.2;
 
 /** Abaixo disso não sobra percurso entre o círculo e a borda: sem onda. */
 const PERCURSO_MINIMO_PX = 8;
@@ -148,7 +149,12 @@ export function BotaoGravar({ gravando, ocupado = false, rotulo, faixa, aoTocar 
     // Resolvida uma vez: `getComputedStyle` por quadro é caro, e a cor do
     // acento é a mesma nos dois temas — só fundo e texto trocam.
     const cor = getComputedStyle(c).color;
-    const corPonta = comAlfa(cor, ALFA_PONTA);
+    // Uma cor por camada, resolvida aqui: dentro do laço isso seria seis
+    // concatenações de string por quadro, 360 por segundo, à toa.
+    const cores = CAMADAS.map((camada) => ({
+      saida: comAlfa(cor, camada.alfa),
+      ponta: comAlfa(cor, camada.alfa * ALFA_PONTA),
+    }));
 
     const amostras = new Uint8Array(1024);
     let quadro = 0;
@@ -181,20 +187,27 @@ export function BotaoGravar({ gravando, ocupado = false, rotulo, faixa, aoTocar 
       ctx!.lineJoin = "round";
 
       for (const lado of [-1, 1] as const) {
-        // Degradê da borda do círculo até a ponta: a onda não termina, apaga.
-        const grad = ctx!.createLinearGradient(meio + lado * raio, 0, meio + lado * (raio + percurso), 0);
-        grad.addColorStop(0, cor);
-        grad.addColorStop(1, corPonta);
-        ctx!.strokeStyle = grad;
+        const de = meio + lado * raio;
+        const ate = meio + lado * (raio + percurso);
 
-        ctx!.beginPath();
-        for (let d = 0; d <= percurso; d += PASSO_PX) {
-          const x = meio + lado * (raio + d);
-          const y = eixo + alturaOnda(d / percurso, amplitude, fase);
-          if (d === 0) ctx!.moveTo(x, y);
-          else ctx!.lineTo(x, y);
-        }
-        ctx!.stroke();
+        CAMADAS.forEach((camada, i) => {
+          // Degradê da borda do círculo até a ponta: a onda não termina, apaga.
+          const grad = ctx!.createLinearGradient(de, 0, ate, 0);
+          grad.addColorStop(0, cores[i].saida);
+          grad.addColorStop(1, cores[i].ponta);
+          ctx!.strokeStyle = grad;
+
+          ctx!.beginPath();
+          for (let d = 0; d <= percurso; d += PASSO_PX) {
+            const x = meio + lado * (raio + d);
+            const y =
+              eixo +
+              alturaOnda(d / percurso, amplitude * camada.amplitude, fase + camada.fase, camada.ciclos);
+            if (d === 0) ctx!.moveTo(x, y);
+            else ctx!.lineTo(x, y);
+          }
+          ctx!.stroke();
+        });
       }
     }
 
