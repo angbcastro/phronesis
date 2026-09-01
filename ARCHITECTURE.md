@@ -36,7 +36,7 @@ chama o agente 2 e não paga nada.
 **A jornada não passa pela transcrição.** Parar de falar leva à tela de
 processamento, e dela a revisão abre sozinha quando a proposta fica pronta. O
 texto literal é porta de serviço: mora em `/sessao/:id/transcricao` e se alcança
-pelo botão "transcrição" na lista de áudios (seção 11). Ler quinze minutos de
+pelo botão "transcrição" na lista de sessões (seção 11). Ler quinze minutos de
 transcrição no meio do caminho é o atrito que mata o ritual — a transcrição é
 insumo do extrator, não coisa que eu leio todo dia.
 
@@ -99,6 +99,7 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   perfil.ts       os três campos de perfil: ler, gravar, e o agente 3 que rascunha
   entidades.ts    catálogo do grafo + a visão agregada da revisão — só leitura
   referencias.ts  lê os dois formatos de proposta (antes e depois da 4)  (client)
+  catalogo.ts     busca de entidade no navegador: trecho, acento, alias (client)
   atomos.ts       escreve :Atomo, :Entidade e :PERFILA — só o confirmar chama
   pipeline.ts     transcrever bloco / finalizar sessão (o orquestrador)
   auth.ts         magic link HMAC, cookie httpOnly
@@ -117,11 +118,13 @@ src/client/       navegador
 src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Gravacao (a tela de gravar), BotaoGravar (o círculo, o halo,
                   as ondas laterais e o selo de REC), Importacao (subir arquivo),
-                  ChipRecuperacao (retomar ou revisar),
                   Processando (fechar a sessão e esperar; leva à revisão),
                   Revisao (aprovar, editar, escutar, confirmar),
+                  SeletorEntidade (a barra pesquisável de entidade, nos dois
+                    lugares da revisão),
                   Leitura (a transcrição literal — porta de serviço),
-                  Sessoes (lista de áudios), Entidades (higiene do grafo)
+                  Sessoes (lista de sessões — e a cor que diz o que falta
+                    revisar), Entidades (higiene do grafo)
 src/app/api/      as rotas de sessão e de entidade + 2 de auth (seção 10)
 src/middleware.ts porta única: sem cookie válido nada responde
 db/migrations/    definição canônica do schema
@@ -579,11 +582,14 @@ inventada. `localizarNoAudio` traduz o segundo absoluto em "bloco N, segundo M"
 pegando o último bloco que começa antes dele — funciona igual para gravação (um
 bloco a cada 30 s) e para importação (um bloco só), sem caso especial.
 
-**O painel de entidades é o lugar onde se corrige.** Entidade nova tem nome e
+**O painel de entidades é onde se corrige de uma vez.** Entidade nova tem nome e
 tipo editáveis; renomear "ela" para "Marina" uma vez faz todos os átomos que
-apontam para ela passarem a apontar para o nome novo — a tradução acontece na
-hora de montar o payload, nenhum átomo é reescrito. Entidade **conhecida** não é
-editável: o grafo vence, como já vale na resolução (4.6).
+apontam para ela passarem a apontar para o nome novo. Escolher na barra uma
+entidade que **já existe** re-aponta a candidata inteira para ela, e o tipo passa
+a ser o do nó: o grafo vence, aqui como na resolução (4.6). Entidade
+**conhecida** não tem barra de nome — renomear nó que já existe é trabalho de
+`/entidades`, e re-apontar um átomo que caiu no nó errado se faz pelo `sobre`
+dele, dentro do átomo.
 
 Entidade com `precisa_nome` vai para o topo, destacada, e **o confirmar fica
 desabilitado** enquanto sobrar pronome. Desmarcar deixa a entidade só no texto do
@@ -595,12 +601,43 @@ O editor de um átomo abre por um botão **editar** — que num átomo em dúvid
 — e o CSS ainda dava `cursor: text` ali, sinalizando o contrário. Menção igual ao
 sujeito não é exibida nem enviada.
 
-**O seletor de sujeito é uma lista pesquisável, não um campo cego.** Um filtro de
-tipo mais um `<input list>` com `<datalist>`: busca conforme eu digito, sem
-biblioteca nenhuma e sem estado novo na tela, e o campo continua aceitando um
-nome que ainda não existe. As alternativas que o agente de resolução ofereceu vêm
-primeiro; o resto do grafo vem de `GET /api/entidades`, rota que já existia. Se
-ela falhar, o campo volta a ser texto livre — que era o comportamento anterior.
+**A entidade se corrige em dois lugares, e a diferença entre eles é o alcance.**
+Dentro do átomo, no bloco "entidades" do editor, eu troco o sujeito e as menções
+**daquele** átomo. No painel do rodapé eu troco o nome de uma candidata e
+**todos** os átomos que a citam seguem junto — a tradução acontece em
+`nomeFinal()`, na hora de montar o payload, e nenhum átomo é reescrito. Os dois
+usam a mesma barra: `SeletorEntidade`.
+
+**A barra é uma lista pesquisável sobre o grafo inteiro.** Foco abre a lista;
+apagar tudo mostra o grafo todo, mais falado primeiro; digitar filtra por
+**trecho** — "nan" acha "Fernanda". Cada linha traz tipo e número de sessões, e
+quando o casamento veio de um apelido ele aparece entre parênteses, senão a linha
+apareceria sem motivo visível. As alternativas do agente de resolução vêm
+primeiro. O filtro de tipo continua, agora valendo para todas as barras daquele
+átomo.
+
+Era um `<input list>` com `<datalist>`, escolhido na slice 4 por não custar
+biblioteca. Ele não sustenta o que falta: casa só prefixo em vários navegadores,
+não mostra tipo nem apelido, não atravessa alias, e no celular — que é onde este
+app vive — degrada para uma tirinha de sugestão. O combobox é escrito à mão, com
+os tokens de `globals.css`; nenhuma dependência entrou.
+
+**O campo continua aceitando nome que não existe.** A lista é ajuda, não trava. O
+que decide entre reusar um nó e criar outro é o **casamento exato** de
+`catalogo.resolver` na montagem do payload: casou (por caixa, por acento ou por
+alias), vai a grafia canônica do grafo e o tipo do nó; não casou, nasce entidade
+nova com o que eu escrevi. A linha `+ criar "X"` existe só para eu ver de que
+lado eu estou antes de confirmar.
+
+O catálogo vem de `GET /api/entidades`, rota que já existia — **rota nova
+nenhuma, migration nenhuma**. Se ela falhar, as barras voltam a ser texto livre,
+que era o comportamento anterior; `tests/revisao.test.ts` fixa isso.
+
+**As menções são editáveis** — acrescentar e tirar, uma barra por menção.
+Antes elas eram texto morto no item: menção errada só se consertava rejeitando o
+átomo inteiro ou renomeando a entidade no rodapé, e as duas são grandes demais
+para o erro. A lista viaja inteira nas edições do átomo, e não como delta: sem
+isso não dá para distinguir "não mexi" de "apaguei todas".
 
 **Átomo com atribuição incerta aparece marcado**, com a sugestão já preenchida, o
 motivo do agente e as alternativas ao lado. O confirmar **não** trava: ver 4.8.
@@ -616,7 +653,13 @@ lista aprovada.
 #### O que o cliente pode mandar, e o que não pode
 
 `POST /api/sessoes/:id/confirmar` recebe quais átomos foram aprovados e como
-foram editados — texto, tipo, sujeito, menções. **Procedência não vem no corpo.**
+foram editados — texto, tipo, sujeito, menções. O corpo é montado por
+`montarCorpoDoConfirmar`, função pura exportada da `Revisao` porque é a lógica
+que quebra em silêncio: entidade citada que não entrar em `entidades` é
+descartada pelo servidor **sem uma palavra**, e o erro só aparece no grafo dias
+depois. Toda menção que eu acrescentei entra na lista junto; toda entidade que eu
+desmarquei no rodapé sai dela, e sai também das menções — o alcance do checkbox é
+o nó, não só o sujeito. **Procedência não vem no corpo.**
 `id`, offsets, âncoras, `prompt_version` e `modelo` são relidos de
 `extracao.json` pelo índice do átomo. Se viessem do navegador, seriam uma
 afirmação dele, e átomo com procedência falsa é pior que átomo nenhum.
@@ -761,8 +804,8 @@ isso o texto atual nunca é sobrescrito sem eu ver os dois lado a lado.
 
 ```
 gravando → finalizando → transcrevendo → transcrito → extraindo → em_revisao → confirmada
-     ↓            ↓              ↓                         ↓
-abandonada       erro          erro                       erro    (o que está no R2 fica
+                  ↓              ↓                         ↓
+                 erro          erro                       erro    (o que está no R2 fica
                                                                    intacto, retry manual)
 ```
 
@@ -770,23 +813,34 @@ abandonada       erro          erro                       erro    (o que está n
 `confirmada`, e quem confirma sou eu, na revisão — `estaConcluida` mudou junto.
 `confirmada` não tem transição de saída.
 
-`estados.ts` guarda as transições permitidas e `foiAbandonada()` (sem bloco novo
-há mais de 10 min, `ABANDONO_MIN`). Três predicadas dizem o que cada estado
-significa para as telas:
+`estados.ts` guarda as transições permitidas. Quatro predicadas dizem o que cada
+estado significa para as telas:
 
 | Predicada | Verdadeira em | Para quê |
 |---|---|---|
 | `temTranscricao` | `transcrito`, `extraindo`, `em_revisao`, `confirmada` | a leitura para o polling; a extração corre atrás |
 | `estaPendenteDeRevisao` | `em_revisao` | tem proposta esperando |
-| `estaAberta` / `STATUS_ABERTOS` | `gravando`, `abandonada`, `erro`, `em_revisao` | o chip da home |
 | `terminouDeProcessar` | `em_revisao`, `confirmada`, `erro` | a leitura para o polling |
 
-`em_revisao` entra em `STATUS_ABERTOS`, e o chip decide o verbo pelo status:
-"retomar" para gravação interrompida, "revisar" para proposta esperando. Oferecer
-"retomar" numa sessão já extraída mandaria gravar por cima do que está pronto.
-`sessoesAbertas()` recebe a lista de `estados.ts` por parâmetro em vez de
-repeti-la no Cypher — escrita à mão nos dois lugares, ela divergiria no primeiro
-estado novo, que foi exatamente o que quase aconteceu.
+**A máquina de recuperação foi apagada inteira.** Com o chip da home saíram
+`GET /api/sessoes/abertas` e `sessoesAbertas()`, e com eles as peças que só
+existiam para alimentá-los: `STATUS_ABERTOS`, `estaAberta`, `foiAbandonada` e
+`duracaoPorChunks` (`estados.ts`), `ABANDONO_MIN` (`tipos.ts`), `proximoIndice` e
+`duracaoEstimadaS` (`manifest.ts`), e a opção `indiceInicial` do `Gravador`.
+Nenhuma delas ficou como código morto com teste em volta: elas estão no git, e a
+que voltar a ser necessária se reescreve em três linhas. O que fica no lugar é
+uma marca só, na lista de sessões, e ela sai de `confirmada` — verde é sessão
+revisada, branco é sessão com trabalho pendente (`jaRevisada`, seção 11).
+
+**`abandonada` saiu da máquina junto.** Ele estava em `STATUS_SESSAO`, na tabela
+de transições e nos `sePartirDe` de `/pronto`, `/finalizar` e `pipeline.ts` — mas
+nenhuma escrita no grafo jamais produziu esse status: `foiAbandonada()` só
+reetiquetava a resposta de `/api/sessoes/abertas` em memória, nunca o nó. Era
+vocabulário sem fato, e um estado que nunca acontece só serve para o próximo
+leitor tratar como caso real. **Nenhum nó do banco carrega esse valor**, pelo
+mesmo motivo — não há dado a migrar, e por isso a remoção não pede migration.
+Uma gravação que a aba interrompeu fica em `gravando` até `/finalizar` levá-la
+adiante, que é o que já acontecia de fato.
 
 `terminouDeProcessar` existe porque `completa` não serve para parar o polling da
 leitura: `completa` é sobre a transcrição e fica verdadeiro em `transcrito`, ou
@@ -881,13 +935,20 @@ Duas exigências de transporte do R2 sustentam isso, ambas dentro de `put()` em
 O primeiro erro mascarava o segundo: o 411 estourava antes de o laço de retry
 chegar a exercitar o `If-Match`. `tests/r2.test.ts` cobre os dois.
 
-### 6.2 Retomada
+### 6.2 Gravação interrompida
 
-`proximoIndice(manifest)` é `max(i) + 1`. Retomar uma sessão recuperada continua
-a numeração dos blocos na mesma sessão, sem sobrescrever nada (aceite 3). O chip
-que oferece a retomada é dispensável, guarda os ids dispensados em
-`localStorage` e não volta a insistir — nenhuma tela desta slice mostra contagem
-de dias, sequência ou lembrete.
+**Retomar não existe mais.** Havia um chip na home que oferecia "retomar" e
+"revisar" no mesmo cartão; ele saiu para tirar a cobrança da tela de gravar
+(visão §6), e o "retomar" foi junto — era o único lugar de onde podia ser
+chamado, porque precisa do microfone e do `Gravador`. Todo o maquinário dele foi
+apagado com ele (§5): `proximoIndice`, `foiAbandonada`, `ABANDONO_MIN`,
+`indiceInicial`. Uma gravação nova sempre começa em `chunk_000` de uma sessão
+nova.
+
+**Fala não se perde por isso.** Os blocos que já subiram estão no R2, e a sessão
+interrompida continua na lista de sessões levando a `/sessao/:id`, onde
+`Processando` finaliza e transcreve o que existe. O que se perde é emendar fala
+nova na mesma sessão — está no §14 como limite.
 
 ## 7. Fronteira de segurança
 
@@ -1147,7 +1208,6 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco |
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
 | `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo, com `:PERFILA` | `ja_confirmada` na segunda; procedência relida do R2, não do corpo |
-| `GET /api/sessoes/abertas` | sessões não finalizadas com pelo menos um bloco | alimenta o chip |
 | `GET /api/entidades` | o que está no grafo, com átomos, sessões, aliases e perfil | só leitura; nó fundido vira alias do vencedor; alimenta também o seletor da revisão |
 | `POST /api/entidades/duplicatas` | propõe pares que parecem a mesma coisa | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/entidades/fundir` | `{vencedora, perdedora}` — migra arestas, marca alias | idempotente pela guarda de `status` |
@@ -1166,11 +1226,11 @@ Todas com `runtime = "nodejs"`.
 
 | Rota | Componente | O que mostra |
 |---|---|---|
-| `/` | `Gravacao` + `BotaoGravar` + `Importacao` + `ChipRecuperacao` | o círculo "Como foi seu dia?", link "ou subir um áudio que já gravei"; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo" |
+| `/` | `Gravacao` + `BotaoGravar` + `Importacao` | o círculo "Como foi seu dia?", link "ou subir um áudio que já gravei", e as portas "sessões · entidades" — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo" |
 | `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; abre a revisão sozinho |
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, editar, escutar cada trecho, resolver a dúvida de quem é, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
-| `/sessoes` | `Sessoes` | lista de áudios: abrir, ler a transcrição, forçar re-extração |
+| `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, escrever o perfil |
 | `/entrar` | página de login | pede o e-mail permitido |
 
@@ -1185,7 +1245,7 @@ de celular.
 `BotaoGravar` é **um nó do DOM só**, parado e gravando. Antes eram duas árvores
 diferentes — a de gravar trocava a tela inteira pelo timer — e por isso não
 havia o que transicionar entre elas, só um corte. Agora o círculo permanece e o
-que muda é o que o cerca: parado, as portas de serviço e o chip de retomada;
+que muda é o que o cerca: parado, as portas de serviço;
 gravando, o timer, o "salvo" e o "parar".
 
 O palco é um grid de uma célula com tudo empilhado (`.palco > * { grid-area: 1/1 }`):
@@ -1304,10 +1364,29 @@ não faz sentido, o botão de voltar tem que sair da sessão.
 **A transcrição saiu da jornada.** Ela era a tela que a gravação abria, com o
 texto inteiro e um link para revisar; agora é `/sessao/:id/transcricao`, sem
 finalizar nada e sem redirecionar, alcançável pelo botão "transcrição" na lista
-de áudios, ao lado de "reextrair". Serve para conferir o literal — um nome que o
+de sessões, ao lado de "reextrair". Serve para conferir o literal — um nome que o
 STT grafou errado, um trecho que ele comeu. `destino()` em `Sessoes` manda cada
 linha para onde ainda há o que fazer: revisão se há proposta esperando,
 transcrição se o texto já está inteiro, processamento no resto.
+
+**A home não avisa nada, e a lista avisa pela cor.** Havia um `ChipRecuperacao`
+na tela de gravar que aparecia sempre que existia sessão aberta e, num dos seus
+dois estados, cobrava: "sessão de 12 min esperando revisão". Cobrança na tela
+onde eu passo o tempo é a forma de morte da visão §6, e o chip era o único
+elemento crônico que restava ali. Ele saiu inteiro.
+
+O que ficou no lugar é `jaRevisada(s)` em `Sessoes`: a linha de uma sessão
+`confirmada` sai em `--ok`, o mesmo verde do ponto de "salvo" da gravação, e o
+resto da lista fica no branco de `--texto`. Não há classe para "falta revisar" —
+uma marca em cada linha não marca nada —, e a legenda vai no cabeçalho, senão a
+cor é adivinhação. `confirmada` é o único estado terminal da máquina (seção 5), o
+que faz o verde querer dizer exatamente uma coisa; `tests/sessoes-lista.test.ts`
+fixa isso, porque pintar de verde uma sessão que ainda tem trabalho é pior que
+não pintar nada.
+
+O nome da porta acompanhou: "áudios" virou **"sessões"**, que é como a coisa se
+chama no resto do sistema (`:Sessao`, `/sessoes`, `sessao_id`). Áudio é o
+arquivo; sessão é o que eu abro ali.
 
 ## 12. Ambiente
 
@@ -1512,14 +1591,32 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   sem nenhuma letra em comum com o nome do nó ("Bidu" para "Roberto") vira
   entidade nova, e o conserto é fundir depois em `/entidades`. É deliberado —
   mandar o catálogo todo seria pagar por texto que não muda resposta nenhuma —,
-  mas é um limite, não um detalhe.
+  mas é um limite, não um detalhe. O que a barra pesquisável faz é baratear o
+  conserto: o grafo inteiro está a duas letras de distância dentro do próprio
+  átomo, então "Bidu" vira "Roberto" na revisão em vez de virar nó e fusão.
+- **A revisão carrega o grafo inteiro para buscar nele.** `GET /api/entidades`
+  não tem `q`, nem limite, nem paginação, e não há índice de texto sobre `nome` —
+  a busca é no cliente, sobre a lista toda. Num grafo de dezenas de entidades
+  isso é mais rápido que ida ao servidor por tecla; em milhares, deixa de ser, e
+  a saída é uma rota de busca com uma migration de índice atrás dela.
+- **Não dá para retomar uma gravação interrompida.** O botão "retomar" morava no
+  chip da home, e o chip saiu para tirar a cobrança da tela de gravar (11) — os
+  dois verbos viviam no mesmo cartão, então perder um custou o outro. O
+  maquinário dele foi apagado junto (§5, §6.2): nada ficou como código morto
+  esperando uma tela que talvez nunca volte. O que **não** se perde: os blocos já
+  subidos estão no R2, e a sessão interrompida continua na lista de sessões
+  levando a `/sessao/:id`, onde `Processando` finaliza e transcreve o que
+  existe — perde-se emendar fala nova na mesma sessão, não se perde fala. Se um
+  dia incomodar, o caminho é um link `retomar` na linha da lista apontando para
+  `/?retomar=<id>`, e as três linhas de `proximoIndice` se reescrevem.
 - **Não há como separar um nó que já conflacionou duas pessoas.** A máquina da
   slice 3 junta, não divide, e mover átomo entre entidades não existe. É por isso
   que dois nomes homófonos têm que ser cadastrados em `/entidades` **antes** da
   primeira menção: depois de conflacionados, não há caminho de volta.
 - **A marca de perfil não é editável na revisão.** Ela aparece no átomo e some se
   eu rejeitar o átomo ou desmarcar a entidade, mas não dá para trocar o campo nem
-  apontar outra entidade sem editar o sujeito. Se o agente 2 errar o campo com
+  apontar outra entidade — é a única das três relações do átomo que continua sem
+  controle na tela, agora que `menciona` ganhou o dele (4.7). Se o agente 2 errar o campo com
   frequência, o que se ajusta é o `resolucao-1`.
 - **O perfil realimenta a resolução, e isso é o risco declarado da slice.** O
   agente 2 lê o perfil para desambiguar; um perfil errado contamina toda

@@ -1,12 +1,17 @@
 "use client";
 
 /**
- * Lista de áudios — a porta de serviço.
+ * Lista de sessões — a porta de serviço.
  *
  * Existe para duas coisas: achar uma sessão e forçar a re-extração dela — é
  * como se calibra o prompt sem gravar áudio novo, já que a trava de
  * idempotência impede reprocessar uma sessão que já tem proposta — e ler a
  * transcrição literal, que saiu da jornada de gravar e mora aqui.
+ *
+ * **É aqui que se vê o que falta revisar**, e é pela cor: verde é sessão que já
+ * passou pela revisão, branco é sessão que ainda tem trabalho. Antes isso era um
+ * chip na tela de gravar, que aparecia sozinho e cobrava. Um estado que eu leio
+ * de relance no lugar onde eu já vou procurar não cobra nada.
  *
  * Fica atrás de um link discreto de propósito. A tela de gravar é "um botão,
  * um timer, um jeito de parar — idealmente nada mais" (`Specs/visao.md` §6), e
@@ -70,6 +75,15 @@ export const podeLerTranscricao = (s: Sessao): boolean => temTranscricao(s.statu
 export const podeReextrair = (s: Sessao): boolean =>
   ["transcrito", "extraindo", "em_revisao", "erro"].includes(s.status);
 
+/**
+ * Já passou pela revisão: os átomos dela estão no grafo.
+ *
+ * É o único estado terminal da máquina (`ARCHITECTURE.md` §5) e o único que a
+ * lista pinta. Verde tem de querer dizer "terminado" — pintar de verde uma
+ * sessão que ainda tem trabalho é pior que não pintar nada.
+ */
+export const jaRevisada = (s: Sessao): boolean => s.status === "confirmada";
+
 export function Sessoes() {
   const [sessoes, setSessoes] = useState<Sessao[] | null>(null);
   const [falha, setFalha] = useState<string | null>(null);
@@ -121,10 +135,11 @@ export function Sessoes() {
   return (
     <main className="sessoes">
       <header>
-        <h1>áudios</h1>
+        <h1>sessões</h1>
         <p className="aguardando">
-          {sessoes ? `${sessoes.length} sessão(ões)` : "…"} — reextrair chama o modelo de novo e
-          sobrescreve a proposta atual; transcrição abre o texto literal
+          {sessoes ? `${sessoes.length} sessão(ões)` : "…"} · verde é o que eu já revisei —
+          reextrair chama o modelo de novo e sobrescreve a proposta atual; transcrição abre o
+          texto literal
         </p>
       </header>
 
@@ -132,7 +147,7 @@ export function Sessoes() {
 
       <ul className="lista-sessoes">
         {(sessoes ?? []).map((s) => (
-          <li key={s.id}>
+          <li key={s.id} className={jaRevisada(s) ? "revisada" : undefined}>
             <Link href={destino(s)} className="quando">
               <span>{quando(s.iniciada_em)}</span>
               <span className="meta">
@@ -174,7 +189,7 @@ export function Sessoes() {
         ))}
       </ul>
 
-      {sessoes?.length === 0 && <p className="aguardando">nenhum áudio ainda</p>}
+      {sessoes?.length === 0 && <p className="aguardando">nenhuma sessão ainda</p>}
 
     </main>
   );

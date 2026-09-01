@@ -6,7 +6,6 @@
 import { EXT_GRAVACAO } from "./audio";
 import { chaveManifest } from "./chaves";
 import type { ChunkManifest, Manifest } from "./tipos";
-import { DURACAO_CHUNK_S } from "./tipos";
 import { ConflitoR2Error, getJson, putJson } from "./r2";
 
 // ---------- puro ----------
@@ -59,26 +58,9 @@ export function marcarTranscrito(m: Manifest, i: number): Manifest {
   return { ...m, chunks: m.chunks.map((c) => (c.i === i ? { ...c, transcrito: true } : c)) };
 }
 
-export function marcarFinalizado(m: Manifest): Manifest {
-  return m.finalizado ? m : { ...m, finalizado: true };
-}
-
 export const pendentes = (m: Manifest): ChunkManifest[] => m.chunks.filter((c) => !c.transcrito);
 
 export const tudoTranscrito = (m: Manifest): boolean => pendentes(m).length === 0;
-
-/** Próximo índice a gravar. Retomar sessão continua a numeração (aceite 3). */
-export function proximoIndice(m: Manifest): number {
-  return m.chunks.reduce((max, c) => Math.max(max, c.i + 1), 0);
-}
-
-/** Estimativa de duração pelos blocos existentes — serve ao chip de recuperação. */
-export function duracaoEstimadaS(m: Manifest): number {
-  return m.chunks.length * DURACAO_CHUNK_S;
-}
-
-export const bytesTotais = (m: Manifest): number =>
-  m.chunks.reduce((soma, c) => soma + c.bytes, 0);
 
 // ---------- com R2 ----------
 

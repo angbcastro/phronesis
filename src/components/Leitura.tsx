@@ -7,7 +7,7 @@
  * por aqui que a gravação passa**: quem grava vai de `Processando` direto para
  * a revisão. Esta tela existe para quando eu quero conferir a transcrição
  * literal — checar um nome que saiu errado, ver se o STT comeu um trecho — e
- * se chega a ela pelo botão "transcrição" na lista de áudios.
+ * se chega a ela pelo botão "transcrição" na lista de sessões.
  *
  * Por isso ela não finaliza sessão nem redireciona para lugar nenhum: só lê.
  */

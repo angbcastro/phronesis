@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  bytesTotais,
-  duracaoEstimadaS,
   extensaoDoChunk,
   manifestVazio,
-  marcarFinalizado,
   marcarTranscrito,
   pendentes,
-  proximoIndice,
   registrarChunk,
   tudoTranscrito,
 } from "@/lib/manifest";
@@ -52,35 +48,6 @@ describe("estado da transcrição", () => {
 
   it("manifest vazio conta como tudo transcrito", () => {
     expect(tudoTranscrito(manifestVazio("s1"))).toBe(true);
-  });
-
-  it("finalizar duas vezes devolve o mesmo manifest", () => {
-    const m = marcarFinalizado(comChunks(0));
-    expect(marcarFinalizado(m)).toBe(m);
-  });
-});
-
-describe("retomada", () => {
-  it("continua a numeração a partir do último bloco subido", () => {
-    expect(proximoIndice(comChunks(0, 1, 2))).toBe(3);
-  });
-
-  it("começa do zero numa sessão sem bloco nenhum", () => {
-    expect(proximoIndice(manifestVazio("s1"))).toBe(0);
-  });
-
-  it("não reaproveita índice de buraco no meio", () => {
-    expect(proximoIndice(comChunks(0, 1, 5))).toBe(6);
-  });
-});
-
-describe("números do chip", () => {
-  it("estima a duração pela contagem de blocos de 30 s", () => {
-    expect(duracaoEstimadaS(comChunks(0, 1, 2, 3))).toBe(120);
-  });
-
-  it("soma os bytes subidos", () => {
-    expect(bytesTotais(comChunks(0, 1))).toBe(180_000);
   });
 });
 

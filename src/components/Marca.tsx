@@ -3,7 +3,7 @@
 /**
  * A marca no canto superior esquerdo — e a porta de volta.
  *
- * Toda tela de dentro (processando, revisão, transcrição, áudios, entidades)
+ * Toda tela de dentro (processando, revisão, transcrição, sessões, entidades)
  * fica a um toque do início. Antes disso o caminho de volta era um "voltar"
  * no rodapé, que só existe depois de rolar a tela inteira; numa revisão longa
  * ou numa lista grande de entidades ele some do alcance.

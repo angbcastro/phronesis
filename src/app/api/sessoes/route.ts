@@ -5,10 +5,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/sessoes — todos os áudios, do mais recente ao mais antigo.
+ * GET /api/sessoes — todas as sessões, da mais recente à mais antiga.
  *
  * Alimenta a lista de `/sessoes`. Sessão sem bloco nenhum não entra: foi criada
- * e abandonada antes de gravar, e não é áudio nenhum.
+ * e largada antes de gravar, e não é áudio nenhum.
  */
 export async function GET() {
   const sessoes = await todasSessoes();

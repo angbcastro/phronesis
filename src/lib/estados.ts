@@ -1,9 +1,9 @@
 /**
  * Máquina de estados da sessão.
  *
- *   gravando → finalizando → transcrevendo → transcrito
- *         ↓            ↓            ↓            ↓
- *    abandonada       erro ────────────────→ extraindo → em_revisao → confirmada
+ *   gravando → finalizando → transcrevendo → transcrito → extraindo → em_revisao → confirmada
+ *                     ↓              ↓                          ↓
+ *                    erro           erro                       erro
  *
  * `transcrito` deixou de ser terminal na slice 2: a extração dispara sozinha
  * e a sessão só termina quando eu confirmo a revisão. `erro` é a saída tanto
@@ -14,17 +14,15 @@
  * reprocessa nem volta atrás de um estado já concluído (aceite 9).
  */
 import type { StatusSessao } from "./tipos";
-import { ABANDONO_MIN, DURACAO_CHUNK_S } from "./tipos";
 
 const PERMITIDAS: Record<StatusSessao, StatusSessao[]> = {
-  gravando: ["gravando", "finalizando", "abandonada"],
+  gravando: ["gravando", "finalizando"],
   finalizando: ["finalizando", "transcrevendo", "erro"],
   transcrevendo: ["transcrevendo", "transcrito", "erro"],
   transcrito: ["transcrito", "extraindo"],
   extraindo: ["extraindo", "em_revisao", "erro"],
   em_revisao: ["em_revisao", "confirmada", "extraindo"], // reextrair é decisão da revisão
   confirmada: ["confirmada"],
-  abandonada: ["abandonada", "gravando", "finalizando"], // retomar ou processar
   erro: ["erro", "finalizando", "transcrevendo", "extraindo"], // retry manual
 };
 
@@ -52,30 +50,3 @@ export const estaPendenteDeRevisao = (s: StatusSessao): boolean => s === "em_rev
  */
 export const terminouDeProcessar = (s: StatusSessao): boolean =>
   s === "em_revisao" || s === "confirmada" || s === "erro";
-
-/**
- * Sessão pendente, que o chip da home deve oferecer.
- *
- * `em_revisao` entrou junto com a tela de revisão: sessão extraída e não
- * confirmada é exatamente o que a home deve oferecer, e agora existe para onde
- * mandar. O chip decide o verbo pelo status — "retomar" para gravação
- * interrompida, "revisar" para proposta esperando.
- */
-export const STATUS_ABERTOS: StatusSessao[] = ["gravando", "abandonada", "erro", "em_revisao"];
-
-export const estaAberta = (s: StatusSessao): boolean => STATUS_ABERTOS.includes(s);
-
-/** Sem bloco novo há mais de 10 min → abandonada. */
-export function foiAbandonada(
-  status: StatusSessao,
-  ultimoChunkEm: string | null,
-  agora: Date = new Date(),
-): boolean {
-  if (status !== "gravando") return false;
-  if (!ultimoChunkEm) return false;
-  const minutos = (agora.getTime() - new Date(ultimoChunkEm).getTime()) / 60_000;
-  return minutos > ABANDONO_MIN;
-}
-
-/** Duração aproximada pela contagem de blocos, para o chip da home. */
-export const duracaoPorChunks = (n: number): number => n * DURACAO_CHUNK_S;

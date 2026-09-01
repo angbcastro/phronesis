@@ -235,33 +235,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .link-importar:disabled { opacity: 0.6; cursor: default; text-decoration: none; }
 
-/* ---- chip de recuperação ---- */
-
-.chip {
-  width: 100%;
-  border: 1px solid var(--linha);
-  background: var(--fundo-alto);
-  border-radius: var(--raio);
-  padding: 0.9rem 1rem;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.75rem;
-  font-size: 0.9rem;
-  color: var(--texto-fraco);
-}
-.chip p { margin: 0; flex: 1 1 100%; }
-.chip button {
-  border: none;
-  background: transparent;
-  color: var(--texto);
-  padding: 0.25rem 0;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  font-size: 0.9rem;
-}
-.chip button.fraco { color: var(--texto-fraco); }
-
 /* ---- transcrição ---- */
 
 .leitura {
@@ -384,6 +357,99 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .editor .campos select { width: auto; }
 .editor .campos .fraco { background: none; border: none; color: var(--texto-fraco); margin-left: auto; }
 
+/* As entidades do átomo: sujeito e menções, dentro do editor. Um grupo
+   rotulado e não uma aba — o átomo em dúvida abre o editor justamente para
+   dizer de quem ele é, e mais um toque para chegar lá sairia dos 60 s. */
+.entidades-do-atomo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--linha);
+}
+.entidades-do-atomo .rotulo { font-size: 0.78rem; color: var(--texto-fraco); }
+.entidades-do-atomo .campo { display: flex; gap: 0.6rem; align-items: flex-start; }
+.entidades-do-atomo .campo > span {
+  flex: none;
+  width: 4.8rem;
+  padding-top: 0.55rem;
+  font-size: 0.82rem;
+  color: var(--texto-fraco);
+}
+.entidades-do-atomo .campo .seletor { flex: 1; min-width: 0; }
+.entidades-do-atomo .mencoes .lista {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.acrescentar {
+  align-self: flex-start;
+  background: none;
+  border: 1px dashed var(--linha);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--texto-fraco);
+}
+.acrescentar:hover { color: var(--texto); border-color: var(--texto-fraco); }
+
+/* A barra pesquisável de entidade (`SeletorEntidade`), usada nos dois lugares:
+   dentro do átomo e no painel do rodapé. */
+.seletor { position: relative; display: flex; align-items: center; gap: 0.35rem; }
+.seletor > input { flex: 1; min-width: 0; }
+.seletor .remover {
+  flex: none;
+  background: none;
+  border: none;
+  padding: 0.2rem 0.35rem;
+  line-height: 1;
+  color: var(--texto-fraco);
+}
+.seletor .remover:hover { color: var(--acento); }
+.seletor.pedindo > input { border-color: var(--acento); }
+
+.seletor .opcoes {
+  position: absolute;
+  /* Acima do rodapé sticky: a lista aberta no último átomo tem de cobri-lo. */
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--fundo-alto);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--fundo) 75%, transparent);
+}
+.seletor .opcao {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.seletor .opcao[aria-selected="true"] {
+  background: color-mix(in srgb, var(--acento) 18%, transparent);
+}
+.seletor .opcao .nome { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seletor .opcao .nome em { font-style: normal; color: var(--texto-fraco); }
+.seletor .opcao .meta { flex: none; font-size: 0.75rem; color: var(--texto-fraco); }
+.seletor .opcao.criar {
+  margin-top: 0.15rem;
+  border-top: 1px solid var(--linha);
+  border-radius: 0 0 10px 10px;
+  color: var(--acento);
+}
+
 .entidades { display: flex; flex-direction: column; gap: 0.35rem; }
 .entidades h2 { font-size: 0.95rem; font-weight: 600; margin: 0.5rem 0 0; }
 .entidades p { margin: 0 0 0.35rem; }
@@ -400,7 +466,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .entidade.travada input[type="checkbox"] { opacity: 0.5; }
 .entidade .meta { font-size: 0.8rem; color: var(--texto-fraco); }
 
-.entidade input.nome,
 .entidade select {
   font: inherit;
   color: inherit;
@@ -409,15 +474,25 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: 8px;
   padding: 0.25rem 0.45rem;
 }
-.entidade input.nome { min-width: 9rem; }
 .entidade span.nome { padding: 0.25rem 0; }
+/* A barra do rodapé é a mesma do átomo, no tamanho de uma linha de lista. */
+.entidade .seletor { flex: 1 1 9rem; min-width: 9rem; }
+.entidade .seletor > input {
+  font: inherit;
+  color: inherit;
+  background: var(--fundo-alto);
+  border: 1px solid var(--linha);
+  border-radius: 8px;
+  padding: 0.25rem 0.45rem;
+  width: 100%;
+}
 
 /* pronome sem nome: é o que trava o confirmar */
 .entidade.pedindo {
   background: color-mix(in srgb, var(--acento) 12%, transparent);
   outline: 1px solid var(--acento);
 }
-.entidade.pedindo input.nome { border-color: var(--acento); }
+.entidade.pedindo .seletor > input { border-color: var(--acento); }
 .entidade.pedindo .meta { color: var(--acento); }
 
 .revisao footer {
@@ -464,7 +539,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .editar:hover { color: var(--texto); border-color: var(--texto-fraco); }
 .editor .aguardando { font-size: 0.8rem; margin: 0; }
 
-/* ---- áudios ---- */
+/* ---- sessões ---- */
 
 .link-sessoes {
   color: var(--texto-fraco);
@@ -508,6 +583,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .lista-sessoes .quando:hover span:first-child { text-decoration: underline; }
 .lista-sessoes .meta { font-size: 0.8rem; color: var(--texto-fraco); }
+
+/* Verde é trabalho terminado — o mesmo `--ok` do ponto de "salvo" da gravação.
+   Um token, dois lugares, o mesmo significado. Não há classe para o que falta
+   revisar: o normal não precisa de marca, e uma em cada linha não marca nada. */
+.lista-sessoes li.revisada .quando span:first-child { color: var(--ok); }
+.lista-sessoes li.revisada .meta {
+  color: color-mix(in srgb, var(--ok) 55%, var(--texto-fraco));
+}
 
 /* As ações da linha: ler a transcrição e forçar a re-extração, lado a lado. */
 .acoes-sessao { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }

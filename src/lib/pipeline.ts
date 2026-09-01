@@ -105,7 +105,6 @@ export async function finalizarSessao(sessao_id: string): Promise<{
     "gravando",
     "finalizando",
     "transcrevendo",
-    "abandonada",
     "erro",
   ]);
 

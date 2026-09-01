@@ -40,7 +40,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   await atualizarSessao(id, { status: "finalizando", duracao_s }, [
     "gravando",
     "finalizando",
-    "abandonada",
     "erro",
   ]);
 

@@ -7,10 +7,16 @@
  * gravando não são duas telas, são a mesma tela com o círculo no centro; é o
  * que dá continuidade à transição em vez de um corte.
  *
- * O que muda em volta dele: parado, as portas de serviço e o chip de retomada;
- * gravando, o timer, o ponto de "salvo" e o "parar". A mecânica de upload
- * continua invisível — sem contador de blocos, sem barra de progresso. A onda
- * lateral do botão mostra o microfone, não a fila.
+ * O que muda em volta dele: parado, as portas de serviço; gravando, o timer, o
+ * ponto de "salvo" e o "parar". A mecânica de upload continua invisível — sem
+ * contador de blocos, sem barra de progresso. A onda lateral do botão mostra o
+ * microfone, não a fila.
+ *
+ * **Nada de crônico entra aqui.** Havia um chip de recuperação que aparecia
+ * sempre que existia sessão aberta, e num dos estados ele cobrava: "sessão de
+ * 12 min esperando revisão". Cobrança na tela onde eu passo o tempo é a forma de
+ * morte que `Specs/visao.md` §6 descreve. O que falta revisar se lê na lista de
+ * sessões, pela cor, no lugar onde eu já vou procurar.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -19,7 +25,6 @@ import { Gravador, suportado } from "@/client/gravador";
 import { acordar, enfileirar, observarFila, type EstadoFila } from "@/client/fila";
 import { guardarSessaoAtual, limparSessaoAtual } from "@/client/deposito";
 import { BotaoGravar } from "./BotaoGravar";
-import { ChipRecuperacao } from "./ChipRecuperacao";
 import { Importacao } from "./Importacao";
 
 type Fase = "parado" | "abrindo" | "gravando" | "encerrando";
@@ -52,7 +57,7 @@ export function Gravacao() {
   }, [fase]);
 
   const comecar = useCallback(
-    async (retomar?: { id: string; proximo_chunk: number; duracao_s: number }) => {
+    async () => {
       if (!suportado()) {
         setProblema("Este navegador não grava áudio no formato que o sistema usa.");
         return;
@@ -61,26 +66,22 @@ export function Gravacao() {
       setFase("abrindo");
 
       try {
-        let id = retomar?.id;
-        if (!id) {
-          const r = await fetch("/api/sessoes", { method: "POST" });
-          if (!r.ok) throw new Error(`/api/sessoes respondeu ${r.status}`);
-          id = ((await r.json()) as { id: string }).id;
-        }
+        const r = await fetch("/api/sessoes", { method: "POST" });
+        if (!r.ok) throw new Error(`/api/sessoes respondeu ${r.status}`);
+        const id = ((await r.json()) as { id: string }).id;
 
         sessaoId.current = id;
         await guardarSessaoAtual(id);
 
         const g = new Gravador({
-          indiceInicial: retomar?.proximo_chunk ?? 0,
-          aoBloco: ({ i, blob }) => void enfileirar(id!, i, blob),
+          aoBloco: ({ i, blob }) => void enfileirar(id, i, blob),
           aoErro: (e) => console.error("[gravador]", e),
         });
 
         await g.iniciar();
         gravador.current = g;
         setFaixa(g.faixa);
-        setSegundos(retomar?.duracao_s ?? 0);
+        setSegundos(0);
         setFase("gravando");
       } catch (e) {
         console.error(e);
@@ -142,12 +143,11 @@ export function Gravacao() {
       ) : (
         <>
           <Importacao />
-          <ChipRecuperacao aoRetomar={comecar} />
           {/* Portas de serviço: discretas de propósito na tela de gravar, que é
               onde eu passo o tempo e onde nada pode virar cobrança. */}
           <span className="portas">
             <Link className="link-sessoes" href="/sessoes">
-              áudios
+              sessões
             </Link>
             <Link className="link-sessoes" href="/entidades">
               entidades

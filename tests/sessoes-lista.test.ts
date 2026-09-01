@@ -1,5 +1,5 @@
 /**
- * A lista de áudios — a porta de serviço de onde se força uma re-extração.
+ * A lista de sessões — a porta de serviço de onde se força uma re-extração.
  *
  * O que importa testar aqui é para onde cada sessão leva, quais delas podem ser
  * reextraídas — reextrair uma sessão já confirmada produziria uma proposta que
@@ -8,7 +8,14 @@
  * agora só se alcança daqui.
  */
 import { describe, expect, it } from "vitest";
-import { destino, duracao, podeLerTranscricao, podeReextrair, quando } from "@/components/Sessoes";
+import {
+  destino,
+  duracao,
+  jaRevisada,
+  podeLerTranscricao,
+  podeReextrair,
+  quando,
+} from "@/components/Sessoes";
 
 const sessao = (status: string, extra: Record<string, unknown> = {}) => ({
   id: "mtgn3zf7",
@@ -61,7 +68,7 @@ describe("para onde a sessão leva", () => {
   it("ainda processando (ou quebrada) abre na tela de processamento", () => {
     // É lá que se vê em que passo parou — e, no caso de `gravando`, é lá que a
     // finalização é disparada.
-    for (const s of ["gravando", "finalizando", "transcrevendo", "abandonada", "erro"]) {
+    for (const s of ["gravando", "finalizando", "transcrevendo", "erro"]) {
       expect(destino(sessao(s)), s).toBe("/sessao/mtgn3zf7");
     }
   });
@@ -76,7 +83,7 @@ describe("o botão de transcrição", () => {
 
   it("não aparece antes de a transcrição existir", () => {
     // Texto crescendo é a tela de processamento, não esta.
-    for (const s of ["gravando", "finalizando", "transcrevendo", "abandonada", "erro"]) {
+    for (const s of ["gravando", "finalizando", "transcrevendo", "erro"]) {
       expect(podeLerTranscricao(sessao(s)), s).toBe(false);
     }
   });
@@ -96,8 +103,38 @@ describe("quem pode ser reextraída", () => {
   });
 
   it("sessão sem transcrição também não", () => {
-    for (const s of ["gravando", "finalizando", "transcrevendo", "abandonada"]) {
+    for (const s of ["gravando", "finalizando", "transcrevendo"]) {
       expect(podeReextrair(sessao(s)), s).toBe(false);
+    }
+  });
+});
+
+/**
+ * A cor verde da lista, que é o único lugar onde o sistema diz o que falta
+ * revisar desde que o chip saiu da tela de gravar.
+ *
+ * Pintar de verde uma sessão que ainda tem trabalho é pior que não pintar
+ * nada: eu passaria por ela achando que estava resolvida.
+ */
+describe("qual sessão já foi revisada", () => {
+  it("só a confirmada — é o único estado terminal da máquina", () => {
+    expect(jaRevisada(sessao("confirmada"))).toBe(true);
+  });
+
+  it("proposta esperando revisão não conta como revisada", () => {
+    expect(jaRevisada(sessao("em_revisao"))).toBe(false);
+  });
+
+  it("nada mais conta", () => {
+    for (const s of [
+      "gravando",
+      "finalizando",
+      "transcrevendo",
+      "transcrito",
+      "extraindo",
+      "erro",
+    ]) {
+      expect(jaRevisada(sessao(s)), s).toBe(false);
     }
   });
 });

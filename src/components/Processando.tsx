@@ -9,7 +9,7 @@
  * fila esvaziar e chamar `/finalizar`), dizer em que passo o sistema está e
  * **ir sozinha para a revisão** quando a proposta fica pronta.
  *
- * Quem quiser ler o texto vai pela lista de áudios — `/sessao/:id/transcricao`.
+ * Quem quiser ler o texto vai pela lista de sessões — `/sessao/:id/transcricao`.
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -111,7 +111,7 @@ export function Processando({ id }: { id: string }) {
       ) : falhou ? (
         <p className="aguardando">
           Alguma coisa falhou no meio do caminho. O áudio está inteiro no servidor — dá para tentar
-          de novo pela lista de <Link href="/sessoes">áudios</Link>.
+          de novo pela lista de <Link href="/sessoes">sessões</Link>.
         </p>
       ) : (
         <p className="aguardando">{legenda(status, estado?.completa ?? false)}</p>

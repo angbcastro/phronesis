@@ -15,8 +15,6 @@ const MIME = "audio/webm;codecs=opus";
 const BITRATE = 24_000; // ~4 MB numa sessão de 20 min
 
 export interface OpcoesGravador {
-  /** Continua a numeração ao retomar uma sessão recuperada. */
-  indiceInicial?: number;
   aoBloco: (bloco: { i: number; blob: Blob }) => void;
   aoErro?: (e: unknown) => void;
 }
@@ -35,14 +33,12 @@ export class Gravador {
   private recorder: MediaRecorder | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pedacos: Blob[] = [];
-  private proximo: number;
+  private proximo = 0;
   private parando = false;
   private aoParar: (() => void) | null = null;
   private inicioMs = 0;
 
-  constructor(private readonly opcoes: OpcoesGravador) {
-    this.proximo = opcoes.indiceInicial ?? 0;
-  }
+  constructor(private readonly opcoes: OpcoesGravador) {}
 
   get indiceAtual(): number {
     return this.proximo;

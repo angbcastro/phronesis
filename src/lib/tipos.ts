@@ -11,14 +11,10 @@ export const STATUS_SESSAO = [
   "extraindo",
   "em_revisao",
   "confirmada",
-  "abandonada",
   "erro",
 ] as const;
 
 export type StatusSessao = (typeof STATUS_SESSAO)[number];
-
-/** Sem bloco novo por mais que isso, a sessão é considerada abandonada. */
-export const ABANDONO_MIN = 10;
 
 export interface Sessao {
   id: string;

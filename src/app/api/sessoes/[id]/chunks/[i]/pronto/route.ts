@@ -56,10 +56,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; i:
       ? Math.round(corpo.duracao_s)
       : manifest.chunks.length * DURACAO_CHUNK_S;
 
-  await atualizarSessao(id, { chunks_total: manifest.chunks.length, duracao_s }, [
-    "gravando",
-    "abandonada",
-  ]);
+  await atualizarSessao(id, { chunks_total: manifest.chunks.length, duracao_s }, ["gravando"]);
 
   waitUntil(
     transcreverBloco(id, i).catch((e) => {
