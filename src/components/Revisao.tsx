@@ -37,13 +37,14 @@ import { SeletorEntidade } from "@/components/SeletorEntidade";
 import { CATALOGO_VAZIO, montarCatalogo, resolver } from "@/lib/catalogo";
 import { mencoesDe, sobreDe } from "@/lib/referencias";
 import { ehPronome, normalizarNome } from "@/lib/texto";
-import { TIPOS_ATOMO, TIPOS_ENTIDADE } from "@/lib/tipos";
+import { CAMPOS_GESTO, TIPOS_ATOMO, TIPOS_ENTIDADE } from "@/lib/tipos";
 import type { Catalogo, EntidadeDoCatalogo } from "@/lib/catalogo";
 import type {
   AtomoProposto,
   BlocoAbsoluto,
   CampoPerfil,
   EntidadeCandidata,
+  Gestos,
   MarcaPerfil,
   TipoAtomo,
   TipoEntidade,
@@ -62,7 +63,13 @@ interface Proposta {
   blocos: BlocoAbsoluto[];
 }
 
-/** Edições locais de um átomo. Só o que eu mexi; o resto vem da proposta. */
+/**
+ * Edições locais de um átomo. Só o que eu mexi; o resto vem da proposta.
+ *
+ * As chaves são exatamente `CAMPOS_GESTO` (`tipos.ts`), e não por acaso: a
+ * chave existir **é** o gesto que viaja em `gestos.atomos` (slice 4.6). Campo
+ * novo aqui precisa entrar lá, ou a correção daquele campo nasce inferida.
+ */
 interface Edicao {
   texto?: string;
   tipo?: TipoAtomo;
@@ -123,6 +130,60 @@ export interface AtomoEditado {
 export interface CorpoDoConfirmar {
   aprovados: (Omit<AtomoEditado, "menciona"> & { menciona: string[] })[];
   entidades: { nome: string; tipo: TipoEntidade }[];
+  /** O registro do toque, não um valor novo (slice 4.6). Opcional no servidor. */
+  gestos: Gestos;
+}
+
+/**
+ * O que o servidor não tem como derivar sozinho — só o navegador foi testemunha.
+ *
+ * O diff de uma correção é computado lá, comparando `extracao.json` com o que
+ * eu aprovei; duplicá-lo aqui faria duas implementações divergirem, com a da
+ * tela vencendo calada. O que não sobrevive à viagem são três coisas:
+ *
+ *   recusa       desmarcar a candidata tem a mesma aparência de não usá-la
+ *   renome       o POST manda só o nome final; o par original→final se perde
+ *   toque        editar um campo tem a mesma aparência da canonização, em que
+ *                a grafia do grafo vence sem eu ter feito nada
+ *
+ * Nada aqui carrega valor: `gestos` é só o registro do gesto. Corpo sem ele
+ * continua confirmando — o servidor infere pelo valor e marca `tocado: false`.
+ */
+export function montarGestos(entrada: {
+  /** Edições por índice. A chave existir é o gesto; o valor já vai no corpo. */
+  edicoes: Record<number, { texto?: string; tipo?: TipoAtomo; sobre?: string; menciona?: string[] }>;
+  /** As candidatas da proposta, com o nome como o extrator as entregou. */
+  entidades: EntidadeCandidata[];
+  /** Como cada uma ficou depois que eu mexi no rodapé. */
+  finalDe: (e: EntidadeCandidata) => { nome: string };
+  /** Chaves **da proposta** das candidatas que de fato não viraram nó. */
+  recusadas: ReadonlySet<string>;
+  /** O que o extrator não viu e eu digitei. Vazio enquanto o botão não existe. */
+  faltantes?: { texto: string }[];
+}): Gestos {
+  const { edicoes, entidades, finalDe, recusadas, faltantes = [] } = entrada;
+
+  const atomos = Object.entries(edicoes).flatMap(([indice, edicao]) => {
+    const campos = CAMPOS_GESTO.filter((campo) => edicao[campo] !== undefined);
+    return campos.length === 0 ? [] : [{ indice: Number(indice), campos }];
+  });
+
+  // Nome final igual ao proposto por normalização não é renome: é a mesma
+  // trava que o servidor aplica, e aqui ela evita mandar o gesto de graça.
+  const renomes = entidades.flatMap((e) => {
+    const nome = finalDe(e).nome;
+    const chave = normalizarNome(nome);
+    return chave === "" || chave === e.nome_normalizado ? [] : [{ de: e.nome, para: nome }];
+  });
+
+  return {
+    atomos,
+    entidades_recusadas: entidades
+      .filter((e) => recusadas.has(e.nome_normalizado))
+      .map((e) => e.nome_normalizado),
+    renomes,
+    faltantes,
+  };
 }
 
 /**
@@ -153,7 +214,7 @@ export function montarCorpoDoConfirmar(entrada: {
   /** Chaves das candidatas desmarcadas: não viram nó, nem recebem menção. */
   recusadas: ReadonlySet<string>;
   catalogo: Catalogo;
-}): CorpoDoConfirmar {
+}): Omit<CorpoDoConfirmar, "gestos"> {
   const { aprovados, entidades, recusadas, catalogo } = entrada;
   const paraGravar = new Map<string, { nome: string; tipo: TipoEntidade }>();
 
@@ -383,30 +444,44 @@ export function Revisao({ id }: { id: string }) {
     setGravando(true);
     setFalha(null);
 
+    // As candidatas que de fato não viram nó. A lista sai daqui e não de
+    // `semEntidade` cru: uma desmarcada que ainda é sujeito de átomo aprovado
+    // continua entrando, e chamá-la de recusada seria mentir para a calibração.
+    const naoUsadas = entidades.filter((e) => !usada(e));
+
     // Tudo já traduzido para o nome final do rodapé; o resto — casar com o
     // grafo, juntar as entidades citadas, respeitar o que eu desmarquei — é
     // `montarCorpoDoConfirmar`, que é puro e tem teste.
-    const corpo = montarCorpoDoConfirmar({
-      aprovados: aprovados.map((a) => {
-        const v = valorDe(a);
-        return {
-          indice: a.indice,
-          texto: v.texto,
-          tipo: v.tipo,
-          sobre: nomeFinal(v.sobre),
-          menciona: v.menciona.map(nomeFinal),
-          perfila: (a.perfila ?? []).map((m: MarcaPerfil) => ({
-            entidade: nomeFinal(m.entidade),
-            campo: m.campo,
-          })),
-        };
+    const corpo: CorpoDoConfirmar = {
+      ...montarCorpoDoConfirmar({
+        aprovados: aprovados.map((a) => {
+          const v = valorDe(a);
+          return {
+            indice: a.indice,
+            texto: v.texto,
+            tipo: v.tipo,
+            sobre: nomeFinal(v.sobre),
+            menciona: v.menciona.map(nomeFinal),
+            perfila: (a.perfila ?? []).map((m: MarcaPerfil) => ({
+              entidade: nomeFinal(m.entidade),
+              campo: m.campo,
+            })),
+          };
+        }),
+        entidades: entidades.filter(usada).map(finalDe),
+        recusadas: new Set(naoUsadas.map((e) => normalizarNome(finalDe(e).nome))),
+        catalogo,
       }),
-      entidades: entidades.filter(usada).map(finalDe),
-      recusadas: new Set(
-        entidades.filter((e) => !usada(e)).map((e) => normalizarNome(finalDe(e).nome)),
-      ),
-      catalogo,
-    });
+      // A chave aqui é a **da proposta**, e não a do nome final: é por ela que
+      // o servidor acha a candidata que eu recusei e tira aquela entidade da
+      // conta das menções.
+      gestos: montarGestos({
+        edicoes,
+        entidades,
+        finalDe,
+        recusadas: new Set(naoUsadas.map((e) => e.nome_normalizado)),
+      }),
+    };
 
     const r = await fetch(`/api/sessoes/${id}/confirmar`, {
       method: "POST",

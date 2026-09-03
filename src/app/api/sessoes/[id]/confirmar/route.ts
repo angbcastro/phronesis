@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { gravarAtomos, gravarEntidades } from "@/lib/atomos";
+import { capturarCorrecoes } from "@/lib/calibracao";
 import { chaveExtracao } from "@/lib/chaves";
+import { normalizarGestos } from "@/lib/correcoes";
 import { ehPronome, normalizarNome, normalizarTipoEntidade } from "@/lib/entidades";
 import { normalizarTipo } from "@/lib/extracao";
 import { normalizarCampo } from "@/lib/perfil";
@@ -8,6 +11,7 @@ import { getJson } from "@/lib/r2";
 import { atualizarSessao, buscarSessao } from "@/lib/sessoes";
 import { erro, parametros } from "@/lib/rotas";
 import type { AtomoParaGravar, EntidadeParaGravar } from "@/lib/atomos";
+import type { AtomoConfirmado } from "@/lib/correcoes";
 import type { CampoPerfil, Extracao } from "@/lib/tipos";
 
 export const runtime = "nodejs";
@@ -42,6 +46,12 @@ interface EntidadeAprovada {
 interface Corpo {
   aprovados: AtomoAprovado[];
   entidades: EntidadeAprovada[];
+  /**
+   * O registro do que eu toquei na revisão (slice 4.6). **Opcional**: corpo sem
+   * `gestos` continua confirmando exatamente como antes, e a apuração cai no
+   * que dá para inferir por valor. Nenhum 400 novo nasce daqui.
+   */
+  gestos?: unknown;
 }
 
 /**
@@ -110,6 +120,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const atomos: AtomoParaGravar[] = [];
+  /**
+   * O mesmo que foi gravado, com os nomes **finais** de volta — é contra isto
+   * que a apuração de correções compara a proposta, depois da resposta.
+   */
+  const confirmados: AtomoConfirmado[] = [];
+  const nomeDe = (chave: string) => aprovadas.get(chave)?.nome ?? chave;
 
   for (const bruto of corpo.aprovados) {
     const original = porIndice.get(bruto.indice);
@@ -145,6 +161,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       ).values(),
     ];
 
+    const menciona = [
+      ...new Set(
+        (Array.isArray(bruto.menciona) ? bruto.menciona : [])
+          .map((m) => normalizarNome(String(m)))
+          .filter((m) => m !== "" && m !== sobre && aprovadas.has(m)),
+      ),
+    ];
+
     atomos.push({
       // Procedência: sempre do servidor, nunca do corpo.
       id: original.id,
@@ -157,14 +181,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       texto,
       tipo,
       sobre,
-      menciona: [
-        ...new Set(
-          (Array.isArray(bruto.menciona) ? bruto.menciona : [])
-            .map((m) => normalizarNome(String(m)))
-            .filter((m) => m !== "" && m !== sobre && aprovadas.has(m)),
-        ),
-      ],
+      menciona,
       perfila,
+    });
+
+    confirmados.push({
+      indice: bruto.indice,
+      texto,
+      tipo,
+      sobre: nomeDe(sobre),
+      menciona: menciona.map(nomeDe),
     });
   }
 
@@ -183,6 +209,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   // Guarda de status: confirmar duas vezes não reprocessa (regra 4).
   await atualizarSessao(id, { status: "confirmada" }, ["em_revisao"]);
+
+  // O que eu corrigi nesta revisão, apurado **depois** de o grafo já ter
+  // recebido tudo e fora do caminho da resposta (slice 4.6). Falhar aqui não
+  // desfaz nem atrasa nada: o diário está gravado, o que se perde é material
+  // de calibração — e é por isso que o `catch` engole em vez de subir.
+  waitUntil(
+    capturarCorrecoes({
+      proposta: proposta.valor,
+      confirmados,
+      entidades: [...aprovadas.values()],
+      gestos: normalizarGestos(corpo.gestos),
+    })
+      .then((n) => {
+        if (n > 0) console.log(`[calibracao] sessão ${id}: ${n} correção(ões) registrada(s)`);
+      })
+      .catch((e) => {
+        console.error(`[calibracao] sessão ${id}: não consegui registrar as correções:`, e);
+      }),
+  );
 
   return NextResponse.json({
     status: "confirmada",

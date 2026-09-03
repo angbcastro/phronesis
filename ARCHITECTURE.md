@@ -9,7 +9,8 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.5.md`.
 > arquivo no mesmo commit. Ver "Manutenção deste arquivo" no fim.
 
 **Estado: slice 2 fechada e validada; slices 3 (higiene do grafo), 4
-(identidade por contexto) e 4.5 (o grafo ganha vetor) construídas.**
+(identidade por contexto) e 4.5 (o grafo ganha vetor) construídas; da 4.6
+(o prompt aprende com a revisão), a metade da captura.**
 Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. Terminada
 a transcrição, a extração dispara sozinha, grava a proposta em `extracao.json` e
 deixa a sessão em `em_revisao` (seções 4.6 e 5); o confirmar da revisão grava
@@ -60,9 +61,21 @@ trocar o STT por um modelo que escreve melhor foi **recusado**: o candidato não
 tem canal de vocabulário nenhum, e nome próprio errado custa mais que prosa
 torta neste sistema.
 
+**E a correção que eu faço na revisão parou de se perder** (seção 4.11). Até
+aqui, rejeitar um átomo, editar um texto ou trocar um tipo morria no clique de
+confirmar — o servidor até contava os rejeitados, só para descartar o número na
+resposta. Agora o confirmar apura, **depois** de gravar no grafo e fora do
+caminho da resposta, o que a proposta dizia contra o que eu aprovei, e guarda o
+resultado no R2. Nenhum gesto novo na revisão, nenhum node novo, nenhuma
+migration: o grafo é o único lugar que esta metade não toca.
+
 O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
 ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
 deduplicação de **átomo** — dizer a mesma coisa em duas sessões ainda cria dois.
+Da 4.6, falta a metade de leitura: `/calibracao`, o agente `calibracao-1`, as
+regras aprovadas entrando no prompt, o `extracao-anterior` lado a lado e a
+sugestão de calibrar. Hoje as correções **acumulam sem consumidor** — e o
+`extracao-5` continua saindo byte a byte igual ao de antes desta fatia.
 Tudo slice 5, e tudo dependente de material acumulado: uma pergunta boa precisa
 saber de quem se está falando, que é o que a slice 4 entrega, e achar o que já foi
 dito sem varrer o grafo inteiro, que é o que a 4.5 entrega.
@@ -125,6 +138,10 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   perfil.ts       os três campos de perfil: ler, gravar, e o agente 3 que rascunha
   entidades.ts    catálogo do grafo + a visão agregada da revisão; e o vetor da
                   entidade: refresh por hash e as duas consultas de vizinhança
+  correcoes.ts    o diff entre o que a proposta dizia e o que eu aprovei:
+                  apuração, chaves e a fusão no índice — puro, sem rede
+  calibracao.ts   onde as correções vivem: correcoes.json por sessão e o índice
+                  acumulado, com read-modify-write por etag
   referencias.ts  lê os dois formatos de proposta (antes e depois da 4)  (client)
   catalogo.ts     busca de entidade no navegador: trecho, acento, alias (client)
   tipografia.ts   qual tela é ritual e qual é gestão — a regra da fonte  (client)
@@ -1031,6 +1048,122 @@ motivo e devolve lista vazia — e a resolução se comporta exatamente como na
 slice 4. É também o que permite este código ir ao ar antes de a migration 006
 rodar.
 
+### 4.11 A correção que a revisão produz (slice 4.6)
+
+A correção mais cara do sistema se perdia de graça. Rejeitar um átomo, editar um
+texto, trocar um tipo: tudo isso já acontecia na revisão, e nada sobrevivia ao
+clique de confirmar — o servidor chegava a calcular quantos átomos foram
+rejeitados só para descartar o número na resposta HTTP. Esta metade da 4.6 não
+pede nenhum gesto novo na tela; ela só para de jogar fora o que a revisão já
+produz.
+
+**O grafo é o único lugar que ela não toca.** `POST /confirmar` grava exatamente
+o mesmo Cypher de antes. Só depois de responder, dentro de `waitUntil`, o
+servidor compara a proposta com o que foi aprovado, produz os registros de
+`Correcao` e os grava **só no R2**. Falhar ali nunca desfaz nem atrasa o que já
+foi confirmado.
+
+#### O diff mora no servidor; o que viaja do cliente é só o gesto
+
+Os dois lados de toda correção de átomo já estão no servidor: `extracao.json`
+guarda a proposta indexada por índice, e o corpo do confirmar traz o valor final.
+Computar o diff na tela faria duas implementações divergirem, com a da tela
+vencendo calada — o mesmo argumento que pôs `referencias.ts` num módulo só.
+
+Três coisas, porém, são **gesto e não valor**, e só o navegador testemunha:
+
+| Não derivável | Vem de |
+|---|---|
+| entidade recusada de propósito × não usada por acaso | as candidatas desmarcadas que de fato não viraram nó |
+| o par original→final de um renome | o POST manda só o final |
+| campo que eu toquei × canonização (a grafia do grafo vencendo) | as chaves de `edicoes[indice]` — a chave existir **é** o gesto |
+
+Daí o campo **opcional** `gestos` no corpo do confirmar
+(`{ atomos, entidades_recusadas, renomes, faltantes }`). Ele não carrega valor
+nenhum. Corpo sem ele continua confirmando: o servidor infere pelo valor e marca
+`tocado: false`. Retrocompatível de propósito — nenhum 400 novo nasceu aqui.
+
+**Duas travas contra correção-fantasma de canonização**, nesta ordem: (1) a
+comparação é por nome normalizado, então caixa e acento nunca viram correção;
+(2) chave diferente sem o campo em `gestos` é provável travessia de alias —
+registrada mesmo assim, mas marcada como inferida. E as entidades que aparecem
+em `gestos.renomes` ou entre as recusadas **saem da conta** antes de computar
+`sujeito` e `menciona`: um renome no rodapé já muda todo átomo que cita aquela
+entidade, e uma edição minha não pode virar dez correções.
+
+#### O que uma correção guarda, e de quem é a culpa
+
+`Correcao` (`tipos.ts`) tem `antes`, `depois`, o texto proposto, as âncoras do
+átomo (para o player da tela que ainda não existe), a procedência **do átomo da
+proposta** — nunca do corpo, regra 7 —, `tocado` e `incorporada_em` (`null` = em
+aberto).
+
+A chave **não** é sempre `${atomo_id}|${tipo}`. Três tipos não têm átomo, e com
+um id fixo por tipo os três colapsariam num registro só, uma correção nova
+apagando a anterior em silêncio:
+
+```
+átomo     rejeitado, texto, tipo, sujeito, mencao_*  -> `${atomo_id}|${tipo}`
+entidade  entidade_recusada|renomeada|tipo           -> `${sessao_id}|${tipo}|${chave}`
+faltou                                               -> `${sessao_id}|faltou|${chave40}`
+```
+
+`mencao_adicionada` e `mencao_removida` são dois tipos e não um: com um só,
+acrescentar e tirar menção no mesmo átomo colapsariam num registro, e o segundo
+apagaria o primeiro.
+
+Cada correção sai etiquetada com o agente que a produziu:
+
+| Tipo | Agente | Por quê |
+|---|---|---|
+| `rejeitado`, `texto`, `tipo`, `faltou` | `extracao` | é o `extracao-5` produzindo o que não presta |
+| `entidade_recusada` | `extracao` | listou como entidade o que não é pessoa, projeto nem objetivo |
+| `entidade_tipo` | `extracao` | errou o palpite de tipo na lista `entidades` |
+| `sujeito`, `mencao_*` | `resolucao` ou `extracao` | **por átomo**: `sobre.conhecida` decide |
+| `entidade_renomeada` | `grafo` | higiene de grafia — salvo quando o nome apagado era pronome, e aí é `extracao` furando a seção "NOME DE ENTIDADE É NOME" |
+
+O sinal de `sujeito`/`mencao_*` é por átomo e não por sessão: `resolucao.ts` roda
+a camada determinística para toda menção, e `prompt_version_resolucao` só marca
+se alguma foi ao modelo — então uma sessão sem ambiguidade nenhuma (comum com o
+grafo pequeno) pode ter batido no nó errado por acaso. `conhecida: true` é a
+resolução decidindo entre nós que existem; `conhecida: false` é candidata nova,
+mais perto de "o extrator escreveu algo que não bate com nada".
+
+**Captura os três agentes, calibra um de cada vez.** `resolucao` e `grafo`
+acumulam etiquetados, sem consumidor, até a fatia que os calibrar.
+
+#### Por que R2, e por que dois objetos
+
+O grafo é o que eu vivi; correção é o que o pipeline errou. Um `:Atomo` dizendo
+"o modelo escreveu FATO onde era OPINIAO" apareceria numa busca por "o que eu
+aprendi" e apodreceria a coisa que o sistema existe para fazer. Some-se a regra
+2, e não valia uma migration.
+
+`sessoes/<id>/correcoes.json` é o registro permanente daquela revisão — uma
+fotografia do momento da confirmação, gravada com `If-None-Match: *`, e escrita
+mesmo quando não houve correção nenhuma: o objeto vazio é o que distingue
+"revisei e não corrigi nada" de "o `waitUntil` morreu antes de apurar". Separado
+de `extracao.json` porque `forcar` sobrescreve a proposta sem backup, e correção
+guardada junto morreria na primeira recalibração — quando ela mais vale.
+
+`calibracao/indice.json` é a mesa de trabalho: o acumulado, com teto de 500.
+Existe porque `r2.ts` não tem `LIST` — sem ele, uma correção seria alcançável só
+por quem já soubesse o id da sessão. Guarda as correções inteiras (o corpus é
+esparso por construção) e a escrita é read-modify-write por etag, no mesmo laço
+de espera de `atualizarManifest` (§6.1), com o conteúdo recalculado **dentro** de
+cada tentativa. Estourado o teto, a eviction come as **fechadas** antes das
+**abertas**: fechada já cumpriu o papel e o registro por sessão cobre auditoria;
+aberta perdida daqui é inatingível para sempre.
+
+#### Quando roda, e o que se perde se não rodar
+
+Dentro do `waitUntil`, depois da resposta, num `try/catch` que nunca derruba o
+confirmar. O que destrava o `router.push("/")` da revisão é a resposta HTTP;
+pagar idas ao R2 nos 60 s da revisão por material de meta seria pagar no lugar
+errado. `waitUntil` morto perde as correções daquela sessão, sem recuperação —
+e nada do diário se perde junto, porque os átomos já estão no grafo quando isto
+começa.
+
 ## 5. Estados da sessão
 
 ```
@@ -1232,6 +1365,10 @@ Três travas independentes:
 | `embedding IS NULL` ou modelo diferente | `atomos.embutirAtomos` e `atomosSemVetor` | reconfirmar não reembute o que já tem vetor; rodar o retrofill duas vezes não gasta duas vezes |
 | `embedding_fonte` bater | `entidades.garantirEmbeddings` | entidade em dia não é reembutida — e por isso não há gancho a esquecer em nenhuma das cinco rotas de entidade |
 | `CREATE VECTOR INDEX … IF NOT EXISTS` | migration 006 | reaplicar a migration é no-op |
+| `If-None-Match: *` em `correcoes.json` | `calibracao.capturarCorrecoes` | reenviar o confirmar não sobrescreve o registro permanente da revisão |
+| `If-Match` + laço de retry no índice | `calibracao.atualizarIndice` | duas capturas concorrentes se somam; quem perde a corrida relê e reaplica |
+| `Correcao.id` condicional ao tipo | `correcoes.apurarCorrecoes` | correção de átomo, de entidade e "faltou" nunca colidem entre si |
+| id que já está no índice não é reaberto | `correcoes.juntarNoIndice` | reapurar não devolve `incorporada_em` para `null` |
 
 A trava de `extracao.json` vale para **os dois agentes**: proposta pronta não
 rechama nem a extração nem a resolução, e `forcar` refaz as duas. Calibrar o
@@ -1588,8 +1725,13 @@ sessoes/<id>/chunk_000.opus     áudio importado — a extensão é a do arquivo
 sessoes/<id>/chunk_000.json     transcrição do bloco, offsets relativos, modelo, granularidade
 sessoes/<id>/transcricao.json   final, offsets absolutos
 sessoes/<id>/extracao.json      proposta: átomos ancorados, referências resolvidas (com o `porque` da camada 3b), marcas de perfil, entidades agregadas, procedência dos dois agentes
+sessoes/<id>/correcoes.json     o que eu corrigi naquela revisão — fotografia do momento da confirmação, escrita uma vez só
+calibracao/indice.json          a mesa de trabalho: as correções acumuladas de todas as sessões, teto de 500
 _smoke/                         objetos temporários do `pnpm smoke`, apagados no fim
 ```
+
+`calibracao/` fica **fora** do prefixo `sessoes/` de propósito: o índice não é de
+sessão nenhuma.
 
 `chaves.ts` é o único lugar que monta chave — rota, worker e teste passam por ele.
 Por isso é lá que a extensão é validada contra a lista de `audio.ts`, e não só na
@@ -1613,7 +1755,7 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/sessoes/:id/extrair` | dispara extração **e resolução** de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` refaz as duas e sobrescreve |
 | `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5 — contrato inalterado, campo novo |
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
-| `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo, com `:PERFILA` | `ja_confirmada` na segunda; procedência relida do R2, não do corpo |
+| `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo, com `:PERFILA`, e apura as correções em `waitUntil` | `ja_confirmada` na segunda; procedência relida do R2, não do corpo; `gestos` é **opcional** e corpo sem ele confirma igual |
 | `GET /api/entidades` | o que está no grafo, com átomos, sessões, aliases e perfil | só leitura; nó fundido vira alias do vencedor; alimenta também o seletor da revisão |
 | `POST /api/entidades/duplicatas` | propõe pares que parecem a mesma coisa | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/entidades/fundir` | `{vencedora, perdedora}` — migra arestas, marca alias | idempotente pela guarda de `status` |
@@ -1950,6 +2092,23 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - Qualidade da resolução (slice 4) também não tem teste automático, e pelo mesmo
   motivo. A diferença é que agora existe um caso concreto de que eu sei a
   resposta: a sessão que fala do Rapha e do Raffa.
+- `tests/correcoes.test.ts` — a apuração inteira, pura: que rejeitar, editar e
+  trocar o sujeito viram correção (critério 1); que dois renomes na mesma sessão
+  não colapsam num id só (critério 2); e que canonização **não** produz correção
+  nenhuma (critério 3), que é o teste que impede o corpus de nascer envenenado.
+- `tests/gestos.test.ts` — a fronteira do que o cliente manda: a chave existir é
+  o gesto, e caixa e acento não são renome.
+- `tests/calibracao.test.ts` — o `If-Match` com laço de retry: duas capturas
+  concorrentes se somam em vez de a segunda apagar a primeira.
+- `tests/confirmar-correcoes.test.ts` — a fiação, incluindo o critério 10: falhar
+  ao registrar não muda a resposta do confirmar.
+- **Ler o índice cru depois de confirmar uma sessão de verdade.** É a verificação
+  que nenhum teste substitui, porque o que se confere é se as correções que
+  aparecem lá são as que eu de fato fiz. `calibracao/indice.json` se abre no
+  object browser do bucket no painel da Cloudflare; `sessoes/<id>/correcoes.json`
+  guarda a mesma coisa recortada por sessão. Índice ausente depois de uma
+  confirmação com correção significa `waitUntil` perdido — o log traz
+  `[calibracao] sessão <id>`.
 - O que o confirmar escreveu agora se vê em `/entidades`. Para o detalhe do
   átomo ainda é Cypher à mão no console do Aura:
 
@@ -2147,6 +2306,22 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   perfil. As travas são o agente 3 nunca escrever, o proposto aparecer ao lado do
   atual e nunca por cima, e a escrita passar só por `POST /api/entidades/perfil`.
   Nenhuma delas impede eu mesmo aprovar um rascunho ruim depressa.
+- **O registro de correções é best-effort.** Ele roda no `waitUntil`, depois da
+  resposta; `waitUntil` morto perde as correções daquela sessão, sem recuperação
+  e sem aviso na tela. Custo assumido: o diário já está no grafo quando isso
+  roda, então o que se perde é material de calibração, não fala.
+- **Ruído de canonização quando `gestos` não chega.** Um corpo montado à mão, ou
+  um cliente antigo, faz a apuração inferir só pelo valor: travessia de alias
+  vira correção marcada como inferida (`tocado: false`). As duas travas de §4.11
+  mitigam, não eliminam — e por isso `tocado` existe.
+- **A etiqueta de agente de `mencao_*` usa `sobre.conhecida` do átomo**, e não a
+  referência de cada menção. É o sinal que a spec fixou, e é grosseiro: um átomo
+  sobre "eu" cuja menção era candidata nova sai etiquetado `resolucao`. Não custa
+  nada hoje, porque esta fatia só consome as correções de `extracao`; custará no
+  dia em que o `resolucao-2` for calibrado a partir deste recorte.
+- **Correções de `resolucao` e `grafo` acumulam sem consumidor** até uma fatia
+  futura as calibrar. Elas ocupam vaga no teto de 500 do índice como qualquer
+  outra.
 - `scripts/smoke.ts` roda solto no node e não importa de `src/`, então repete o
   id de modelo padrão. O teste "o smoke usa o mesmo modelo padrão que a lib"
   existe para as duas cópias não divergirem.
