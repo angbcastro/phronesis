@@ -10,16 +10,32 @@
  * por palavra em `providerMetadata`; quando vierem, usamos. Quando não,
  * caímos para segmento e registramos isso no bloco — procedência tem que
  * dizer a verdade sobre a própria precisão.
+ *
+ * **O rate limit do Gateway é esperado, não é falha** (`limite.ts`). Uma sessão
+ * gravada de 15 min são 30 blocos, e o free tier recusa a rajada — sem a espera,
+ * o bloco recusado morre no `catch` do `waitUntil` e a sessão inteira vai para
+ * `erro` por um limite que passa sozinho em um minuto.
  */
 import { experimental_transcribe as transcribe } from "ai";
+import { comEsperaDeLimite, ehLimiteDeTaxa } from "./limite";
 import { garantirGateway, modeloStt, opcoesDeVocabulario } from "./modelos";
 import { vocabulario } from "./vocabulario";
 import type { Granularidade, Palavra } from "./tipos";
 
 export class SttError extends Error {
-  constructor(message: string) {
-    super(message);
+  /**
+   * O limite de taxa já foi esperado e ainda assim não passou. Quem loga a
+   * falha (`pipeline.ts`) precisa distinguir isso de "o modelo não existe":
+   * um pede voltar mais tarde, o outro pede mexer no código.
+   */
+  readonly limiteDeTaxa: boolean;
+
+  // `cause` preservado de propósito: `ehLimiteDeTaxa` lê a cadeia inteira, e
+  // embrulhar só a mensagem apagaria o `statusCode` que a identifica.
+  constructor(message: string, opcoes?: { cause?: unknown }) {
+    super(message, opcoes);
     this.name = "SttError";
+    this.limiteDeTaxa = ehLimiteDeTaxa(opcoes?.cause);
   }
 }
 
@@ -67,23 +83,31 @@ export interface ResultadoStt {
 }
 
 /** Offsets voltam relativos ao início do bloco — a absolutização é na concatenação. */
-export async function transcrever(audio: ArrayBuffer): Promise<ResultadoStt> {
+export async function transcrever(
+  audio: ArrayBuffer,
+  { ate }: { ate?: number } = {},
+): Promise<ResultadoStt> {
   garantirGateway(); // falha cedo, antes de mandar os bytes
   const modelo = modeloStt();
   const termos = await vocabulario();
 
   let resultado;
   try {
-    // `model` é string de propósito: id em string sai pelo Gateway. Objeto de
-    // provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
-    resultado = await transcribe({
-      model: modelo,
-      audio: new Uint8Array(audio),
-      // O nome da opção é por provedor, não fixo — ver `opcoesDeVocabulario`.
-      providerOptions: opcoesDeVocabulario(modelo, termos),
-    });
+    resultado = await comEsperaDeLimite(
+      `stt ${modelo}`,
+      () =>
+        // `model` é string de propósito: id em string sai pelo Gateway. Objeto
+        // de provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
+        transcribe({
+          model: modelo,
+          audio: new Uint8Array(audio),
+          // O nome da opção é por provedor, não fixo — ver `opcoesDeVocabulario`.
+          providerOptions: opcoesDeVocabulario(modelo, termos),
+        }),
+      { ate },
+    );
   } catch (e) {
-    throw new SttError(e instanceof Error ? e.message : String(e));
+    throw new SttError(e instanceof Error ? e.message : String(e), { cause: e });
   }
 
   const porPalavra = palavrasDoMetadata(resultado.providerMetadata);

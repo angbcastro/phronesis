@@ -24,6 +24,7 @@ import {
   modeloPerfil,
   modeloResolucao,
   modeloStt,
+  provedorAceitaVocabulario,
   provedorDe,
   validarIdDeModelo,
 } from "@/lib/modelos";
@@ -119,6 +120,20 @@ describe("porta única de modelo", () => {
     // duas vezes. Este teste é o que impede as duas de divergirem.
     const smoke = readFileSync(join("scripts", "smoke.ts"), "utf8");
     expect(smoke).toContain(MODELO_STT_PADRAO);
+  });
+
+  it("o smoke conhece os mesmos provedores de vocabulário que a lib", () => {
+    // Mesma duplicação, mesmo risco: se um provedor entrar no mapa de
+    // `modelos.ts` e não aqui, o smoke passa a avisar que o vocabulário não é
+    // mandado justamente quando ele está sendo mandado.
+    const smoke = readFileSync(join("scripts", "smoke.ts"), "utf8");
+    for (const provedor of ["xai", "deepgram"]) {
+      expect(provedorAceitaVocabulario(`${provedor}/qualquer-modelo`)).toBe(true);
+      expect(smoke).toContain(`"${provedor}"`);
+    }
+    // E o contrário: provedor fora do mapa não recebe opção nenhuma. Medido no
+    // Gemini, que engole a opção sem avisar (ARCHITECTURE §4.4).
+    expect(provedorAceitaVocabulario("google/gemini-3.5-transcribe")).toBe(false);
   });
 });
 

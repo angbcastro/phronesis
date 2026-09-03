@@ -51,6 +51,15 @@ grafia: são **aditivas**, com teto e piso, e uma sessão sem ambiguidade contin
 não pagando nada. A camada dos vizinhos herda atribuição passada, e o que a torna
 aceitável é que a revisão mostra **quais** átomos elegeram cada sugestão.
 
+**O caminho automático aguenta o Gateway dizer "devagar"** (seções 4.2.1 e 5.3).
+O free tier limita por conta, não por modelo — medido em 02/09, com o mesmo
+limite derrubando os dois modelos de STT em disputa —, e uma sessão de 15 min são
+30 blocos. STT e extração agora esperam a janela passar em vez de morrer nela, e
+a desistência diz quando a causa foi pressa e não defeito. Na mesma medição,
+trocar o STT por um modelo que escreve melhor foi **recusado**: o candidato não
+tem canal de vocabulário nenhum, e nome próprio errado custa mais que prosa
+torta neste sistema.
+
 O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
 ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
 deduplicação de **átomo** — dizer a mesma coisa em duas sessões ainda cria dois.
@@ -92,6 +101,7 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   leem credencial nem rede e por isso o navegador pode importar
   env.ts          leitura de variável de ambiente, falha cedo se faltar
   rede.ts         retry de conexão: o que dá para repetir sem duplicar efeito
+  limite.ts       o rate limit do Gateway: reconhecer e esperar passar
   neo4j.ts        HTTP Query API (nunca driver Bolt)
   fusao.ts        fundir, renomear, recusar — a escrita de higiene no grafo
   duplicatas.ts   quem parece ser a mesma coisa: string + o modelo, só propõem
@@ -309,37 +319,85 @@ passe por fora.
 Medido em 2026-08-31, com o **mesmo bloco real** de 30 s para todos, pelo
 Gateway. A pergunta não é quem transcreve melhor: é quem devolve **tempo**.
 
-| Modelo | Tempo | Texto | Custo/30 s | Rate limit |
-|---|---|---|---|---|
-| `xai/grok-stt` | **palavra** — 64 segmentos de 1 palavra (`1.802–2.002 "Vamos"`) | pior dos cinco | $0,0008 | — |
-| `openai/whisper-1` | frase — 4 segmentos de ~8 s | bom | $0,0029 | **free tier bloqueia** |
-| `google/gemini-3.5-transcribe` | **nenhum** | melhor dos cinco | $0,0014 | — |
-| `openai/gpt-4o-transcribe` | **nenhum** | bom | $0,0015 | — |
-| `openai/gpt-4o-mini-transcribe` | **nenhum** | bom | $0,0008 | — |
+| Modelo | Tempo | Texto | Custo/30 s |
+|---|---|---|---|
+| `xai/grok-stt` | **palavra** — 64 segmentos de 1 palavra (`1.802–2.002 "Vamos"`) | pior dos cinco | $0,0008 |
+| `openai/whisper-1` | frase — 4 segmentos de ~8 s | bom | $0,0029 |
+| `google/gemini-3.5-transcribe` | **nenhum** | melhor dos cinco | $0,0014 |
+| `openai/gpt-4o-transcribe` | **nenhum** | bom | $0,0015 |
+| `openai/gpt-4o-mini-transcribe` | **nenhum** | bom | $0,0008 |
 
 `deepgram/*`, `assemblyai/*`, `elevenlabs/*`, `groq/whisper-*`,
 `mistral/voxtral-*`, `fal/wizper`, `revai/*` e `azure/whisper`: `Model not
 found`. Não estão neste Gateway — e é de **Deepgram** que vem o nome `keyterm`
-usado em `stt.ts`, o que explica a opção estar lá e provavelmente nunca ter
-feito efeito em provedor nenhum.
+usado em `stt.ts`, o que explica a opção estar lá.
 
 **Sem tempo não há procedência**, que a visão §4 lista como necessidade: sem
 ele todo átomo nasce com `inicios_s`, `fins_s` e `ancoras` vazios, o player da
 revisão some de todos os itens e "escuto antes de aprovar" deixa de existir.
 Isso elimina os três modelos sem timestamp por melhor que seja o texto deles.
-O `whisper-1` sairia por rate limit: uma sessão de 15 min são 30 blocos, e o
-free tier travou já na segunda chamada seguida.
 
-Sobra um. **A troca para `google/gemini-3.5-transcribe` foi tentada e revertida
-no mesmo dia** — fica registrada aqui para ninguém repetir o teste daqui a três
-meses achando que é ideia nova.
+> **A tabela tinha uma sexta coluna, "Rate limit", que dizia `—` para o
+> `xai/grok-stt` e eliminava o `whisper-1`. Ela saiu porque é falsa** — ver
+> "O rate limit é da conta", abaixo. O limite não escolhe modelo.
 
 O custo declarado: no bloco medido o grok escreveu "Vamos testar se **a
 secretária** está funcionando" onde os outros três ouviram "testar se **isso
 aqui tá** funcionando". O bloco é um teste de microfone de 24/08, e as sessões
 reais transcritas por ele produziram extração boa — mas transcrição estranha
-numa sessão de verdade tem aqui a primeira suspeita, e não há para onde correr
-dentro deste Gateway.
+numa sessão de verdade tem aqui a primeira suspeita.
+
+#### Abrir mão do timestamp para ganhar texto: medido e recusado (2026-09-02)
+
+A pergunta voltou, e desta vez com a proposta certa: **trocar procedência por
+qualidade de transcrição**, indo para o `google/gemini-3.5-transcribe`. A
+medição usou um bloco real de sessão importada (`mtkwtbpa…`) em vez do teste de
+microfone, e o resultado inverteu a decisão pelo motivo oposto ao esperado.
+
+O Gemini de fato escreve melhor. No mesmo bloco:
+
+| | `grok-stt` | `gemini-3.5-transcribe` |
+|---|---|---|
+| "eu me apliquei hoje" | "eu me **apoiou**" — erra nas duas rodadas | **acerta** |
+| o nome "Bearing Founders" | "**Bejewel** Founders" sem lista; certo **com** lista | **acerta sozinho**, nas duas ocorrências |
+| "Phronesis" | **acerta** | "**fronesis**" |
+| "na Adapta" | erra ("na data") | erra ("na data") |
+
+**Mas ele não tem por onde receber o vocabulário.** Testados cinco nomes de
+opção — `keyterm`, `phrases`, `speechContexts`, `vocabulary` e `prompt` —, os
+cinco devolvem saída **byte a byte idêntica** à chamada sem opção nenhuma, e o
+AI SDK não emite um `warning` sequer. Não é nome errado: é canal inexistente,
+com falha silenciosa. `providerOptions` vira decoração e ninguém fica sabendo.
+
+Isso mata a troca. Num sistema em que o nome próprio é a chave da entidade e o
+insumo do agente 2, um modelo que escreve melhor a prosa e pior o nome está
+piorando exatamente o que importa — e "fronesis" é o nome do próprio projeto.
+A lista tem efeito medido e grande (§4.4); um provedor surdo a ela custa mais
+do que ganha. Somado a `segments: 0` e `providerMetadata` sem palavras
+(reconfirmado nesta medição), o Gemini perde nos dois eixos que decidem.
+
+**Fica registrado para ninguém repetir o teste daqui a três meses:** a troca já
+foi tentada duas vezes — em 31/08, revertida no mesmo dia por falta de
+timestamp; em 02/09, recusada por falta de canal de vocabulário. A âncora por
+bloco de 30 s resolveria o primeiro motivo (a gravação já é fatiada, e
+`localizarNoAudio` já toca por bloco), **mas não resolve o segundo** — por isso
+não foi construída: não há hoje, neste Gateway, um modelo pelo qual gastá-la.
+
+#### O rate limit é da conta, não do modelo (2026-09-02)
+
+Medido na mesma sessão de trabalho, e é o achado que não é sobre o Gemini:
+
+```
+GatewayRateLimitError: Free tier requests on this model are rate-limited.
+```
+
+Ele apareceu depois de cinco chamadas seguidas de transcrição no Gemini e, na
+mesma janela, **derrubou também o `xai/grok-stt`** — que a tabela acima listava
+como sem limite. Trocar de modelo não escapa dele. Uma espera de ~75 s
+destravou o que três tentativas seguidas do próprio AI SDK não destravaram.
+
+Isso é um risco vivo do caminho de hoje, não uma nota de rodapé: uma sessão
+gravada de 15 min são 30 blocos. O tratamento está em `limite.ts` (§5.3).
 
 ### 4.3 Granularidade e procedência
 
@@ -395,6 +453,27 @@ mesma chamada, só a lista variando:
 A grafia segue a lista, e o controle mostra que um termo que não foi falado
 **não** se injeta na saída. É o que sustenta a metade A da slice 3: gerar a
 lista das entidades do grafo tem efeito real, não decorativo.
+
+**Repetido em 2026-09-02 contra um bloco de sessão real**, e o efeito é maior do
+que a medição de agosto sugeria — lá a lista trocava uma grafia plausível por
+outra; aqui ela tira um nome do ruído puro:
+
+| Lista | Saída |
+|---|---|
+| sem lista | "eu me apoiou hoje para a **Bejewel Founders**" |
+| `["Adapta", "Bearing Founders", "Phronesis"]` | "eu me apoiou hoje para a **Bearing Founders**" |
+
+Mesmo áudio, mesma chamada, 236 e 237 segmentos. Note o que a lista **não**
+conserta: "eu me **apoiou**" continua errado nas duas, e "na **Adapta**"
+continua saindo como "na data" mesmo com "Adapta" na lista. Ela ensina grafia
+de nome próprio, não corrige gramática — e nem todo nome ela salva.
+
+**E o canal existe só no provedor de hoje.** No `google/gemini-3.5-transcribe`,
+cinco nomes de opção diferentes produzem saída byte a byte idêntica à chamada
+sem opção nenhuma, sem um `warning` sequer (§4.2.1). É por isso que
+`OPCAO_DE_VOCABULARIO` tem **silêncio como padrão** para provedor desconhecido:
+o vocabulário some sem avisar, e um `STT_MODEL` trocado leva junto a metade A da
+slice 3 sem que nada na tela mude.
 
 ### 4.5 Concatenação
 
@@ -1016,7 +1095,9 @@ com prefixo:
 |---|---|---|
 | `[stt] sessão <id> bloco <i> falhou:` | rota `/chunks/:i/pronto` | o bloco falhou ao ser transcrito na subida |
 | `[pipeline] sessão <id> bloco <i> não transcreveu:` | laço de espera em `finalizarSessao` | a retentativa da finalização falhou |
-| `[pipeline] sessão <id>: desistiu após 45s…` | `finalizarSessao` | o prazo estourou; lista os blocos que faltaram |
+| `[pipeline] sessão <id>: desistiu após 150s…` | `finalizarSessao` | o prazo estourou; lista os blocos que faltaram, e diz se a causa foi rate limit |
+| `[limite] <rótulo>: rate limit do Gateway — esperando Ns` | `comEsperaDeLimite` | o Gateway recusou por excesso e vai haver outra tentativa |
+| `[limite] <rótulo>: sem orçamento para esperar Ns` | `comEsperaDeLimite` | o limite ainda vale, mas esperar estouraria o prazo de quem chamou |
 | `[extracao] sessão <id> falhou:` | `extrairSessao` | o modelo estourou, ou a resposta não era JSON válido |
 | `[extracao] sessão <id>: sem transcricao.json…` | `extrairSessao` | pediram extração de uma sessão sem transcrição gravada |
 | `[finalizar] sessão <id> falhou:` | rota `/finalizar` | `finalizarSessao` estourou uma exceção |
@@ -1082,6 +1163,55 @@ stack de undici, o que faz a rede parecer defeito do sistema:
 A outra metade do conserto é não pagar a latência três vezes: as três buscas de
 `GET /api/sessoes/:id/extracao` (uma no Neo4j, duas no R2) são independentes e
 vão em `Promise.all`. Em série, essa tela custava a soma de três idas à rede.
+
+### 5.3 Quando a falha é pressa, e não defeito
+
+Medido em 2026-09-02 (§4.2.1): o free tier do AI Gateway recusa rajada de
+chamada, **na conta inteira e não por modelo**. É a terceira classe de falha
+deste sistema, e a única em que o conserto é o relógio:
+
+| Classe | Onde mora | O que fazer |
+|---|---|---|
+| rede | `rede.ts` | repetir já, se o pedido não saiu |
+| serviço | quem chamou | subir: repetir vai falhar igual |
+| **limite de taxa** | **`limite.ts`** | **esperar dezenas de segundos e repetir** |
+
+`rede.ts` não serve aqui, e juntar os dois seria erro: lá a pergunta é "o pedido
+chegou a sair?", e um 429 cairia em "erro do serviço — nunca repete", que é o
+oposto do certo. O pedido saiu, foi recusado inteiro, repetir não duplica nada;
+o que falta é **quando**.
+
+O erro chega embrulhado — o AI SDK já tentou três vezes por conta própria e
+sobe um `RetryError` com o `GatewayRateLimitError` em `lastError`. Por isso
+`ehLimiteDeTaxa` percorre a cadeia (`lastError`, `errors`, `cause`) e reconhece
+pela forma, em quatro sinais: `name`, `type`, `statusCode` e, por último, a
+mensagem. **Nada disso importa `@ai-sdk/gateway`** — regra inviolável 8 vale
+também para o tipo do erro; `tests/limite.test.ts` é quem avisa se o SDK mudar
+o embrulho.
+
+As esperas são **20 s e 60 s**, com o jitter da fila de upload, sempre para
+cima: a medição mostrou ~75 s de janela, e esperar menos que o medido é o jeito
+de a espera não servir para nada. São duas e não cinco porque o teto de cima é o
+`maxDuration` de 300 s da rota, e a extração ainda roda depois.
+
+Quem chama dentro de um prazo passa o seu (`ate`): `finalizarSessao` tem 150 s
+para os blocos que faltam, e uma espera que não caiba nesse orçamento é pior que
+não esperar — o `waitUntil` morre antes de a chamada voltar, e a falha fica sem
+nem o log. Onde não há prazo — a rota `chunks/:i/pronto`, que cuida de um bloco
+só —, não se passa nada.
+
+Os dois pontos que falam com modelo no caminho automático estão cobertos: `stt.ts`
+e `extracao.ts`. A extração é a mais exposta das duas, apesar de ser uma chamada
+só: ela roda logo depois dos 30 blocos de STT, que é exatamente quando o limite
+está mais perto de estourar — sem a espera, a sessão transcreve inteira e morre
+no último passo. Resolução, perfil, duplicatas e embedding **não** estão
+cobertos: são chamados sob demanda, a partir de um clique meu na revisão, e ali
+a falha aparece na tela em vez de matar uma sessão em `waitUntil`.
+
+Quando a espera não basta, a linha de desistência diz isso com todas as letras —
+"a causa foi rate limit do AI Gateway… chamar /finalizar de novo daqui a alguns
+minutos costuma resolver" —, porque a alternativa é procurar defeito no código
+onde só havia pressa. O áudio fica intacto no R2 e o retry é o mesmo de sempre.
 
 ## 6. Idempotência
 
@@ -1865,9 +1995,23 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Entrega do magic link**: não há provedor de e-mail configurado. O link sai no
   log do servidor e, fora de produção, no corpo da resposta. Único ponto a
   mexer: a função `entregar` em `src/app/api/auth/link/route.ts`.
-- **`finalizarSessao` espera no máximo 45 s** pelos blocos pendentes; passando
+- **`finalizarSessao` espera no máximo 150 s** pelos blocos pendentes; passando
   disso a sessão vai para `erro` com a lista do que faltou. O áudio fica intacto
-  e o retry é manual.
+  e o retry é manual. Eram 45 s até 02/09 — menos que uma janela de rate limit
+  (§5.3), então o laço estourava o prazo sem nunca ter chance de passar. O preço
+  do prazo maior é real: bloco que falha por motivo definitivo agora leva 150 s
+  para ser declarado perdido.
+- **O rate limit do Gateway é da conta e não some com troca de modelo** (§4.2.1,
+  medido em 02/09). `limite.ts` espera 20 s e 60 s antes de desistir, o que cobre
+  a janela medida (~75 s) — não cobre um limite que dure minutos. Aí a sessão vai
+  para `erro` dizendo que foi rate limit, e o conserto é chamar `/finalizar` de
+  novo mais tarde. **Uma sessão gravada de 15 min são 30 blocos e nunca foi
+  transcrita inteira sob limite** — o que se mediu foram chamadas soltas.
+- **Resolução, perfil, duplicatas e embedding não esperam o rate limit.** Só STT
+  e extração chamam `comEsperaDeLimite` (§5.3). É deliberado — os outros quatro
+  saem de um clique meu e falham na minha frente, não dentro de um `waitUntil` —,
+  mas quer dizer que um limite ativo faz o botão de rascunho de perfil dar erro
+  em vez de esperar.
 - **`config/vocabulario.txt`** ainda tem só os três nomes de exemplo. Desde a
   slice 3 ele não é mais a lista inteira — as entidades do grafo entram junto —
   mas continua sendo o único jeito de ensinar um nome **antes** de falá-lo pela
@@ -1940,12 +2084,15 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Não haverá medida automática da qualidade da extração.** A avaliação é à mão,
   na tela de revisão; sem gabarito rotulado nem percentual de recall, regressão de
   prompt não aparece em teste — só na revisão seguinte.
-- **O `keyterm` vale só para o provedor de hoje.** Medido em 2026-08-31 e
-  funciona no `xai/grok-stt` (§4.4). Desde a slice 3 o nome da opção é um mapa
-  por provedor em `modelos.ts`, com **silêncio como padrão** para provedor
-  desconhecido — trocar `STT_MODEL` por um provedor fora do mapa faz o
-  vocabulário não ser mandado, e não derruba a transcrição. Mas continua sendo
-  verdade que só um provedor foi medido.
+- **O `keyterm` vale só para o provedor de hoje, e agora se sabe o custo disso.**
+  Medido em 31/08 e de novo em 02/09: funciona no `xai/grok-stt` (§4.4). O nome
+  da opção é um mapa por provedor em `modelos.ts`, com **silêncio como padrão**
+  para provedor desconhecido — trocar `STT_MODEL` por um provedor fora do mapa
+  faz o vocabulário não ser mandado, e não derruba a transcrição. No
+  `google/gemini-3.5-transcribe` foi medido que **nenhum** dos cinco nomes de
+  opção testados chega ao modelo, e sem `warning` nenhum: a falha é silenciosa
+  dos dois lados. Trocar de STT sem medir isso primeiro perde a metade A da
+  slice 3 sem que nada apareça na tela.
 - **Deduplicação de átomo não existe** (slice 5). A de **entidade** ficou pronta
   na slice 3, mas nada compara um átomo novo com os que já estão no grafo: dizer
   a mesma coisa em duas sessões cria dois átomos.

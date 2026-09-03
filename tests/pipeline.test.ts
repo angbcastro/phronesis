@@ -5,6 +5,10 @@
  * do servidor, senão a falha é indiagnosticável depois do fato. Foi o que
  * aconteceu na sessão de 2026-08-24: o `catch` da espera engolia o erro do
  * STT sem uma linha sequer, e a sessão ia para `erro` calada.
+ *
+ * E o motivo tem de dizer **qual** falha foi: rate limit do Gateway pede voltar
+ * mais tarde, modelo inexistente pede mexer no código. Confundir os dois faz
+ * perder tarde procurando defeito onde só havia pressa (`limite.ts`).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,9 +18,12 @@ const manifesto = {
   finalizado: false,
 };
 
+/** Trocável por teste: o mesmo laço tem de contar duas histórias diferentes. */
+let erroDoStt = () => new Error("Missing or empty model identifier");
+
 vi.mock("@/lib/stt", () => ({
   transcrever: vi.fn(async () => {
-    throw new Error("Missing or empty model identifier");
+    throw erroDoStt();
   }),
 }));
 
@@ -45,12 +52,16 @@ vi.mock("@/lib/manifest", () => ({
   tudoTranscrito: vi.fn(() => false),
 }));
 
-import { finalizarSessao } from "@/lib/pipeline";
+import { ESPERA_MAX_MS, finalizarSessao } from "@/lib/pipeline";
+
+/** Passar do prazo do laço, seja ele qual for — a constante é quem manda. */
+const ALEM_DO_PRAZO = ESPERA_MAX_MS + 30_000;
 
 let erros: string[];
 
 beforeEach(() => {
   erros = [];
+  erroDoStt = () => new Error("Missing or empty model identifier");
   vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
     erros.push(args.map((a) => (a instanceof Error ? a.message : String(a))).join(" "));
   });
@@ -65,7 +76,7 @@ afterEach(() => {
 describe("falha de transcrição deixa rastro no log", () => {
   it("registra o motivo do STT, com sessão e bloco", async () => {
     const p = finalizarSessao("s1");
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(ALEM_DO_PRAZO);
     await p;
 
     const linha = erros.find((e) => e.includes("Missing or empty model identifier"));
@@ -76,11 +87,36 @@ describe("falha de transcrição deixa rastro no log", () => {
 
   it("registra quais blocos ficaram para trás quando desiste", async () => {
     const p = finalizarSessao("s1");
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(ALEM_DO_PRAZO);
     const r = await p;
 
     expect(r.status).toBe("erro");
     expect(r.faltando).toEqual([0]);
     expect(erros.some((e) => e.includes("desistiu") || e.includes("faltando"))).toBe(true);
+  });
+
+  it("quando a causa é rate limit, a desistência diz isso e manda voltar depois", async () => {
+    erroDoStt = () =>
+      Object.assign(new Error("Free tier requests on this model are rate-limited."), {
+        name: "GatewayRateLimitError",
+        statusCode: 429,
+      });
+
+    const p = finalizarSessao("s1");
+    await vi.advanceTimersByTimeAsync(ALEM_DO_PRAZO);
+    const r = await p;
+
+    expect(r.status).toBe("erro");
+    const desistencia = erros.find((e) => e.includes("desistiu"));
+    expect(desistencia, `sem linha de desistência. Logs: ${JSON.stringify(erros)}`).toBeDefined();
+    expect(desistencia).toContain("rate limit");
+  });
+
+  it("modelo inexistente não vira rate limit — a linha não pode mandar esperar à toa", async () => {
+    const p = finalizarSessao("s1");
+    await vi.advanceTimersByTimeAsync(ALEM_DO_PRAZO);
+    await p;
+
+    expect(erros.find((e) => e.includes("desistiu"))).not.toContain("rate limit");
   });
 });

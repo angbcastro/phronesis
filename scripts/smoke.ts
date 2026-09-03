@@ -15,6 +15,14 @@ import { experimental_transcribe as transcribe } from "ai";
 
 const ORIGEM_DEV = process.env.SMOKE_ORIGIN ?? "http://localhost:3000";
 
+/**
+ * Provedores que de fato recebem a lista de vocabulário. Cópia do
+ * `OPCAO_DE_VOCABULARIO` de `src/lib/modelos.ts` — o script roda solto no node
+ * e não importa de src/, como acontece com o id do modelo padrão.
+ * `tests/gateway.test.ts` é quem impede as duas de divergirem.
+ */
+const PROVEDORES_COM_VOCABULARIO = ["xai", "deepgram"];
+
 let falhas = 0;
 
 function ok(nome: string, detalhe = "") {
@@ -269,8 +277,23 @@ async function checarStt() {
     for (const w of r.warnings ?? []) {
       aviso("aviso do provedor", JSON.stringify(w).slice(0, 160));
     }
-    if (termos.length > 0 && (r.warnings?.length ?? 0) === 0) {
-      ok("keyterm", `${termos.length} termo(s) aceitos sem reclamação`);
+    // "Aceito sem reclamação" NÃO é o mesmo que "chegou ao modelo": medido em
+    // 2026-09-02, o `google/gemini-3.5-transcribe` engole cinco nomes de opção
+    // diferentes e devolve saída byte a byte idêntica, sem um `warning` sequer
+    // (ARCHITECTURE §4.4). Esta checagem dizia "ok" para esse caso, que é o
+    // pior falso positivo possível: o vocabulário some e o smoke aplaude.
+    if (termos.length > 0) {
+      if (PROVEDORES_COM_VOCABULARIO.includes(provedor)) {
+        if ((r.warnings?.length ?? 0) === 0) {
+          ok("keyterm", `${termos.length} termo(s) para um provedor que os usa`);
+        }
+      } else {
+        aviso(
+          "keyterm",
+          `${provedor} não está no mapa de vocabulário de modelos.ts — a lista NÃO é mandada. ` +
+            `Confira à mão se os nomes próprios saíram certos antes de adotar este modelo.`,
+        );
+      }
     }
 
     const trecho = (r.text ?? "").trim().slice(0, 160);

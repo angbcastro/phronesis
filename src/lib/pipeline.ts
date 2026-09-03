@@ -16,6 +16,7 @@ import {
   pendentes,
   tudoTranscrito,
 } from "./manifest";
+import { ehLimiteDeTaxa } from "./limite";
 import { ConflitoR2Error, getBytes, getJson, putJson } from "./r2";
 import { atualizarSessao, buscarSessao } from "./sessoes";
 import { temTranscricao } from "./estados";
@@ -28,8 +29,17 @@ import type { Extracao, Transcricao, TranscricaoBloco } from "./tipos";
  *
  * A existência desse objeto é a chave de idempotência: se ele já está lá,
  * não chama o STT de novo nem sobrescreve o resultado pronto (aceite 9).
+ *
+ * `ate` é o prazo de quem chama: `transcrever` espera o rate limit do Gateway
+ * passar (`limite.ts`), e dentro do laço de `finalizarSessao` essa espera tem
+ * de caber no orçamento da função. Na subida do bloco não há prazo — o
+ * `waitUntil` da rota `pronto` cuida de um bloco só.
  */
-export async function transcreverBloco(sessao_id: string, i: number): Promise<TranscricaoBloco> {
+export async function transcreverBloco(
+  sessao_id: string,
+  i: number,
+  { ate }: { ate?: number } = {},
+): Promise<TranscricaoBloco> {
   const keyTranscricao = chaveChunkTranscricao(sessao_id, i);
 
   const pronto = await getJson<TranscricaoBloco>(keyTranscricao);
@@ -46,7 +56,7 @@ export async function transcreverBloco(sessao_id: string, i: number): Promise<Tr
   const audio = await getBytes(key);
   if (!audio) throw new Error(`Bloco ${i} da sessão ${sessao_id} não está no R2 (${key})`);
 
-  const { texto, palavras, modelo, granularidade } = await transcrever(audio);
+  const { texto, palavras, modelo, granularidade } = await transcrever(audio, { ate });
   const bloco: TranscricaoBloco = { i, texto, palavras, modelo, granularidade };
 
   await putJson(keyTranscricao, bloco);
@@ -73,7 +83,21 @@ export async function transcricaoParcial(sessao_id: string): Promise<{ texto: st
   return { texto: concatenar(sessao_id, blocos).texto, blocos: blocos.length };
 }
 
-const ESPERA_MAX_MS = 45_000;
+/**
+ * Quanto a finalização espera pelos blocos que ainda faltam.
+ *
+ * Eram 45 s, e 45 s é **menos que uma janela de rate limit**: medido em
+ * 2026-09-02, o limite do free tier levou ~75 s para ceder (`limite.ts`). O
+ * laço estourava o prazo sem nunca ter chance de passar — e, pior, martelava o
+ * Gateway de segundo em segundo enquanto isso, que é o jeito de fazer o limite
+ * durar mais.
+ *
+ * O teto de cima é o `maxDuration` de 300 s da rota `/finalizar`, e a extração
+ * roda depois disto, no mesmo `waitUntil` — daí 150 s e não 300 s. O custo é
+ * assumido: um bloco que falha por motivo definitivo (modelo inexistente,
+ * áudio corrompido) agora leva 150 s para ser declarado perdido em vez de 45 s.
+ */
+export const ESPERA_MAX_MS = 150_000;
 const INTERVALO_ESPERA_MS = 1_000;
 
 /**
@@ -111,15 +135,21 @@ export async function finalizarSessao(sessao_id: string): Promise<{
   // Espera os blocos que ainda estão no STT; retranscreve o que ficou para trás.
   const limite = Date.now() + ESPERA_MAX_MS;
   let m = await carregarManifest(sessao_id);
+  let limitado = false;
 
   while (!tudoTranscrito(m) && Date.now() < limite) {
     for (const c of pendentes(m)) {
+      // Dentro do laço, não só na volta: com o rate limit, um único bloco pode
+      // segurar dezenas de segundos, e uma rodada de dez blocos pendentes
+      // passaria muito do prazo antes de alguém reconferir o relógio.
+      if (Date.now() >= limite) break;
       try {
-        await transcreverBloco(sessao_id, c.i);
+        await transcreverBloco(sessao_id, c.i, { ate: limite });
       } catch (e) {
         // Outro worker pode estar no mesmo bloco; a próxima volta relê o
         // manifest. Mas o motivo vai para o log: a tela só sabe dizer que
         // falhou, e sem esta linha a falha fica indiagnosticável depois.
+        limitado = limitado || ehLimiteDeTaxa(e);
         console.error(`[pipeline] sessão ${sessao_id} bloco ${c.i} não transcreveu:`, e);
       }
     }
@@ -132,6 +162,10 @@ export async function finalizarSessao(sessao_id: string): Promise<{
     const faltando = pendentes(m).map((c) => c.i);
     console.error(
       `[pipeline] sessão ${sessao_id}: desistiu após ${ESPERA_MAX_MS / 1000}s com bloco(s) faltando: ${faltando.join(", ")}. ` +
+        (limitado
+          ? "A causa foi rate limit do AI Gateway, que já foi esperado e não cedeu — " +
+            "chamar /finalizar de novo daqui a alguns minutos costuma resolver. "
+          : "") +
         `O motivo de cada um está nas linhas [pipeline] acima. Áudio intacto no R2.`,
     );
     await atualizarSessao(sessao_id, { status: "erro" }); // áudio intacto, retry manual

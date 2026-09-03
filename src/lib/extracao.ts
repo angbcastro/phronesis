@@ -23,6 +23,7 @@
  */
 import { generateText } from "ai";
 import { agregarCandidatas, listarEntidades } from "./entidades";
+import { comEsperaDeLimite, ehLimiteDeTaxa } from "./limite";
 import { diagnostico, garantirGateway, modeloExtracao } from "./modelos";
 import { criarLocalizador } from "./offsets";
 import { resolverReferencias } from "./resolucao";
@@ -45,9 +46,13 @@ import type {
 export const PROMPT_VERSION = "extracao-5";
 
 export class ExtracaoError extends Error {
-  constructor(message: string) {
-    super(message);
+  /** Mesma distinção de `SttError`: voltar mais tarde, ou mexer no código. */
+  readonly limiteDeTaxa: boolean;
+
+  constructor(message: string, opcoes?: { cause?: unknown }) {
+    super(message, opcoes);
     this.name = "ExtracaoError";
+    this.limiteDeTaxa = ehLimiteDeTaxa(opcoes?.cause);
   }
 }
 
@@ -296,16 +301,22 @@ export async function extrair(transcricao: Transcricao): Promise<Extracao> {
 
   async function chamar() {
     try {
-      // `model` é string de propósito: id em string sai pelo Gateway. Objeto de
-      // provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
-      return await generateText({
-        model: modelo,
-        prompt,
-        temperature: 0,
-        maxOutputTokens: MAX_TOKENS_SAIDA,
-      });
+      // O rate limit do Gateway é da conta inteira (`limite.ts`): a extração
+      // roda logo depois de 30 blocos de STT, que é exatamente quando o limite
+      // está mais perto de estourar. Sem a espera, a sessão transcreve e morre
+      // no último passo.
+      return await comEsperaDeLimite(`extracao ${modelo}`, () =>
+        // `model` é string de propósito: id em string sai pelo Gateway. Objeto
+        // de provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
+        generateText({
+          model: modelo,
+          prompt,
+          temperature: 0,
+          maxOutputTokens: MAX_TOKENS_SAIDA,
+        }),
+      );
     } catch (e) {
-      throw new ExtracaoError(e instanceof Error ? e.message : String(e));
+      throw new ExtracaoError(e instanceof Error ? e.message : String(e), { cause: e });
     }
   }
 
