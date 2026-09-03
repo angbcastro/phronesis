@@ -25,6 +25,26 @@ interface Estado {
 
 const INTERVALO_POLL_MS = 2000;
 
+/**
+ * A sessão precisa que alguém chame `/finalizar` para andar?
+ *
+ * Os estados de fora são os que já estão andando por conta própria, ou que
+ * acabaram. Os de dentro são os que ficariam parados para sempre se ninguém
+ * empurrasse:
+ *
+ *   gravando    a sessão nunca foi fechada — é o caso comum, vindo do botão
+ *   transcrito  transcreveu e não extraiu: o `waitUntil` da extração se perdeu
+ *   erro        falhou no meio; `/finalizar` é o retry manual
+ *
+ * `transcrito` estava de fora, e era um beco sem saída: a sessão tinha texto no
+ * R2, nenhuma proposta, e nada em tela nenhuma que disparasse a extração. A
+ * chamada é idempotente — proposta que já existe não rechama o modelo (regra 4),
+ * e `finalizou` garante uma por visita.
+ */
+export function precisaFinalizar(status: string): boolean {
+  return !["finalizando", "transcrevendo", "extraindo", "em_revisao", "confirmada"].includes(status);
+}
+
 /** O que dizer em cada passo. Um verbo, sem barra de progresso. */
 export function legenda(status: string | undefined, completa: boolean): string {
   if (status === "extraindo") return "lendo o que você disse…";
@@ -52,13 +72,7 @@ export function Processando({ id }: { id: string }) {
     /** Os blocos que ainda não subiram têm que chegar antes de finalizar. */
     async function garantirFinalizacao(atual: Estado) {
       if (finalizou.current) return;
-      if (
-        ["finalizando", "transcrevendo", "transcrito", "extraindo", "em_revisao", "confirmada"].includes(
-          atual.status,
-        )
-      ) {
-        return;
-      }
+      if (!precisaFinalizar(atual.status)) return;
       finalizou.current = true;
 
       acordar();

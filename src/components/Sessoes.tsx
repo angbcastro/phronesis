@@ -47,16 +47,23 @@ export const duracao = (s: number): string =>
   s >= 60 ? `${Math.round(s / 60)} min` : `${Math.max(1, Math.round(s))} s`;
 
 /**
- * Para onde a sessão leva quando eu clico nela.
+ * Para onde a sessão leva quando eu clico nela: **sempre para onde ainda há o
+ * que fazer**.
  *
- * Sempre para o lugar onde ainda há o que fazer: revisar, se tem proposta
- * esperando; ler a transcrição, se ela já existe e não há mais nada pendente;
- * e a tela de processamento no resto — sessão travada em `transcrevendo` ou em
- * `erro` é ali que se vê o que aconteceu.
+ * Proposta esperando abre na revisão. Sessão confirmada não tem mais trabalho
+ * nenhum, e o que resta dela é o texto literal. Todo o resto — inclusive
+ * `transcrito` e `extraindo` — vai para o corredor, que é quem sabe empurrar a
+ * sessão para o passo seguinte e abre a revisão sozinho quando a proposta fica
+ * pronta.
+ *
+ * `transcrito` levava ao texto literal, e isso era um beco: uma sessão que
+ * transcreveu e nunca extraiu — `waitUntil` perdido, extração que morreu — não
+ * tinha caminho nenhum até a revisão. Ler a transcrição continua a um toque
+ * daqui, no botão ao lado, que é onde essa porta de serviço deve estar.
  */
 export function destino(s: Sessao): string {
   if (s.status === "em_revisao") return `/sessao/${s.id}/revisar`;
-  if (temTranscricao(s.status as StatusSessao)) return `/sessao/${s.id}/transcricao`;
+  if (s.status === "confirmada") return `/sessao/${s.id}/transcricao`;
   return `/sessao/${s.id}`;
 }
 

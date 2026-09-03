@@ -1779,12 +1779,27 @@ Neo4j ou R2 não atendem, com a causa legível no corpo (seção 5.2).
 | Rota | Componente | O que mostra |
 |---|---|---|
 | `/` | `Gravacao` + `BotaoGravar` + `Gestao` | o círculo "Como foi seu dia?" e uma engrenagem discreta no canto — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo" |
-| `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; abre a revisão sozinho |
+| `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e abre a revisão sozinho |
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, editar, escutar cada trecho, resolver a dúvida de quem é, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, escrever o perfil |
 | `/entrar` | página de login | pede o e-mail permitido |
+
+**Clicar na sessão leva sempre para onde ainda há o que fazer.** Proposta
+esperando abre na revisão; sessão `confirmada` abre no texto literal, que é o
+que sobrou dela; **todo o resto vai para o corredor**, e é ele quem chama
+`/finalizar` na sessão parada. `transcrito` levava ao texto literal e o corredor
+não a empurrava — uma sessão que transcreveu e nunca extraiu (`waitUntil`
+perdido, extração que morreu) ficava sem caminho nenhum até a revisão, com o
+texto no R2 e nenhuma proposta. Ler a transcrição continua a um toque, no botão
+ao lado, que é onde essa porta de serviço deve estar.
+
+O corredor empurra `gravando`, `transcrito` e `erro` — os três estados que
+ficariam parados para sempre —, e não toca em `finalizando`, `transcrevendo` nem
+`extraindo`, que já estão andando por conta própria. A chamada é idempotente
+(regra 4: proposta que existe não rechama o modelo) e acontece uma vez por
+visita.
 
 **Em `/` a porta de serviço inteira é uma engrenagem no meio da borda
 esquerda** — sessões, entidades e subir um áudio, num menu lateral (`Gestao`).
@@ -2092,6 +2107,9 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - Qualidade da resolução (slice 4) também não tem teste automático, e pelo mesmo
   motivo. A diferença é que agora existe um caso concreto de que eu sei a
   resposta: a sessão que fala do Rapha e do Raffa.
+- `tests/processando.test.ts` — quando o corredor empurra a sessão parada, que é
+  a única decisão dele que não é cosmética: empurrar demais paga uma chamada de
+  modelo à toa, empurrar de menos deixa a sessão sem caminho até a revisão.
 - `tests/correcoes.test.ts` — a apuração inteira, pura: que rejeitar, editar e
   trocar o sujeito viram correção (critério 1); que dois renomes na mesma sessão
   não colapsam num id só (critério 2); e que canonização **não** produz correção
@@ -2306,6 +2324,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   perfil. As travas são o agente 3 nunca escrever, o proposto aparecer ao lado do
   atual e nunca por cima, e a escrita passar só por `POST /api/entidades/perfil`.
   Nenhuma delas impede eu mesmo aprovar um rascunho ruim depressa.
+- **Sessão travada em `extraindo` não tem retry automático.** O corredor a deixa
+  em paz de propósito: uma extração pode estar de fato correndo, e empurrar de
+  novo pagaria uma segunda chamada de modelo pela mesma sessão. Se o `waitUntil`
+  daquela extração morreu, a sessão fica girando "lendo o que você disse…" e a
+  saída é o **reextrair** da lista. `transcrito` e `erro`, esses, o corredor
+  empurra sozinho.
 - **O registro de correções é best-effort.** Ele roda no `waitUntil`, depois da
   resposta; `waitUntil` morto perde as correções daquela sessão, sem recuperação
   e sem aviso na tela. Custo assumido: o diário já está no grafo quando isso

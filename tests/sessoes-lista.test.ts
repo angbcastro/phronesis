@@ -60,15 +60,20 @@ describe("para onde a sessão leva", () => {
     expect(destino(sessao("em_revisao"))).toBe("/sessao/mtgn3zf7/revisar");
   });
 
-  it("com transcrição pronta e nada pendente, abre no texto literal", () => {
-    expect(destino(sessao("transcrito"))).toBe("/sessao/mtgn3zf7/transcricao");
+  it("confirmada abre no texto literal — é o que sobrou dela", () => {
     expect(destino(sessao("confirmada"))).toBe("/sessao/mtgn3zf7/transcricao");
+  });
+
+  it("transcrita e não extraída abre no corredor, não no texto literal", () => {
+    // Era um beco: a sessão tinha texto no R2, nenhuma proposta, e nada em tela
+    // nenhuma que disparasse a extração. O corredor empurra e abre a revisão.
+    expect(destino(sessao("transcrito"))).toBe("/sessao/mtgn3zf7");
   });
 
   it("ainda processando (ou quebrada) abre na tela de processamento", () => {
     // É lá que se vê em que passo parou — e, no caso de `gravando`, é lá que a
     // finalização é disparada.
-    for (const s of ["gravando", "finalizando", "transcrevendo", "erro"]) {
+    for (const s of ["gravando", "finalizando", "transcrevendo", "extraindo", "erro"]) {
       expect(destino(sessao(s)), s).toBe("/sessao/mtgn3zf7");
     }
   });
