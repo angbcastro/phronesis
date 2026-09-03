@@ -216,3 +216,33 @@ export function opcoesDeVocabulario(
 /** Para o smoke e a tela dizerem se o vocabulário chega a este provedor. */
 export const provedorAceitaVocabulario = (modelo: string): boolean =>
   OPCAO_DE_VOCABULARIO[provedorDe(modelo)] !== undefined;
+
+/**
+ * Modelo de embedding (slice 4.5). `EMBEDDING_MODEL` troca sem tocar em código,
+ * como todos os outros — string `provedor/modelo`, pelo Gateway (regra 8).
+ *
+ * **Escolhido por medição** (2026-09-02), contra o catálogo real deste Gateway:
+ * dos 26 modelos de embedding servidos, este é o que devolve exatamente as
+ * 1536 dimensões que a migration 006 declara **e** o que separa melhor o par
+ * de teste da slice 4.5 do ruído —
+ *
+ *   openai/text-embedding-3-small   1536   par 0,594   não relacionado 0,19–0,29
+ *   google/gemini-embedding-001     3072   par 0,764   não relacionado 0,48–0,59
+ *
+ * O Gemini pontua mais alto em tudo, o que não é qualidade: o que decide um
+ * piso é a **distância** entre o par verdadeiro e o ruído, e ali ela é 1,4× —
+ * contra 2× aqui. Trocar de modelo é a variável de ambiente; trocar para um de
+ * outra dimensão pede `DROP` e recriar os dois índices, por migration nova.
+ */
+export const MODELO_EMBEDDING_PADRAO = "openai/text-embedding-3-small";
+
+/**
+ * A dimensão que os dois índices vetoriais declaram (migration 006). Vive aqui,
+ * junto do modelo padrão, porque é ele quem a determina — e é a única coisa
+ * desta slice que amarra o schema.
+ */
+export const DIMENSAO_EMBEDDING = 1536;
+
+export function modeloEmbedding(): string {
+  return validarIdDeModelo(process.env.EMBEDDING_MODEL || MODELO_EMBEDDING_PADRAO);
+}

@@ -3,9 +3,15 @@
  * nome, que tipo e que perfil — e como as menções de uma sessão se agregam numa
  * lista para a revisão.
  *
- * **Nada é escrito aqui.** Este módulo só lê: `:Entidade` nasce no confirmar
- * (`atomos.ts`) ou quando eu semeio um nome à mão (`fusao.ts`). Antes da
- * confirmação na revisão o grafo não recebe nada (regra 5).
+ * **Conteúdo não é escrito aqui.** Este módulo lê: `:Entidade` nasce no
+ * confirmar (`atomos.ts`) ou quando eu semeio um nome à mão (`fusao.ts`). Antes
+ * da confirmação na revisão o grafo não recebe nada (regra 5).
+ *
+ * A exceção é o **vetor** (slice 4.5). `garantirEmbeddings()` escreve
+ * `embedding`, `embedding_modelo` e `embedding_fonte`, e isso não fura a regra
+ * 5: nada ali é conteúdo, é derivado. O vetor é uma função do que já está no
+ * grafo — apagá-lo e recalculá-lo não perde nada, e nenhuma afirmação nova
+ * entra por esse caminho.
  *
  * **A resolução mudou de lugar na slice 4.** Até a 3, `coletar()` colapsava
  * todas as menções ao mesmo nome numa candidata só, válida para a sessão
@@ -20,12 +26,15 @@
  * Duas menções à mesma pessoa não viram dois nós nem em corrida, porque quem
  * garante é o banco (migration 002).
  */
+import { embutirVarios, fonteDaEntidade, hashDaFonte } from "./embedding";
+import { modeloEmbedding } from "./modelos";
 import { query } from "./neo4j";
 import { ehPronome, normalizarNome } from "./texto";
-import { TIPOS_ENTIDADE } from "./tipos";
+import { PERFIL_VAZIO, TIPOS_ENTIDADE } from "./tipos";
 import type {
   EntidadeCandidata,
   EntidadePropostaFrase,
+  Evidencia,
   Perfil,
   ReferenciaResolvida,
   TipoEntidade,
@@ -236,4 +245,316 @@ export function agregarCandidatas(
   }
 
   return [...porChave.values()];
+}
+
+// ──────────────────── Slice 4.5: o vetor da entidade ────────────────────
+
+/** O que sobrou de uma entidade depois de tirar o que não vira vetor. */
+interface LinhaFonte {
+  id: string;
+  nome: string;
+  labels: string[];
+  aliases: string[];
+  contexto: string | null;
+  pode_ajudar_com: string | null;
+  fizemos_juntos: string | null;
+  embedding_fonte: string | null;
+  embedding_modelo: string | null;
+}
+
+export interface ResumoEmbeddings {
+  /** Quantas entidades ativas foram olhadas. */
+  conferidas: number;
+  /** Quantas saíram de dia e foram reembutidas. */
+  embutidas: number;
+  modelo: string;
+}
+
+/**
+ * Põe em dia o vetor das entidades — e só das que saíram de dia.
+ *
+ * **A comparação é de hash, e é o que dispensa gancho.** Editar o perfil em
+ * `/entidades`, fundir, renomear, trocar o tipo, semear um nome: cinco rotas
+ * mexem em entidade, e nenhuma precisa lembrar de invalidar o vetor. A string
+ * canônica muda, o hash muda, e a próxima passada por aqui reembute. O caminho
+ * oposto — um gancho em cada rota — é um lugar a mais para alguém esquecer, e
+ * vetor velho não dá erro: dá vizinhança errada.
+ *
+ * Três razões para reembutir, e as três são a mesma pergunta ("o que está
+ * gravado corresponde ao que a entidade é hoje?"):
+ *
+ *   vetor ausente          entidade que nunca passou por aqui
+ *   `embedding_fonte` ≠    perfil, nome, alias ou tipo mudaram
+ *   `embedding_modelo` ≠   `EMBEDDING_MODEL` mudou; misturar dois espaços
+ *                          vetoriais no mesmo índice não dá erro, dá
+ *                          vizinhança errada
+ *
+ * Não editar nada não reembute nada: rodar duas vezes seguidas devolve
+ * `embutidas: 0` na segunda (regra 4).
+ *
+ * Entidade fundida fica de fora: ela não é candidata a nada, e o vetor dela
+ * seria peso morto no índice.
+ */
+export async function garantirEmbeddings(limite = 500): Promise<ResumoEmbeddings> {
+  const modelo = modeloEmbedding();
+
+  const linhas = await query<LinhaFonte>(
+    `MATCH (e:Entidade)
+     WHERE coalesce(e.status, 'ativa') <> 'fundida'
+     OPTIONAL MATCH (alias:Entidade)-[:FUNDIDA_EM]->(e)
+     RETURN e.id AS id, e.nome AS nome, labels(e) AS labels,
+            collect(DISTINCT alias.nome) AS aliases,
+            e.contexto AS contexto, e.pode_ajudar_com AS pode_ajudar_com,
+            e.fizemos_juntos AS fizemos_juntos,
+            e.embedding_fonte AS embedding_fonte,
+            e.embedding_modelo AS embedding_modelo
+     ORDER BY e.nome
+     LIMIT $limite`,
+    { limite },
+  );
+
+  const foraDeDia = linhas.flatMap((l) => {
+    const fonte = fonteDaEntidade({
+      nome: l.nome,
+      tipo: tipoDosLabels(l.labels ?? []),
+      aliases: (l.aliases ?? []).filter((a): a is string => typeof a === "string" && a !== ""),
+      perfil: {
+        ...PERFIL_VAZIO,
+        contexto: limpo(l.contexto),
+        pode_ajudar_com: limpo(l.pode_ajudar_com),
+        fizemos_juntos: limpo(l.fizemos_juntos),
+      },
+    });
+    const hash = hashDaFonte(fonte);
+    const emDia = l.embedding_fonte === hash && l.embedding_modelo === modelo;
+    return emDia ? [] : [{ id: l.id, fonte, hash }];
+  });
+
+  if (foraDeDia.length === 0) {
+    return { conferidas: linhas.length, embutidas: 0, modelo };
+  }
+
+  const vetores = await embutirVarios(foraDeDia.map((e) => e.fonte));
+
+  await query(
+    `UNWIND $entidades AS v
+     MATCH (e:Entidade { id: v.id })
+     SET e.embedding = v.embedding,
+         e.embedding_modelo = v.modelo,
+         e.embedding_fonte = v.fonte`,
+    {
+      entidades: foraDeDia.map((e, i) => ({
+        id: e.id,
+        fonte: e.hash,
+        embedding: vetores[i].embedding,
+        modelo: vetores[i].modelo,
+      })),
+    },
+  );
+
+  return { conferidas: linhas.length, embutidas: foraDeDia.length, modelo };
+}
+
+// ─────────────── Slice 4.5: as duas camadas semânticas ───────────────
+
+/** Uma entidade que uma camada semântica indicou, e por quê. */
+export interface CandidatoSemantico {
+  /** `nome_normalizado` do nó, já atravessando fusão. */
+  chave: string;
+  camada: "perfil" | "vizinhos";
+  /** Cosseno. O melhor da camada para esta entidade. */
+  similaridade: number;
+  /** Quantos átomos vizinhos votaram nela. Sempre 1 na camada de perfil. */
+  votos: number;
+  /** Os átomos que a elegeram. Vazio na camada de perfil — lá não há átomo. */
+  porque: Evidencia[];
+}
+
+/** Quanto do texto do átomo vizinho entra no `porque`. */
+const TAMANHO_DO_TRECHO = 180;
+
+/** Quantos átomos aparecem no `porque` de um candidato. Três cabem na tela. */
+export const MAX_EVIDENCIAS = 3;
+
+/**
+ * O ajuste de espaço de score, num lugar só.
+ *
+ * `db.index.vector.queryNodes` com cosseno devolve o score **normalizado** para
+ * [0,1]: `(1 + cosseno) / 2`. É o que explica o 0,500 da sondagem de 2026-09-02
+ * — dois vetores ortogonais. As consultas daqui devolvem o cosseno de volta,
+ * porque é nesse espaço que os pisos de `resolucao.ts` vivem: é o que
+ * `cosineSimilarity` do pacote `ai` fala, e por isso é o único número que eu
+ * consigo conferir à mão fora do banco.
+ */
+const COSSENO = "2 * score - 1";
+
+/**
+ * Camada 3a — **perfil parecido**: o texto do átomo contra o vetor da entidade.
+ *
+ * Pega a entidade **com perfil e sem átomo**: o Rapha no dia seguinte ao passo
+ * zero, que nenhuma camada de string alcança porque a grafia que eu falo não é
+ * a que está gravada, e que a 3b não alcança porque ela ainda não tem átomo
+ * nenhum para votar nela.
+ *
+ * A comparação é **assimétrica** — texto corrido de um lado, string canônica
+ * curta do outro —, e é por isso que o piso dela se calibra separado do da 3b.
+ * O mesmo número não significa a mesma coisa nas duas.
+ */
+export async function candidatosPorPerfil(
+  vetores: readonly (readonly number[])[],
+  piso: number,
+  k: number,
+): Promise<CandidatoSemantico[][]> {
+  const saida: CandidatoSemantico[][] = vetores.map(() => []);
+  if (vetores.length === 0) return saida;
+
+  const linhas = await query<{ i: number; chave: string; similaridade: number }>(
+    `UNWIND $vetores AS v
+     CALL db.index.vector.queryNodes('entidade_embedding', $k, v.vetor) YIELD node, score
+     WITH v.i AS i, node AS e, ${COSSENO} AS similaridade
+     WHERE similaridade >= $piso
+     OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(vencedor:Entidade)
+     WITH i, coalesce(vencedor, e) AS alvo, similaridade
+     RETURN i, alvo.nome_normalizado AS chave, max(similaridade) AS similaridade
+     ORDER BY i, similaridade DESC`,
+    { vetores: vetores.map((vetor, i) => ({ i, vetor })), piso, k },
+  );
+
+  for (const l of linhas) {
+    if (!saida[l.i] || typeof l.chave !== "string" || l.chave === "") continue;
+    saida[l.i].push({
+      chave: l.chave,
+      camada: "perfil",
+      similaridade: l.similaridade,
+      votos: 1,
+      porque: [],
+    });
+  }
+  return saida;
+}
+
+/**
+ * Camada 3b — **os vizinhos votam**: o texto do átomo contra os outros átomos,
+ * e cada vizinho vota na entidade a que ele já pertence (`:SOBRE`/`:MENCIONA`).
+ *
+ * Pega o buraco **oposto** ao da 3a: a entidade com átomos e **sem** perfil —
+ * que é todo o grafo de hoje. As duas cobrem lados contrários, e é por isso que
+ * as duas ficam.
+ *
+ * Devolve os ids, as datas e os trechos dos átomos que elegeram cada candidato.
+ * Isso não é enfeite: esta camada herda atribuição passada, e o `porque` é o
+ * que a torna corrigível em vez de silenciosa. **Sem ele, esta camada não
+ * entra.**
+ *
+ * Um detalhe que só aparece ao reextrair uma sessão já confirmada: os átomos
+ * dela estão no grafo e votam em si mesmos, com similaridade perto de 1. Não é
+ * defeito — a atribuição que eu confirmei é evidência boa —, mas explica por
+ * que a mesma sessão reextraída sugere com mais confiança do que sugeriu da
+ * primeira vez.
+ */
+export async function candidatosPorVizinhos(
+  vetores: readonly (readonly number[])[],
+  piso: number,
+  k: number,
+): Promise<CandidatoSemantico[][]> {
+  const saida: CandidatoSemantico[][] = vetores.map(() => []);
+  if (vetores.length === 0) return saida;
+
+  const linhas = await query<{
+    i: number;
+    chave: string;
+    similaridade: number;
+    votos: number;
+    porque: Evidencia[];
+  }>(
+    `UNWIND $vetores AS v
+     CALL db.index.vector.queryNodes('atomo_embedding', $k, v.vetor) YIELD node, score
+     WITH v.i AS i, node AS a, ${COSSENO} AS similaridade
+     WHERE similaridade >= $piso AND coalesce(a.status, 'ativo') = 'ativo'
+     MATCH (a)-[:SOBRE|:MENCIONA]->(e:Entidade)
+     OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(vencedor:Entidade)
+     WITH i, coalesce(vencedor, e) AS alvo, a, similaridade
+     ORDER BY similaridade DESC
+     RETURN i, alvo.nome_normalizado AS chave,
+            count(DISTINCT a) AS votos,
+            max(similaridade) AS similaridade,
+            collect({ atomo_id: a.id,
+                      valido_em: coalesce(a.valido_em, ''),
+                      texto: left(a.texto, $trecho),
+                      similaridade: similaridade })[0..$evidencias] AS porque
+     ORDER BY i, votos DESC, similaridade DESC`,
+    {
+      vetores: vetores.map((vetor, i) => ({ i, vetor })),
+      piso,
+      k,
+      trecho: TAMANHO_DO_TRECHO,
+      evidencias: MAX_EVIDENCIAS,
+    },
+  );
+
+  for (const l of linhas) {
+    if (!saida[l.i] || typeof l.chave !== "string" || l.chave === "") continue;
+    saida[l.i].push({
+      chave: l.chave,
+      camada: "vizinhos",
+      similaridade: l.similaridade,
+      votos: l.votos ?? 0,
+      porque: Array.isArray(l.porque) ? l.porque : [],
+    });
+  }
+  return saida;
+}
+
+/** Os pisos de cada camada semântica, em cosseno. Quem calibra é `resolucao.ts`. */
+export interface PisosSemanticos {
+  perfil: number;
+  vizinhos: number;
+}
+
+/** Quantos nós cada índice devolve **antes** do piso cortar. */
+export interface AlcanceSemantico {
+  perfis: number;
+  vizinhos: number;
+}
+
+/**
+ * Os candidatos semânticos de cada átomo de uma sessão: embutir o texto, e
+ * perguntar aos dois índices quem se parece com ele.
+ *
+ * Mora aqui, e não em `resolucao.ts`, para manter a divisão que a slice 4.5
+ * escolheu: `embedding.ts` é a porta do Gateway e não sabe o que é um nó;
+ * `resolucao.ts` decide o que fazer com candidato e não fala com o Gateway nem
+ * escreve Cypher; e este módulo, que já é o grafo de entidades como as outras
+ * camadas o enxergam, é quem junta as duas pontas.
+ *
+ * **Falhar aqui não derruba nada.** Índice que ainda não existe, Gateway fora
+ * do ar, átomo sem texto: em qualquer desses casos a sessão volta com as duas
+ * camadas de string, que é exatamente o comportamento da slice 4. O vetor é
+ * aditivo por construção — ele só acrescenta candidato, nunca é condição para
+ * haver algum. É também o que permite este código ir ao ar antes da migration
+ * 006 rodar.
+ */
+export async function candidatosSemanticos(
+  textos: readonly string[],
+  pisos: PisosSemanticos,
+  alcance: AlcanceSemantico,
+): Promise<CandidatoSemantico[][]> {
+  const vazio = textos.map(() => [] as CandidatoSemantico[]);
+  if (textos.length === 0) return vazio;
+
+  try {
+    const vetores = (await embutirVarios(textos)).map((v) => v.embedding);
+    const [perfil, vizinhos] = await Promise.all([
+      candidatosPorPerfil(vetores, pisos.perfil, alcance.perfis),
+      candidatosPorVizinhos(vetores, pisos.vizinhos, alcance.vizinhos),
+    ]);
+    return textos.map((_, i) => [...(perfil[i] ?? []), ...(vizinhos[i] ?? [])]);
+  } catch (e) {
+    console.error(
+      "[entidades] camada semântica indisponível nesta sessão; " +
+        "a resolução segue só com as camadas de string. Causa:",
+      e instanceof Error ? e.message : e,
+    );
+    return vazio;
+  }
 }

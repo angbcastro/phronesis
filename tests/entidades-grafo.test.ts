@@ -8,17 +8,34 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/neo4j", () => ({ query: vi.fn(async () => []) }));
+// A porta do Gateway é mockada; o que se testa aqui é QUEM sai de dia, que é a
+// regra do hash — a chamada de rede em si não tem o que ensinar.
+vi.mock("@/lib/embedding", async (original) => ({
+  ...(await original<typeof import("@/lib/embedding")>()),
+  embutirVarios: vi.fn(async (textos: string[]) =>
+    textos.map(() => ({ embedding: [0.1, 0.2], modelo: "openai/text-embedding-3-small" })),
+  ),
+}));
 
-import { acharPorChave, listarEntidades, nomesParaVocabulario } from "@/lib/entidades";
+import {
+  acharPorChave,
+  garantirEmbeddings,
+  listarEntidades,
+  nomesParaVocabulario,
+} from "@/lib/entidades";
 import type { EntidadeDoGrafo } from "@/lib/entidades";
+import { embutirVarios, fonteDaEntidade, hashDaFonte } from "@/lib/embedding";
+import { modeloEmbedding } from "@/lib/modelos";
 import { query } from "@/lib/neo4j";
 
 const consulta = vi.mocked(query);
+const embutir = vi.mocked(embutirVarios);
 const cypher = () => String(consulta.mock.calls[0][0]);
 
 beforeEach(() => {
   consulta.mockReset();
   consulta.mockResolvedValue([]);
+  embutir.mockClear();
 });
 
 describe("a chave atravessa o alias", () => {
@@ -135,5 +152,93 @@ describe("os nomes que vão para o STT", () => {
   it("respeita o teto pedido", async () => {
     await nomesParaVocabulario(100);
     expect(consulta.mock.calls[0][1]).toEqual({ limite: 100 });
+  });
+});
+
+describe("o vetor da entidade (slice 4.5)", () => {
+  /** Uma linha como `garantirEmbeddings` a lê do grafo. */
+  const linha = (extra: Record<string, unknown> = {}) => ({
+    id: "id-raffa",
+    nome: "Raffa",
+    labels: ["Entidade", "Pessoa"],
+    aliases: [],
+    contexto: "amigo de infância",
+    pode_ajudar_com: null,
+    fizemos_juntos: null,
+    embedding_fonte: null,
+    embedding_modelo: null,
+    ...extra,
+  });
+
+  /** O hash que o grafo teria se estivesse em dia com esta linha. */
+  const emDia = (l: ReturnType<typeof linha>) =>
+    hashDaFonte(
+      fonteDaEntidade({
+        nome: l.nome,
+        tipo: "Pessoa",
+        aliases: l.aliases as string[],
+        perfil: {
+          contexto: l.contexto ?? "",
+          pode_ajudar_com: l.pode_ajudar_com ?? "",
+          fizemos_juntos: l.fizemos_juntos ?? "",
+        },
+      }),
+    );
+
+  it("entidade sem vetor nenhum é embutida", async () => {
+    consulta.mockResolvedValueOnce([linha()] as never).mockResolvedValue([] as never);
+    const r = await garantirEmbeddings();
+    expect(r).toMatchObject({ conferidas: 1, embutidas: 1 });
+    expect(embutir).toHaveBeenCalledTimes(1);
+  });
+
+  it("entidade em dia NÃO é reembutida — o hash é a trava (critério 8)", async () => {
+    const l = linha();
+    consulta.mockResolvedValueOnce([
+      { ...l, embedding_fonte: emDia(l), embedding_modelo: modeloEmbedding() },
+    ] as never);
+
+    const r = await garantirEmbeddings();
+    expect(r.embutidas).toBe(0);
+    expect(embutir).not.toHaveBeenCalled();
+    // Nem a consulta de escrita roda: nada saiu de dia, nada tem que ser gravado.
+    expect(consulta).toHaveBeenCalledTimes(1);
+  });
+
+  it("editar o perfil faz a entidade sair de dia (critério 8)", async () => {
+    const antes = linha();
+    const depois = linha({ fizemos_juntos: "acampamos na serra" });
+    consulta.mockResolvedValueOnce([
+      { ...depois, embedding_fonte: emDia(antes), embedding_modelo: modeloEmbedding() },
+    ] as never);
+
+    expect((await garantirEmbeddings()).embutidas).toBe(1);
+  });
+
+  it("trocar EMBEDDING_MODEL põe todo mundo de volta na fila", async () => {
+    // Dois espaços vetoriais no mesmo índice não dão erro: dão vizinhança
+    // errada. É para isso que `embedding_modelo` existe.
+    const l = linha();
+    consulta.mockResolvedValueOnce([
+      { ...l, embedding_fonte: emDia(l), embedding_modelo: "outro/modelo-de-antes" },
+    ] as never);
+
+    expect((await garantirEmbeddings()).embutidas).toBe(1);
+  });
+
+  it("entidade fundida fica de fora — não é candidata a nada", async () => {
+    await garantirEmbeddings();
+    expect(cypher()).toContain("coalesce(e.status, 'ativa') <> 'fundida'");
+  });
+
+  it("grava o hash junto do vetor, não a string inteira", async () => {
+    const l = linha();
+    consulta.mockResolvedValueOnce([l] as never).mockResolvedValue([] as never);
+    await garantirEmbeddings();
+
+    const escrita = consulta.mock.calls[1];
+    expect(String(escrita[0])).toContain("e.embedding_fonte = v.fonte");
+    const params = escrita[1] as { entidades: { fonte: string }[] };
+    expect(params.entidades[0].fonte).toBe(emDia(l));
   });
 });

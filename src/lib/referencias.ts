@@ -41,6 +41,9 @@ export function comoReferencia(
         ? valor.alternativas.filter((a): a is string => typeof a === "string")
         : [],
       motivo: typeof valor.motivo === "string" ? valor.motivo : "",
+      // Nasceu na slice 4.5; proposta anterior não tem, e ausente é lista
+      // vazia — a revisão simplesmente não mostra o "porque" naquela sessão.
+      porque: Array.isArray(valor.porque) ? valor.porque : [],
     };
   }
 
@@ -52,6 +55,7 @@ export function comoReferencia(
     certo: true,
     alternativas: [],
     motivo: "",
+    porque: [],
   };
 }
 

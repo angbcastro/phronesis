@@ -141,6 +141,25 @@ export const PERFIL_VAZIO: Perfil = {
 };
 
 /**
+ * Um átomo já gravado que sustenta uma sugestão — o **porquê** da camada 3b
+ * (slice 4.5).
+ *
+ * A camada dos vizinhos herda atribuição passada: ela sugere o Raffa porque
+ * átomos que já são do Raffa se parecem com este. Isso é realimentação, e o que
+ * a torna aceitável é ser **um voto entre `k`, com o id na tela** — visível e
+ * corrigível. Sem esta lista chegando à revisão, a camada não entra.
+ */
+export interface Evidencia {
+  atomo_id: string;
+  /** A data do átomo: "isto se parece com o que você disse em 12/ago". */
+  valido_em: string;
+  /** Trecho curto do texto, o bastante para eu reconhecer sem abrir nada. */
+  texto: string;
+  /** Cosseno com o átomo desta sessão. */
+  similaridade: number;
+}
+
+/**
  * Uma menção do extrator já atribuída a alguém — **por menção, não por sessão**.
  *
  * É a diferença que carrega a slice 4. Até a 3, todas as menções ao mesmo nome
@@ -160,6 +179,15 @@ export interface ReferenciaResolvida {
   alternativas: string[];
   /** Uma frase curta do porquê. Só é mostrada na dúvida. */
   motivo: string;
+  /**
+   * Os átomos passados que elegeram esta entidade na camada dos vizinhos
+   * (slice 4.5). Vazio quando quem decidiu foi string, perfil ou nada.
+   *
+   * Vai à revisão junto com o resto: é o que permite a tela dizer "sugeri o
+   * Raffa porque isto se parece com o que você disse em 12/ago", com o trecho
+   * à mão. É a condição de a camada 3b existir, não um enfeite dela.
+   */
+  porque: Evidencia[];
 }
 
 /**

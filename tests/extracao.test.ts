@@ -23,6 +23,7 @@ const novas = (crus: AtomoCru[]): Atribuicoes => {
     certo: true,
     alternativas: [],
     motivo: "",
+    porque: [],
   });
   return {
     sobre: crus.map((a) => ref(a.sobre)),

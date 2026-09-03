@@ -32,6 +32,7 @@ const nova: ReferenciaResolvida = {
   certo: false,
   alternativas: ["Rapha"],
   motivo: "slackline",
+  porque: [],
 };
 
 describe("formato antigo", () => {
@@ -43,6 +44,9 @@ describe("formato antigo", () => {
       certo: true,
       alternativas: [],
       motivo: "",
+      // Nasceu na slice 4.5. Proposta antiga não tem, e ausente é lista vazia:
+      // a revisão simplesmente não mostra o porquê naquela sessão.
+      porque: [],
     });
   });
 

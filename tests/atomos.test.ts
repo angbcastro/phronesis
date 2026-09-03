@@ -5,15 +5,34 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/neo4j", () => ({ query: vi.fn(async () => []) }));
+vi.mock("@/lib/embedding", () => ({
+  embutirVarios: vi.fn(async (textos: string[]) =>
+    textos.map(() => ({ embedding: [0.1, 0.2], modelo: "provedor/embed-teste" })),
+  ),
+}));
 
 import { STATUS_ATOMO_ATIVO, gravarAtomos, gravarEntidades } from "@/lib/atomos";
+import { embutirVarios } from "@/lib/embedding";
 import { query } from "@/lib/neo4j";
 import type { AtomoParaGravar, EntidadeParaGravar } from "@/lib/atomos";
 
 const consulta = vi.mocked(query);
+const embutir = vi.mocked(embutirVarios);
 
 const cypherDe = (i: number) => String(consulta.mock.calls[i][0]);
 const paramsDe = (i: number) => consulta.mock.calls[i][1] as Record<string, unknown>;
+
+/**
+ * Onde, na fila de consultas, está a que contém este trecho de Cypher.
+ *
+ * As posições deixaram de ser fixas na slice 4.5: gravar um átomo passou a
+ * disparar também a sondagem de "quem ainda precisa de vetor". Procurar pelo
+ * Cypher em vez de contar índice é o que impede um teste de menção de quebrar
+ * porque uma consulta de embedding nasceu antes dele.
+ */
+const indiceDe = (trecho: string) =>
+  consulta.mock.calls.findIndex((c) => String(c[0]).includes(trecho));
+const rodou = (trecho: string) => indiceDe(trecho) !== -1;
 
 const atomo = (extra: Partial<AtomoParaGravar> = {}): AtomoParaGravar => ({
   id: "s1-0",
@@ -33,6 +52,10 @@ const atomo = (extra: Partial<AtomoParaGravar> = {}): AtomoParaGravar => ({
 beforeEach(() => {
   consulta.mockClear();
   consulta.mockResolvedValue([]);
+  embutir.mockClear();
+  embutir.mockImplementation(async (textos) =>
+    textos.map(() => ({ embedding: [0.1, 0.2], modelo: "provedor/embed-teste" })),
+  );
 });
 
 describe("entidades", () => {
@@ -125,10 +148,10 @@ describe("átomos", () => {
     expect(cypher).toContain("coalesce(v, e) AS alvo");
   });
 
-  it("sem menção, não roda a segunda consulta", async () => {
+  it("sem menção, não roda a consulta de menção", async () => {
     // UNWIND de lista vazia mataria a linha inteira, e átomo sem menção é o caso comum.
     await gravarAtomos("s1", [atomo()], "2026-08-31T00:00:00.000Z");
-    expect(consulta).toHaveBeenCalledTimes(1);
+    expect(rodou(":MENCIONA")).toBe(false);
   });
 
   it("as menções vão achatadas, uma linha por par", async () => {
@@ -137,12 +160,12 @@ describe("átomos", () => {
       [atomo({ menciona: ["rafa", "phronesis"] }), atomo({ id: "s1-1", menciona: ["rafa"] })],
       "2026-08-31T00:00:00.000Z",
     );
-    expect(consulta).toHaveBeenCalledTimes(2);
-    expect(cypherDe(1)).toContain("MERGE (a)-[:MENCIONA]->(alvo)");
+    const i = indiceDe("MERGE (a)-[:MENCIONA]->(alvo)");
+    expect(i).toBeGreaterThan(-1);
     // Depois de atravessar o alias, dois nomes distintos podem virar o mesmo
     // nó — e :SOBRE + :MENCIONA para a mesma entidade não é contrato válido.
-    expect(cypherDe(1)).toContain("WHERE NOT (a)-[:SOBRE]->(alvo)");
-    expect(paramsDe(1).mencoes).toEqual([
+    expect(cypherDe(i)).toContain("WHERE NOT (a)-[:SOBRE]->(alvo)");
+    expect(paramsDe(i).mencoes).toEqual([
       { atomo_id: "s1-0", entidade: "rafa" },
       { atomo_id: "s1-0", entidade: "phronesis" },
       { atomo_id: "s1-1", entidade: "rafa" },
@@ -162,9 +185,9 @@ describe("átomos", () => {
       [atomo({ perfila: [{ entidade: "raffa", campo: "fizemos_juntos" }] })],
       "2026-08-31T00:00:00.000Z",
     );
-    const cypher = cypherDe(1);
-    expect(cypher).toContain("MERGE (a)-[:PERFILA { campo: m.campo }]->(alvo)");
-    expect(paramsDe(1).marcas).toEqual([
+    const i = indiceDe("MERGE (a)-[:PERFILA { campo: m.campo }]->(alvo)");
+    expect(i).toBeGreaterThan(-1);
+    expect(paramsDe(i).marcas).toEqual([
       { atomo_id: "s1-0", entidade: "raffa", campo: "fizemos_juntos" },
     ]);
   });
@@ -175,12 +198,12 @@ describe("átomos", () => {
       [atomo({ perfila: [{ entidade: "exx med", campo: "contexto" }] })],
       "2026-08-31T00:00:00.000Z",
     );
-    expect(cypherDe(1)).toContain("coalesce(v, e) AS alvo");
+    expect(cypherDe(indiceDe(":PERFILA"))).toContain("coalesce(v, e) AS alvo");
   });
 
   it("sem marca nenhuma, não roda a consulta de perfil", async () => {
     await gravarAtomos("s1", [atomo()], "2026-08-31T00:00:00.000Z");
-    expect(consulta).toHaveBeenCalledTimes(1);
+    expect(rodou(":PERFILA")).toBe(false);
   });
 
   it("campo fora do schema não vira aresta", async () => {
@@ -191,7 +214,7 @@ describe("átomos", () => {
       [atomo({ perfila: [{ entidade: "raffa", campo: "cor_favorita" as never }] })],
       "2026-08-31T00:00:00.000Z",
     );
-    expect(consulta).toHaveBeenCalledTimes(1);
+    expect(rodou(":PERFILA")).toBe(false);
   });
 
   it("átomo rejeitado não é gravado — nem com status", async () => {
@@ -199,5 +222,62 @@ describe("átomos", () => {
     // registrar o que nunca entrou. Quem filtra é a rota; aqui só chega aprovado.
     await gravarAtomos("s1", [atomo()], "2026-08-31T00:00:00.000Z");
     expect(JSON.stringify(paramsDe(0))).not.toContain("rejeitado");
+  });
+});
+
+describe("o vetor do átomo (slice 4.5)", () => {
+  it("o embedding vem DEPOIS da gravação — nunca antes", async () => {
+    // A regra de precedência da slice inteira: nada no caminho do embedding
+    // pode impedir uma gravação de acontecer.
+    consulta.mockResolvedValue([{ id: "s1-0" }] as never);
+    await gravarAtomos("s1", [atomo()], "2026-08-31T00:00:00.000Z");
+
+    const gravou = indiceDe("MERGE (at:Atomo { id: a.id })");
+    const embutiu = indiceDe("SET a.embedding = v.embedding");
+    expect(gravou).toBeGreaterThan(-1);
+    expect(embutiu).toBeGreaterThan(gravou);
+  });
+
+  it("falha do Gateway NÃO derruba o confirmar (critério 9)", async () => {
+    consulta.mockResolvedValue([{ id: "s1-0" }] as never);
+    embutir.mockRejectedValue(new Error("gateway fora do ar"));
+
+    // Não estoura: o átomo fica no grafo sem vetor, e a rota de retrofill o
+    // alcança depois. Vetor é derivável; gravação não é.
+    await expect(
+      gravarAtomos("s1", [atomo()], "2026-08-31T00:00:00.000Z"),
+    ).resolves.toBeUndefined();
+    expect(rodou("MERGE (at:Atomo { id: a.id })")).toBe(true);
+  });
+
+  it("átomo que já tem vetor não é reembutido (critério 7)", async () => {
+    // A sondagem não devolveu o id: já está em dia. Reconfirmar não pode pagar
+    // o Gateway de novo.
+    consulta.mockResolvedValue([] as never);
+    await gravarAtomos("s1", [atomo()], "2026-08-31T00:00:00.000Z");
+    expect(embutir).not.toHaveBeenCalled();
+    expect(rodou("SET a.embedding = v.embedding")).toBe(false);
+  });
+
+  it("o modelo vai gravado junto do vetor", async () => {
+    // Vetores de dois modelos no mesmo índice não dão erro: dão vizinhança
+    // errada. Sem o campo não há como saber quem refazer.
+    consulta.mockResolvedValue([{ id: "s1-0" }] as never);
+    await gravarAtomos("s1", [atomo()], "2026-08-31T00:00:00.000Z");
+
+    const i = indiceDe("SET a.embedding = v.embedding");
+    expect(cypherDe(i)).toContain("a.embedding_modelo = v.modelo");
+    expect(paramsDe(i).vetores).toEqual([
+      { id: "s1-0", embedding: [0.1, 0.2], modelo: "provedor/embed-teste" },
+    ]);
+  });
+
+  it("só o texto vira vetor — nada de tipo, entidade ou sessão", async () => {
+    // O corte estrutural é do grafo, o semântico é do vetor. Enfiar o tipo no
+    // texto embutido faria dois APRENDIZADO parecerem próximos por serem
+    // APRENDIZADO, que é o sinal que o grafo já dá de graça e melhor.
+    consulta.mockResolvedValue([{ id: "s1-0" }] as never);
+    await gravarAtomos("s1", [atomo()], "2026-08-31T00:00:00.000Z");
+    expect(embutir).toHaveBeenCalledWith(["O contrato da Exxmed vai atrasar"]);
   });
 });

@@ -16,7 +16,14 @@
  *
  * Átomo rejeitado **não é gravado**. `status = 'rejeitado'` (regra 6) é para
  * tirar do grafo o que já entrou, não para registrar o que nunca entrou.
+ *
+ * **O átomo gravado ganha vetor** (slice 4.5), e ganha **depois** de estar no
+ * grafo. Vetor é derivável do texto a qualquer momento, e por isso nada no
+ * caminho do embedding pode impedir uma gravação de acontecer: falha do Gateway
+ * deixa o átomo sem vetor e `POST /api/atomos/embutir` o alcança depois.
  */
+import { embutirVarios } from "./embedding";
+import { modeloEmbedding } from "./modelos";
 import { query } from "./neo4j";
 import { novoId } from "./sessoes";
 import { CAMPOS_PERFIL, TIPOS_ENTIDADE } from "./tipos";
@@ -154,6 +161,109 @@ export async function gravarAtomos(
   }
 
   await gravarPerfila(atomos);
+
+  // **Depois de gravar, e nunca antes** (slice 4.5). O vetor é derivável do
+  // texto a qualquer momento; a gravação não é. Falha do Gateway aqui deixa o
+  // átomo no grafo sem vetor, e `POST /api/atomos/embutir` o alcança depois —
+  // é a regra de precedência da slice inteira: nada no caminho do embedding
+  // pode impedir uma gravação de acontecer.
+  try {
+    await embutirAtomos(atomos.map((a) => ({ id: a.id, texto: a.texto })));
+  } catch (e) {
+    console.error(
+      `[atomos] ${atomos.length} átomo(s) gravados sem vetor; ` +
+        `POST /api/atomos/embutir refaz. Causa:`,
+      e instanceof Error ? e.message : e,
+    );
+  }
+}
+
+/** Um átomo esperando vetor: o id para gravar, o texto para embutir. */
+export interface AtomoParaEmbutir {
+  id: string;
+  texto: string;
+}
+
+/**
+ * Calcula e grava o vetor destes átomos.
+ *
+ * **Só `a.texto` vira vetor** — nada de tipo, de entidade ou de sessão. As três
+ * já são estrutura no grafo, e a divisão é essa: o corte estrutural é do grafo,
+ * o semântico é do vetor. Enfiar o tipo no texto embutido faria dois APRENDIZADO
+ * parecerem próximos por serem APRENDIZADO, que é exatamente o sinal que o grafo
+ * já dá de graça e melhor.
+ *
+ * `embedding_modelo` vai junto do vetor, sempre: dois modelos no mesmo índice
+ * não dão erro, dão vizinhança errada, e sem o campo não há como saber quem
+ * refazer quando `EMBEDDING_MODEL` mudar.
+ *
+ * **Átomo que já tem vetor deste modelo não é reembutido.** A trava é uma
+ * consulta antes da chamada, e não a boa vontade de quem chama: o retrofill já
+ * chega com a lista filtrada, mas o confirmar chega com a sessão inteira, e
+ * reconfirmar não pode pagar o Gateway de novo (regra 4).
+ *
+ * Devolve quantos foram gravados. Estoura quando o Gateway estoura — quem chama
+ * decide se isso derruba alguma coisa, e no caminho do confirmar não derruba.
+ */
+export async function embutirAtomos(atomos: readonly AtomoParaEmbutir[]): Promise<number> {
+  const candidatos = atomos.filter((a) => a.id !== "" && a.texto.trim() !== "");
+  if (candidatos.length === 0) return 0;
+
+  const faltantes = await idsSemVetor(candidatos.map((a) => a.id));
+  const alvos = candidatos.filter((a) => faltantes.has(a.id));
+  if (alvos.length === 0) return 0;
+
+  const vetores = await embutirVarios(alvos.map((a) => a.texto));
+
+  await query(
+    `UNWIND $vetores AS v
+     MATCH (a:Atomo { id: v.id })
+     SET a.embedding = v.embedding, a.embedding_modelo = v.modelo`,
+    {
+      vetores: alvos.map((a, i) => ({
+        id: a.id,
+        embedding: vetores[i].embedding,
+        modelo: vetores[i].modelo,
+      })),
+    },
+  );
+
+  return alvos.length;
+}
+
+/** A condição de "precisa de vetor", num lugar só. Ver `atomosSemVetor`. */
+const FALTA_VETOR = `a.embedding IS NULL OR coalesce(a.embedding_modelo, '') <> $modelo`;
+
+/** Destes ids, quais ainda precisam de vetor. */
+async function idsSemVetor(ids: readonly string[]): Promise<Set<string>> {
+  const linhas = await query<{ id: string }>(
+    `MATCH (a:Atomo) WHERE a.id IN $ids AND (${FALTA_VETOR}) RETURN a.id AS id`,
+    { ids, modelo: modeloEmbedding() },
+  );
+  return new Set(linhas.map((l) => l.id));
+}
+
+/**
+ * Os átomos que ainda precisam de vetor — o que o retrofill pega.
+ *
+ * Duas condições, e a segunda é a que justifica `embedding_modelo` existir:
+ * átomo sem vetor nenhum, e átomo cujo vetor veio de **outro** modelo. Trocar
+ * `EMBEDDING_MODEL` sem isto deixaria o grafo com dois espaços vetoriais
+ * misturados no mesmo índice — que não dá erro, dá vizinhança errada.
+ *
+ * Rodar duas vezes com o mesmo modelo devolve lista vazia na segunda: é a trava
+ * de idempotência desta rota (regra 4).
+ */
+export async function atomosSemVetor(limite: number): Promise<AtomoParaEmbutir[]> {
+  const modelo = modeloEmbedding();
+  return query<AtomoParaEmbutir>(
+    `MATCH (a:Atomo)
+     WHERE ${FALTA_VETOR}
+     RETURN a.id AS id, a.texto AS texto
+     ORDER BY a.criado_em
+     LIMIT $limite`,
+    { modelo, limite },
+  );
 }
 
 /**
@@ -187,6 +297,21 @@ async function gravarPerfila(atomos: AtomoParaGravar[]): Promise<void> {
      MERGE (a)-[:PERFILA { campo: m.campo }]->(alvo)`,
     { marcas },
   );
+}
+
+/**
+ * Quantos átomos ainda esperam vetor no grafo inteiro.
+ *
+ * Contagem própria, e não `atomosSemVetor().length`: aquela tem `LIMIT`, e um
+ * "restam 200" que na verdade são 3.800 faria o retrofill parecer terminado
+ * quando mal começou.
+ */
+export async function contarAtomosSemVetor(): Promise<number> {
+  const r = await query<{ total: number }>(
+    `MATCH (a:Atomo) WHERE ${FALTA_VETOR} RETURN count(a) AS total`,
+    { modelo: modeloEmbedding() },
+  );
+  return r[0]?.total ?? 0;
 }
 
 /** Quantos átomos a sessão já tem no grafo. Usado para conferir o confirmar. */

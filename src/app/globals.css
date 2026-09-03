@@ -643,6 +643,26 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .duvida strong { font-weight: 600; }
 
+/* ---- slice 4.5: por que o vetor sugeriu quem sugeriu ----
+   A camada dos vizinhos herda atribuição passada. O que a torna aceitável não
+   é ela acertar mais — é o átomo que a elegeu estar aqui, para eu discordar. */
+.porque {
+  margin: 0.3rem 0 0;
+  padding-left: 1rem;
+  list-style: none;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  opacity: 0.75;
+}
+.porque li { position: relative; }
+.porque li::before {
+  content: "↳";
+  position: absolute;
+  left: -1rem;
+  opacity: 0.6;
+}
+.porque span { font-style: italic; }
+
 /* O que este átomo vai acrescentar ao perfil de alguém, se eu confirmar. */
 .meta.perfila { display: block; margin-top: 0.25rem; opacity: 0.9; }
 

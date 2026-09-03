@@ -16,8 +16,10 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  MODELO_EMBEDDING_PADRAO,
   MODELO_EXTRACAO_PADRAO,
   MODELO_STT_PADRAO,
+  modeloEmbedding,
   modeloExtracao,
   modeloPerfil,
   modeloResolucao,
@@ -107,6 +109,9 @@ describe("porta única de modelo", () => {
     const exemplo = readFileSync(".env.example", "utf8");
     expect(CHAVE_PROIBIDA.test(exemplo)).toBe(false);
     expect(exemplo).toContain("AI_GATEWAY_API_KEY");
+    // A slice 4.5 acrescentou um modelo, não uma chave: `EMBEDDING_MODEL` é id,
+    // e continua sendo `AI_GATEWAY_API_KEY` que paga por ele.
+    expect(exemplo).toContain("EMBEDDING_MODEL");
   });
 
   it("o smoke usa o mesmo modelo padrão que a lib", () => {
@@ -198,9 +203,13 @@ describe("endereçamento de modelo", () => {
     }
   });
 
-  it("os dois modelos padrão são endereçáveis pelo Gateway", () => {
+  it("os modelos padrão são endereçáveis pelo Gateway", () => {
     expect(validarIdDeModelo(MODELO_STT_PADRAO)).toBe(MODELO_STT_PADRAO);
     expect(validarIdDeModelo(MODELO_EXTRACAO_PADRAO)).toBe(MODELO_EXTRACAO_PADRAO);
+    // Embedding também sai pela porta única (slice 4.5): id em string, mesma
+    // chave, nenhuma dependência nova. `embed`/`embedMany` vêm do pacote `ai`.
+    expect(validarIdDeModelo(MODELO_EMBEDDING_PADRAO)).toBe(MODELO_EMBEDDING_PADRAO);
+    expect(validarIdDeModelo(modeloEmbedding())).toBe(modeloEmbedding());
   });
 
   it("STT_MODEL mal escrito estoura antes de qualquer byte sair", () => {

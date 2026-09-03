@@ -87,6 +87,13 @@ const ROTULO_CAMPO: Record<CampoPerfil, string> = {
   fizemos_juntos: "fizemos juntos",
 };
 
+/** "2026-08-12T…" → "12/ago". Só a data, que é o que situa a lembrança. */
+function diaMes(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
+}
+
 const mmss = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -499,6 +506,23 @@ export function Revisao({ id }: { id: string }) {
                       {ref.motivo !== "" && ` — ${ref.motivo}`}
                       {ref.alternativas.length > 0 && ` · também podia ser ${ref.alternativas.join(", ")}`}
                     </p>
+                  )}
+
+                  {incerto && ref.porque.length > 0 && (
+                    // O porquê da camada dos vizinhos (slice 4.5). Ela sugere
+                    // por semelhança com átomos que já são de alguém, o que é
+                    // herdar atribuição passada — e a única coisa que torna
+                    // isso aceitável é estar na tela, com o átomo à mão. Sem
+                    // esta lista, a camada não entraria.
+                    <ul className="porque">
+                      {ref.porque.map((e) => (
+                        <li key={e.atomo_id}>
+                          parece com o que você disse
+                          {diaMes(e.valido_em) !== "" && ` em ${diaMes(e.valido_em)}`}:{" "}
+                          <span>“{e.texto}”</span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
 
                   {marcas.length > 0 && (

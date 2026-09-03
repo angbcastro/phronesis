@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { statements } from "../scripts/migrate";
+import { DIMENSAO_EMBEDDING } from "@/lib/modelos";
 
 const migration = readFileSync("db/migrations/001_sessao.cypher", "utf8");
 
@@ -53,5 +54,51 @@ describe("004_fusao_entidade.cypher", () => {
   it("documenta as duas arestas novas, que Neo4j não declara", () => {
     expect(m004).toMatch(/:FUNDIDA_EM/);
     expect(m004).toMatch(/:DISTINTA_DE/);
+  });
+});
+
+describe("006_embedding.cypher", () => {
+  const m006 = readFileSync("db/migrations/006_embedding.cypher", "utf8");
+  const lista = statements(m006);
+
+  it("declara os dois índices vetoriais, e só eles (critério 1)", () => {
+    expect(lista).toHaveLength(2);
+    expect(m006).toMatch(/CREATE VECTOR INDEX atomo_embedding IF NOT EXISTS/);
+    expect(m006).toMatch(/CREATE VECTOR INDEX entidade_embedding IF NOT EXISTS/);
+    expect(lista[0]).toMatch(/FOR \(a:Atomo\) ON \(a\.embedding\)/);
+    expect(lista[1]).toMatch(/FOR \(e:Entidade\) ON \(e\.embedding\)/);
+  });
+
+  it("a dimensão declarada é a que a porta do vetor conhece", () => {
+    // A única coisa desta slice que amarra o schema: trocar para um modelo de
+    // outra dimensão exige DROP e recriar, por migration nova.
+    for (const s of lista) {
+      expect(s).toContain(`\`vector.dimensions\`: ${DIMENSAO_EMBEDDING}`);
+      expect(s).toMatch(/`vector\.similarity_function`: 'cosine'/);
+    }
+  });
+
+  it("é segura reaplicar — rodar de novo é no-op (critério 1)", () => {
+    expect(lista.every((s) => /IF NOT EXISTS/.test(s))).toBe(true);
+  });
+
+  it("não migra dado: nenhum vetor é calculado aqui", () => {
+    // Quem preenche são as duas rotas de embutir. Fosse aqui, o retrofill
+    // custaria uma migration em vez de uma chamada de rota.
+    const cypher = lista.join(" ");
+    expect(cypher).not.toMatch(/\bSET\b|\bMERGE\b|\bMATCH\b/);
+  });
+
+  it("não fixa número de HNSW que ninguém calibrou", () => {
+    // O padrão medido em 2026-09-02 (SCALAR, m 16, ef_construction 100) é o que
+    // a migration herda de propósito.
+    // Nos statements, não no arquivo: o comentário fala dos padrões medidos
+    // de propósito, e é o Cypher que não pode fixá-los.
+    expect(lista.join(" ")).not.toMatch(/hnsw\.|quantization/);
+  });
+
+  it("documenta os campos novos, que Neo4j não declara", () => {
+    expect(m006).toMatch(/embedding_modelo/);
+    expect(m006).toMatch(/embedding_fonte/);
   });
 });

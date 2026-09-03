@@ -2,14 +2,14 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.5.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
 > arquivo no mesmo commit. Ver "Manutenção deste arquivo" no fim.
 
-**Estado: slice 2 fechada e validada; slices 3 (higiene do grafo) e 4
-(identidade por contexto) construídas.**
+**Estado: slice 2 fechada e validada; slices 3 (higiene do grafo), 4
+(identidade por contexto) e 4.5 (o grafo ganha vetor) construídas.**
 Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. Terminada
 a transcrição, a extração dispara sozinha, grava a proposta em `extracao.json` e
 deixa a sessão em `em_revisao` (seções 4.6 e 5); o confirmar da revisão grava
@@ -40,11 +40,23 @@ pelo botão "transcrição" na lista de sessões (seção 11). Ler quinze minuto
 transcrição no meio do caminho é o atrito que mata o ritual — a transcrição é
 insumo do extrator, não coisa que eu leio todo dia.
 
+**E o grafo passou a comparar significado, não só letra** (seções 4.10 e 8.4).
+`:Atomo` e `:Entidade` carregam um vetor de 1536 dimensões, dois índices
+vetoriais os indexam, e a resolução de identidade ganhou **duas camadas de
+candidato que enxergam sentido**: uma que compara o átomo com o perfil escrito
+de uma entidade, e outra em que os átomos vizinhos votam em quem eles já são.
+As duas cobrem buracos opostos — a primeira pega quem tem perfil e nenhum átomo,
+a segunda pega quem tem átomos e nenhum perfil — e nenhuma delas substitui a
+grafia: são **aditivas**, com teto e piso, e uma sessão sem ambiguidade continua
+não pagando nada. A camada dos vizinhos herda atribuição passada, e o que a torna
+aceitável é que a revisão mostra **quais** átomos elegeram cada sugestão.
+
 O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
 ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
 deduplicação de **átomo** — dizer a mesma coisa em duas sessões ainda cria dois.
 Tudo slice 5, e tudo dependente de material acumulado: uma pergunta boa precisa
-saber de quem se está falando, que é o que a slice 4 entrega.
+saber de quem se está falando, que é o que a slice 4 entrega, e achar o que já foi
+dito sem varrer o grafo inteiro, que é o que a 4.5 entrega.
 
 ---
 
@@ -90,19 +102,24 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   estados.ts      máquina de estados da sessão e regra de abandono
   modelos.ts      porta única de modelo: todo LLM sai pelo Vercel AI Gateway,
                   e o diagnóstico de resposta vazia que os três agentes usam
+  embedding.ts    a porta do vetor: texto → embedding, e a string canônica da
+                  entidade mais o hash dela. Não fala com o Neo4j
   stt.ts          transcrição — pede o modelo a modelos.ts
   vocabulario.ts  nomes próprios → keyterms do STT
   transcricao.ts  offsets absolutos, prefixo contíguo, concatenação
   texto.ts        normalização, nome_normalizado e lista de pronomes       (client)
   extracao.ts     átomos a partir da transcrição: prompt, JSON estrito, procedência
   offsets.ts      trecho do modelo → segundo do áudio (modelo não dá timestamp)
-  resolucao.ts    agente 2: de quem eu estava falando — atribui menção a menção
+  resolucao.ts    agente 2: de quem eu estava falando — atribui menção a menção,
+                  com as quatro camadas de candidato, o teto e os pisos
   perfil.ts       os três campos de perfil: ler, gravar, e o agente 3 que rascunha
-  entidades.ts    catálogo do grafo + a visão agregada da revisão — só leitura
+  entidades.ts    catálogo do grafo + a visão agregada da revisão; e o vetor da
+                  entidade: refresh por hash e as duas consultas de vizinhança
   referencias.ts  lê os dois formatos de proposta (antes e depois da 4)  (client)
   catalogo.ts     busca de entidade no navegador: trecho, acento, alias (client)
   tipografia.ts   qual tela é ritual e qual é gestão — a regra da fonte  (client)
-  atomos.ts       escreve :Atomo, :Entidade e :PERFILA — só o confirmar chama
+  atomos.ts       escreve :Atomo, :Entidade e :PERFILA — só o confirmar chama;
+                  e embute o átomo depois de gravá-lo, nunca antes
   pipeline.ts     transcrever bloco / finalizar sessão (o orquestrador)
   auth.ts         magic link HMAC, cookie httpOnly
   backoff.ts      backoff exponencial com jitter                          (client)
@@ -805,6 +822,136 @@ atribuição futura, e o erro se realimenta — átomo atribuído ao Rapha por e
 vira evidência do perfil do Rapha. Por isso nada entra sem o meu toque, e por
 isso o texto atual nunca é sobrescrito sem eu ver os dois lado a lado.
 
+### 4.10 O vetor, e as duas camadas semânticas (slice 4.5)
+
+Até aqui **toda semelhança deste sistema era grafia**: `nome_normalizado` na
+slice 3, `proximidade()` na 4. Letra não alcança dois átomos que dizem a mesma
+coisa com palavras diferentes, nem uma pessoa cujo nome eu falo de um jeito que o
+grafo não escreveu. O vetor é a primeira comparação daqui que não passa por
+letra.
+
+**O que isto não é.** Não é economia de token: o gasto dominante continua sendo
+o `extracao-5`, que manda a transcrição inteira, e embedding não corta um token
+dele. O que ele compra é a **seleção de candidato**, que na slice 5 vira a única
+forma possível de deduplicar átomo — cinco sessões por semana a 15 átomos dão
+~3.900 átomos por ano, ou ~7,6 milhões de pares, que não é caro: é impossível.
+
+```
+src/lib/embedding.ts   texto → vetor. Fala com o Gateway, não com o Neo4j
+src/lib/entidades.ts   vetor → candidatos. Fala com o Neo4j, e junta as pontas
+src/lib/resolucao.ts   candidatos → decisão. Não fala com nenhum dos dois
+```
+
+Essa divisão é a mesma que já existe entre `duplicatas.ts` (string pura,
+testável sem rede) e quem a usa, e é o que deixa a **regra de união** — que é
+onde os erros de desenho moram — testável sem banco e sem chave.
+
+#### O que vira vetor, e o que fica de fora
+
+| Nó | Fonte do vetor |
+|---|---|
+| `:Atomo` | **só `a.texto`** |
+| `:Entidade` | uma string canônica: `nome`, `tipo`, `aliases` e os três campos de perfil, com campo vazio **omitido** |
+
+Nada de tipo, entidade ou sessão no átomo: as três já são estrutura no grafo, e a
+divisão é essa — **o corte estrutural é do grafo, o semântico é do vetor.** Enfiar
+o tipo no texto embutido faria dois APRENDIZADO parecerem próximos por serem
+APRENDIZADO, que é exatamente o sinal que o grafo já dá de graça e melhor.
+
+Na entidade, o nó inteiro **não** entra. `id`, `nome_normalizado` e `chaves` são
+duplicação ou ruído; e `sessoes`/`atomos` são contagens que mudam a cada confirmar
+sem que o significado da entidade mude — entrariam no hash e forçariam reembutir o
+grafo inteiro toda sessão, de graça. Campo de perfil vazio é omitido e não posto
+em branco: string vazia no meio do texto é ruído com posição.
+
+**Os átomos da entidade ficam de fora, e isso é decisão, não esquecimento.** Com
+átomos na fonte, um átomo atribuído errado viraria evidência para a próxima
+atribuição — dissolvido num vetor que ninguém audita e do qual não dá para
+tirá-lo depois. É a mesma realimentação que a slice 4 fechou ao decidir que o
+agente 3 nunca escreve (4.9). A diferença entre aquela e a da camada 3b abaixo é
+**visibilidade**, e é ela que decide o que entra.
+
+#### As quatro camadas de candidato
+
+`candidatosDe()` tem quatro camadas **aditivas**, nunca substitutivas — nenhuma
+camada anterior mudou de comportamento:
+
+| Camada | Sinal | Pega o caso |
+|---|---|---|
+| 1. exato por chave | `nome_normalizado`, alias inclusive | grafia conhecida |
+| 2. string (`proximidade`) | Levenshtein e palavra em comum | homófono: "Rafa" × "Raffa" × "Rapha" |
+| 3a. perfil parecido | átomo × `entidade_embedding` | entidade **com perfil e sem átomo** — o Rapha no dia seguinte ao passo zero |
+| 3b. vizinhos votam | átomo × `atomo_embedding`, voto por `:SOBRE`/`:MENCIONA` | entidade **com átomos e sem perfil** — todo o grafo de hoje |
+
+As duas semânticas cobrem buracos **opostos**, e é por isso que as duas ficam.
+Uma entidade recém-criada, sem perfil e sem átomo, continua invisível para ambas
+— só a string a acha, e é por isso que criar um nome à mão pede escrever o perfil
+no mesmo gesto.
+
+**A 3b devolve o porquê.** Ela consulta os vizinhos do átomo novo e conta votos
+por entidade, devolvendo junto os **ids, as datas e os trechos** dos átomos que
+elegeram cada candidato. A revisão mostra isso ao lado da dúvida: *"parece com o
+que você disse em 12/ago: «…»"*. Isso não é enfeite. Esta camada herda atribuição
+passada — um erro de atribuição pode sugerir o próximo —, e a única coisa que a
+torna aceitável é ser **um voto entre `k`, com o átomo na tela**: visível e
+corrigível. Sem o `porque`, esta camada não entraria.
+
+#### Teto e piso são obrigatórios
+
+`TOP_K = 3` sobre a **união** das quatro camadas, e piso de score por camada.
+Sem os dois, todo átomo ganha candidato, `decidir()` cai sempre em `julgar`, o
+agente 2 é chamado em toda sessão e o critério 5 da slice 4 morre — aquele que
+diz que sessão sem ambiguidade não paga nada. **Uma camada semântica sem piso é
+uma camada que sempre acha alguém.**
+
+O que faz aquele critério sobreviver é a **deduplicação da união**: o caso comum
+de uma sessão sem ambiguidade é a grafia casar com um nó e os vizinhos votarem
+**no mesmo nó**. União de tamanho 1, decisão de graça, agente 2 não chamado. Uma
+sessão só passa a custar quando o vetor traz alguém que a string não tinha
+trazido — que é exatamente o buraco que ele existe para tapar.
+
+Os pisos de 3a e 3b se calibram **separado**, e o mesmo número não significa a
+mesma coisa nas duas: 3a é assimétrica (texto de átomo contra string curta de
+perfil), 3b é simétrica (átomo contra átomo). O ponto de partida é medido, não
+escolhido — com `openai/text-embedding-3-small`, o par de teste da slice
+(dois APRENDIZADO sobre relacionamento, de sessões diferentes, sem uma palavra
+rara em comum) dá 0,594 entre si contra 0,19–0,29 de assunto não relacionado.
+
+```
+PISO_VIZINHOS = 0.45   (cosseno)   simétrica
+PISO_PERFIL   = 0.34   (cosseno)   assimétrica, pontua sistematicamente menos
+ALCANCE       = { perfis: 5, vizinhos: 8 }
+```
+
+Os pisos vivem em espaço de **cosseno**, e não no do banco:
+`db.index.vector.queryNodes` com cosseno devolve `(1 + cosseno) / 2`, e as
+consultas de `entidades.ts` desfazem essa normalização antes de comparar. A razão
+é poder conferir o piso à mão — `cosineSimilarity` do pacote `ai` fala cosseno, e
+um número que só existe dentro do banco é um número que ninguém audita.
+
+#### `resolucao-2`
+
+`PROMPT_VERSION_RESOLUCAO` subiu para `resolucao-2`, e o texto do prompt quase
+não mudou. **A versão acompanha a entrada, não só a redação:** o conjunto de
+candidatos que o agente recebe é outro, e isso é saída diferente (regra 7). O
+prompt passou a dizer, ao lado de cada candidato, **por que ele está na lista** —
+e quando o motivo é "átomos passados parecidos", os trechos vão junto, porque
+evidência de uso é o sinal mais forte que existe quando o perfil está vazio.
+
+#### Nada no caminho do embedding impede uma gravação
+
+É a regra de precedência da slice inteira. O confirmar grava o átomo **e só
+então** o embute; se o Gateway falhar, o átomo fica no grafo sem vetor, com um
+`[atomos]` no log, e `POST /api/atomos/embutir` o alcança depois. Vetor é
+derivável do texto a qualquer momento — refazer 4.000 deles é uma passada de
+`embedMany` que custa menos de um centavo. Gravação não é derivável de nada.
+
+A mesma regra vale na leitura: se o índice ainda não existe, se o Gateway está
+fora, ou se nada passa do piso, `candidatosSemanticos` engole a falha, registra o
+motivo e devolve lista vazia — e a resolução se comporta exatamente como na
+slice 4. É também o que permite este código ir ao ar antes de a migration 006
+rodar.
+
 ## 5. Estados da sessão
 
 ```
@@ -952,6 +1099,9 @@ Três travas independentes:
 | `campo` **dentro** do `MERGE` de `:PERFILA` | `atomos.gravarAtomos` | reconfirmar não dobra a aresta de perfil: a identidade dela é (átomo, campo, entidade) |
 | o rascunho de perfil não escreve | `perfil.rascunhar` | pedir o rascunho dez vezes não muda o grafo; só `POST /api/entidades/perfil` grava |
 | status na cláusula `WHERE` | `sessoes.atualizarSessao` | transição já feita não volta atrás; confirmar duas vezes não reprocessa |
+| `embedding IS NULL` ou modelo diferente | `atomos.embutirAtomos` e `atomosSemVetor` | reconfirmar não reembute o que já tem vetor; rodar o retrofill duas vezes não gasta duas vezes |
+| `embedding_fonte` bater | `entidades.garantirEmbeddings` | entidade em dia não é reembutida — e por isso não há gancho a esquecer em nenhuma das cinco rotas de entidade |
+| `CREATE VECTOR INDEX … IF NOT EXISTS` | migration 006 | reaplicar a migration é no-op |
 
 A trava de `extracao.json` vale para **os dois agentes**: proposta pronta não
 rechama nem a extração nem a resolução, e `forcar` refaz as duas. Calibrar o
@@ -1232,6 +1382,73 @@ status ∈ 'ativa' | 'fundida'
 (:Atomo)-[:PERFILA { campo }]->(:Entidade)                               (005)
 ```
 
+### 8.4 O vetor no grafo (migration 006)
+
+```
+(:Atomo    { …, embedding: [1536 floats], embedding_modelo })
+(:Entidade { …, embedding: [1536 floats], embedding_modelo, embedding_fonte })
+
+CREATE VECTOR INDEX atomo_embedding    FOR (a:Atomo)    ON (a.embedding)
+CREATE VECTOR INDEX entidade_embedding FOR (e:Entidade) ON (e.embedding)
+  vector.dimensions: 1536, vector.similarity_function: 'cosine'
+```
+
+Diferente da 003 e da 005, esta migration **tem statement de verdade** — índice
+se declara. Propriedade continua não se declarando no Aura Free, então os três
+campos são contrato escrito, não statement.
+
+**O tier Free aceita índice vetorial**, verificado contra a instância real
+(`0adada47`, Neo4j 5.27-aura) em 2026-09-02: `CREATE` aceito, `ONLINE` em menos
+de 500 ms, `db.index.vector.queryNodes` devolvendo vizinhos com score. A doc
+negava só "Vector Optimization" (configuração ≥ 4 GB), que é outra coisa. **E a
+cota do Free não é medida em bytes**: o teto publicado é de 200 mil nós e 400 mil
+arestas, e embedding é propriedade em nó que já existe — não cria nó nem aresta.
+Com 4.000 átomos o grafo vai a ~4.050 nós, 2% do teto.
+
+O resto da configuração fica no **padrão medido** (`quantization.type: SCALAR`,
+`hnsw.m: 16`, `ef_construction: 100`, `default_search_expansion_factor: 1.5`).
+Explicitar qualquer um desses seria fixar número que não foi calibrado contra
+nada — e é o `SCALAR` do padrão que mantém o vetor **do índice** em torno de
+6 MB para 4.000 átomos, contra os ~48 MB das propriedades.
+
+**A dimensão é a única coisa aqui que amarra.** Trocar para um modelo de outra
+dimensão exige `DROP` e recriar os dois índices, por migration nova;
+`embedding.ts` estoura na porta quando a dimensão não bate, para o erro aparecer
+antes do banco e dizendo o que fazer.
+
+#### Os três campos, e por que cada um existe
+
+| Campo | Onde | Para quê |
+|---|---|---|
+| `embedding` | átomo e entidade | o vetor |
+| `embedding_modelo` | átomo e entidade | vetores de **dois modelos no mesmo índice não dão erro: dão vizinhança errada**. Sem o campo não há como saber quais nós voltam para a fila quando `EMBEDDING_MODEL` mudar |
+| `embedding_fonte` | **só** entidade | hash da string canônica. É o que torna o refresh idempotente **e dispensa gancho** nas cinco rotas que mexem em entidade |
+
+O átomo não tem `embedding_fonte`, e não é esquecimento: texto de átomo
+confirmado não muda — deleção é soft (regra 6) e o `MERGE` é por
+`<sessao_id>-<índice>`. Lá `embedding IS NULL` é a trava que basta.
+
+O `embedding_fonte` é o que faz `/perfil`, `/renomear`, `/fundir`, `/tipo` e
+`/criar` não precisarem lembrar de invalidar nada: a string canônica muda, o hash
+muda, e a próxima passada de `garantirEmbeddings()` reembute. O desenho oposto —
+um gancho em cada rota — é um lugar a mais onde alguém esquece, e vetor velho não
+dá erro.
+
+**Sem migração de dado**: nenhum vetor é calculado pela migration. Quem preenche
+são `POST /api/atomos/embutir` e `POST /api/entidades/embutir`, e é isso que faz
+o retrofill custar uma chamada de rota em vez de uma reextração.
+
+Contrato completo depois da 006:
+
+```
+(:Atomo    { id, texto, tipo, inicios_s, fins_s, ancoras, valido_em, status,
+             prompt_version, modelo, criado_em,
+             embedding, embedding_modelo })                              (006)
+(:Entidade { id, nome, nome_normalizado, criado_em, status,
+             contexto, pode_ajudar_com, fizemos_juntos,
+             embedding, embedding_modelo, embedding_fonte })             (006)
+```
+
 ## 9. Layout do R2
 
 ```
@@ -1240,7 +1457,7 @@ sessoes/<id>/chunk_000.webm     áudio do bloco gravado no navegador
 sessoes/<id>/chunk_000.opus     áudio importado — a extensão é a do arquivo de origem
 sessoes/<id>/chunk_000.json     transcrição do bloco, offsets relativos, modelo, granularidade
 sessoes/<id>/transcricao.json   final, offsets absolutos
-sessoes/<id>/extracao.json      proposta: átomos ancorados, referências resolvidas, marcas de perfil, entidades agregadas, procedência dos dois agentes
+sessoes/<id>/extracao.json      proposta: átomos ancorados, referências resolvidas (com o `porque` da camada 3b), marcas de perfil, entidades agregadas, procedência dos dois agentes
 _smoke/                         objetos temporários do `pnpm smoke`, apagados no fim
 ```
 
@@ -1264,7 +1481,7 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha **e extrai** em `waitUntil` | `ja_finalizada` a partir de `em_revisao`; antes disso, é o retry da extração |
 | `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s, `force-dynamic`; `completa` é sobre a transcrição, não sobre a sessão |
 | `POST /api/sessoes/:id/extrair` | dispara extração **e resolução** de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` refaz as duas e sobrescreve |
-| `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco |
+| `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5 — contrato inalterado, campo novo |
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
 | `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo, com `:PERFILA` | `ja_confirmada` na segunda; procedência relida do R2, não do corpo |
 | `GET /api/entidades` | o que está no grafo, com átomos, sessões, aliases e perfil | só leitura; nó fundido vira alias do vencedor; alimenta também o seletor da revisão |
@@ -1276,6 +1493,8 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/entidades/criar` | `{nome, tipo}` — semeia um nome antes de falá-lo | cria nó órfão de propósito |
 | `POST /api/entidades/perfil` | `{chave, campo, texto}` — grava um dos três campos | o único lugar que escreve perfil; corta no teto de 300 no servidor |
 | `POST /api/entidades/perfil/rascunho` | `{chave, campo}` — o agente 3 propõe | **não escreve nada**; é `POST` porque gasta chamada de modelo |
+| `POST /api/atomos/embutir` | dá vetor aos átomos que ainda não têm, em lote | retrofill e retry; 200 por chamada, `continua: true` enquanto sobrar; não toca no texto nem reextrai |
+| `POST /api/entidades/embutir` | põe em dia o vetor das entidades, comparando `embedding_fonte` | não editar nada devolve `embutidas: 0` |
 | `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
 
@@ -1525,12 +1744,13 @@ execução não há requisição a terceiros.
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, perfil, deduplicação
+AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, perfil, deduplicação, embedding
 STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
 RESOLUCAO_MODEL           opcional; padrão igual ao da extração
 PERFIL_MODEL              opcional; padrão igual ao da extração
+EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões
 AUTH_SECRET, ALLOWED_EMAIL
 ```
 
@@ -1550,6 +1770,9 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   que chega com `File.type` vazio, e os limites de tamanho e duração.
 - `tests/importacao.test.ts` — `transcreverBloco` busca o áudio na extensão que o
   manifest registrou, e continua caindo em `.webm` quando o campo não existe.
+- `tests/embedding.test.ts` — a string canônica da entidade e o hash dela: o que
+  entra, o que é omitido, e o que faz uma entidade sair de dia. Sem rede: a
+  qualidade da vizinhança em si eu avalio à mão, olhando a lista.
 - `tests/gateway.test.ts` — guarda da porta única de modelo (seção 4.2): varre
   `src/` e `scripts/` atrás de import de pacote de provedor, endpoint de
   provedor escrito à mão e leitura de chave de provedor, e confere as
@@ -1614,6 +1837,24 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
+- **`db.index.vector.queryNodes` está deprecado a partir do Neo4j 2026.04**, em
+  favor da cláusula `SEARCH`. A instância é 5.27 e o procedimento funciona; quando
+  a Aura subir, é uma linha a trocar em `entidades.ts`.
+- **A camada 3b herda atribuição passada.** Ela sugere por semelhança com átomos
+  que já são de alguém, então um erro de atribuição pode sugerir o próximo.
+  Mitigado pelo `porque` na tela — um voto entre `k`, com o átomo à mão —, não
+  eliminado.
+- **Entidade nova, sem perfil e sem átomo, é invisível às duas camadas
+  semânticas.** Só a string a acha. É estado transitório por construção — criar um
+  nome pede escrever o perfil junto —, mas nada no código obriga.
+- **Os pisos de 3a e 3b são ponto de partida, não calibração.** Saíram de uma
+  medição de um par contra três textos não relacionados, em 2026-09-02. Quem os
+  ajusta sou eu, olhando a revisão, sessão real por sessão real: piso alto demais
+  faz a camada calar, baixo demais faz o agente 2 ser chamado à toa.
+- **1536 floats por átomo são ~12 KB** de propriedade; 4.000 átomos, ~48 MB. Não
+  há cota em bytes no Free contra a qual comparar isso, e o vetor do índice,
+  quantizado em `SCALAR`, fica em torno de 6 MB. Se um dia apertar, o botão é a
+  dimensão do vetor.
 - **O retry cobre link instável, não link caído.** Três tentativas resolvem a
   conexão fria que falha e abre na seguinte, que é o caso medido. Rede fora de
   verdade só faz a rota levar ~33 s para dizer 502 em vez de 10 s.

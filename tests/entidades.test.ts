@@ -16,6 +16,7 @@ const ref = (entidade: string, extra: Partial<ReferenciaResolvida> = {}): Refere
   entidade,
   conhecida: false,
   certo: true,
+  porque: [],
   alternativas: [],
   motivo: "",
   ...extra,
