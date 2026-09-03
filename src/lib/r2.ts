@@ -6,6 +6,7 @@
  */
 import { AwsClient } from "aws4fetch";
 import { env } from "./env";
+import { comRetry } from "./rede";
 
 export const VALIDADE_PRESIGN_S = 300; // 5 min
 
@@ -77,7 +78,11 @@ export interface ObjetoTexto {
 }
 
 export async function getTexto(key: string): Promise<ObjetoTexto | null> {
-  const resp = await cliente().fetch(urlObjeto(key), { method: "GET" });
+  const resp = await comRetry(
+    `R2 GET ${key}`,
+    () => cliente().fetch(urlObjeto(key), { method: "GET" }),
+    { leitura: true },
+  );
   if (resp.status === 404) return null;
   if (!resp.ok) throw new Error(`R2 GET ${key} falhou: ${resp.status}`);
   return { texto: await resp.text(), etag: resp.headers.get("etag") };
@@ -90,14 +95,22 @@ export async function getJson<T>(key: string): Promise<{ valor: T; etag: string 
 }
 
 export async function getBytes(key: string): Promise<ArrayBuffer | null> {
-  const resp = await cliente().fetch(urlObjeto(key), { method: "GET" });
+  const resp = await comRetry(
+    `R2 GET ${key}`,
+    () => cliente().fetch(urlObjeto(key), { method: "GET" }),
+    { leitura: true },
+  );
   if (resp.status === 404) return null;
   if (!resp.ok) throw new Error(`R2 GET ${key} falhou: ${resp.status}`);
   return await resp.arrayBuffer();
 }
 
 export async function existe(key: string): Promise<{ bytes: number } | null> {
-  const resp = await cliente().fetch(urlObjeto(key), { method: "HEAD" });
+  const resp = await comRetry(
+    `R2 HEAD ${key}`,
+    () => cliente().fetch(urlObjeto(key), { method: "HEAD" }),
+    { leitura: true },
+  );
   if (resp.status === 404) return null;
   if (!resp.ok) throw new Error(`R2 HEAD ${key} falhou: ${resp.status}`);
   return { bytes: Number(resp.headers.get("content-length") ?? 0) };
@@ -152,13 +165,17 @@ export async function put(
   if (opcoes.ifMatch) headers["If-Match"] = etagForte(opcoes.ifMatch);
   if (opcoes.ifNoneMatch) headers["If-None-Match"] = opcoes.ifNoneMatch;
 
-  const resp = await cliente().fetch(urlObjeto(key), {
-    method: "PUT",
-    headers,
-    // Uint8Array é BodyInit em tempo de execução; o TS só reclama da variância
-    // de ArrayBufferLike (SharedArrayBuffer), que não ocorre aqui.
-    body: bytes as BodyInit,
-  });
+  // Sem `leitura`: PUT condicional não se repete depois de sair. Se o primeiro
+  // chegou, o segundo levaria 412 e viraria conflito falso no manifest.
+  const resp = await comRetry(`R2 PUT ${key}`, () =>
+    cliente().fetch(urlObjeto(key), {
+      method: "PUT",
+      headers,
+      // Uint8Array é BodyInit em tempo de execução; o TS só reclama da variância
+      // de ArrayBufferLike (SharedArrayBuffer), que não ocorre aqui.
+      body: bytes as BodyInit,
+    }),
+  );
 
   if (resp.status === 412 || resp.status === 409) throw new ConflitoR2Error(key);
   if (!resp.ok) throw new Error(`R2 PUT ${key} falhou: ${resp.status} ${await resp.text()}`);

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { listarEntidades } from "@/lib/entidades";
-import { erro } from "@/lib/rotas";
+import { erroDeInfra } from "@/lib/rotas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +16,6 @@ export async function GET() {
   try {
     return NextResponse.json({ entidades: await listarEntidades() });
   } catch (e) {
-    console.error("[entidades]", e);
-    return erro(e instanceof Error ? e.message : "não consegui ler o grafo", 502);
+    return erroDeInfra("entidades", e);
   }
 }

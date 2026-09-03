@@ -7,6 +7,7 @@
  * O <banco> vem do NEO4J_DATABASE das credenciais do Aura — não é sempre "neo4j".
  */
 import { env } from "./env";
+import { comRetry } from "./rede";
 
 type Parametros = Record<string, unknown>;
 
@@ -32,18 +33,23 @@ export async function query<T = Record<string, unknown>>(
 ): Promise<T[]> {
   const { url, user, password } = env.neo4j;
 
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      Authorization: `Basic ${btoa(`${user}:${password}`)}`,
-    },
-    body: JSON.stringify({ statement, parameters }),
-    cache: "no-store",
+  // Só a conexão é repetida, nunca um pedido que já saiu: `comRetry` sem
+  // `leitura` repete apenas os códigos de antes do envio, e por isso vale
+  // igual para o Cypher que escreve (regra inviolável 4).
+  const { resp, texto } = await comRetry("neo4j", async () => {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Basic ${btoa(`${user}:${password}`)}`,
+      },
+      body: JSON.stringify({ statement, parameters }),
+      cache: "no-store",
+    });
+    return { resp, texto: await resp.text() };
   });
 
-  const texto = await resp.text();
   let corpo: RespostaQuery;
   try {
     corpo = texto ? (JSON.parse(texto) as RespostaQuery) : {};

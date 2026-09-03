@@ -79,6 +79,7 @@ navegador pede uma URL presigned e faz `PUT` direto no bucket.
 src/lib/          servidor — exceto os módulos puros marcados (client), que não
                   leem credencial nem rede e por isso o navegador pode importar
   env.ts          leitura de variável de ambiente, falha cedo se faltar
+  rede.ts         retry de conexão: o que dá para repetir sem duplicar efeito
   neo4j.ts        HTTP Query API (nunca driver Bolt)
   fusao.ts        fundir, renomear, recusar — a escrita de higiene no grafo
   duplicatas.ts   quem parece ser a mesma coisa: string + o modelo, só propõem
@@ -107,7 +108,8 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   backoff.ts      backoff exponencial com jitter                          (client)
   audio.ts        formatos aceitos na importação, limites de arquivo       (client)
   onda.ts         a matemática da onda do botão de gravar — nível, envelope (client)
-  rotas.ts        validação de parâmetro compartilhada pelas rotas
+  rotas.ts        validação de parâmetro e o 502 de infraestrutura, compartilhados
+                  pelas rotas
   tipos.ts        contratos do domínio + constantes (DURACAO_CHUNK_S = 30)
 
 src/client/       navegador
@@ -880,6 +882,60 @@ Log de terminal morre com a janela. Por isso `scripts/dev.ps1` também escreve
 tudo em `logs/dev-<data>.log` (seção 13) — sem isso, diagnosticar uma falha
 exige reproduzi-la.
 
+### 5.2 Quando a falha é da rede, e não do sistema
+
+Tudo que este sistema faz sai por `fetch`: Neo4j pela HTTP Query API, R2 pela
+API S3, modelo pelo AI Gateway. O undici derruba a conexão que não completa o
+handshake em **10 s** — o erro é `TypeError: fetch failed` com
+`UND_ERR_CONNECT_TIMEOUT` no `cause`, e o pedido **nunca saiu**. Em link com
+meia dúzia de saltos e jitter alto isso acontece de verdade: medido no link que
+produziu o primeiro caso, o handshake frio com o R2 falhou depois de 24,8 s e as
+quatro tentativas seguintes abriram em menos de 400 ms cada.
+
+**Esses 10 s não são configuráveis.** O `fetch` do Node usa a cópia interna do
+undici, e ela recusa um dispatcher vindo do pacote `undici` do npm — por símbolo
+global ou pelo `init`, dá `UND_ERR_INVALID_ARG`. Aumentar o prazo exigiria
+trocar a implementação de `fetch` do processo inteiro e atropelar o cache de
+fetch do Next. Não faz falta: quem conserta é o retry, não o prazo maior.
+
+`rede.ts` classifica o erro pelo código dentro do `cause` e decide se repetir é
+seguro — a pergunta é sempre a mesma, "o pedido chegou a sair?":
+
+| Classe | Códigos | Repete |
+|---|---|---|
+| antes do envio | `UND_ERR_CONNECT_TIMEOUT`, `ECONNREFUSED`, `ENOTFOUND`, `EAI_AGAIN`, `EHOSTUNREACH`, `ENETUNREACH` | sempre — a conexão nem abriu, não há efeito para duplicar |
+| depois de abrir | `ECONNRESET`, `ETIMEDOUT`, `EPIPE`, `UND_ERR_SOCKET`, `UND_ERR_HEADERS_TIMEOUT`, `UND_ERR_BODY_TIMEOUT` | só em leitura (`{ leitura: true }`) |
+| erro do serviço | Cypher inválido, 404, 412 | nunca — repetir o que vai falhar de novo só faz a tela esperar mais |
+
+É a regra inviolável 4 vista pelo outro lado: `query` do Neo4j serve escrita
+também, e por isso vai sem `leitura` — só repete o que comprovadamente não saiu.
+O mesmo vale para o `put` do R2, que é condicional: se o primeiro PUT chegou, o
+segundo levaria 412 e viraria conflito falso no manifest. `getTexto`, `getBytes`
+e `existe` são leitura pura e repetem as duas classes.
+
+São **3 tentativas**, com o mesmo backoff da fila de upload (1 s, 2 s, com
+jitter). Pior caso de uma chamada: ~33 s antes de desistir.
+
+O caminho do modelo não passa por `rede.ts` e não precisa: o AI SDK reconhece o
+`fetch failed` como `isRetryable` e já repete por conta própria (`maxRetries`
+padrão 2). Quem estava descoberto era só o que fala direto com Neo4j e R2.
+
+Quando desiste, a rota responde **502** por `erroDeInfra`, com a causa no log e
+uma frase legível na tela — `fetch failed` não diz nada a quem está olhando.
+Rota sem esse tratamento deixava o erro subir cru e o Next respondia **500** com
+stack de undici, o que faz a rede parecer defeito do sistema:
+
+| Linha | Quem escreve | Quando |
+|---|---|---|
+| `[rede] <alvo>: <código> — tentativa n/3` | `comRetry` | uma tentativa falhou e vai haver outra |
+| `[sessoes] …` | `GET`/`POST /api/sessoes` | Neo4j fora |
+| `[extracao] …` | `GET /api/sessoes/:id/extracao` | Neo4j ou R2 fora |
+| `[entidades] …` | `GET /api/entidades` | Neo4j fora |
+
+A outra metade do conserto é não pagar a latência três vezes: as três buscas de
+`GET /api/sessoes/:id/extracao` (uma no Neo4j, duas no R2) são independentes e
+vão em `Promise.all`. Em série, essa tela custava a soma de três idas à rede.
+
 ## 6. Idempotência
 
 Regra inviolável 4: todo passo é chaveado por `sessao_id` (+ `chunk_index`).
@@ -1223,7 +1279,9 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
 
-Todas com `runtime = "nodejs"`.
+Todas com `runtime = "nodejs"`. `GET /api/sessoes`, `POST /api/sessoes`,
+`GET /api/sessoes/:id/extracao` e `GET /api/entidades` respondem **502** quando
+Neo4j ou R2 não atendem, com a causa legível no corpo (seção 5.2).
 
 ## 11. Telas
 
@@ -1486,8 +1544,8 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 ## 13. Verificação
 
 - `pnpm test` — vitest sobre a lógica pura (chaves, manifest, estados, offsets,
-  vocabulário, backoff, migrate, formatos de importação). Nenhuma credencial,
-  nenhuma rede.
+  vocabulário, backoff, retry de rede, migrate, formatos de importação).
+  Nenhuma credencial, nenhuma rede.
 - `tests/audio.test.ts` — resolução de formato, incluindo o `.opus` do WhatsApp
   que chega com `File.type` vazio, e os limites de tamanho e duração.
 - `tests/importacao.test.ts` — `transcreverBloco` busca o áudio na extensão que o
@@ -1556,6 +1614,9 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
+- **O retry cobre link instável, não link caído.** Três tentativas resolvem a
+  conexão fria que falha e abre na seguinte, que é o caso medido. Rede fora de
+  verdade só faz a rota levar ~33 s para dizer 502 em vez de 10 s.
 - **O botão de gravar foi verificado por compilação e teste, não por olho.**
   `tests/onda.test.ts` cobre a matemática da onda, e `tsc` mais `next build`
   passam; ninguém abriu a tela e olhou o halo respirar. Não há navegador
