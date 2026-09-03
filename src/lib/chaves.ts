@@ -7,6 +7,8 @@
  *   sessoes/<id>/chunk_000.json
  *   sessoes/<id>/transcricao.json
  *   sessoes/<id>/extracao.json
+ *   sessoes/<id>/correcoes.json
+ *   calibracao/indice.json
  */
 import { EXT_GRAVACAO, extensaoAceita } from "./audio";
 
@@ -20,6 +22,24 @@ export const chaveTranscricao = (id: string) => `${prefixoSessao(id)}/transcrica
  * proposta que já pode ter sido revisada.
  */
 export const chaveExtracao = (id: string) => `${prefixoSessao(id)}/extracao.json`;
+
+/**
+ * O registro permanente do que eu corrigi naquela revisão (slice 4.6).
+ *
+ * Separado de `extracao.json` porque `forcar` sobrescreve a proposta sem
+ * backup (`pipeline.ts`): correção guardada junto morreria na primeira
+ * recalibração — que é exatamente quando ela mais vale.
+ */
+export const chaveCorrecoes = (id: string) => `${prefixoSessao(id)}/correcoes.json`;
+
+/**
+ * A mesa de trabalho da calibração: o acumulado de todas as sessões.
+ *
+ * Existe porque `r2.ts` não tem `LIST` — sem um objeto que reúna as correções,
+ * cada uma seria alcançável só por quem já soubesse o id da sessão. Fora do
+ * prefixo `sessoes/` de propósito: não é de sessão nenhuma.
+ */
+export const chaveIndiceCalibracao = () => `calibracao/indice.json`;
 
 export function indiceChunk(i: number): string {
   if (!Number.isInteger(i) || i < 0 || i > 999_999) {

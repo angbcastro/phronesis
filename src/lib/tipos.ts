@@ -336,3 +336,141 @@ export interface Extracao {
   granularidade: Granularidade;
   criado_em: string;
 }
+
+// ───────── Slice 4.6: o prompt aprende com a revisão ─────────
+
+/**
+ * O que eu corrigi na revisão. Nada aqui é nota nem percentual: é o registro
+ * de um gesto que hoje se perde no clique de confirmar.
+ *
+ * `mencao_adicionada` e `mencao_removida` são dois tipos e não um `mencao_*`
+ * genérico porque a chave de uma correção de átomo é `${atomo_id}|${tipo}`
+ * (spec §2): com um tipo só, acrescentar e tirar menção no mesmo átomo
+ * colapsariam num registro só, e o segundo apagaria o primeiro.
+ */
+export const TIPOS_CORRECAO = [
+  "rejeitado",
+  "texto",
+  "tipo",
+  "sujeito",
+  "mencao_adicionada",
+  "mencao_removida",
+  "entidade_recusada",
+  "entidade_renomeada",
+  "entidade_tipo",
+  "faltou",
+] as const;
+
+export type TipoCorrecao = (typeof TIPOS_CORRECAO)[number];
+
+/**
+ * Quem produziu o que não presta. **Captura os três, calibra um de cada vez** —
+ * esta fatia consome só `extracao`; `resolucao` e `grafo` acumulam etiquetados
+ * até a fatia que os calibrar.
+ */
+export const AGENTES_CORRECAO = ["extracao", "resolucao", "grafo"] as const;
+
+export type AgenteCorrecao = (typeof AGENTES_CORRECAO)[number];
+
+/**
+ * Um campo do átomo que eu toquei na tela. A chave existir **é** o gesto — o
+ * valor já viaja no corpo do confirmar, e duplicá-lo aqui faria duas fontes
+ * para a mesma coisa.
+ */
+export const CAMPOS_GESTO = ["texto", "tipo", "sobre", "menciona"] as const;
+
+export type CampoGesto = (typeof CAMPOS_GESTO)[number];
+
+/**
+ * O que o servidor não tem como derivar sozinho: só o navegador testemunhou.
+ *
+ * Corpo de confirmar sem `gestos` continua confirmando — a apuração cai no que
+ * dá para inferir por valor e marca `tocado: false`. Retrocompatível de
+ * propósito: nenhum 400 novo nasce nesta fatia.
+ */
+export interface Gestos {
+  /** Quais campos de cada átomo eu de fato editei. */
+  atomos: { indice: number; campos: CampoGesto[] }[];
+  /** Chaves das candidatas que eu desmarquei — recusa, não desuso por acaso. */
+  entidades_recusadas: string[];
+  /** O par original→final de um renome. O POST manda só o final. */
+  renomes: { de: string; para: string }[];
+  /** O que o extrator não viu e eu digitei no rodapé da revisão (spec §6). */
+  faltantes: { texto: string }[];
+}
+
+export const GESTOS_VAZIOS: Gestos = {
+  atomos: [],
+  entidades_recusadas: [],
+  renomes: [],
+  faltantes: [],
+};
+
+/**
+ * Uma correção minha, guardada no R2 e **nunca** no grafo.
+ *
+ * O grafo é o que eu vivi; correção é o que o pipeline errou. Um `:Atomo`
+ * dizendo "o modelo escreveu FATO onde era OPINIAO" apareceria numa busca por
+ * "o que eu aprendi" e apodreceria a coisa que o sistema existe para fazer.
+ */
+export interface Correcao {
+  /**
+   * Condicional ao tipo (spec §2):
+   *
+   *   átomo    `${atomo_id}|${tipo}`
+   *   entidade `${sessao_id}|${tipo}|${normalizarNome(entidade)}`
+   *   faltou   `${sessao_id}|faltou|${normalizarNome(texto).slice(0,40)}`
+   *
+   * Não é sempre `${atomo_id}|${tipo}` porque três tipos não têm átomo: com um
+   * id fixo por tipo, uma correção nova apagaria a anterior em silêncio —
+   * exatamente o oposto de "as correções se acumulam".
+   */
+  id: string;
+  sessao_id: string;
+  /** Só para correção de átomo. */
+  atomo_id: string | null;
+  /** Só para `entidade_recusada`, `entidade_renomeada`, `entidade_tipo`. */
+  entidade_chave: string | null;
+  agente: AgenteCorrecao;
+  tipo: TipoCorrecao;
+  /** "" quando eu acrescentei. */
+  antes: string;
+  /** "" quando eu rejeitei. */
+  depois: string;
+  tipo_atomo: TipoAtomo | null;
+  texto_proposto: string;
+  /** As âncoras, para o player da tela de calibração. */
+  inicios_s: number[];
+  /** Do átomo da proposta, nunca do corpo (regra 7). */
+  prompt_version: string;
+  modelo: string;
+  /** `false` = inferida pelo valor, sem gesto que a testemunhe. */
+  tocado: boolean;
+  em: string;
+  /** Hash da versão de regras que a endereçou; `null` = em aberto. */
+  incorporada_em: string | null;
+}
+
+/**
+ * `calibracao/indice.json` — a mesa de trabalho.
+ *
+ * Guarda as correções inteiras porque `r2.ts` não tem `LIST`: sem índice, uma
+ * correção fora dele é inatingível para sempre. O corpus é esparso por
+ * construção, então cabe.
+ */
+export interface IndiceCalibracao {
+  /** Mais novas primeiro, teto de `TETO_CORRECOES`. */
+  correcoes: Correcao[];
+  /** Hash da versão de regras em vigor; `null` = nenhuma aprovada. */
+  regras_correntes: string | null;
+  /** Última vez que `/calibracao` carregou de fato. */
+  visitado_em: string | null;
+  atualizado_em: string;
+}
+
+/**
+ * Teto do índice. Estourado, a eviction remove **fechadas** antes de
+ * **abertas**: fechada já cumpriu o papel e o registro por sessão cobre
+ * auditoria; aberta é a única que ainda importa para o `calibracao-1`.
+ */
+export const TETO_CORRECOES = 500;
