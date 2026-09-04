@@ -312,7 +312,12 @@ export function apurarCorrecoes(entrada: EntradaApuracao): Correcao[] {
       registrar({
         ...base,
         id: chaveDeAtomo(a.id, "mencao_adicionada"),
-        agente: agenteDaReferencia(ref),
+        // Sempre `extracao`, e não `agenteDaReferencia`: acrescentar uma menção
+        // que o extrator não listou é falha de extração por definição — não há
+        // referência original para a resolução ter errado. Medido na primeira
+        // rodada real: a única menção acrescentada saiu como `resolucao` porque
+        // o `sobre` daquele átomo era entidade conhecida, o que é só ruído.
+        agente: "extracao",
         tipo: "mencao_adicionada",
         antes: "",
         depois: adicionadas.join(", "),

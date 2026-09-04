@@ -1119,7 +1119,8 @@ Cada correção sai etiquetada com o agente que a produziu:
 | `rejeitado`, `texto`, `tipo`, `faltou` | `extracao` | é o `extracao-5` produzindo o que não presta |
 | `entidade_recusada` | `extracao` | listou como entidade o que não é pessoa, projeto nem objetivo |
 | `entidade_tipo` | `extracao` | errou o palpite de tipo na lista `entidades` |
-| `sujeito`, `mencao_*` | `resolucao` ou `extracao` | **por átomo**: `sobre.conhecida` decide |
+| `sujeito`, `mencao_removida` | `resolucao` ou `extracao` | **por átomo**: `sobre.conhecida` decide |
+| `mencao_adicionada` | `extracao` | menção que o extrator não listou; não há referência original para a resolução ter errado |
 | `entidade_renomeada` | `grafo` | higiene de grafia — salvo quando o nome apagado era pronome, e aí é `extracao` furando a seção "NOME DE ENTIDADE É NOME" |
 
 O sinal de `sujeito`/`mencao_*` é por átomo e não por sessão: `resolucao.ts` roda
@@ -2338,11 +2339,32 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   um cliente antigo, faz a apuração inferir só pelo valor: travessia de alias
   vira correção marcada como inferida (`tocado: false`). As duas travas de §4.11
   mitigam, não eliminam — e por isso `tocado` existe.
-- **A etiqueta de agente de `mencao_*` usa `sobre.conhecida` do átomo**, e não a
-  referência de cada menção. É o sinal que a spec fixou, e é grosseiro: um átomo
-  sobre "eu" cuja menção era candidata nova sai etiquetado `resolucao`. Não custa
-  nada hoje, porque esta fatia só consome as correções de `extracao`; custará no
-  dia em que o `resolucao-2` for calibrado a partir deste recorte.
+- **Um terço das correções capturadas é erro de STT, e sai etiquetado como erro
+  de agente.** Medido em 2026-09-04, nas 5 primeiras sessões confirmadas: de 21
+  correções, 5 eram conserto de grafia de nome próprio ("Beijing"→"Behring
+  Founders", "Jean"→"Giampaolo Lepore", "Dapta"→"Adapta") e outras 2 misturavam
+  grafia com edição de conteúdo. O extrator não errou nada nessas — ele copiou
+  fielmente o que a transcrição dizia —, mas elas saem como `extracao` (correção
+  de texto) ou `grafo` (renome), porque nenhum sinal no material distingue "o
+  modelo escreveu errado" de "o microfone ouviu errado". O risco concreto é o
+  `calibracao-1` ver quatro casos do mesmo padrão e propor, para o `extracao-5`,
+  uma regra que conserta algo que nunca chegou até ele.
+  **A saída decidida não é etiqueta nem regra de prompt**: é um agente de
+  pré-resolução de entidades, rodando antes da resolução, que busca as entidades
+  de menor distância no embedding e usa um modelo barato para decidir, átomo a
+  átomo, qual nome citado deve ser substituído pelo do grafo. Fica para quando o
+  fluxo de resolução for refinado — não é trabalho da 4.6. Até lá, o que segura
+  é a amarra do `calibracao-1` e o descarte no rascunho. O paliativo que já
+  funciona sozinho é o vocabulário (§4.4): os três nomes agora estão no grafo, e
+  a próxima sessão já sai com eles nos keyterms.
+- **A etiqueta de agente de `sujeito` e `mencao_removida` usa `sobre.conhecida`
+  do átomo**, e não a referência de cada menção. É o sinal que a spec fixou, e é
+  grosseiro: um átomo sobre "eu" cuja menção era candidata nova sai etiquetado
+  `resolucao`. Não custa nada hoje, porque esta fatia só consome as correções de
+  `extracao`; custará no dia em que o `resolucao-2` for calibrado a partir deste
+  recorte. `mencao_adicionada` ficou de fora dessa regra: acrescentar uma menção
+  que o extrator não listou é falha de extração por definição — não existe
+  referência original para a resolução ter errado.
 - **Correções de `resolucao` e `grafo` acumulam sem consumidor** até uma fatia
   futura as calibrar. Elas ocupam vaga no teto de 500 do índice como qualquer
   outra.

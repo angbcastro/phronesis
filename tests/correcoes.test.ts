@@ -268,6 +268,37 @@ describe("trocar o sujeito e as menções", () => {
     expect(cs[0]).toMatchObject({ tipo: "sujeito", agente: "resolucao" });
   });
 
+  it("menção acrescentada é sempre do extrator, mesmo em átomo de entidade conhecida", () => {
+    // Não há referência original para a resolução ter errado: o extrator
+    // simplesmente não listou aquela menção.
+    const p = proposta(
+      [atomo(0, { sobre: "Isinha", conhecida: true })],
+      [candidata("Isinha", { conhecida: true })],
+    );
+    const cs = apurar({
+      proposta: p,
+      confirmados: [confirmado(0, { sobre: "Isinha", menciona: ["Giam"] })],
+      entidades: [entidade("Isinha"), entidade("Giam")],
+      gestos: gestos({ atomos: [{ indice: 0, campos: ["menciona"] }] }),
+    });
+
+    expect(cs[0]).toMatchObject({ tipo: "mencao_adicionada", agente: "extracao" });
+  });
+
+  it("menção removida continua seguindo o átomo — ali a resolução pode ter errado", () => {
+    const p = proposta(
+      [atomo(0, { sobre: "Isinha", conhecida: true, menciona: ["Pedro"] })],
+      [candidata("Isinha", { conhecida: true })],
+    );
+    const cs = apurar({
+      proposta: p,
+      confirmados: [confirmado(0, { sobre: "Isinha", menciona: [] })],
+      entidades: [entidade("Isinha")],
+    });
+
+    expect(cs[0]).toMatchObject({ tipo: "mencao_removida", agente: "resolucao" });
+  });
+
   it("acrescentar e tirar menção no mesmo átomo são duas correções, não uma", () => {
     const p = proposta([atomo(0, { menciona: ["Pedro"] })]);
     const cs = apurar({
