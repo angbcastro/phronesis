@@ -494,11 +494,30 @@ que já estão no grafo foram construídas.
 
 Metade do que se fala são nomes próprios que o modelo não conhece: "Rodozanco"
 vira "rodo zanco". `config/vocabulario.txt` (uma entrada por linha, `#` é
-comentário) é lido, cacheado em memória e mandado como `keyterm`, respeitando o
-teto da API: 100 termos, 50 caracteres cada, sem repetir a mesma palavra em
-outra caixa. Termo longo demais é descartado inteiro, nunca truncado pela
-metade. Na slice 1 a lista é escrita à mão; a partir da slice 3 é gerada das
-entidades do grafo.
+comentário) é lido e mandado como `keyterm`, respeitando o teto da API: 100
+termos, 50 caracteres cada, sem repetir a mesma palavra em outra caixa. Termo
+longo demais é descartado inteiro, nunca truncado pela metade. Na slice 1 a
+lista é escrita à mão; a partir da slice 3 é gerada das entidades do grafo.
+
+**A união não vai inteira: `termoUtil` corta duas classes**, e o corte vale para
+o que vem do arquivo e para o que vem do grafo. O ganho do vocabulário está em
+nome próprio incomum, e cada vaga gasta com palavra que o modelo já escreve
+certo é uma vaga a menos para o nome que ele erra:
+
+| Corte | Por quê |
+|---|---|
+| pronome nunca vira keyterm (`ehPronome`) | é a mesma lista que a revisão e o confirmar usam; a entidade `eu`, que §4.6 descreve como caso real, é `:Pessoa` no grafo e **nunca** é mandada ao STT |
+| palavra comum, quando a entidade tem **uma** palavra só (`COMUNS`, 26 delas) | ensinar o STT a ouvir "casa" com mais força piora a transcrição inteira em troca de nada. Só filtra termo de uma palavra: "meu pai" passa, "pai" sozinho não — e "Ana Paula" passa mesmo que "ana" fosse comum |
+
+**A lista final é cacheada por 5 minutos** (`TTL_MS`), não indefinidamente, e o
+cache é do resultado da união — arquivo ∪ grafo —, não do arquivo. Duas
+consequências que valem estar escritas: um nome que eu confirmo agora leva até
+5 min para chegar ao STT, e o cache é por instância serverless, que é
+exatamente o desenho que §4.12 e §4.13 **recusam** para `regras()` e
+`overrides.ts`. A assimetria é deliberada e o critério é o que a demora custa:
+"salvei uma regra e ela não valeu" é uma promessa quebrada sem ninguém ver;
+"o nome que entrou agora só entra nos keyterms daqui a cinco minutos" custa uma
+grafia numa sessão, e o ritual é de uma vez por dia.
 
 **A lista de fato muda a transcrição** — medido em 2026-08-31, mesmo bloco,
 mesma chamada, só a lista variando:
@@ -1606,6 +1625,16 @@ com prefixo:
 | `[extracao] sessão <id> falhou:` | `extrairSessao` | o modelo estourou, ou a resposta não era JSON válido |
 | `[extracao] sessão <id>: sem transcricao.json…` | `extrairSessao` | pediram extração de uma sessão sem transcrição gravada |
 | `[finalizar] sessão <id> falhou:` | rota `/finalizar` | `finalizarSessao` estourou uma exceção |
+| `[extrair] sessão <id> falhou:` | rota `/extrair` | a re-extração manual morreu — é o log do botão "reextrair" da lista |
+| `[calibracao] sessão <id>: …` | `capturarCorrecoes` | as correções daquela revisão foram (ou não foram) registradas |
+| `[atomos] N átomo(s) gravados sem vetor;` | `gravarAtomos` | o confirmar gravou e o embedding falhou — `POST /api/atomos/embutir` alcança depois (§4.10) |
+| `[overrides] <id>: o hash <h> não resolve texto nenhum, usando a base` | `resolver` | um prompt editado sumiu do R2; o agente cai na base **e** carimba a base (§4.13) |
+| `[overrides] não consegui ler o prompt <agente>+<hash>:` | `promptPorHash` | o mesmo, um nível abaixo — o R2 recusou a leitura |
+
+Os três últimos não são falha de sessão: a sessão segue, e o que se perde é
+material de calibração, um vetor ou um prompt editado. Estão aqui porque esta é
+a tabela que responde "onde aparece o motivo", e um log que ninguém sabe que
+existe não é diferente de log nenhum.
 
 O laço de espera engolia o erro do bloco em `catch {}` — a falha ia para `erro`
 sem uma linha sequer, e depois do fato não havia o que investigar.
@@ -1806,8 +1835,14 @@ nova na mesma sessão — está no §14 como limite.
   `escopo.exp.HMAC-SHA256`, assinado com `AUTH_SECRET` via WebCrypto; comparação
   em tempo constante. Link vale 15 min, cookie de sessão 90 dias, `httpOnly` +
   `sameSite=lax` + `secure` em produção. Sem signup, sem roles, sem reset.
-- **Middleware** é a porta única: só `/entrar` e `/api/auth/*` passam sem cookie.
-  Requisição a `/api/*` sem cookie recebe 401; navegação vai para `/entrar`.
+- **Middleware** é a porta única: no corpo dele só `/entrar` e `/api/auth/*`
+  passam sem cookie. Requisição a `/api/*` sem cookie recebe 401; navegação vai
+  para `/entrar`. Antes do corpo há o `matcher`, e ele decide onde o middleware
+  **nem roda**: `_next/static`, `_next/image`, `favicon.ico`,
+  `manifest.webmanifest` e `icone.svg`. Os dois últimos são exigência do PWA — o
+  navegador busca o manifest e o ícone sem cookie de app —, e por isso são
+  decisão e não descuido; os três primeiros são estático de build. A resposta
+  completa de "o que responde sem cookie" é a soma dos dois lugares.
 - **Nenhuma chave de servidor chega ao cliente** (regra 3): `src/lib/env.ts` só
   roda no servidor e nenhum segredo usa `NEXT_PUBLIC_`. O navegador recebe
   apenas URLs presigned de 5 minutos, uma por bloco.
@@ -1834,13 +1869,19 @@ o valor de `NEO4J_DATABASE` no arquivo de credenciais. Errar esse segmento dá
 `fields`/`values` da resposta em objetos e transforma `errors[0]` em
 `Neo4jError`.
 
-Dois módulos escrevem conteúdo, e a divisão importa:
+Quatro módulos escrevem em nó de conteúdo, e a divisão importa:
 
 | Módulo | Escreve | Quem chama |
 |---|---|---|
 | `atomos.ts` | `:Atomo`, `:Entidade` e `:PERFILA` | **só o confirmar** — nenhum átomo entra antes da revisão (regra 5) |
 | `fusao.ts` | `:Entidade` — funde, renomeia, troca tipo, cria | só as rotas de `/entidades`, com um toque meu em cada uma |
 | `perfil.ts` | `:Entidade` — os três campos de perfil (8.3) | só `POST /api/entidades/perfil`, com um toque meu |
+| `entidades.ts` | `:Entidade` — `embedding`, `embedding_modelo` e `embedding_fonte` (8.4) | `POST /api/entidades/embutir`; o módulo que lê o catálogo é o mesmo que põe o vetor em dia |
+
+`entidades.ts` está na lista porque escrever vetor é escrever no grafo, mesmo
+que o que ele escreva seja derivável do texto a qualquer momento. Ele é a
+exceção da regra de cima e a confirma: é o único dos quatro que grava sem um
+toque meu, e é o único cujo dado se refaz sozinho na passada seguinte.
 
 A regra 5 é sobre o **pipeline** não gravar sozinho. `fusao.ts` é o contrário
 disso: é eu corrigindo à mão o que o pipeline deixou torto. A resolução de
@@ -1960,9 +2001,27 @@ acidente; aqui é o pedido. O ganho é que o nome entra no vocabulário do STT
 enfim for falado a resolução acha a entidade pronta com o tipo que eu escolhi,
 em vez do palpite do extrator.
 
-`status` ausente conta como ativa (`coalesce` em toda leitura). A 004 **não
-migra dado** de propósito: preencher agora arrumaria os nós de hoje e não o que
-um deploy antigo criasse amanhã. A defesa tem que estar na leitura.
+**`status` ausente conta como ativa, e a ausência é o caso normal — não o
+legado.** `Specs/slice-3.md` põe a escolha em duas opções ("ou a migration
+preenche com `'ativa'`, ou o código trata ausência como ativa") e decide pela
+segunda, por ser mais barata e por sobreviver a nó criado por código antigo. A
+implementação seguiu: `gravarEntidades` (`atomos.ts`), que é o caminho por onde
+quase toda entidade nasce, grava `id`, `nome`, `nome_normalizado` e `criado_em`
+e **não** grava `status`; quem grava `status: 'ativa'` é só a semeadura manual
+de `/entidades/criar`. As três leituras de entidade usam
+`coalesce(e.status, 'ativa') <> 'fundida'`, e a defesa está toda ali.
+
+Duas consequências que só se descobrem lendo o código, e por isso ficam
+escritas aqui:
+
+- **o índice `entidade_status` da 004 não é usado.** `coalesce()` sobre a
+  propriedade impede o planejador de usá-lo, e propriedade nula não entra em
+  índice de faixa. Ele existe, está `ONLINE` e não serve a nenhuma das três
+  consultas. Não custa nada com dezenas de nós; é candidato a `DROP` numa
+  migration futura, não a conserto agora;
+- **`WHERE e.status = 'ativa'` não é consulta válida neste grafo.** Quem ler só
+  a migration vai escrevê-la e não achar quase nada. A forma certa, em Cypher
+  novo, é sempre o `coalesce`.
 
 **Nada é automático.** `duplicatas.ts` só propõe — string primeiro (de graça),
 o modelo depois, sobre a lista curta e com os textos dos átomos como contexto.
@@ -2128,10 +2187,11 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | Rota | Faz | Notas |
 |---|---|---|
 | `POST /api/sessoes` | cria `:Sessao {status:'gravando'}` | devolve `id` |
+| `GET /api/sessoes` | a lista de sessões, da mais recente para a mais antiga | teto de 50; **esconde sessão sem bloco** que não esteja `gravando` — ver abaixo |
 | `POST /api/sessoes/:id/chunks/:i/url` | presigned PUT de 5 min | corpo `{ext?}`; 415 fora da lista; o áudio não passa por aqui |
-| `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT)` | corpo `{ext?, duracao_s?}`; `maxDuration = 300` |
+| `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT)` | corpo `{ext?, duracao_s?}` |
 | `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha **e extrai** em `waitUntil` | `ja_finalizada` a partir de `em_revisao`; antes disso, é o retry da extração |
-| `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s, `force-dynamic`; `completa` é sobre a transcrição, não sobre a sessão |
+| `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s; `completa` é sobre a transcrição, não sobre a sessão |
 | `POST /api/sessoes/:id/extrair` | dispara extração **e resolução** de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` refaz as duas e sobrescreve |
 | `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5; `anterior` vem como cabeçalho, e a lista antiga só com `?anterior=1` |
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
@@ -2159,6 +2219,32 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 Todas com `runtime = "nodejs"`. `GET /api/sessoes`, `POST /api/sessoes`,
 `GET /api/sessoes/:id/extracao` e `GET /api/entidades` respondem **502** quando
 Neo4j ou R2 não atendem, com a causa legível no corpo (seção 5.2).
+
+**As duas configurações que mudam comportamento, por extenso.** Nenhuma delas é
+detalhe de deploy: o teto de execução é o que decide se um `waitUntil` termina, e
+`force-dynamic` é o que impede o App Router de servir estado de sessão em cache.
+
+| `maxDuration` | Rotas |
+|---|---|
+| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair` — as três que chamam modelo dentro de `waitUntil` |
+| 60 s | `/confirmar`, `/atomos/embutir`, `/entidades/embutir`, `/entidades/duplicatas`, `/entidades/fundir`, `/entidades/perfil/rascunho`, `/calibracao/rascunho` |
+| padrão | todo o resto |
+
+O 60 s do `/confirmar` é o que mais importa: a apuração de correções roda no
+`waitUntil` dele, **depois** da resposta, e é dentro desse teto que ela termina
+ou não (§4.11).
+
+`dynamic = "force-dynamic"` em seis rotas, todas de leitura de estado:
+`GET /api/sessoes`, `GET /api/sessoes/:id`, `GET /api/sessoes/:id/extracao`,
+`GET /api/entidades`, `GET /api/calibracao` e `GET /api/calibracao/sugestao`.
+
+**`GET /api/sessoes` esconde uma categoria de nó, e isso não é bug.** O filtro é
+`chunks_total > 0 || status === "gravando"`: uma sessão criada e largada antes de
+o primeiro bloco subir não é áudio nenhum e não aparece na lista. O `:Sessao`
+continua no Neo4j para sempre — deleção é soft (regra 6) e nada apaga sessão —,
+então existe uma categoria de nó órfão que a única tela que lista sessões não
+mostra. Custo hoje: nenhum. Custo no dia em que eu contar sessões por Cypher: o
+número não vai bater com a tela.
 
 ## 11. Telas
 
@@ -2208,6 +2294,25 @@ fechar. **Clicar em "subir um áudio" não a fecha**, de propósito: o botão vi
 ficar visíveis onde eu cliquei. Ela some sozinha quando o upload termina e a rota
 troca. A engrenagem só existe com a gravação parada, como os três links que ela
 substituiu: navegar para fora no meio de uma gravação a mataria.
+
+#### O PWA, que é instalabilidade e tela cheia — e mais nada
+
+`CLAUDE.md` decide PWA como stack, e o que existe é o mínimo que faz o app
+**instalar** e abrir sem barra de navegador:
+
+| Peça | Onde | O que dá |
+|---|---|---|
+| `public/manifest.webmanifest` | `display: standalone`, `start_url: "/"`, `theme_color: #0d0d0d`, ícone `/icone.svg` | o "adicionar à tela de início", e o app abrindo sem barra |
+| `metadata.manifest` | `layout.tsx` | é o que põe o `<link rel="manifest">` no HTML |
+| `viewport.viewportFit: "cover"` | `layout.tsx` | a tela chega até a borda no iPhone, por baixo do notch |
+| `matcher` do middleware | `src/middleware.ts` | manifest e ícone respondem sem cookie, senão o navegador não os busca (§7) |
+
+**Não há service worker, não há cache offline e não há instalação promovida.**
+Gravar sem rede não funciona: o `getUserMedia` até abre, mas o bloco não sobe e
+`Processando` não fecha a sessão. O que protege a fala nesse caso é o IndexedDB
+(§3.2), que segura o bloco até a rede voltar — proteção da fila, não do app.
+Quem lê "PWA" em `CLAUDE.md` e espera funcionar no avião vai encontrar menos do
+que espera, e é por isso que está escrito aqui.
 
 Em toda tela dessa tabela menos `/` e `/entrar`, `Marca` fica fixa no canto
 superior esquerdo e leva a `/`. É **só o ponto terracota** — o nome do projeto
@@ -2332,11 +2437,16 @@ Duas fontes, uma por natureza de tela:
 | | Fonte | Telas |
 |---|---|---|
 | ritual | **Nunito** | `/`, `/sessao/:id`, `/sessao/:id/revisar` |
-| gestão | **Inter** | `/sessao/:id/transcricao`, `/sessoes`, `/entidades`, `/entrar` |
+| gestão | **Inter** | `/sessao/:id/transcricao`, `/sessoes`, `/entidades`, `/calibracao`, `/agentes`, `/entrar` |
 
 Ritual é o que eu faço todo dia — falar, esperar processar, revisar. Gestão é
 manutenção, e a transcrição literal está com ela de propósito: é porta de
 serviço, não parte do ritual.
+
+**`RITUAL` é allowlist, e é por isso que a tabela cresce sozinha do lado da
+gestão.** `/calibracao` e `/agentes` nasceram nas fatias 4.6 e 4.7 e caíram em
+Inter sem ninguém marcar nada, que é o comportamento certo: manutenção é
+gestão, e uma tela nova que fosse ritual é que teria de ser declarada.
 
 **A regra é por rota, não por classe CSS** (`src/lib/tipografia.ts`,
 `ehRitual`). Não é preferência: `Processando` e a `Revisao` ainda carregando
@@ -2434,6 +2544,29 @@ AUTH_SECRET, ALLOWED_EMAIL
 `env.ts` usa getters: a variável só é exigida quando alguém de fato precisa dela,
 e a falta vira erro claro em vez de `undefined` silencioso.
 
+**`next.config.mjs` decide se o vocabulário chega à produção**, e por isso não é
+arquivo de configuração qualquer:
+
+```js
+outputFileTracingIncludes: {
+  "/api/sessoes/[id]/chunks/[i]/pronto": ["./config/vocabulario.txt"],
+  "/api/sessoes/[id]/finalizar": ["./config/vocabulario.txt"],
+},
+```
+
+`vocabulario.ts` lê o arquivo do bundle em runtime
+(`readFile(join(process.cwd(), "config", "vocabulario.txt"))`). Sem a entrada
+correspondente, o arquivo **não viaja** na função da Vercel e `doArquivo()` cai
+no `catch` que devolve lista vazia: sem erro, sem log, sem nada na tela. É o
+segundo caminho para o modo de falha que §4.4 e §14 descrevem como o pior deste
+sistema — o vocabulário sumir sem avisar —, e ele não tem nada a ver com trocar
+`STT_MODEL`.
+
+A lista está correta hoje porque `transcrever()` só é alcançada por essas duas
+rotas (`/chunks/:i/pronto` direto, `/finalizar` via `finalizarSessao`). **Uma
+terceira rota que chame o STT perde o arquivo em silêncio**, e não há teste que
+cubra isso.
+
 **Desde a slice 4.7, `/agentes` fica por cima destas variáveis** (§4.13): o modelo
 escolhido no painel vence a variável de ambiente, que por sua vez vence o padrão.
 A validação é a mesma nos três caminhos — `validarIdDeModelo`, string
@@ -2446,9 +2579,15 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 13. Verificação
 
-- `pnpm test` — vitest sobre a lógica pura (chaves, manifest, estados, offsets,
-  vocabulário, backoff, retry de rede, migrate, formatos de importação).
-  Nenhuma credencial, nenhuma rede.
+- `pnpm test` — **45 arquivos, 652 testes**, sem credencial e sem rede. A lista
+  abaixo comenta os que valem uma explicação; a cobertura inteira se lê em
+  `tests/`. Os que não têm bullet próprio cobrem a lógica pura da slice 1
+  (chaves, manifest, estados, offsets, vocabulário, backoff, retry de rede,
+  migrate) e, das fatias seguintes, a escrita no grafo e as telas:
+  `atomos`, `confirmar`, `entidades`, `entidades-grafo`, `revisao`,
+  `calibracao-tela`, `catalogo`, `texto`, `transcricao`, `modelos`, `extracao`
+  (o parser, o envelope e a normalização de tipo — **não** a qualidade da
+  extração, que é o bullet mais abaixo) e `pipeline-extracao`.
 - `tests/audio.test.ts` — resolução de formato, incluindo o `.opus` do WhatsApp
   que chega com `File.type` vazio, e os limites de tamanho e duração.
 - `tests/agentes.test.ts` — a **varredura** (todo `generateText`/`transcribe`/
@@ -2660,6 +2799,18 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Não há como desfazer um confirmar.** `confirmada` não tem transição de saída
   e nada apaga átomo (regra 6). Corrigir depois de confirmar depende de edição
   no grafo, que não existe nesta slice.
+- **Forçar a extração de uma sessão confirmada quebra a procedência dela.** A
+  tela não oferece o botão — `podeReextrair` (`Sessoes.tsx`) recusa `confirmada`,
+  e diz por quê —, mas a rota aceita: `POST /api/sessoes/:id/extrair` com
+  `{"forcar":true}` re-extrai, gasta a chamada de modelo e **sobrescreve o
+  `extracao.json`** contra o qual aqueles átomos foram confirmados. O grafo fica
+  intacto (o status não muda, porque `marcarEmRevisao` tem guarda), e o que se
+  perde é a conferência: §4.7 promete que `id`, offsets, âncoras,
+  `prompt_version` e `modelo` se releem daquele objeto, e ele passa a descrever
+  uma extração que nunca foi confirmada. A proposta real vai para
+  `extracao-anterior.json` e some na segunda vez. A trava está na tela e não no
+  servidor, que é o desenho que §4.7 recusa em todos os outros pontos — fica
+  como limite conhecido, e não como decisão boa.
 - **A extração roda no mesmo `waitUntil` da transcrição.** Em dev isso é o mesmo
   processo: fechar a janela do servidor no meio mata o job e a sessão fica em
   `extraindo`. O retry é chamar `/finalizar` de novo.
