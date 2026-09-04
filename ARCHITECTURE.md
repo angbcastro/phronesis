@@ -105,9 +105,9 @@ dito sem varrer o grafo inteiro, que é o que a 4.5 entrega.
 │ MediaRecorder           │   │ middleware (auth)   │   │ Cloudflare R2        │
 │ IndexedDB (blocos)      │   │ App Router /api/*   │   │  áudio + JSON        │
 │ fila de upload          │   │ waitUntil (STT)     │   │ Neo4j Aura (HTTP)    │
-│ React (5 telas)         │   │                     │   │  :Sessao + conteúdo  │
+│ React (9 telas)         │   │                     │   │  :Sessao + conteúdo  │
 └──────────┬──────────────┘   └──────────┬──────────┘   │ Vercel AI Gateway    │
-           │                             │              │  → modelo de STT     │
+           │                             │              │  → os sete agentes   │
            │  PUT presigned (áudio)      │              └──────────────────────┘
            └─────────────────────────────┴──────────────▶ R2
 ```
@@ -202,7 +202,8 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Leitura (a transcrição literal — porta de serviço),
                   Sessoes (lista de sessões — e a cor que diz o que falta
                     revisar), Entidades (higiene do grafo)
-src/app/api/      as rotas de sessão e de entidade + 2 de auth (seção 10)
+src/app/api/      29 rotas em seis famílias — sessão, entidade, calibração,
+                  agentes, átomos e as 2 de auth (seção 10)
 src/middleware.ts porta única: sem cookie válido nada responde
 db/migrations/    definição canônica do schema
 scripts/          migrate.ts (aplica migrations), smoke.ts (confere externos)
@@ -619,7 +620,7 @@ modelo devolveu um átomo dizendo que o texto era confuso e circular; falar
 desorganizado é o esperado num diário falado, e lista vazia é a resposta certa
 quando não há o que extrair.
 
-#### O que o prompt manda fazer (`extracao-3`)
+#### O que o prompt manda fazer (`extracao-5`)
 
 A primeira versão pedia "uma afirmação por item" e só descartava hesitação. Numa
 sessão real de 45 s isso rendeu 9 átomos — "acordei", "pedalei", "nadei", "fui
@@ -765,7 +766,7 @@ bloco a cada 30 s) e para importação (um bloco só), sem caso especial.
 tipo editáveis; renomear "ela" para "Marina" uma vez faz todos os átomos que
 apontam para ela passarem a apontar para o nome novo. Escolher na barra uma
 entidade que **já existe** re-aponta a candidata inteira para ela, e o tipo passa
-a ser o do nó: o grafo vence, aqui como na resolução (4.6). Entidade
+a ser o do nó: o grafo vence, aqui como na resolução (4.8). Entidade
 **conhecida** não tem barra de nome — renomear nó que já existe é trabalho de
 `/entidades`, e re-apontar um átomo que caiu no nó errado se faz pelo `sobre`
 dele, dentro do átomo.
@@ -1576,6 +1577,12 @@ estado significa para as telas:
 | `temTranscricao` | `transcrito`, `extraindo`, `em_revisao`, `confirmada` | a leitura para o polling; a extração corre atrás |
 | `estaPendenteDeRevisao` | `em_revisao` | tem proposta esperando |
 | `terminouDeProcessar` | `em_revisao`, `confirmada`, `erro` | a leitura para o polling |
+| `estaConcluida` | `confirmada` | terminal: o grafo já recebeu o que eu aprovei |
+
+`estaConcluida` é a única das quatro sem consumidor em `src/`: a lista de
+sessões reescreve a mesma comparação à mão, em `jaRevisada`. Está aqui porque é
+exportada e testada, e porque duas cópias da mesma regra divergem no primeiro
+ajuste.
 
 **A máquina de recuperação foi apagada inteira.** Com o chip da home saíram
 `GET /api/sessoes/abertas` e `sessoesAbertas()`, e com eles as peças que só
@@ -1694,9 +1701,10 @@ stack de undici, o que faz a rede parecer defeito do sistema:
 | `[extracao] …` | `GET /api/sessoes/:id/extracao` | Neo4j ou R2 fora |
 | `[entidades] …` | `GET /api/entidades` | Neo4j fora |
 
-A outra metade do conserto é não pagar a latência três vezes: as três buscas de
-`GET /api/sessoes/:id/extracao` (uma no Neo4j, duas no R2) são independentes e
-vão em `Promise.all`. Em série, essa tela custava a soma de três idas à rede.
+A outra metade do conserto é não pagar a latência quatro vezes: as quatro buscas
+de `GET /api/sessoes/:id/extracao` (uma no Neo4j e três no R2 — `extracao.json`,
+`transcricao.json` e `extracao-anterior.json`) são independentes e
+vão em `Promise.all`. Em série, essa tela custava a soma de quatro idas à rede.
 
 ### 5.3 Quando a falha é pressa, e não defeito
 
@@ -1750,7 +1758,8 @@ onde só havia pressa. O áudio fica intacto no R2 e o retry é o mesmo de sempr
 ## 6. Idempotência
 
 Regra inviolável 4: todo passo é chaveado por `sessao_id` (+ `chunk_index`).
-Três travas independentes:
+Eram três travas na slice 1 — o bloco, a proposta e o manifest; a tabela cresceu
+com cada fatia, e hoje são estas:
 
 | Trava | Onde | Efeito |
 |---|---|---|
@@ -2417,6 +2426,7 @@ componente — quem precisa de uma variação usa `color-mix()` sobre o token.
 | `--status` | `#ffffff` a 0,7 | texto de status e ícone |
 | `--rec` | `#ff4d3d` | o ponto vermelho do selo de REC |
 | `--circulo` | `min(72vw, 264px)` | diâmetro do botão de gravar |
+| `--raio` | `14px` | o canto de cartão, campo e chip |
 | `--ok` | `#6aa84f` | o ponto de "salvo" |
 
 `--fundo` e `--acento` mudaram de `#0f0f10` e `#d8613c` para os valores acima
@@ -2792,7 +2802,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **A qualidade da proposta em caso real não foi medida.** O grafo não tem
   duplicata vinda de sessão, então `duplicatas-1` nunca julgou um par com
   contexto de verdade. A mecânica, sim, está validada ponta a ponta.
-- **Fundir não é atômico.** São quatro consultas pela Query API, sem transação
+- **Fundir não é atômico.** São cinco consultas pela Query API, sem transação
   entre elas. Cair no meio deixa as arestas migradas e o perdedor sem alias — um
   nó de zero átomos aparecendo na lista. **Refazer a fusão cura**: a segunda
   passada não acha aresta para migrar e marca o alias.
