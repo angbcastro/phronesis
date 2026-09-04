@@ -67,6 +67,21 @@ export async function atualizarIndice(
 }
 
 /**
+ * Registra que eu abri `/calibracao` de fato — é o relógio da sugestão (§5 da
+ * spec), e olhar já conta, aprovando regra ou não.
+ *
+ * **Não cria o índice.** Sem índice não há correção em aberto, e sem correção
+ * em aberto a sugestão nunca acende: gravar um objeto só para anotar a visita
+ * a uma tela vazia seria escrever por escrever.
+ */
+export async function marcarVisita(agora: string = new Date().toISOString()): Promise<void> {
+  const atual = await getJson<IndiceCalibracao>(chaveIndiceCalibracao());
+  if (!atual) return;
+
+  await atualizarIndice((i) => ({ ...i, visitado_em: agora }));
+}
+
+/**
  * O que o "faltou um" precisa para nascer ancorado.
  *
  * A transcrição só é lida quando há o que casar — o caso comum é não haver

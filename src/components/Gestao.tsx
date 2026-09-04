@@ -96,6 +96,12 @@ export function Gestao() {
         <Link className="item" href="/entidades" onClick={() => setAberto(false)}>
           entidades
         </Link>
+        {/* Fica aqui sempre, e não só quando há o que calibrar: a gaveta é o
+            mapa da gestão, e porta que aparece e some é porta que eu procuro
+            no lugar errado. Quem aparece por tempo é a sugestão (slice 4.6). */}
+        <Link className="item" href="/calibracao" onClick={() => setAberto(false)}>
+          calibração
+        </Link>
 
         <hr />
 

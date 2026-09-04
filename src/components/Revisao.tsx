@@ -36,6 +36,7 @@ import Link from "next/link";
 import { SeletorEntidade } from "@/components/SeletorEntidade";
 import { CATALOGO_VAZIO, montarCatalogo, resolver } from "@/lib/catalogo";
 import { mencoesDe, sobreDe } from "@/lib/referencias";
+import { localizarNoAudio } from "@/lib/transcricao";
 import { ehPronome, normalizarNome } from "@/lib/texto";
 import { CAMPOS_GESTO, TIPOS_ATOMO, TIPOS_ENTIDADE } from "@/lib/tipos";
 import type { Catalogo, EntidadeDoCatalogo } from "@/lib/catalogo";
@@ -94,7 +95,7 @@ const ROTULO_CAMPO: Record<CampoPerfil, string> = {
   fizemos_juntos: "fizemos juntos",
 };
 
-/** "2026-08-12T…" → "12/ago". Só a data, que é o que situa a lembrança. */
+/** "2026-08-12T…" → "12 de ago", no fuso de quem lê. Só a data, que é o que situa a lembrança. */
 function diaMes(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -105,17 +106,11 @@ const mmss = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 /**
- * Do segundo absoluto para "bloco N, segundo M dentro dele".
- *
- * O último bloco que começa antes do offset é o que contém o trecho. Serve
- * para os dois formatos sem caso especial: gravação tem um bloco a cada 30 s,
- * importação tem um bloco só com offset zero.
+ * Mora em `transcricao.ts`, que é onde offset vira bloco. Reexportado aqui
+ * porque esta tela foi a primeira a precisar dele e é por aqui que o teste o
+ * alcança.
  */
-export function localizarNoAudio(blocos: BlocoAbsoluto[], segundo: number) {
-  const bloco = [...blocos].reverse().find((b) => b.offset_s <= segundo) ?? blocos[0];
-  if (!bloco) return null;
-  return { i: bloco.i, dentro: Math.max(0, segundo - bloco.offset_s) };
-}
+export { localizarNoAudio };
 
 /** Um átomo do jeito que ficou depois das minhas edições na tela. */
 export interface AtomoEditado {

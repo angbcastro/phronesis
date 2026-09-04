@@ -72,10 +72,10 @@ migration: o grafo é o único lugar que esta metade não toca.
 O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
 ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
 deduplicação de **átomo** — dizer a mesma coisa em duas sessões ainda cria dois.
-Da 4.6, falta a metade de leitura: `/calibracao`, o agente `calibracao-1`, as
-regras aprovadas entrando no prompt, o `extracao-anterior` lado a lado e a
-sugestão de calibrar. Hoje as correções **acumulam sem consumidor** — e o
-`extracao-5` continua saindo byte a byte igual ao de antes desta fatia.
+Da 4.6, falta o loop de aprovação: o agente `calibracao-1`, as regras aprovadas
+entrando no prompt, o `extracao-anterior` lado a lado e a sugestão de calibrar.
+`/calibracao` já mostra o acumulado (§11), mas o `extracao-5` continua saindo
+byte a byte igual ao de antes desta fatia.
 Tudo slice 5, e tudo dependente de material acumulado: uma pergunta boa precisa
 saber de quem se está falando, que é o que a slice 4 entrega, e achar o que já foi
 dito sem varrer o grafo inteiro, que é o que a 4.5 entrega.
@@ -129,7 +129,8 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   entidade mais o hash dela. Não fala com o Neo4j
   stt.ts          transcrição — pede o modelo a modelos.ts
   vocabulario.ts  nomes próprios → keyterms do STT
-  transcricao.ts  offsets absolutos, prefixo contíguo, concatenação
+  transcricao.ts  offsets absolutos, prefixo contíguo, concatenação — e o
+                  caminho de volta, do segundo para o bloco que o contém  (client)
   texto.ts        normalização, nome_normalizado e lista de pronomes       (client)
   extracao.ts     átomos a partir da transcrição: prompt, JSON estrito, procedência
   offsets.ts      trecho do modelo → segundo do áudio (modelo não dá timestamp)
@@ -169,6 +170,7 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Tipografia (a classe da fonte, conforme a rota),
                   Processando (fechar a sessão e esperar; leva à revisão),
                   Revisao (aprovar, editar, escutar, confirmar),
+                  Calibracao (o que eu já corrigi, com o áudio à mão),
                   SeletorEntidade (a barra pesquisável de entidade, nos dois
                     lugares da revisão),
                   Leitura (a transcrição literal — porta de serviço),
@@ -1156,6 +1158,34 @@ cada tentativa. Estourado o teto, a eviction come as **fechadas** antes das
 **abertas**: fechada já cumpriu o papel e o registro por sessão cobre auditoria;
 aberta perdida daqui é inatingível para sempre.
 
+#### A tela: o material mandou no desenho
+
+`/calibracao` é gestão — `tipografia.ts` a serve com Inter sem ninguém marcar
+nada, porque `RITUAL` é allowlist —, e vive na gaveta da `Gestao`, sempre, e não
+só quando há o que calibrar: gaveta é mapa, e porta que aparece e some é porta
+que se procura no lugar errado.
+
+**O desenho dela saiu da primeira rodada real, não de palpite.** Medido em
+2026-09-04, com 5 sessões e 21 correções: **metade são correções de `texto`, com
+`antes` e `depois` de 200 a 660 caracteres.** Isso a tira da categoria "lista de
+rótulos curtos" — o que ela precisa resolver é ler dois parágrafos e enxergar
+onde diferem. Daí a única regra de apresentação que não é CSS: par que somado
+cabe em 90 caracteres vai **em linha**, com a seta; acima disso vai
+**empilhado**, um bloco sob o outro, cada um etiquetado ("o que veio" / "o que
+eu deixei"). Sem diff colorido: cor que aponta o que mudou é a tela afirmando
+uma leitura que eu não pedi.
+
+Cada correção com âncora ganha `▶ mm:ss` (`localizarNoAudio`, o mesmo da
+revisão), e a proposta da sessão só é buscada **quando eu clico** — uma ida à
+rede por sessão, guardada, não uma por correção ao abrir. Correção com
+`tocado: false` mostra "inferida": ela veio da trava 2, não de um gesto meu, e a
+tela tem que dizer isso ou eu a leio como coisa que fiz.
+
+No rodapé, atrás de um botão, os `descartados` da extração agrupados por motivo
+— item que o modelo devolveu e a validação recusou. A revisão já os carregava e
+nunca os renderizou. É o outro lado da correção: ali eu digo o que ficou torto,
+aqui o código diz o que nem passou.
+
 #### Quando roda, e o que se perde se não rodar
 
 Dentro do `waitUntil`, depois da resposta, num `try/catch` que nunca derruba o
@@ -1757,6 +1787,7 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5 — contrato inalterado, campo novo |
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
 | `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo, com `:PERFILA`, e apura as correções em `waitUntil` | `ja_confirmada` na segunda; procedência relida do R2, não do corpo; `gestos` é **opcional** e corpo sem ele confirma igual |
+| `GET /api/calibracao` | o índice de correções, para a tela de calibração | marca `visitado_em` em `waitUntil` — best-effort, e só se o índice já existe |
 | `GET /api/entidades` | o que está no grafo, com átomos, sessões, aliases e perfil | só leitura; nó fundido vira alias do vencedor; alimenta também o seletor da revisão |
 | `POST /api/entidades/duplicatas` | propõe pares que parecem a mesma coisa | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/entidades/fundir` | `{vencedora, perdedora}` — migra arestas, marca alias | idempotente pela guarda de `status` |
@@ -1785,6 +1816,7 @@ Neo4j ou R2 não atendem, com a causa legível no corpo (seção 5.2).
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, escrever o perfil |
+| `/calibracao` | `Calibracao` | o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
 | `/entrar` | página de login | pede o e-mail permitido |
 
 **Clicar na sessão leva sempre para onde ainda há o que fazer.** Proposta

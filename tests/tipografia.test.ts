@@ -22,7 +22,7 @@ describe("o caminho do ritual", () => {
   });
 
   it("as telas de manutenção são gestão", () => {
-    for (const r of ["/sessoes", "/entidades", "/entrar"]) {
+    for (const r of ["/sessoes", "/entidades", "/calibracao", "/entrar"]) {
       expect(ehRitual(r), r).toBe(false);
     }
   });

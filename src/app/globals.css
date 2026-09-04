@@ -852,6 +852,124 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .gaveta:not(.aberta) { transform: translateX(-100%); }
 }
 
+/* ── calibração: o que eu já corrigi ───────────────────────────────────────
+   O material manda no desenho. Metade das correções são parágrafos de 200 a
+   660 caracteres, então o cartão é largo, o texto respira, e o par longo vem
+   empilhado — não em duas colunas, que num celular viraria duas colunas de
+   quatro palavras. Sem cor de diff: cor que aponta o que mudou é a tela
+   afirmando uma leitura que eu não pedi. */
+.calibracao {
+  width: 100%;
+  max-width: 38rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.calibracao h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem; }
+.calibracao header p { margin: 0; }
+.calibracao .aguardando { color: var(--texto-fraco); font-size: 0.95rem; }
+
+.correcoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+
+.correcao {
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  background: var(--fundo-alto);
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+/* Fechada já cumpriu o papel: continua legível, para de chamar atenção. */
+.correcao.fechada { opacity: 0.55; background: none; }
+
+.correcao .cabecalho {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--texto-fraco);
+}
+.correcao .acao { color: var(--texto); }
+.correcao .quando { margin-left: auto; }
+
+/* O selo é de **quem produziu**, não de gravidade — daí a mesma forma para os
+   três, e cor só no da extração, que é o único que esta fatia calibra. */
+.correcao .selo {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--linha);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+.correcao .selo.extracao { border-color: var(--acento); color: var(--acento); }
+.correcao .tipo-atomo { font-size: 0.72rem; letter-spacing: 0.03em; }
+
+.correcao .contexto {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--texto-fraco);
+  border-left: 2px solid var(--linha);
+  padding-left: 0.6rem;
+}
+
+.correcao .par-curto {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  line-height: 1.5;
+}
+.correcao .par-curto .antes { color: var(--texto-fraco); text-decoration: line-through; }
+.correcao .par-curto .seta { color: var(--texto-fraco); }
+
+.correcao .par-longo { display: flex; flex-direction: column; gap: 0.6rem; }
+.correcao .par-longo .lado { display: flex; flex-direction: column; gap: 0.2rem; }
+.correcao .par-longo .rotulo { font-size: 0.72rem; color: var(--texto-fraco); }
+.correcao .par-longo p {
+  margin: 0;
+  line-height: 1.55;
+  font-size: 0.95rem;
+  border-left: 2px solid var(--linha);
+  padding-left: 0.6rem;
+}
+/* O que eu deixei é o que vale: a borda dele é a única marca de direção. */
+.correcao .par-longo .lado:last-child p { border-left-color: var(--acento); }
+
+.correcao .rodape { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.correcao .ouvir {
+  border: 1px solid var(--linha);
+  background: none;
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.82rem;
+  color: var(--texto-fraco);
+}
+.correcao .ouvir:hover { color: var(--texto); border-color: var(--texto-fraco); }
+.correcao .inferida,
+.correcao .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+.correcao .inferida { border-bottom: 1px dotted var(--texto-fraco); cursor: help; }
+
+.refugo { margin-top: 0.5rem; }
+.refugo h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.4rem; }
+.refugo ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.refugo li { font-size: 0.88rem; color: var(--texto-fraco); }
+.refugo .n { color: var(--texto); }
+.abrir-refugo {
+  border: 1px solid var(--linha);
+  background: none;
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.88rem;
+  color: var(--texto-fraco);
+}
+.abrir-refugo:hover { color: var(--texto); border-color: var(--texto-fraco); }
+
 /* Espaço para ela nas telas que ela cobre. `.leitura` já abre com 3.5rem. */
 .sessoes,
+.calibracao,
 .revisao { padding-top: 3.75rem; }

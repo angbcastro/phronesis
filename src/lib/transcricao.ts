@@ -16,6 +16,23 @@ import { DURACAO_CHUNK_S } from "./tipos";
 
 export const offsetDoBloco = (i: number): number => i * DURACAO_CHUNK_S;
 
+/**
+ * O caminho de volta: do segundo absoluto para "bloco N, segundo M dentro dele".
+ *
+ * O último bloco que começa antes do offset é o que contém o trecho. Serve para
+ * os dois formatos sem caso especial: gravação tem um bloco a cada 30 s,
+ * importação tem um bloco só com offset zero.
+ *
+ * Mora aqui, e não na tela que a usa primeiro, porque duas telas a usam — a
+ * revisão e a calibração — e a segunda não deve arrastar a primeira inteira
+ * para o bundle só por causa de seis linhas puras.
+ */
+export function localizarNoAudio(blocos: BlocoAbsoluto[], segundo: number) {
+  const bloco = [...blocos].reverse().find((b) => b.offset_s <= segundo) ?? blocos[0];
+  if (!bloco) return null;
+  return { i: bloco.i, dentro: Math.max(0, segundo - bloco.offset_s) };
+}
+
 export function absolutizarPalavras(bloco: TranscricaoBloco): Palavra[] {
   const offset = offsetDoBloco(bloco.i);
   return bloco.palavras.map((p) => ({
