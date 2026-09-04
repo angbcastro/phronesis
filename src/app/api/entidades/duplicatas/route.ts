@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { julgar, parecidas, PROMPT_VERSION_DUPLICATAS } from "@/lib/duplicatas";
+import type { ParJulgado } from "@/lib/duplicatas";
 import type { ContextoEntidade } from "@/lib/duplicatas";
 import { listarEntidades } from "@/lib/entidades";
 import { paresDistintos } from "@/lib/fusao";
-import { modeloDuplicatas } from "@/lib/modelos";
 import { query } from "@/lib/neo4j";
 import { erro } from "@/lib/rotas";
 
@@ -65,14 +65,17 @@ export async function POST() {
       });
     }
 
+    // Modelo e versão saem daqui, e não de `modeloDuplicatas()` ao lado: desde
+    // o painel (4.7) os dois podem vir do que eu editei, e procedência tem de
+    // ser o que rodou, não o que a rota recalcularia.
     const julgados = await julgar(candidatos, contexto);
 
     return NextResponse.json({
       // Só o que o modelo achou ser a mesma coisa. O resto eu não preciso ver:
       // a tela é para decidir fusão, não para ler o raciocínio dele.
-      pares: julgados
-        .filter((p) => p.mesma)
-        .map((p) => ({
+      pares: julgados.pares
+        .filter((p: ParJulgado) => p.mesma)
+        .map((p: ParJulgado) => ({
           ...p,
           nome_a: porChave.get(p.a)?.nome ?? p.a,
           nome_b: porChave.get(p.b)?.nome ?? p.b,
@@ -80,8 +83,8 @@ export async function POST() {
           sessoes_b: porChave.get(p.b)?.sessoes ?? 0,
         })),
       analisados: candidatos.length,
-      modelo: modeloDuplicatas(),
-      prompt_version: PROMPT_VERSION_DUPLICATAS,
+      modelo: julgados.modelo,
+      prompt_version: julgados.prompt_version,
     });
   } catch (e) {
     console.error("[duplicatas]", e);

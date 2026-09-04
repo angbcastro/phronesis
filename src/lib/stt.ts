@@ -19,6 +19,7 @@
 import { experimental_transcribe as transcribe } from "ai";
 import { comEsperaDeLimite, ehLimiteDeTaxa } from "./limite";
 import { garantirGateway, modeloStt, opcoesDeVocabulario } from "./modelos";
+import { efetivo } from "./overrides";
 import { vocabulario } from "./vocabulario";
 import type { Granularidade, Palavra } from "./tipos";
 
@@ -88,7 +89,11 @@ export async function transcrever(
   { ate }: { ate?: number } = {},
 ): Promise<ResultadoStt> {
   garantirGateway(); // falha cedo, antes de mandar os bytes
-  const modelo = modeloStt();
+  // O modelo que eu escolhi no painel, ou `STT_MODEL`, ou o padrão (4.7).
+  // Este agente não tem prompt: o que ele recebe de mim é o vocabulário, e o
+  // canal dele depende do provedor (`opcoesDeVocabulario`) — trocar de modelo
+  // aqui pode deixar a lista de nomes próprios sem por onde chegar.
+  const { modelo } = await efetivo("stt", { modelo: modeloStt() });
   const termos = await vocabulario();
 
   let resultado;

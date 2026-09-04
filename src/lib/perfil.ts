@@ -22,6 +22,7 @@
  */
 import { generateText } from "ai";
 import { garantirGateway, modeloPerfil } from "./modelos";
+import { carimbo, efetivo } from "./overrides";
 import { query } from "./neo4j";
 import { normalizarNome } from "./texto";
 import { CAMPOS_PERFIL, TETO_PERFIL } from "./tipos";
@@ -134,7 +135,7 @@ const COMO_USAR: Record<CampoPerfil, string> = {
   fizemos_juntos: "o que o dono do diário e essa entidade já fizeram juntos",
 };
 
-const INSTRUCOES = `Você mantém a ficha de uma entidade num diário pessoal. Recebe o texto que já está escrito num campo dessa ficha e os trechos do diário que falam desse campo, e devolve o texto ATUALIZADO.
+export const INSTRUCOES = `Você mantém a ficha de uma entidade num diário pessoal. Recebe o texto que já está escrito num campo dessa ficha e os trechos do diário que falam desse campo, e devolve o texto ATUALIZADO.
 
 REGRAS
 - Escreva na terceira pessoa, direto, sem floreio. Não é um parágrafo bonito, é uma anotação para ser lida rápido.
@@ -173,10 +174,12 @@ export async function rascunhar(
   }
 
   garantirGateway();
-  const modelo = modeloPerfil();
+  // O prompt e o modelo que eu editei no painel, ou a base do git (slice 4.7).
+  const meu = await efetivo("perfil", { prompt: INSTRUCOES, modelo: modeloPerfil() });
+  const modelo = meu.modelo;
 
   const trechos = marcados.map((a) => `- [${a.tipo}] ${a.texto}`).join("\n");
-  const prompt = `${INSTRUCOES}
+  const prompt = `${meu.prompt}
 
 ENTIDADE: ${nome}
 CAMPO: ${campo} — ${COMO_USAR[campo]}
@@ -205,7 +208,7 @@ ${trechos}`;
     texto: extrairTexto(bruto).slice(0, TETO_PERFIL),
     atomos: marcados.length,
     modelo,
-    prompt_version: PROMPT_VERSION_PERFIL,
+    prompt_version: carimbo(PROMPT_VERSION_PERFIL, meu.hash),
   };
 }
 

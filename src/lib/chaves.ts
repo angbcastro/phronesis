@@ -11,6 +11,8 @@
  *   sessoes/<id>/correcoes.json
  *   calibracao/indice.json
  *   calibracao/regras-<hash>.json
+ *   config/agentes.json
+ *   config/prompt-<agente>-<hash>.json
  */
 import { EXT_GRAVACAO, extensaoAceita } from "./audio";
 
@@ -61,6 +63,32 @@ export const chaveIndiceCalibracao = () => `calibracao/indice.json`;
  * prompt que o produziu se acha por esta chave e por mais nada.
  */
 export const chaveRegras = (hash: string) => `calibracao/regras-${hash}.json`;
+
+/**
+ * O que eu editei dos agentes: por agente, o hash do prompt e o modelo.
+ *
+ * Um objeto só para os sete, e não um por agente, porque a tela e cada chamada
+ * de agente querem o mesmo retrato — sete GETs para responder "o que está em
+ * vigor" seria pagar sete vezes pela mesma pergunta.
+ *
+ * Fora de `sessoes/` e fora de `calibracao/`: não é de sessão nenhuma e não é
+ * material de calibração; é configuração.
+ */
+export const chaveAgentes = () => `config/agentes.json`;
+
+/**
+ * Um prompt editado, **imutável para sempre** — o gêmeo de `chaveRegras`.
+ *
+ * O nome carrega o agente **e** o hash porque o mesmo texto em dois agentes
+ * seria o mesmo hash, e ler `config/prompt-a3f91c7d.json` não diria de quem é.
+ * É por esta chave, e por mais nenhuma, que um átomo carimbado
+ * `extracao-5+a3f91c7d` resolve o texto que o produziu.
+ */
+export const chavePromptAgente = (agente: string, hash: string) => {
+  if (!/^[a-z]{3,20}$/.test(agente)) throw new Error(`Agente inválido: ${agente}`);
+  if (!/^[0-9a-f]{8,64}$/.test(hash)) throw new Error(`Hash inválido: ${hash}`);
+  return `config/prompt-${agente}-${hash}.json`;
+};
 
 export function indiceChunk(i: number): string {
   if (!Number.isInteger(i) || i < 0 || i > 999_999) {

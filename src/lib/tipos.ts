@@ -514,3 +514,72 @@ export interface VersaoDeRegras {
  * sem limite é exatamente como esta fatia estragaria a extração que já presta.
  */
 export const MAX_REGRAS = 12;
+
+// ───────────────────────── slice 4.7: os agentes ─────────────────────────
+
+/**
+ * Todo ponto deste sistema que fala com o Gateway, nomeado.
+ *
+ * Mora aqui, no módulo sem import nenhum, porque três camadas precisam do mesmo
+ * id sem depender umas das outras: `overrides.ts` (que grava), cada agente (que
+ * lê o override do próprio id) e `agentes.ts` (o registro que a tela mostra).
+ * Se ele morasse no registro, todo agente importaria o registro, e o registro
+ * importa todo agente — ciclo.
+ *
+ * `stt` e `embedding` estão na lista mesmo sem prompt: eles têm modelo, e o
+ * painel é de tudo que sai pelo Gateway, não só do que tem texto.
+ */
+export const AGENTE_IDS = [
+  "stt",
+  "extracao",
+  "resolucao",
+  "perfil",
+  "calibracao",
+  "duplicatas",
+  "embedding",
+] as const;
+
+export type AgenteId = (typeof AGENTE_IDS)[number];
+
+export const ehAgenteId = (v: unknown): v is AgenteId =>
+  typeof v === "string" && (AGENTE_IDS as readonly string[]).includes(v);
+
+/**
+ * Quando cada agente roda. É selo na tela, e a diferença importa para ler o
+ * custo: `automatico` roda em toda sessão, `condicional` só quando o caso
+ * aparece, `sob_demanda` só quando eu aperto um botão.
+ */
+export type QuandoRoda = "automatico" | "condicional" | "sob_demanda";
+
+/**
+ * O que eu editei de um agente. Ausente em qualquer campo = a base do git.
+ *
+ * `prompt_hash` e não o texto: o texto vive num objeto imutável próprio
+ * (`config/prompt-<id>-<hash>.json`), porque é ele que um `prompt_version`
+ * carimbado meses atrás precisa resolver. O índice guarda só o ponteiro.
+ */
+export interface OverrideDeAgente {
+  prompt_hash?: string | null;
+  modelo?: string | null;
+  atualizado_em: string;
+}
+
+/** `config/agentes.json` — o índice inteiro, um objeto por agente tocado. */
+export interface ConfigAgentes {
+  overrides: Partial<Record<AgenteId, OverrideDeAgente>>;
+  atualizado_em: string;
+}
+
+/**
+ * `config/prompt-<id>-<hash>.json` — **imutável para sempre**, pela mesma razão
+ * que `VersaoDeRegras`: o sufixo de `prompt_version` tem que resolver para um
+ * texto, e um átomo de três meses atrás é quem cobra essa promessa.
+ */
+export interface VersaoDePrompt {
+  agente: AgenteId;
+  hash: string;
+  texto: string;
+  /** Hash do que esta substituiu, ou `null` quando veio direto da base. */
+  anterior: string | null;
+  criada_em: string;
+}

@@ -118,6 +118,11 @@ export function Gestao() {
         <Link className="item" href="/entidades" onClick={() => setAberto(false)}>
           entidades
         </Link>
+        {/* O painel de quem faz o trabalho: o fluxo desenhado, e o prompt e o
+            modelo de cada agente editáveis ali mesmo (slice 4.7). */}
+        <Link className="item" href="/agentes" onClick={() => setAberto(false)}>
+          agentes
+        </Link>
         {/* Fica aqui sempre, e não só quando há o que calibrar: a gaveta é o
             mapa da gestão, e porta que aparece e some é porta que eu procuro
             no lugar errado. Quem aparece por tempo é a sugestão (slice 4.6). */}

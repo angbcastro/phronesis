@@ -9,8 +9,8 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.5.md`.
 > arquivo no mesmo commit. Ver "Manutenção deste arquivo" no fim.
 
 **Estado: slice 2 fechada e validada; slices 3 (higiene do grafo), 4
-(identidade por contexto), 4.5 (o grafo ganha vetor) e 4.6 (o prompt aprende
-com a revisão) construídas.**
+(identidade por contexto), 4.5 (o grafo ganha vetor), 4.6 (o prompt aprende
+com a revisão) e 4.7 (o painel dos agentes) construídas.**
 Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. Terminada
 a transcrição, a extração dispara sozinha, grava a proposta em `extracao.json` e
 deixa a sessão em `em_revisao` (seções 4.6 e 5); o confirmar da revisão grava
@@ -29,7 +29,7 @@ o vencedor na sessão seguinte em vez de renascer como nó novo.
 do nome** (seções 4.8 e 8.3). "Raffa" e "Rapha" são o mesmo som: o STT escreve
 uma grafia só para os dois, e a grafia carrega **zero** sinal sobre quem é. Por
 isso são **dois agentes e não um** — o `extracao-5` extrai e devolve o nome cru,
-e o `resolucao-1` atribui cada menção a um nó, lendo os três campos de perfil da
+e o `resolucao-2` atribui cada menção a um nó, lendo os três campos de perfil da
 entidade. Dúvida **destaca, não trava**: a revisão marca o átomo, mostra o motivo
 e o confirmar continua liberado. Sessão em que nenhuma menção é ambígua não
 chama o agente 2 e não paga nada.
@@ -76,6 +76,15 @@ byte a byte igual ao de antes desta fatia, o que faz dela um no-op até o meu
 primeiro toque. Verificado por medição, não por confiança: 21 correções reais em
 5 sessões, e um terço delas mostrou que o maior erro do pipeline não é o
 extrator, é o STT ouvindo nome próprio errado (§14).
+
+**E os sete agentes ganharam rosto** (seção 4.13). `/agentes` desenha o fluxo
+inteiro — STT, extração, resolução, calibração, perfil, duplicatas, embedding, e
+o único nó humano no meio deles —, e clicar numa caixa abre o prompt e o modelo
+daquele agente, editáveis, valendo na próxima execução e **sem deploy**. O
+mecanismo é o da 4.6 generalizado: texto no R2, snapshot imutável por hash,
+sufixo no `prompt_version`. Sem override nenhum, todo agente sai byte a byte
+igual ao de antes desta fatia, e é `tests/agentes.test.ts` quem cobra isso — mais
+a varredura que impede um agente novo de nascer fora do painel.
 
 O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
 ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
@@ -152,7 +161,13 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   acumulado, por etag) e o agente 4, que rascunha regra e não
                   escreve nada
   regras.ts       as regras aprovadas: o hash que vira sufixo de prompt_version,
-                  a leitura tolerante e o snapshot imutável
+                  a leitura tolerante e o snapshot imutável — e o hashDeTexto
+                  que o override também usa
+  overrides.ts    o prompt e o modelo que eu editei na tela: leitura tolerante,
+                  snapshot imutável por hash, e o carimbo. Não sabe quais
+                  agentes existem — recebe o id e a base de quem chama
+  agentes.ts      o registro dos sete e o desenho do fluxo. Fica ACIMA dos
+                  agentes: importa os cinco prompts, e nenhum deles o importa
   referencias.ts  lê os dois formatos de proposta (antes e depois da 4)  (client)
   catalogo.ts     busca de entidade no navegador: trecho, acento, alias (client)
   tipografia.ts   qual tela é ritual e qual é gestão — a regra da fonte  (client)
@@ -181,6 +196,7 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Processando (fechar a sessão e esperar; leva à revisão),
                   Revisao (aprovar, editar, escutar, confirmar),
                   Calibracao (o que eu já corrigi, com o áudio à mão),
+                  Agentes (o fluxo desenhado, e o prompt e o modelo de cada um),
                   SeletorEntidade (a barra pesquisável de entidade, nos dois
                     lugares da revisão),
                   Leitura (a transcrição literal — porta de serviço),
@@ -805,7 +821,7 @@ acrescenta qualquer sujeito que eu tenha escrito à mão. Duas guardas no servid
 porque a regra não pode depender da UI: nome que caia na lista de pronomes é
 recusado com 400, e `tipo` é validado contra `TIPOS_ENTIDADE`.
 
-### 4.8 Identidade por contexto (agente 2, `resolucao-1`)
+### 4.8 Identidade por contexto (agente 2, `resolucao-2`)
 
 **"Raffa" e "Rapha" são o mesmo som.** O STT escreve uma grafia só para os dois,
 e ter os dois nomes no vocabulário não ajuda — só torna arbitrário qual sai. A
@@ -1337,6 +1353,157 @@ nada. E ela aparece **só na gaveta**, nunca no ícone em `/` — a tela de grav
 tela que não pode cobrar. Abrir a tela apaga a sugestão por mais três semanas,
 aprovando regra ou não: olhar já conta.
 
+### 4.13 O painel dos agentes (slice 4.7)
+
+Sete pontos deste sistema falam com o Gateway. Até esta fatia, saber o que cada
+um fazia exigia abrir cinco arquivos de `src/lib/`, e mudar qualquer coisa exigia
+um deploy. `/agentes` é onde eles passam a ter rosto: o fluxo desenhado, e cada
+caixa abrindo o prompt e o modelo que a comandam.
+
+| Agente | Módulo | Quando | Modelo | Envelope que o parser exige |
+|---|---|---|---|---|
+| STT (sem prompt) | `stt.ts` | automático, por bloco | `STT_MODEL` | — |
+| `extracao-5` | `extracao.ts` | automático, no fim da transcrição | `EXTRACAO_MODEL` | `atomos`, `entidades` |
+| `resolucao-2` | `resolucao.ts` | condicional: só com menção ambígua | `RESOLUCAO_MODEL` | `referencias`, `perfil` |
+| `calibracao-1` | `calibracao.ts` | sob demanda, em `/calibracao` | `CALIBRACAO_MODEL` | `regras`, `cita` |
+| `perfil-1` | `perfil.ts` | sob demanda, em `/entidades` | `PERFIL_MODEL` | `texto` |
+| `duplicatas-1` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
+| embedding (sem prompt) | `embedding.ts` | automático, depois de gravar | `EMBEDDING_MODEL` | — |
+
+#### O mecanismo é o da 4.6, generalizado
+
+Nada novo foi inventado: as regras aprovadas já viviam no R2 e já valiam sem
+deploy, com snapshot imutável por hash e sufixo no `prompt_version`. `overrides.ts`
+é `regras.ts` aberto para os sete, e o cabeçalho de lá continua sendo a
+explicação de por que R2 (serverless não tem disco gravável nem compartilhado),
+por que snapshot imutável (o carimbo tem de resolver para um texto), e **por que
+sem cache** (cache por instância faria "salvei, vale na próxima" ser falso de um
+jeito que ninguém vê).
+
+```
+config/agentes.json                  { overrides: { <agente>: { prompt_hash, modelo, atualizado_em } } }
+config/prompt-<agente>-<hash>.json   { agente, hash, texto, anterior, criada_em } — imutável
+```
+
+**Nunca propaga erro na leitura.** R2 fora do ar não impede sessão nenhuma de ser
+transcrita ou extraída: sem override, o agente sai byte a byte igual ao de antes
+desta fatia. A falha degrada para o comportamento bom, não para nenhum — e é o
+mesmo motivo que faz a slice inteira ser um **no-op** até o meu primeiro toque.
+
+O custo está declarado: **uma leitura do índice por chamada de agente.** Uma por
+sessão na extração, uma na resolução, e **trinta numa sessão gravada de 15 min no
+STT**, uma por bloco. É o preço que `regras()` já paga, e é o preço de a promessa
+ser verdadeira em vez de quase.
+
+#### A procedência de um prompt editado
+
+`prompt_version` carrega de onde o texto veio, e o prefixo diz por qual chave o
+hash resolve:
+
+| Carimbo | Quem produziu | Resolve em |
+|---|---|---|
+| `extracao-5` | a base do git, sem regra aprovada | o próprio git |
+| `extracao-5+a3f91c7d` | a base do git, com regra aprovada | `calibracao/regras-<hash>.json` |
+| `extracao-5+p1b2c3d4` | prompt editado no painel | `config/prompt-extracao-<hash>.json` |
+| `extracao-5+p1b2c3d4+a3f91c7d` | prompt editado **e** regra aprovada | os dois objetos, nesta ordem |
+
+Sem o `p`, ler um carimbo antigo viraria adivinhação: um hash só não teria como
+resolver dois objetos diferentes. O hash sai do **conteúdo**, então salvar o
+mesmo texto duas vezes não cria versão nova, e desfazer uma edição devolvendo o
+texto original devolve o carimbo original.
+
+**E o hash volta `null` quando o texto não foi usado.** Ponteiro que não resolve
+objeto — índice apontando para um prompt que sumiu — cai na base **e** carimba a
+base. Carimbar uma versão que não rodou é procedência falsa, que é pior que
+procedência nenhuma.
+
+#### Onde a regra aprovada entra num prompt editado
+
+O bloco `AJUSTES QUE EU PEDI` continua entrando **antes do cabeçalho `FORMATO`**:
+depois de tudo o que instrui, antes do que descreve o envelope de saída. Enquanto
+o prompt eram duas constantes, esse ponto era a emenda entre elas; agora é um
+cabeçalho procurado no texto (`comRegras`). Se eu renomear o cabeçalho ao editar,
+as regras vão para o fim, antes da transcrição — pior lugar, e ainda assim o
+comportamento certo: regra aprovada não pode sumir porque um cabeçalho mudou de
+nome.
+
+#### As duas travas, e as duas são no servidor
+
+**O envelope.** Eu posso reescrever o prompt inteiro, inclusive o `FORMATO` — mas
+não posso salvar um que deixe de pedir o JSON que o parser sabe ler. `POST
+/api/agentes/:id` recusa com 400 dizendo qual chave falta. Sem isso o erro só
+apareceria na próxima sessão, na hora de extrair, e derrubaria todas as
+seguintes. É substring e não JSON de verdade, de propósito: o que se checa é se o
+prompt continua **pedindo** o formato, e isso é pergunta sobre o texto.
+
+**O embedding não tem campo de modelo.** Os dois índices vetoriais declaram 1536
+dimensões na migration 006 (§8.4); trocar por um modelo de outra dimensão pede
+`DROP` e migration nova, que é decisão aprovada e não toque de tela. A caixa
+mostra o modelo e o motivo, em vez de um campo que aceitaria e quebraria.
+
+Duas mais, menores, e as duas evitam que o painel minta: id de modelo continua
+passando por `validarIdDeModelo` (regra 8 — string `provedor/modelo`, nunca
+objeto de provedor), e **salvar o texto igual ao da base revoga o override**, em
+vez de guardar uma "edição" byte a byte idêntica ao git que faria o painel dizer
+"editado" e o átomo sair carimbado com `+p`.
+
+#### O desenho, e por que ele em vez de uma lista
+
+Sete linhas numa tabela não dizem que a resolução roda **dentro** da extração,
+que a regra que eu aprovo volta para o prompt do extrator, nem que existe
+exatamente **um** nó humano no meio de tudo — e é esse nó que a regra 5 protege.
+A lista descreve; o desenho explica. Por isso o nó da revisão é terracota e é o
+único que não é agente nem dado.
+
+O fluxo é **dado** (`NOS` e `ARESTAS`, em `agentes.ts`), e não marcação no
+componente: sistema que muda tem de quebrar um teste, não só ficar feio numa
+tela. `tests/agentes.test.ts` cobra que toda aresta ligue nós que existem, que
+todo agente tenha caixa, que nenhum nó fique solto no desenho, e que o nó humano
+continue sendo um só.
+
+A grade é **vertical**, quatro colunas, e rola na horizontal quando não couber.
+Este app vive no celular: um canvas que se arrasta e se dá zoom é confortável no
+monitor e inútil no telefone, e diagrama espremido não é diagrama responsivo, é
+diagrama ilegível. **Nenhuma dependência entrou** — as caixas são uma grade CSS
+posicionada pelo `linha`/`coluna` do registro, e as setas são um `<svg>` por
+cima, medido do DOM com `ResizeObserver`. Mesma escolha do `SeletorEntidade`, que
+foi escrito à mão em vez de trazer um combobox de biblioteca.
+
+**Quatro colunas, e não três, por causa de um invariante do roteador.** Uma
+aresta de ida é um cotovelo — desce, atravessa na altura do meio entre as duas
+linhas, desce —, então **aresta que pula uma linha atravessa a caixa que está
+entre elas**. O `grafo` tem três filhos (`duplicatas`, `perfil`, `embedding`) e
+eles têm de caber na mesma linha; a quarta coluna é por onde a calibração desce
+sem disputar espaço com eles. `tests/agentes.test.ts` cobra os dois lados: aresta
+de ida liga linhas vizinhas, e realimentação sempre sobe. Foi esse teste que
+pegou o desenho de três colunas, em que `grafo → perfil` cortava a caixa do
+`duplicatas`.
+
+A realimentação é a exceção, e por isso tem traço próprio: curva pontilhada
+terracota, saindo pela lateral e subindo **por fora** da grade — é o que o
+`padding` horizontal do palco reserva. São as três voltas que fecham o sistema
+(a regra que volta ao extrator, o perfil e o vetor que voltam ao resolvedor) mais
+a proposta de fusão, e elas são justamente o que uma lista de sete linhas não
+conta.
+
+#### A varredura, que é o teste que mais vale
+
+`tests/agentes.test.ts` percorre `src/` e falha quando um arquivo chama
+`generateText`, `transcribe`, `embed` ou `embedMany` sem pertencer a um agente do
+registro. É o mesmo desenho de `tests/gateway.test.ts`, e existe pelo mesmo tipo
+de razão: sem ele, um agente novo nasceria **funcionando e invisível** — rodando
+em toda sessão, cobrando, e sem caixa no painel nem prompt que eu pudesse ler. Se
+ele te barrou, o conserto é registrar o agente em `agentes.ts`.
+
+#### O que esta fatia não faz
+
+Não guarda histórico de edição: `config/agentes.json` tem o que vale agora, e os
+snapshots por hash guardam os textos, mas não há linha do tempo nem "desfazer" de
+mais de um passo. Não mede nada — não há latência, custo nem contagem de chamada
+por agente, porque `CLAUDE.md` proíbe métrica automática de qualidade e porque
+custo e latência já têm lugar: o painel do próprio Gateway. E não deixa criar
+agente: os sete são os que o código tem, e um oitavo nasce escrevendo código.
+
 ## 5. Estados da sessão
 
 ```
@@ -1547,8 +1714,8 @@ Três travas independentes:
 
 A trava de `extracao.json` vale para **os dois agentes**: proposta pronta não
 rechama nem a extração nem a resolução, e `forcar` refaz as duas. Calibrar o
-`resolucao-1` custa, sim, uma extração junto — o que a arquitetura de dois
-agentes barateia é o contrário: mexer no `resolucao-1` não mexe no `extracao-5`.
+`resolucao-2` custa, sim, uma extração junto — o que a arquitetura de dois
+agentes barateia é o contrário: mexer no `resolucao-2` não mexe no `extracao-5`.
 
 **A única saída da trava é `extrairSessao(id, { forcar: true })`**, exposta por
 `POST /api/sessoes/:id/extrair` com `{"forcar": true}`. Ela existe para calibrar
@@ -1904,11 +2071,15 @@ sessoes/<id>/extracao-anterior.json  a proposta que o `forcar` substituiu — s�
 sessoes/<id>/correcoes.json     o que eu corrigi naquela revisão — fotografia do momento da confirmação, escrita uma vez só
 calibracao/indice.json          a mesa de trabalho: as correções acumuladas de todas as sessões, teto de 500
 calibracao/regras-<hash>.json   uma composição de regras aprovada — imutável para sempre
+config/agentes.json             o que eu editei de cada agente: hash do prompt e modelo (slice 4.7)
+config/prompt-<agente>-<hash>.json  um prompt editado — imutável para sempre; é o que o sufixo `+p<hash>` resolve
 _smoke/                         objetos temporários do `pnpm smoke`, apagados no fim
 ```
 
-`calibracao/` fica **fora** do prefixo `sessoes/` de propósito: o índice não é de
-sessão nenhuma.
+`calibracao/` e `config/` ficam **fora** do prefixo `sessoes/` de propósito: nem
+o índice de correções nem a configuração dos agentes são de sessão nenhuma. E são
+dois prefixos e não um porque são duas coisas: `calibracao/` é material que o
+sistema acumulou sozinho, `config/` é o que eu escrevi.
 
 `chaves.ts` é o único lugar que monta chave — rota, worker e teste passam por ele.
 Por isso é lá que a extensão é validada contra a lista de `audio.ts`, e não só na
@@ -1948,6 +2119,8 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/entidades/perfil/rascunho` | `{chave, campo}` — o agente 3 propõe | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/atomos/embutir` | dá vetor aos átomos que ainda não têm, em lote | retrofill e retry; 200 por chamada, `continua: true` enquanto sobrar; não toca no texto nem reextrai |
 | `POST /api/entidades/embutir` | põe em dia o vetor das entidades, comparando `embedding_fonte` | não editar nada devolve `embutidas: 0` |
+| `GET /api/agentes` | os sete com o que está em vigor, mais o desenho do fluxo | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
+| `POST /api/agentes/:id` | `{prompt?, modelo?}` — o que passa a valer | o **único** lugar que escreve configuração de agente; `null` revoga o campo e volta à base; recusa prompt que quebre o envelope e id de modelo fora do formato |
 | `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
 
@@ -1966,6 +2139,7 @@ Neo4j ou R2 não atendem, com a causa legível no corpo (seção 5.2).
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, escrever o perfil |
 | `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
+| `/agentes` | `Agentes` | o fluxo desenhado — os sete agentes, os dados entre eles e o único nó humano; clicar numa caixa abre o prompt e o modelo daquele agente |
 | `/entrar` | página de login | pede o e-mail permitido |
 
 **Clicar na sessão leva sempre para onde ainda há o que fazer.** Proposta
@@ -1984,7 +2158,8 @@ ficariam parados para sempre —, e não toca em `finalizando`, `transcrevendo` 
 visita.
 
 **Em `/` a porta de serviço inteira é uma engrenagem no meio da borda
-esquerda** — sessões, entidades e subir um áudio, num menu lateral (`Gestao`).
+esquerda** — sessões, entidades, agentes, calibração e subir um áudio, num menu
+lateral (`Gestao`).
 Ela fica na altura do círculo, na margem, e **não** no canto superior esquerdo:
 aquele canto é da `Marca`, a volta ao início. Um segundo significado ali faria o
 canto querer dizer duas coisas conforme a tela. Eram
@@ -2227,6 +2402,12 @@ AUTH_SECRET, ALLOWED_EMAIL
 `env.ts` usa getters: a variável só é exigida quando alguém de fato precisa dela,
 e a falta vira erro claro em vez de `undefined` silencioso.
 
+**Desde a slice 4.7, `/agentes` fica por cima destas variáveis** (§4.13): o modelo
+escolhido no painel vence a variável de ambiente, que por sua vez vence o padrão.
+A validação é a mesma nos três caminhos — `validarIdDeModelo`, string
+`provedor/modelo`, pelo Gateway. `EMBEDDING_MODEL` é a exceção e continua sendo
+só variável: a dimensão está declarada na migration 006.
+
 Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 `LLM_API_KEY`…) — seção 4.2. `tests/gateway.test.ts` também confere isso no
 `.env.example`, para o arquivo não voltar a oferecer o que a arquitetura proíbe.
@@ -2238,6 +2419,10 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   Nenhuma credencial, nenhuma rede.
 - `tests/audio.test.ts` — resolução de formato, incluindo o `.opus` do WhatsApp
   que chega com `File.type` vazio, e os limites de tamanho e duração.
+- `tests/agentes.test.ts` — a **varredura** (todo `generateText`/`transcribe`/
+  `embed` de `src/` pertence a um agente do registro), o **no-op** (sem override,
+  todo prompt sai byte a byte igual ao de antes da 4.7), o carimbo com os dois
+  sufixos, o guarda-corpo do envelope e a integridade do desenho do fluxo.
 - `tests/importacao.test.ts` — `transcreverBloco` busca o áudio na extensão que o
   manifest registrou, e continua caindo em `.webm` quando o campo não existe.
 - `tests/embedding.test.ts` — a string canônica da entidade e o hash dela: o que
@@ -2331,6 +2516,22 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
+- **O prompt de cinco agentes passou a ter duas fontes.** O git tem a base; o R2
+  tem o que eu editei em `/agentes` (§4.13). É o mesmo custo que a 4.6 já tinha
+  declarado para as regras, agora multiplicado: `git revert` sozinho não reverte
+  mais o prompt inteiro, e ler o prompt efetivo exige os dois lugares. O
+  `prompt_version` e os snapshots imutáveis impedem a procedência de mentir, e
+  `voltar ao original` é um toque — mas quem olhar só o repositório vai ver a
+  metade do texto.
+- **O painel não guarda histórico de edição.** `config/agentes.json` tem o que
+  vale agora; os snapshots por hash guardam os textos, e não a ordem em que eu os
+  escrevi. Não há linha do tempo nem desfazer de mais de um passo — o `anterior`
+  do snapshot dá para andar para trás lendo, e nada na tela faz isso.
+- **Trocar `STT_MODEL` pelo painel pode calar o vocabulário sem avisar.** O canal
+  de nomes próprios existe só em alguns provedores (§4.4), e a tela agora deixa eu
+  escolher um que não o tem. Ela avisa quando isso acontece — é o que
+  `provedorAceitaVocabulario` faz na caixa do STT —, mas não impede: qual modelo
+  transcreve melhor é medição minha, não regra de código.
 - **`db.index.vector.queryNodes` está deprecado a partir do Neo4j 2026.04**, em
   favor da cláusula `SEARCH`. A instância é 5.27 e o procedimento funciona; quando
   a Aura subir, é uma linha a trocar em `entidades.ts`.
@@ -2470,7 +2671,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   saída, se incomodar, é chamar o agente também quando houver átomo com cara de
   perfil — o que troca "sessão limpa é de graça" por "perfil acumula sozinho".
 - **A resolução nunca julgou um homófono de verdade.** O grafo tem `Isinha` e
-  `eu`; nada disputa nome parecido, então o `resolucao-1` só rodou contra teste.
+  `eu`; nada disputa nome parecido, então o `resolucao-2` só rodou contra teste.
   O caso concreto de que eu sei a resposta — a sessão com o Rapha e o Raffa —
   depende dos dois estarem **cadastrados antes da primeira menção**.
 - **O agente 2 só enxerga os candidatos da menção, não o grafo inteiro.** Quem
@@ -2504,7 +2705,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   eu rejeitar o átomo ou desmarcar a entidade, mas não dá para trocar o campo nem
   apontar outra entidade — é a única das três relações do átomo que continua sem
   controle na tela, agora que `menciona` ganhou o dele (4.7). Se o agente 2 errar o campo com
-  frequência, o que se ajusta é o `resolucao-1`.
+  frequência, o que se ajusta é o `resolucao-2`.
 - **O perfil realimenta a resolução, e isso é o risco declarado da slice.** O
   agente 2 lê o perfil para desambiguar; um perfil errado contamina toda
   atribuição futura, e átomo atribuído por engano vira evidência daquele mesmo

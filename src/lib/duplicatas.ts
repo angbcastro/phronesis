@@ -16,6 +16,7 @@
  */
 import { generateText } from "ai";
 import { garantirGateway, modeloDuplicatas } from "./modelos";
+import { carimbo, efetivo } from "./overrides";
 import { chaveDoPar } from "./fusao";
 import { normalizar } from "./texto";
 import type { EntidadeDoGrafo } from "./entidades";
@@ -132,7 +133,7 @@ export function parecidas(
   return pares.sort((p, q) => q.proximidade - p.proximidade);
 }
 
-const INSTRUCOES = `Você recebe pares de nomes que aparecem num diário pessoal, com o contexto em que cada um foi usado. Para cada par, diga se são a MESMA entidade escrita de dois jeitos, ou duas entidades diferentes.
+export const INSTRUCOES = `Você recebe pares de nomes que aparecem num diário pessoal, com o contexto em que cada um foi usado. Para cada par, diga se são a MESMA entidade escrita de dois jeitos, ou duas entidades diferentes.
 
 Responda SIM apenas quando for grafia diferente da mesma coisa: "Exxmed" e "Exx Med", "Rodozanco" e "Rodozanko", um apelido e o nome de quem o contexto mostra ser a mesma pessoa.
 
@@ -173,15 +174,30 @@ export interface ContextoEntidade {
   textos: string[];
 }
 
+/** O que o julgamento produziu, com a procedência do que de fato rodou. */
+export interface Julgados {
+  pares: ParJulgado[];
+  /** `null` quando não houve o que julgar: nada foi chamado, nada custou. */
+  modelo: string | null;
+  prompt_version: string;
+}
+
 /**
  * O modelo julga a lista curta. Par que ele não devolver fica de fora — sem
  * resposta não há proposta, e inventar uma seria pior.
+ *
+ * Devolve o modelo e a `prompt_version` que **de fato** rodaram, e não só os
+ * pares: desde o painel de agentes (4.7) os dois podem vir do que eu editei, e
+ * a rota não tem como saber disso por fora — se ela os recalculasse, mostraria
+ * uma procedência que não é a desta chamada.
  */
 export async function julgar(
   pares: readonly ParCandidato[],
   contexto: ReadonlyMap<string, ContextoEntidade>,
-): Promise<ParJulgado[]> {
-  if (pares.length === 0) return [];
+): Promise<Julgados> {
+  if (pares.length === 0) {
+    return { pares: [], modelo: null, prompt_version: PROMPT_VERSION_DUPLICATAS };
+  }
   garantirGateway();
 
   const descrever = (chave: string) => {
@@ -195,13 +211,16 @@ export async function julgar(
     .map((p, i) => `${i + 1}. par [${p.a}] x [${p.b}] — ${p.motivo}\n  ${descrever(p.a)}\n  ${descrever(p.b)}`)
     .join("\n\n");
 
-  const modelo = modeloDuplicatas();
+  // O prompt e o modelo que eu editei no painel, ou a base do git (slice 4.7).
+  const meu = await efetivo("duplicatas", { prompt: INSTRUCOES, modelo: modeloDuplicatas() });
+  const modelo = meu.modelo;
+
   let texto: string;
   try {
     const r = await generateText({
       model: modelo,
       maxOutputTokens: 4000,
-      prompt: `${INSTRUCOES}\n\nPARES:\n\n${corpo}`,
+      prompt: `${meu.prompt}\n\nPARES:\n\n${corpo}`,
     });
     texto = r.text ?? "";
   } catch (e) {
@@ -223,5 +242,9 @@ export async function julgar(
     });
   }
 
-  return julgados;
+  return {
+    pares: julgados,
+    modelo,
+    prompt_version: carimbo(PROMPT_VERSION_DUPLICATAS, meu.hash),
+  };
 }

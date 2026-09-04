@@ -28,6 +28,7 @@ import { proximidade } from "./duplicatas";
 import { acharPorChave, candidatosSemanticos } from "./entidades";
 import type { CandidatoSemantico, EntidadeDoGrafo } from "./entidades";
 import { diagnostico, garantirGateway, modeloResolucao } from "./modelos";
+import { carimbo, efetivo } from "./overrides";
 import type { RespostaDoModelo } from "./modelos";
 import { normalizarNome } from "./texto";
 import { CAMPOS_PERFIL } from "./tipos";
@@ -319,7 +320,7 @@ const referenciaNova = (citado: string): ReferenciaResolvida => ({
   porque: [],
 });
 
-const INSTRUCOES = `Você recebe os átomos extraídos de um diário falado pessoal, em português, e a lista de pessoas, projetos e objetivos que já existem no diário — cada um com o perfil que o dono escreveu.
+export const INSTRUCOES = `Você recebe os átomos extraídos de um diário falado pessoal, em português, e a lista de pessoas, projetos e objetivos que já existem no diário — cada um com o perfil que o dono escreveu.
 
 Sua tarefa é decidir, para cada MENÇÃO EM DÚVIDA, a qual dessas entidades ela se refere — ou se é alguém/algo novo.
 
@@ -398,6 +399,8 @@ export function montarPrompt(
   atomos: readonly AtomoCru[],
   pendentes: readonly Pendente[],
   catalogo: readonly EntidadeDoGrafo[],
+  /** O prompt em vigor — a base do git, ou o que eu editei no painel (4.7). */
+  base: string = INSTRUCOES,
 ): string {
   const listaAtomos = atomos
     .map((a, i) => `${i}. [${a.tipo}] ${a.texto}\n   trecho: ${(a.trechos ?? [])[0] ?? ""}`)
@@ -417,7 +420,7 @@ export function montarPrompt(
     )
     .join("\n");
 
-  return `${INSTRUCOES}
+  return `${base}
 
 ÁTOMOS DESTA SESSÃO:
 ${listaAtomos}
@@ -551,10 +554,18 @@ export async function resolverReferencias(
   let marcas: MarcaCru[] = [];
   let modelo: string | null = null;
   let falha: string | null = null;
+  /** O hash do prompt editado no painel, ou `null` — vira o carimbo lá embaixo. */
+  let hashPrompt: string | null = null;
+  let prompt = "";
 
   if (pendentes.length > 0) {
     garantirGateway();
-    modelo = modeloResolucao();
+    // Só aqui, e não no topo: sessão sem menção ambígua não chama este agente e
+    // não paga nada — nem a chamada de modelo, nem a leitura do override.
+    const meu = await efetivo("resolucao", { prompt: INSTRUCOES, modelo: modeloResolucao() });
+    modelo = meu.modelo;
+    hashPrompt = meu.hash;
+    prompt = montarPrompt(atomos, pendentes, [...envolvidas.values()], meu.prompt);
 
     // Guardada fora do `try` porque é no `catch` que ela interessa: este agente
     // usa o mesmo modelo de raciocínio da extração e tem o mesmo modo de falha —
@@ -565,7 +576,7 @@ export async function resolverReferencias(
       const r = await generateText({
         // String de propósito: id em string sai pelo Gateway (regra 8).
         model: modelo,
-        prompt: montarPrompt(atomos, pendentes, [...envolvidas.values()]),
+        prompt,
         temperature: 0,
         maxOutputTokens: MAX_TOKENS_SAIDA,
       });
@@ -669,7 +680,8 @@ export async function resolverReferencias(
     menciona: menciona.map((lista) => lista.filter(Boolean)),
     perfila: validarMarcas(marcas, sobre, menciona, atomos.length),
     modelo,
-    prompt_version: pendentes.length > 0 ? PROMPT_VERSION_RESOLUCAO : null,
+    prompt_version:
+      pendentes.length > 0 ? carimbo(PROMPT_VERSION_RESOLUCAO, hashPrompt) : null,
   };
 }
 

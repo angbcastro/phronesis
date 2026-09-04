@@ -25,6 +25,7 @@ import { chaveCorrecoes, chaveIndiceCalibracao, chaveTranscricao } from "./chave
 import { apurarCorrecoes, indiceVazio, juntarNoIndice } from "./correcoes";
 import { secoesDoPrompt } from "./extracao";
 import { garantirGateway, modeloCalibracao } from "./modelos";
+import { carimbo, efetivo } from "./overrides";
 import { criarLocalizador } from "./offsets";
 import { ConflitoR2Error, getJson, putJson } from "./r2";
 import { gravarVersao } from "./regras";
@@ -204,7 +205,7 @@ export interface RegraRascunhada {
   substitui?: string;
 }
 
-const INSTRUCOES = `Você lê correções que o dono de um diário falado fez À MÃO, na tela de revisão, sobre o que um extrator automático propôs. Sua tarefa é propor no máximo ${MAX_REGRAS_POR_RASCUNHO} regras novas para o prompt desse extrator.
+export const INSTRUCOES = `Você lê correções que o dono de um diário falado fez À MÃO, na tela de revisão, sobre o que um extrator automático propôs. Sua tarefa é propor no máximo ${MAX_REGRAS_POR_RASCUNHO} regras novas para o prompt desse extrator.
 
 O QUE É UMA REGRA BOA
 Uma instrução curta, no imperativo, dirigida a quem extrai. Não é a descrição da correção nem um resumo do que aconteceu: é o que o extrator deveria ter feito e não fez. Se você não consegue escrevê-la sem citar um caso específico, ela não é uma regra.
@@ -276,13 +277,15 @@ export async function rascunharRegras(
   }
 
   garantirGateway();
-  const modelo = modeloCalibracao();
+  // O prompt e o modelo que eu editei no painel, ou a base do git (slice 4.7).
+  const meu = await efetivo("calibracao", { prompt: INSTRUCOES, modelo: modeloCalibracao() });
+  const modelo = meu.modelo;
 
   const material = correcoes.slice(0, TETO_CORRECOES_NO_PROMPT).map(descreverCorrecao).join("\n\n");
   const secoes = secoesDoPrompt();
   const atuais = emVigor.length === 0 ? "(nenhuma ainda)" : emVigor.map((r) => `- ${r.texto}`).join("\n");
 
-  const prompt = `${INSTRUCOES}
+  const prompt = `${meu.prompt}
 
 SEÇÕES DO PROMPT ATUAL, que uma regra pode contradizer:
 ${secoes.join(", ")}
@@ -311,7 +314,7 @@ ${material}`;
     regras: parsearRascunho(bruto, new Set(correcoes.map((c) => c.id)), secoes),
     correcoes: correcoes.length,
     modelo,
-    prompt_version: PROMPT_VERSION_CALIBRACAO,
+    prompt_version: carimbo(PROMPT_VERSION_CALIBRACAO, meu.hash),
   };
 }
 

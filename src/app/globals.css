@@ -1067,3 +1067,254 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sessoes,
 .calibracao,
 .revisao { padding-top: 3.75rem; }
+
+/* ─────────────────────────── o painel dos agentes ───────────────────────────
+   Slice 4.7. Um desenho, e não uma lista: sete linhas não contam que a
+   resolução roda dentro da extração, que a regra aprovada volta para o prompt
+   do extrator, nem que existe um nó humano só no meio de tudo.
+
+   Vertical de propósito. Este app vive no celular, e canvas horizontal de n8n
+   é confortável no monitor e inútil no telefone. Quando a grade não couber, ela
+   rola na horizontal em vez de esmagar as caixas — diagrama espremido não é
+   diagrama responsivo, é diagrama ilegível.
+
+   Quatro colunas porque o `grafo` tem três filhos e eles precisam caber na
+   mesma linha: aresta que pula uma linha atravessa a caixa do meio. A quarta é
+   por onde a calibração desce sem disputar espaço com eles. */
+.agentes {
+  width: 100%;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.agentes h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem; }
+.agentes header p { margin: 0; }
+.agentes .aguardando { color: var(--texto-fraco); font-size: 0.95rem; }
+.agentes .rodape-fluxo { margin: 0; font-size: 0.85rem; color: var(--texto-fraco); line-height: 1.5; }
+
+.palco-fluxo { overflow-x: auto; overflow-y: hidden; margin: 0 -1.25rem; padding: 0 1.25rem; }
+
+/* As colunas laterais têm de sobrar espaço para a curva de realimentação passar
+   por fora — é o "parede" de tracar(). Sem esta folga ela sairia do palco. */
+.fluxo {
+  position: relative;
+  min-width: 30rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 0.5rem;
+  row-gap: 2.4rem;
+  padding: 0.5rem 3rem 1rem;
+  justify-items: center;
+  align-items: stretch;
+}
+
+.fluxo .arestas { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.fluxo .arestas path {
+  fill: none;
+  stroke: var(--texto-fraco);
+  stroke-width: 1.25;
+  opacity: 0.5;
+}
+.fluxo .arestas marker path { fill: var(--texto-fraco); stroke: none; opacity: 1; }
+.fluxo .arestas text { fill: var(--texto-fraco); font-size: 0.62rem; opacity: 0.85; }
+/* Realimentação é o que este sistema tem de mais difícil de enxergar; ela ganha
+   traço próprio em vez de virar mais uma reta no meio do bolo. */
+.fluxo .arestas .volta path { stroke: var(--acento); stroke-dasharray: 3 3; opacity: 0.55; }
+.fluxo .arestas .volta text { fill: var(--acento); opacity: 0.75; }
+
+.fluxo .no {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  align-items: center;
+  text-align: center;
+  padding: 0.5rem 0.4rem;
+  border-radius: 10px;
+  border: 1px solid var(--linha);
+  background: var(--fundo);
+  color: var(--texto);
+  font: inherit;
+}
+.fluxo .no .rotulo { font-size: 0.86rem; display: inline-flex; align-items: center; gap: 0.3rem; }
+.fluxo .no .modelo {
+  font-size: 0.63rem;
+  color: var(--texto-fraco);
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+.fluxo .no .nota { display: none; }
+
+/* Dado não se clica: borda tracejada diz isso antes de qualquer tentativa. */
+.fluxo .no.dado {
+  border-style: dashed;
+  background: none;
+  color: var(--texto-fraco);
+  font-size: 0.82rem;
+}
+
+/* O único nó humano. Terracota, porque é a regra 5 desenhada: nada entra no
+   grafo antes de passar por aqui. */
+.fluxo .no.eu {
+  border-color: var(--acento);
+  color: var(--acento);
+  background: color-mix(in srgb, var(--acento) 8%, transparent);
+  letter-spacing: 0.02em;
+}
+
+.fluxo .no.agente { background: var(--fundo-alto); cursor: pointer; }
+.fluxo .no.agente:hover { border-color: var(--texto-fraco); }
+.fluxo .no.agente:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.fluxo .no.agente.editado { border-color: var(--acento); }
+.fluxo .no .marca {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--acento);
+  flex: none;
+}
+
+/* O selo de quando. A diferença entre os três é o que o agente custa: um roda
+   em toda sessão, outro só quando o caso aparece, outro só quando eu aperto. */
+.quando {
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--texto-fraco);
+  border: 1px solid var(--linha);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+}
+.quando.automatico { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.quando.condicional { color: var(--acento); border-color: color-mix(in srgb, var(--acento) 40%, transparent); }
+
+/* ── a gaveta de edição ──
+   Mesma forma do menu de gestão, pelo lado oposto: ela não é navegação, é o
+   detalhe do que eu acabei de tocar, e entra do lado de onde veio o toque. */
+.editor-agente {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 30;
+  height: 100dvh;
+  width: min(94vw, 34rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: calc(1.25rem + env(safe-area-inset-top)) 1.1rem
+    calc(1.5rem + env(safe-area-inset-bottom))
+    calc(1.1rem + env(safe-area-inset-right));
+  background: var(--fundo-alto);
+  border-left: 1px solid var(--linha);
+  transform: translateX(100%);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.editor-agente.aberta { transform: translateX(0); }
+
+.editor-agente header { display: flex; align-items: flex-start; gap: 0.5rem; }
+.editor-agente h2 { font-size: 1.05rem; font-weight: 600; margin: 0; }
+.editor-agente .versao { margin: 0.15rem 0 0; font-size: 0.78rem; color: var(--texto-fraco); }
+.editor-agente .fechar {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--texto-fraco);
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0 0.25rem;
+  cursor: pointer;
+}
+.editor-agente .fechar:hover { color: var(--texto); }
+
+.editor-agente .papel { margin: 0; line-height: 1.5; }
+.editor-agente .gatilho {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--texto-fraco);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.editor-agente .campo { display: flex; flex-direction: column; gap: 0.35rem; }
+.editor-agente .campo > label,
+.editor-agente .campo .cabecalho label {
+  font-size: 0.78rem;
+  color: var(--texto-fraco);
+}
+.editor-agente .campo .cabecalho { display: flex; align-items: baseline; gap: 0.5rem; }
+.editor-agente .campo .cabecalho .fraco {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--acento);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.editor-agente input,
+.editor-agente textarea {
+  width: 100%;
+  background: var(--fundo);
+  border: 1px solid var(--linha);
+  border-radius: 8px;
+  color: var(--texto);
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+}
+.editor-agente textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+/* Só ler é um estado, e ele se vê: campo editável e campo de leitura não podem
+   ter a mesma cara, senão eu digito num que não recebe. */
+.editor-agente textarea[readonly] { color: var(--texto-fraco); background: none; }
+.editor-agente input:focus-visible,
+.editor-agente textarea:focus-visible { outline: 2px solid var(--acento); outline-offset: -1px; }
+
+.editor-agente .dica { margin: 0; font-size: 0.78rem; color: var(--texto-fraco); line-height: 1.5; }
+.editor-agente .dica code { font-size: 0.76rem; color: var(--texto); }
+.editor-agente .dica.travado { line-height: 1.55; }
+.editor-agente .dica.final { margin-top: auto; padding-top: 0.75rem; border-top: 1px solid var(--linha); }
+.editor-agente .alerta {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--acento);
+  border-left: 2px solid var(--acento);
+  padding-left: 0.6rem;
+}
+
+.editor-agente footer { display: flex; gap: 0.6rem; align-items: center; }
+.editor-agente footer .principal {
+  border: 1px solid var(--acento);
+  background: var(--acento);
+  color: var(--sobre-acento);
+  font: inherit;
+  border-radius: 8px;
+  padding: 0.5rem 1.1rem;
+  cursor: pointer;
+}
+.editor-agente footer .principal:disabled { opacity: 0.4; cursor: default; }
+.editor-agente footer .fraco {
+  background: none;
+  border: none;
+  color: var(--texto-fraco);
+  font: inherit;
+  cursor: pointer;
+}
+.editor-agente footer .fraco:hover { color: var(--acento); }
+
+@media (prefers-reduced-motion: reduce) {
+  .editor-agente { transition: transform 1ms; }
+}

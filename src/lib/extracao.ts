@@ -26,6 +26,7 @@ import { agregarCandidatas, listarEntidades } from "./entidades";
 import { comEsperaDeLimite, ehLimiteDeTaxa } from "./limite";
 import { diagnostico, garantirGateway, modeloExtracao } from "./modelos";
 import { criarLocalizador } from "./offsets";
+import { carimbo, efetivo } from "./overrides";
 import { hashDeRegras, regras } from "./regras";
 import { resolverReferencias } from "./resolucao";
 import type { Atribuicoes } from "./resolucao";
@@ -69,7 +70,7 @@ const MAX_TOKENS_SAIDA = 8000;
 /** Quanto da resposta crua entra na mensagem de erro. */
 const AMOSTRA_ERRO = 400;
 
-const INSTRUCOES_BASE = `Você recebe a transcrição de um diário falado, em português, gravado no fim do dia. Sua tarefa é devolver uma versão ESTRUTURADA E ORGANIZADA do que foi dito — não um recorte da transcrição.
+export const INSTRUCOES_BASE = `Você recebe a transcrição de um diário falado, em português, gravado no fim do dia. Sua tarefa é devolver uma versão ESTRUTURADA E ORGANIZADA do que foi dito — não um recorte da transcrição.
 
 Pense assim: daqui a um ano, o que desta sessão eu vou querer reencontrar, ou ver que mudou de ideia, ou lembrar que tinha esquecido?
 
@@ -131,7 +132,7 @@ Se não houver nada que mereça um átomo, devolva {"atomos":[],"entidades":[]}.
  * de tudo o que instrui, antes do que descreve o envelope de saída. Regra
  * enfiada depois do FORMATO seria lida como parte do exemplo de JSON.
  */
-const FORMATO = `FORMATO
+export const FORMATO = `FORMATO
 Responda somente com JSON, sem texto antes ou depois:
 {"atomos":[{"texto":"...","tipo":"FATO","sobre":"...","menciona":[],"trechos":["...","..."]}],
  "entidades":[{"nome":"...","tipo":"PESSOA"}]}
@@ -176,8 +177,46 @@ export function secoesDoPrompt(): string[] {
   );
 }
 
-export const montarPrompt = (texto: string, lista: readonly Regra[] = []): string =>
-  INSTRUCOES_BASE + blocoDeRegras(lista) + FORMATO + texto.trim();
+/**
+ * O prompt sem a transcrição: é ele que o painel de agentes mostra e edita, e é
+ * dele que sai o hash do carimbo. `INSTRUCOES_BASE + FORMATO` **nesta ordem** é
+ * o texto de origem; o bloco de regras não entra aqui porque ele tem dono
+ * próprio (`/calibracao`) e hash próprio.
+ */
+export const BASE = INSTRUCOES_BASE + FORMATO;
+
+/**
+ * O cabeçalho antes do qual o bloco de regras entra.
+ *
+ * Enquanto as duas metades eram duas constantes, o ponto de inserção era a
+ * emenda entre elas. Com o prompt editável inteiro (slice 4.7) ele passa a ser
+ * um cabeçalho procurado no texto — e continua sendo exatamente o mesmo ponto:
+ * depois de tudo o que instrui, antes do que descreve o envelope de saída.
+ * Regra enfiada depois do FORMATO seria lida como parte do exemplo de JSON.
+ */
+const CABECALHO_FORMATO = "FORMATO\n";
+
+/**
+ * A base com as regras aprovadas no lugar certo.
+ *
+ * Se eu renomear o cabeçalho ao editar o prompt, as regras vão para o fim, antes
+ * da transcrição — pior lugar, e ainda assim o comportamento certo: o prompt que
+ * eu escrevi é o que manda, e uma regra aprovada não pode simplesmente sumir
+ * porque o cabeçalho mudou de nome.
+ */
+export function comRegras(base: string, lista: readonly Regra[]): string {
+  const bloco = blocoDeRegras(lista);
+  if (bloco === "") return base;
+
+  const i = base.lastIndexOf(CABECALHO_FORMATO);
+  return i === -1 ? base + bloco : base.slice(0, i) + bloco + base.slice(i);
+}
+
+export const montarPrompt = (
+  texto: string,
+  lista: readonly Regra[] = [],
+  base: string = BASE,
+): string => comRegras(base, lista) + texto.trim();
 
 /**
  * A versão que vai carimbada no átomo (regra 7).
@@ -187,8 +226,14 @@ export const montarPrompt = (texto: string, lista: readonly Regra[] = []): strin
  * nos dois caminhos, que é o ponto — carimbar `+a3f91c7d` numa extração que
  * rodou sem regra nenhuma seria mentira gravada no grafo para sempre.
  */
-export const versaoDoPrompt = (lista: readonly Regra[]): string =>
-  lista.length === 0 ? PROMPT_VERSION : `${PROMPT_VERSION}+${hashDeRegras(lista)}`;
+export function versaoDoPrompt(
+  lista: readonly Regra[],
+  /** O hash do prompt editado no painel (slice 4.7), ou `null` se é a base. */
+  hashPrompt: string | null = null,
+): string {
+  const base = carimbo(PROMPT_VERSION, hashPrompt);
+  return lista.length === 0 ? base : `${base}+${hashDeRegras(lista)}`;
+}
 
 /**
  * O modelo às vezes embrulha o JSON em cerca de markdown ou emenda uma frase
@@ -358,7 +403,6 @@ export function ancorar(
 /** A proposta inteira, pronta para a revisão. Não grava nada em lugar nenhum. */
 export async function extrair(transcricao: Transcricao): Promise<Extracao> {
   garantirGateway(); // falha cedo, antes de mandar a transcrição para qualquer lugar
-  const modelo = modeloExtracao();
 
   if (transcricao.texto.trim() === "") {
     throw new ExtracaoError("transcrição vazia — não há o que extrair");
@@ -368,8 +412,16 @@ export async function extrair(transcricao: Transcricao): Promise<Extracao> {
   // o R2 falhar. A extração nunca deixa de acontecer por causa disto: sem
   // regra, o prompt sai byte a byte igual ao de antes da slice 4.6.
   const aprovadas = await regras();
-  const versao = versaoDoPrompt(aprovadas);
-  const prompt = montarPrompt(transcricao.texto, aprovadas);
+
+  // O que eu editei no painel de agentes, ou a base do git — e também a base se
+  // o R2 falhar, pela mesma razão das regras (slice 4.7). `modeloExtracao()`
+  // continua sendo quem valida o id e lê `EXTRACAO_MODEL`: o painel só
+  // acrescenta uma camada acima dela.
+  const meu = await efetivo("extracao", { prompt: BASE, modelo: modeloExtracao() });
+  const modelo = meu.modelo;
+
+  const versao = versaoDoPrompt(aprovadas, meu.hash);
+  const prompt = montarPrompt(transcricao.texto, aprovadas, meu.prompt);
 
   async function chamar() {
     try {
