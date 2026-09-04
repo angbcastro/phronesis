@@ -844,6 +844,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .gaveta .item:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
 .gaveta .aviso { margin: 0.35rem 0.6rem 0; font-size: 0.85rem; }
 
+/* A sugestão de calibrar. Discreta e sem número de propósito: ela diz que tem
+   coisa para olhar, e o quanto é a própria tela que responde. */
+.gaveta .item .sugestao {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--acento);
+}
+
 /* Quem pediu menos movimento recebe a gaveta sem deslize — ela aparece. */
 @media (prefers-reduced-motion: reduce) {
   .veu,
@@ -971,6 +979,74 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .correcao .inferida,
 .correcao .meta { font-size: 0.78rem; color: var(--texto-fraco); }
 .correcao .inferida { border-bottom: 1px dotted var(--texto-fraco); cursor: help; }
+
+/* O arquivo de regras: pouca coisa, editável, e o único botão da tela que
+   escreve. Fica ACIMA das correções de propósito — é o que está em vigor, e o
+   que está em vigor se lê antes do material que pode mudá-lo. */
+.regras { display: flex; flex-direction: column; gap: 0.5rem; }
+.regras h2 { font-size: 0.95rem; font-weight: 600; margin: 0; }
+.regras > p { margin: 0; }
+
+.regra {
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  padding: 0.6rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+/* Proposta agora, ainda não aprovada: a borda diz que ela é diferente das
+   outras sem precisar de uma palavra. */
+.regra.nova { border-color: var(--acento); }
+
+.regra textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: inherit;
+  background: none;
+  border: none;
+  resize: vertical;
+  padding: 0;
+}
+.regra textarea:focus-visible { outline: none; }
+
+.meta-regra {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--texto-fraco);
+}
+.meta-regra .proposta { color: var(--acento); }
+.apagar-regra {
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--texto-fraco);
+  font-size: 0.78rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.apagar-regra:hover { color: var(--rec); }
+
+.acoes-regras { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.25rem; }
+.rascunhar,
+.aprovar {
+  border: 1px solid var(--linha);
+  background: none;
+  border-radius: 10px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.9rem;
+}
+.rascunhar:disabled,
+.aprovar:disabled { opacity: 0.5; cursor: default; }
+/* O único botão que escreve regra é o único com o peso do acento. */
+.aprovar { border-color: var(--acento); color: var(--acento); }
+.ok-regras { font-size: 0.85rem; color: var(--ok); }
 
 .refugo { margin-top: 0.5rem; }
 .refugo h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.4rem; }

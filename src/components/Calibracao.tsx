@@ -24,7 +24,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { localizarNoAudio } from "@/lib/transcricao";
-import type { BlocoAbsoluto, Correcao, TipoCorrecao } from "@/lib/tipos";
+import { MAX_REGRAS } from "@/lib/tipos";
+import type { BlocoAbsoluto, Correcao, Regra, TipoCorrecao } from "@/lib/tipos";
 
 /** O que eu fiz, dito como eu diria. O tipo interno é do código, não da tela. */
 const ROTULO: Record<TipoCorrecao, string> = {
@@ -79,8 +80,21 @@ interface DaSessao {
 interface Indice {
   correcoes: Correcao[];
   regras_correntes: string | null;
+  regras: Regra[];
   visitado_em: string | null;
   atualizado_em: string;
+}
+
+/**
+ * Uma regra na tela: a que já vale ou a que o agente acabou de propor.
+ *
+ * `nova` só muda a aparência. O que define "sobreviveu à minha edição" é o
+ * `id` ainda estar na lista que eu submeto — regra rascunhada que eu apago
+ * some, e as correções que a motivavam continuam em aberto para a próxima
+ * rodada.
+ */
+interface RegraNaTela extends Regra {
+  nova?: boolean;
 }
 
 /**
@@ -110,6 +124,14 @@ export function Calibracao() {
   const [sessoes, setSessoes] = useState<Record<string, DaSessao | undefined>>({});
   const [refugoAberto, setRefugoAberto] = useState(false);
 
+  /** A composição inteira: o que já vale mais o que o agente propôs. */
+  const [composicao, setComposicao] = useState<RegraNaTela[]>([]);
+  const [rascunhando, setRascunhando] = useState(false);
+  const [aprovando, setAprovando] = useState(false);
+  const [recado, setRecado] = useState<string | null>(null);
+  /** Aprovei nesta visita: a lista deixa de estar suja. */
+  const [salvo, setSalvo] = useState(false);
+
   const audio = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -119,7 +141,11 @@ export function Calibracao() {
         if (!r.ok) throw new Error(((await r.json()) as { erro?: string }).erro ?? `erro ${r.status}`);
         return (await r.json()) as Indice;
       })
-      .then((d) => vivo && setIndice(d))
+      .then((d) => {
+        if (!vivo) return;
+        setIndice(d);
+        setComposicao(d.regras ?? []);
+      })
       .catch((e: Error) => vivo && setFalha(e.message));
     return () => {
       vivo = false;
@@ -176,6 +202,61 @@ export function Calibracao() {
     [carregarSessao],
   );
 
+  /** O agente propõe. Uma chamada de modelo por toque, e nunca ao abrir. */
+  async function pedirRascunho() {
+    setRascunhando(true);
+    setRecado(null);
+    setSalvo(false);
+
+    const r = await fetch("/api/calibracao/rascunho", { method: "POST" }).catch(() => null);
+    setRascunhando(false);
+
+    if (!r || !r.ok) {
+      setRecado(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
+      return;
+    }
+    const d = (await r.json()) as { regras: Omit<Regra, "aprovada_em">[] };
+    if (d.regras.length === 0) {
+      setRecado("o agente não achou padrão suficiente para propor regra — o que é uma resposta legítima, e frequente");
+      return;
+    }
+    setComposicao((atual) => [
+      ...atual,
+      ...d.regras.map((r) => ({ ...r, aprovada_em: "", nova: true })),
+    ]);
+  }
+
+  /** O único toque que escreve. A lista inteira, não um delta. */
+  async function aprovar() {
+    setAprovando(true);
+    setRecado(null);
+
+    const r = await fetch("/api/calibracao/regras", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        regras: composicao.map(({ id, texto, cita, substitui }) => ({ id, texto, cita, substitui })),
+      }),
+    }).catch(() => null);
+    setAprovando(false);
+
+    if (!r || !r.ok) {
+      setRecado(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
+      return;
+    }
+    const d = (await r.json()) as { hash: string | null; fechadas: number };
+    setSalvo(true);
+    setComposicao((atual) => atual.map(({ nova: _, ...r }) => r));
+    setRecado(
+      d.hash === null
+        ? "sem regra nenhuma — a extração volta a ser só o prompt base"
+        : `em vigor a partir da próxima sessão · ${d.hash}${d.fechadas > 0 ? ` · ${d.fechadas} correção(ões) endereçada(s)` : ""}`,
+    );
+    // O índice mudou: `incorporada_em` fechou o que a regra citou.
+    const novo = await fetch("/api/calibracao", { cache: "no-store" }).catch(() => null);
+    if (novo?.ok) setIndice((await novo.json()) as Indice);
+  }
+
   async function abrirRefugo() {
     setRefugoAberto(true);
     const ids = [...new Set((indice?.correcoes ?? []).map((c) => c.sessao_id))];
@@ -220,6 +301,59 @@ export function Calibracao() {
           em alguma coisa — não há nada a apertar.
         </p>
       )}
+
+      <section className="regras">
+        <h2>o que o extrator lê antes de extrair</h2>
+        <p className="aguardando">
+          {composicao.length === 0
+            ? "nenhuma regra ainda — a extração roda com o prompt base, igual a sempre"
+            : `${composicao.length} de ${MAX_REGRAS} · vale a partir da próxima sessão que eu gravar`}
+        </p>
+
+        {composicao.map((r, k) => (
+          <div key={r.id} className={r.nova ? "regra nova" : "regra"}>
+            <textarea
+              value={r.texto}
+              rows={2}
+              aria-label={`texto da regra ${k + 1}`}
+              onChange={(e) =>
+                setComposicao((atual) =>
+                  atual.map((x) => (x.id === r.id ? { ...x, texto: e.target.value } : x)),
+                )
+              }
+            />
+            <div className="meta-regra">
+              {r.nova && <span className="proposta">proposta agora</span>}
+              {r.substitui && <span>substitui {r.substitui}</span>}
+              {/* `cita` é do agente e imutável na tela: é a procedência do que
+                  motivou a regra, não coisa minha para editar. */}
+              <span>a partir de {r.cita.length} correção(ões)</span>
+              <button
+                className="apagar-regra"
+                onClick={() => setComposicao((atual) => atual.filter((x) => x.id !== r.id))}
+              >
+                apagar
+              </button>
+            </div>
+          </div>
+        ))}
+
+        <div className="acoes-regras">
+          <button
+            className="rascunhar"
+            disabled={rascunhando || composicao.length >= MAX_REGRAS}
+            onClick={() => void pedirRascunho()}
+          >
+            {rascunhando ? "lendo o que eu corrigi…" : "pedir um rascunho"}
+          </button>
+          <button className="aprovar" disabled={aprovando} onClick={() => void aprovar()}>
+            {aprovando ? "gravando…" : "aprovar esta lista"}
+          </button>
+          {salvo && <span className="ok-regras">aprovado</span>}
+        </div>
+
+        {recado && <p className="aguardando">{recado}</p>}
+      </section>
 
       <ul className="correcoes">
         {indice.correcoes.map((c) => {

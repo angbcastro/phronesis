@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
 import { carregarIndice, marcarVisita } from "@/lib/calibracao";
+import { regras } from "@/lib/regras";
 import { erroDeInfra } from "@/lib/rotas";
 
 export const runtime = "nodejs";
@@ -17,7 +18,10 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const indice = await carregarIndice();
+    // O arquivo de regras vai junto: a tela mostra o que está em vigor ao lado
+    // do que eu corrigi, e sem isso "editar e apagar regra" precisaria de uma
+    // segunda ida à rede para uma lista de no máximo doze linhas.
+    const [indice, emVigor] = await Promise.all([carregarIndice(), regras()]);
 
     waitUntil(
       marcarVisita().catch((e) => {
@@ -28,6 +32,7 @@ export async function GET() {
     return NextResponse.json({
       correcoes: indice.correcoes,
       regras_correntes: indice.regras_correntes,
+      regras: emVigor,
       visitado_em: indice.visitado_em,
       atualizado_em: indice.atualizado_em,
     });

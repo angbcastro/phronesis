@@ -474,3 +474,43 @@ export interface IndiceCalibracao {
  * auditoria; aberta é a única que ainda importa para o `calibracao-1`.
  */
 export const TETO_CORRECOES = 500;
+
+/**
+ * Uma regra aprovada por mim, que entra no prompt de extração a partir da
+ * próxima sessão.
+ *
+ * `id` é atribuído no rascunho e nunca muda: é ele que define "sobreviveu à
+ * minha edição". `cita` é do `calibracao-1` e imutável na tela — eu edito o
+ * texto da regra, não a lista do que a motivou.
+ */
+export interface Regra {
+  id: string;
+  /** O único campo que a tela deixa eu editar. */
+  texto: string;
+  /** `Correcao.id[]` — o que motivou esta regra. */
+  cita: string[];
+  /** Qual seção do prompt base ela contradiz, quando for o caso. */
+  substitui?: string;
+  aprovada_em: string;
+}
+
+/**
+ * `calibracao/regras-<hash>.json` — **imutável para sempre**.
+ *
+ * Existe porque `prompt_version` passa a carregar um sufixo (`extracao-5+a3f91c7d`)
+ * e um hash tem que resolver para um texto: sem o snapshot, aquele carimbo
+ * apontaria para uma versão de prompt que não está versionada em lugar nenhum.
+ */
+export interface VersaoDeRegras {
+  hash: string;
+  regras: Regra[];
+  /** Hash da versão que esta substituiu — dá para andar para trás lendo. */
+  anterior: string | null;
+  criada_em: string;
+}
+
+/**
+ * Teto de regras no prompt. **É a curadoria**, não um limite técnico: prompt
+ * sem limite é exatamente como esta fatia estragaria a extração que já presta.
+ */
+export const MAX_REGRAS = 12;

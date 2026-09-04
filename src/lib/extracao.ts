@@ -26,6 +26,7 @@ import { agregarCandidatas, listarEntidades } from "./entidades";
 import { comEsperaDeLimite, ehLimiteDeTaxa } from "./limite";
 import { diagnostico, garantirGateway, modeloExtracao } from "./modelos";
 import { criarLocalizador } from "./offsets";
+import { hashDeRegras, regras } from "./regras";
 import { resolverReferencias } from "./resolucao";
 import type { Atribuicoes } from "./resolucao";
 import { TIPOS_ATOMO } from "./tipos";
@@ -35,6 +36,7 @@ import type {
   Descarte,
   EntidadePropostaFrase,
   Extracao,
+  Regra,
   TipoAtomo,
   Transcricao,
 } from "./tipos";
@@ -67,7 +69,7 @@ const MAX_TOKENS_SAIDA = 8000;
 /** Quanto da resposta crua entra na mensagem de erro. */
 const AMOSTRA_ERRO = 400;
 
-const INSTRUCOES = `Você recebe a transcrição de um diário falado, em português, gravado no fim do dia. Sua tarefa é devolver uma versão ESTRUTURADA E ORGANIZADA do que foi dito — não um recorte da transcrição.
+const INSTRUCOES_BASE = `Você recebe a transcrição de um diário falado, em português, gravado no fim do dia. Sua tarefa é devolver uma versão ESTRUTURADA E ORGANIZADA do que foi dito — não um recorte da transcrição.
 
 Pense assim: daqui a um ano, o que desta sessão eu vou querer reencontrar, ou ver que mudou de ideia, ou lembrar que tinha esquecido?
 
@@ -120,7 +122,16 @@ Você extrai o que eu disse; não avalia como eu disse. Nunca devolva um átomo 
 
 Se não houver nada que mereça um átomo, devolva {"atomos":[],"entidades":[]}. Lista vazia é uma resposta legítima; comentário sobre o material não é.
 
-FORMATO
+`;
+
+/**
+ * A segunda metade, do cabeçalho `FORMATO` até a transcrição.
+ *
+ * O corte entre as duas é o ponto exato onde uma regra aprovada entra: depois
+ * de tudo o que instrui, antes do que descreve o envelope de saída. Regra
+ * enfiada depois do FORMATO seria lida como parte do exemplo de JSON.
+ */
+const FORMATO = `FORMATO
 Responda somente com JSON, sem texto antes ou depois:
 {"atomos":[{"texto":"...","tipo":"FATO","sobre":"...","menciona":[],"trechos":["...","..."]}],
  "entidades":[{"nome":"...","tipo":"PESSOA"}]}
@@ -128,7 +139,56 @@ Responda somente com JSON, sem texto antes ou depois:
 Transcrição:
 `;
 
-export const montarPrompt = (texto: string): string => INSTRUCOES + texto.trim();
+/**
+ * O bloco das regras aprovadas, ou string vazia.
+ *
+ * `blocoDeRegras([]) === ""` não é detalhe: é o que faz esta fatia inteira ser
+ * um **no-op** até a primeira aprovação. Sem regra, o prompt sai byte a byte
+ * igual ao de antes dela, e as substrings que `tests/extracao.test.ts` trava
+ * continuam onde estavam.
+ */
+export function blocoDeRegras(lista: readonly Regra[]): string {
+  if (lista.length === 0) return "";
+
+  const linhas = lista.map((r) => {
+    const alvo = r.substitui?.trim();
+    return `- ${r.texto.trim()}${alvo ? ` (isto substitui a seção ${alvo})` : ""}`;
+  });
+
+  return `AJUSTES QUE EU PEDI
+Vieram da minha revisão de sessões reais e valem sobre tudo o que está acima. Onde um ajuste contradisser uma seção anterior, o ajuste vence.
+${linhas.join("\n")}
+
+`;
+}
+
+/**
+ * Os cabeçalhos de seção do prompt base, lidos do próprio texto.
+ *
+ * Existem para o `calibracao-1` poder dizer **qual** seção uma regra nova
+ * contradiz. Derivados por leitura, e não escritos numa constante ao lado:
+ * uma lista copiada à mão desatualiza no dia em que alguém renomear uma seção,
+ * e desatualizaria em silêncio.
+ */
+export function secoesDoPrompt(): string[] {
+  return INSTRUCOES_BASE.split("\n").filter((l) =>
+    /^[A-ZÁÂÃÀÉÊÍÓÔÕÚÇ][A-ZÁÂÃÀÉÊÍÓÔÕÚÇ ]{3,}$/.test(l),
+  );
+}
+
+export const montarPrompt = (texto: string, lista: readonly Regra[] = []): string =>
+  INSTRUCOES_BASE + blocoDeRegras(lista) + FORMATO + texto.trim();
+
+/**
+ * A versão que vai carimbada no átomo (regra 7).
+ *
+ * O sufixo sai das regras **usadas nesta chamada**, não do arquivo: se o R2
+ * falhar, entram zero regras e a versão é a base. A procedência é verdadeira
+ * nos dois caminhos, que é o ponto — carimbar `+a3f91c7d` numa extração que
+ * rodou sem regra nenhuma seria mentira gravada no grafo para sempre.
+ */
+export const versaoDoPrompt = (lista: readonly Regra[]): string =>
+  lista.length === 0 ? PROMPT_VERSION : `${PROMPT_VERSION}+${hashDeRegras(lista)}`;
 
 /**
  * O modelo às vezes embrulha o JSON em cerca de markdown ou emenda uma frase
@@ -266,6 +326,13 @@ export function ancorar(
   transcricao: Transcricao,
   modelo: string,
   atribuicoes: Atribuicoes,
+  /**
+   * A versão efetiva do prompt: `extracao-5` sem regra aprovada,
+   * `extracao-5+<hash>` com. O padrão é a base porque uma extração sem regra
+   * nenhuma é o caso comum — e porque um carimbo tem de ser verdadeiro por
+   * omissão, nunca otimista.
+   */
+  versao: string = PROMPT_VERSION,
 ): AtomoProposto[] {
   const localizar = criarLocalizador(transcricao.palavras);
 
@@ -283,7 +350,7 @@ export function ancorar(
     })),
     id: `${sessao_id}-${indice}`,
     indice,
-    prompt_version: PROMPT_VERSION,
+    prompt_version: versao,
     modelo,
   }));
 }
@@ -297,7 +364,12 @@ export async function extrair(transcricao: Transcricao): Promise<Extracao> {
     throw new ExtracaoError("transcrição vazia — não há o que extrair");
   }
 
-  const prompt = montarPrompt(transcricao.texto);
+  // As regras aprovadas, ou lista vazia se ainda não há nenhuma — e também se
+  // o R2 falhar. A extração nunca deixa de acontecer por causa disto: sem
+  // regra, o prompt sai byte a byte igual ao de antes da slice 4.6.
+  const aprovadas = await regras();
+  const versao = versaoDoPrompt(aprovadas);
+  const prompt = montarPrompt(transcricao.texto, aprovadas);
 
   async function chamar() {
     try {
@@ -354,7 +426,14 @@ export async function extrair(transcricao: Transcricao): Promise<Extracao> {
   const catalogo = await listarEntidades();
   const atribuicoes = await resolverReferencias(atomos, catalogo);
 
-  const ancorados = ancorar(transcricao.sessao_id, atomos, transcricao, modeloReal, atribuicoes);
+  const ancorados = ancorar(
+    transcricao.sessao_id,
+    atomos,
+    transcricao,
+    modeloReal,
+    atribuicoes,
+    versao,
+  );
 
   return {
     sessao_id: transcricao.sessao_id,
@@ -365,7 +444,7 @@ export async function extrair(transcricao: Transcricao): Promise<Extracao> {
       entidades,
     ),
     descartados,
-    prompt_version: PROMPT_VERSION,
+    prompt_version: versao,
     modelo: modeloReal,
     prompt_version_resolucao: atribuicoes.prompt_version,
     modelo_resolucao: atribuicoes.modelo,

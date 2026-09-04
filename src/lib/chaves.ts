@@ -10,6 +10,7 @@
  *   sessoes/<id>/extracao-anterior.json
  *   sessoes/<id>/correcoes.json
  *   calibracao/indice.json
+ *   calibracao/regras-<hash>.json
  */
 import { EXT_GRAVACAO, extensaoAceita } from "./audio";
 
@@ -51,6 +52,15 @@ export const chaveCorrecoes = (id: string) => `${prefixoSessao(id)}/correcoes.js
  * prefixo `sessoes/` de propósito: não é de sessão nenhuma.
  */
 export const chaveIndiceCalibracao = () => `calibracao/indice.json`;
+
+/**
+ * Uma versão de regras aprovada, **imutável para sempre**.
+ *
+ * O nome é o próprio hash porque é ele que aparece no `prompt_version` do
+ * átomo (`extracao-5+a3f91c7d`): dado um átomo de três meses atrás, o texto do
+ * prompt que o produziu se acha por esta chave e por mais nada.
+ */
+export const chaveRegras = (hash: string) => `calibracao/regras-${hash}.json`;
 
 export function indiceChunk(i: number): string {
   if (!Number.isInteger(i) || i < 0 || i > 999_999) {

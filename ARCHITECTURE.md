@@ -9,8 +9,8 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.5.md`.
 > arquivo no mesmo commit. Ver "Manutenção deste arquivo" no fim.
 
 **Estado: slice 2 fechada e validada; slices 3 (higiene do grafo), 4
-(identidade por contexto) e 4.5 (o grafo ganha vetor) construídas; da 4.6
-(o prompt aprende com a revisão), a metade da captura.**
+(identidade por contexto), 4.5 (o grafo ganha vetor) e 4.6 (o prompt aprende
+com a revisão) construídas.**
 Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. Terminada
 a transcrição, a extração dispara sozinha, grava a proposta em `extracao.json` e
 deixa a sessão em `em_revisao` (seções 4.6 e 5); o confirmar da revisão grava
@@ -61,21 +61,28 @@ trocar o STT por um modelo que escreve melhor foi **recusado**: o candidato não
 tem canal de vocabulário nenhum, e nome próprio errado custa mais que prosa
 torta neste sistema.
 
-**E a correção que eu faço na revisão parou de se perder** (seção 4.11). Até
-aqui, rejeitar um átomo, editar um texto ou trocar um tipo morria no clique de
-confirmar — o servidor até contava os rejeitados, só para descartar o número na
-resposta. Agora o confirmar apura, **depois** de gravar no grafo e fora do
+**E a correção que eu faço na revisão parou de se perder** (seções 4.11 e 4.12).
+Até aqui, rejeitar um átomo, editar um texto ou trocar um tipo morria no clique
+de confirmar — o servidor até contava os rejeitados, só para descartar o número
+na resposta. Agora o confirmar apura, **depois** de gravar no grafo e fora do
 caminho da resposta, o que a proposta dizia contra o que eu aprovei, e guarda o
 resultado no R2. Nenhum gesto novo na revisão, nenhum node novo, nenhuma
-migration: o grafo é o único lugar que esta metade não toca.
+migration: o grafo é o único lugar que essa captura não toca.
+
+Acumulada, ela vira material: em `/calibracao` eu vejo o que corrigi, peço ao
+`calibracao-1` um rascunho de regra, edito, e aprovo. **A regra aprovada entra
+no prompt da próxima extração sem deploy** — e sem regra nenhuma o prompt sai
+byte a byte igual ao de antes desta fatia, o que faz dela um no-op até o meu
+primeiro toque. Verificado por medição, não por confiança: 21 correções reais em
+5 sessões, e um terço delas mostrou que o maior erro do pipeline não é o
+extrator, é o STT ouvindo nome próprio errado (§14).
 
 O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
 ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
 deduplicação de **átomo** — dizer a mesma coisa em duas sessões ainda cria dois.
-Da 4.6, falta o loop de aprovação: o agente `calibracao-1`, as regras aprovadas
-entrando no prompt, o `extracao-anterior` lado a lado e a sugestão de calibrar.
-`/calibracao` já mostra o acumulado (§11), mas o `extracao-5` continua saindo
-byte a byte igual ao de antes desta fatia.
+A 4.6 está construída inteira — captura, tela, regras e o `calibracao-1`. O que
+falta é **uso**: nenhuma regra foi aprovada ainda, e enquanto não for, o
+`extracao-5` continua saindo byte a byte igual ao de antes dela.
 Tudo slice 5, e tudo dependente de material acumulado: uma pergunta boa precisa
 saber de quem se está falando, que é o que a slice 4 entrega, e achar o que já foi
 dito sem varrer o grafo inteiro, que é o que a 4.5 entrega.
@@ -141,8 +148,11 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   entidade: refresh por hash e as duas consultas de vizinhança
   correcoes.ts    o diff entre o que a proposta dizia e o que eu aprovei:
                   apuração, chaves e a fusão no índice — puro, sem rede
-  calibracao.ts   onde as correções vivem: correcoes.json por sessão e o índice
-                  acumulado, com read-modify-write por etag
+  calibracao.ts   onde as correções vivem (correcoes.json por sessão e o índice
+                  acumulado, por etag) e o agente 4, que rascunha regra e não
+                  escreve nada
+  regras.ts       as regras aprovadas: o hash que vira sufixo de prompt_version,
+                  a leitura tolerante e o snapshot imutável
   referencias.ts  lê os dois formatos de proposta (antes e depois da 4)  (client)
   catalogo.ts     busca de entidade no navegador: trecho, acento, alias (client)
   tipografia.ts   qual tela é ritual e qual é gestão — a regra da fonte  (client)
@@ -1215,6 +1225,118 @@ errado. `waitUntil` morto perde as correções daquela sessão, sem recuperaçã
 e nada do diário se perde junto, porque os átomos já estão no grafo quando isto
 começa.
 
+### 4.12 O prompt aprende: as regras e o `calibracao-1` (slice 4.6)
+
+O prompt de extração passou a ter **duas fontes**: `INSTRUCOES_BASE`, no git, e
+as regras aprovadas, no R2. O custo está declarado no §14 — ler o prompt efetivo
+exige os dois lugares, e `git revert` sozinho não reverte mais o prompt inteiro.
+
+#### A montagem, e o no-op
+
+```
+montarPrompt(texto, regras) = INSTRUCOES_BASE + blocoDeRegras(regras) + FORMATO + texto
+```
+
+O corte entre as duas metades é o ponto exato onde uma regra entra: depois de
+tudo o que instrui, antes do que descreve o envelope de saída. Regra enfiada
+depois do `FORMATO` seria lida como parte do exemplo de JSON.
+
+**`blocoDeRegras([]) === ""`, e isso não é detalhe:** sem regra aprovada o
+prompt sai **byte a byte igual** ao de antes desta fatia — verificado contra o
+arquivo anterior, 4620 caracteres nos dois. A slice inteira é um no-op até a
+minha primeira aprovação, e portanto incapaz de piorar nada enquanto eu não
+mandar. `tests/regras.test.ts` trava a junção exata das duas metades.
+
+`versaoDoPrompt` substitui o `PROMPT_VERSION` fixo: `extracao-5` sem regra,
+`extracao-5+a3f91c7d` com. **O hash sai das regras usadas na chamada, não do
+arquivo** — se o R2 falhar, entram zero regras e a versão é a base. A
+procedência é verdadeira nos dois caminhos, que é o ponto: carimbar `+a3f91c7d`
+numa extração que rodou sem regra seria mentira gravada no grafo para sempre.
+
+E o hash resolve para um texto: cada aprovação grava
+`calibracao/regras-<hash>.json`, imutável, e o índice aponta qual é a corrente.
+Sem isso, um átomo de três meses atrás carregaria uma versão de prompt que não
+está versionada em lugar nenhum.
+
+#### `regras()`: tolerante, com teto, e sem cache
+
+Copia o molde de `vocabulario()` — leitura que **nunca propaga erro**, porque
+R2 fora do ar não pode impedir uma sessão de ser extraída. A falha degrada para
+o comportamento bom (o prompt base), não para nenhum. `MAX_REGRAS = 12` corta no
+servidor, e o teto **é a curadoria**: prompt sem limite é exatamente como esta
+fatia estragaria a extração que já presta.
+
+**Sem cache, e aqui o código diverge da spec**, que previa um invalidado na
+escrita. Numa função serverless o cache é por instância: a que aprovou invalida
+o dela, e a vizinha, que cacheou a lista vazia, continuaria extraindo sem a
+regra — "aprovar → vale na próxima extração" seria falso de um jeito que
+ninguém vê. `regras()` é chamada **uma vez por sessão**; duas idas ao R2 por
+sessão é o preço de a promessa ser verdadeira.
+
+#### O `calibracao-1`, quarto agente
+
+`PROMPT_VERSION_CALIBRACAO = "calibracao-1"`, parser tolerante próprio,
+`temperature: 0`, `modeloCalibracao()` (`CALIBRACAO_MODEL`, padrão o da
+extração). **Não escreve nada**: propõe e para, como o agente 3. A razão é a
+mesma, e maior — perfil rascunhado errado contamina a resolução; regra
+rascunhada errada contamina toda extração futura.
+
+Ele lê só as correções **em aberto e do agente `extracao`** (`paraCalibrar`).
+`resolucao` e `grafo` seguem capturadas e etiquetadas: alimentar o agente da
+extração com elas só produziria regra de extração para erro que não é dela.
+
+**As amarras valem no parser, não só no prompt** — amarra que vive apenas no
+texto é amarra que o modelo ignora num dia ruim:
+
+| Amarra | Por quê |
+|---|---|
+| no máximo 2 regras por rascunho | mais que isso não é rascunho, é reescrita do prompt |
+| toda regra cita os `Correcao.id` que a motivam | sem procedência, "endereçada" não quer dizer nada |
+| id citado tem de estar no material | id inventado fecharia uma correção que a regra nunca leu |
+| **nunca a partir de uma correção só** | um caso não é padrão, e generalizar um caso piora o extrator em todos os outros |
+| seção inventada não vira `substitui` | iria ao prompt como "isto substitui a seção X" apontando para nada |
+
+Há uma quinta, e ela veio da medição de 2026-09-04: **conserto de grafia de nome
+próprio não vira regra**. Um terço das correções reais era o STT tendo ouvido
+errado, e nenhuma instrução faz o extrator adivinhar um nome que nunca chegou
+até ele. A amarra é uma linha do prompt; a saída de verdade é o agente de
+pré-resolução do §14, que fica para quando o fluxo de resolução for refinado.
+
+#### Aprovar: três escritas, um ciclo só
+
+`POST /api/calibracao/regras` recebe a **lista inteira** que deve valer, não um
+delta: apagar é submeter sem ela, editar é submeter o texto novo com o mesmo
+`id`, e lista vazia revoga tudo e volta ao prompt base. "Sobreviveu à minha
+edição" é o `id` ainda estar na lista — daí ele ser atribuído no rascunho e
+nunca editável, enquanto `texto` é o único campo que a tela deixa mexer e `cita`
+é do agente.
+
+`aprovarRegras` grava o snapshot, aponta `regras_correntes` para ele e marca
+`incorporada_em` nas correções citadas — **as três no mesmo read-modify-write**.
+`incorporada_em` só é autoritativo no índice, e duas aprovações quase
+simultâneas só não se destroem se o conteúdo for recalculado dentro de cada
+tentativa do retry. A cópia de cada `Correcao` em `sessoes/<id>/correcoes.json`
+não é atualizada: ela é a fotografia do momento da confirmação, não o estado.
+
+Regra que eu corto antes de aprovar deixa as correções que a motivavam **em
+aberto**, e elas voltam no próximo rascunho — é o que faz "descartar" ser
+diferente de "endereçar".
+
+#### A sugestão: a cada 3 semanas, nunca um número
+
+`sugerirCalibracao` é pura e binária. Sem correção em aberto **nunca** sugere,
+não importa o tempo passado. Havendo, a contagem parte de `visitado_em` — a
+última vez que `/calibracao` carregou de fato — ou, se eu nunca visitei, da
+correção em aberto mais antiga; passados 21 dias, acende.
+
+A `Gestao` consulta `GET /api/calibracao/sugestao`, que é **puro**, ao abrir a
+gaveta. Quem reseta o relógio é a carga real da tela: se a consulta marcasse
+visita, a sugestão morreria no primeiro toque na engrenagem, sem eu ter olhado
+nada. E ela aparece **só na gaveta**, nunca no ícone em `/` — a tela de gravar é
+"um botão, um timer, um jeito de parar", e um sinal ali seria cobrança na única
+tela que não pode cobrar. Abrir a tela apaga a sugestão por mais três semanas,
+aprovando regra ou não: olhar já conta.
+
 ## 5. Estados da sessão
 
 ```
@@ -1420,6 +1542,8 @@ Três travas independentes:
 | `If-Match` + laço de retry no índice | `calibracao.atualizarIndice` | duas capturas concorrentes se somam; quem perde a corrida relê e reaplica |
 | `Correcao.id` condicional ao tipo | `correcoes.apurarCorrecoes` | correção de átomo, de entidade e "faltou" nunca colidem entre si |
 | id que já está no índice não é reaberto | `correcoes.juntarNoIndice` | reapurar não devolve `incorporada_em` para `null` |
+| `regras-<hash>.json` imutável, com `If-None-Match` | `regras.gravarVersao` | reaprovar a mesma composição não cria versão nova: o hash sai do conteúdo |
+| o rascunho de regra não escreve | `calibracao.rascunharRegras` | pedir dez rascunhos não muda prompt nenhum; só `POST /api/calibracao/regras` grava |
 
 A trava de `extracao.json` vale para **os dois agentes**: proposta pronta não
 rechama nem a extração nem a resolução, e `forcar` refaz as duas. Calibrar o
@@ -1779,6 +1903,7 @@ sessoes/<id>/extracao.json      proposta: átomos ancorados, referências resolv
 sessoes/<id>/extracao-anterior.json  a proposta que o `forcar` substituiu — só a última, para eu comparar
 sessoes/<id>/correcoes.json     o que eu corrigi naquela revisão — fotografia do momento da confirmação, escrita uma vez só
 calibracao/indice.json          a mesa de trabalho: as correções acumuladas de todas as sessões, teto de 500
+calibracao/regras-<hash>.json   uma composição de regras aprovada — imutável para sempre
 _smoke/                         objetos temporários do `pnpm smoke`, apagados no fim
 ```
 
@@ -1808,7 +1933,10 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5; `anterior` vem como cabeçalho, e a lista antiga só com `?anterior=1` |
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
 | `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo, com `:PERFILA`, e apura as correções em `waitUntil` | `ja_confirmada` na segunda; procedência relida do R2, não do corpo; `gestos` é **opcional** e corpo sem ele confirma igual |
-| `GET /api/calibracao` | o índice de correções, para a tela de calibração | marca `visitado_em` em `waitUntil` — best-effort, e só se o índice já existe |
+| `GET /api/calibracao` | o índice de correções **e as regras em vigor**, para a tela de calibração | marca `visitado_em` em `waitUntil` — best-effort, e só se o índice já existe |
+| `GET /api/calibracao/sugestao` | `{ sugerir: boolean }` | **puro, nunca escreve**; a gaveta o consulta ao abrir |
+| `POST /api/calibracao/rascunho` | o `calibracao-1` propõe até duas regras | **não escreve nada**; é `POST` porque gasta chamada de modelo |
+| `POST /api/calibracao/regras` | a lista inteira que passa a valer, e o que ela fecha | o **único** lugar que escreve regra; lista vazia revoga tudo |
 | `GET /api/entidades` | o que está no grafo, com átomos, sessões, aliases e perfil | só leitura; nó fundido vira alias do vencedor; alimenta também o seletor da revisão |
 | `POST /api/entidades/duplicatas` | propõe pares que parecem a mesma coisa | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/entidades/fundir` | `{vencedora, perdedora}` — migra arestas, marca alias | idempotente pela guarda de `status` |
@@ -1837,7 +1965,7 @@ Neo4j ou R2 não atendem, com a causa legível no corpo (seção 5.2).
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, escrever o perfil |
-| `/calibracao` | `Calibracao` | o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
+| `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
 | `/entrar` | página de login | pede o e-mail permitido |
 
 **Clicar na sessão leva sempre para onde ainda há o que fazer.** Proposta
@@ -2085,12 +2213,13 @@ execução não há requisição a terceiros.
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, perfil, deduplicação, embedding
+AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, perfil, deduplicação, embedding, calibração
 STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
 RESOLUCAO_MODEL           opcional; padrão igual ao da extração
 PERFIL_MODEL              opcional; padrão igual ao da extração
+CALIBRACAO_MODEL          opcional; padrão igual ao da extração
 EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões
 AUTH_SECRET, ALLOWED_EMAIL
 ```
@@ -2161,6 +2290,10 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - Qualidade da resolução (slice 4) também não tem teste automático, e pelo mesmo
   motivo. A diferença é que agora existe um caso concreto de que eu sei a
   resposta: a sessão que fala do Rapha e do Raffa.
+- `tests/regras.test.ts` — o teste que mais importa da 4.6: **sem regra
+  aprovada, as duas metades do prompt se emendam sem nada entre elas**, e a
+  versão sai sem sufixo (critério 4). Também as amarras do `calibracao-1`
+  reaplicadas no parser, e a sugestão dos 21 dias (critérios 7, 8 e 9).
 - `tests/processando.test.ts` — quando o corredor empurra a sessão parada, que é
   a única decisão dele que não é cosmética: empurrar demais paga uma chamada de
   modelo à toa, empurrar de menos deixa a sessão sem caminho até a revisão.
@@ -2384,6 +2517,22 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   daquela extração morreu, a sessão fica girando "lendo o que você disse…" e a
   saída é o **reextrair** da lista. `transcrito` e `erro`, esses, o corredor
   empurra sozinho.
+- **O prompt passa a ter duas fontes** — `INSTRUCOES_BASE` no git, as regras no
+  R2. O hash e os snapshots imutáveis impedem a procedência de mentir, mas ler o
+  prompt efetivo passa a exigir os dois lugares, e `git revert` sozinho não
+  reverte mais o prompt inteiro. Para revogar uma regra aprovada, o caminho é
+  submeter a lista sem ela em `/calibracao`, não apagar o snapshot.
+- **Regra nova pode piorar o que já presta, e nenhum teste automático vê.**
+  Consequência direta de não haver medida automática de qualidade — e não vai
+  haver. As defesas são o teto de 12 regras, o `extracao-anterior` lado a lado,
+  as amarras do `calibracao-1` e o índice fechado por `incorporada_em`: nenhuma
+  delas é métrica, todas dependem do meu julgamento na revisão seguinte.
+- **As primeiras regras nascerão de um punhado de correções.** Risco de
+  generalizar demais um caso só; mitigado por nunca propor regra a partir de uma
+  correção isolada, não eliminado.
+- **A sugestão é sob demanda de olhar, não de agir.** Correção pode continuar em
+  aberto indefinidamente se eu abrir `/calibracao`, ver e não pedir rascunho
+  nenhum. É decisão minha, e ignorar é sempre saída válida.
 - **O registro de correções é best-effort.** Ele roda no `waitUntil`, depois da
   resposta; `waitUntil` morto perde as correções daquela sessão, sem recuperação
   e sem aviso na tela. Custo assumido: o diário já está no grafo quando isso

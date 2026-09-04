@@ -113,6 +113,15 @@ export function modeloPerfil(): string {
 }
 
 /**
+ * Modelo que lê as minhas correções e rascunha uma regra nova para o prompt de
+ * extração (slice 4.6, agente 4). Mesma regra dos outros: padrão é o da
+ * extração, e `CALIBRACAO_MODEL` separa sem tocar em código.
+ */
+export function modeloCalibracao(): string {
+  return validarIdDeModelo(process.env.CALIBRACAO_MODEL || modeloExtracao());
+}
+
+/**
  * Modelo que julga se duas entidades parecidas são a mesma coisa (slice 3).
  * Mesma família da extração: saída JSON curta, chamado sob demanda.
  */

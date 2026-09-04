@@ -26,9 +26,31 @@ import { Importacao } from "./Importacao";
 
 export function Gestao() {
   const [aberto, setAberto] = useState(false);
+  /**
+   * A sugestão de calibrar: **binária, nunca um número**.
+   *
+   * Consultada ao abrir a gaveta, e nunca em `/`: a tela de gravar é "um
+   * botão, um timer, um jeito de parar", e um sinal no ícone da engrenagem
+   * seria cobrança na única tela que não pode cobrar nada. A consulta é pura —
+   * quem reseta o relógio por mais três semanas é a carga de `/calibracao`, e
+   * não este toque, para a sugestão ter chance de valer os 21 dias inteiros.
+   */
+  const [sugere, setSugere] = useState(false);
   const idGaveta = useId();
   const engrenagem = useRef<HTMLButtonElement | null>(null);
   const gaveta = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!aberto) return;
+    let vivo = true;
+    fetch("/api/calibracao/sugestao", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ sugerir: boolean }>) : null))
+      .then((d) => vivo && d && setSugere(d.sugerir))
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [aberto]);
 
   // Esc fecha, de qualquer lugar de dentro. Só escuta enquanto está aberto:
   // um listener de teclado vivo numa tela de gravar é ruído que ninguém pediu.
@@ -101,6 +123,10 @@ export function Gestao() {
             no lugar errado. Quem aparece por tempo é a sugestão (slice 4.6). */}
         <Link className="item" href="/calibracao" onClick={() => setAberto(false)}>
           calibração
+          {/* Uma linha, sem número: "tem coisa acumulada para olhar", e nada
+              mais. Quantas, de quando e de que tipo é a própria tela que
+              responde — aqui seria placar. */}
+          {sugere && <span className="sugestao">tem o que olhar</span>}
         </Link>
 
         <hr />

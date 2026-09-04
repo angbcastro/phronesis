@@ -479,3 +479,50 @@ export function juntarNoIndice(
     atualizado_em: agora,
   };
 }
+
+// ───────────────────────── a sugestão de calibrar ─────────────────────────
+
+export const INTERVALO_SUGESTAO_DIAS = 21; // 3 semanas
+
+const DIA_MS = 24 * 60 * 60 * 1000;
+
+const diasEntre = (iso: string, agora: number): number => {
+  const t = new Date(iso).getTime();
+  return Number.isNaN(t) ? 0 : (agora - t) / DIA_MS;
+};
+
+/**
+ * Está na hora de calibrar?
+ *
+ * **Binário, nunca numérico.** A gaveta da `Gestao` mostra a linha ou não
+ * mostra — nunca "3 semanas e 12 correções", e nunca no ícone da engrenagem em
+ * `/`. Um número ali viraria cobrança na tela cujo trabalho é não cobrar nada.
+ *
+ * A contagem parte de `visitado_em` — a última vez que `/calibracao` carregou
+ * de fato — ou, se eu nunca visitei, da correção em aberto mais antiga. **Sem
+ * correção em aberto nunca sugere**, não importa o tempo passado: não há o que
+ * calibrar, e sugerir seria mandar eu olhar uma tela que não tem novidade.
+ */
+export function sugerirCalibracao(
+  indice: IndiceCalibracao,
+  agora: number = Date.now(),
+): boolean {
+  const abertas = indice.correcoes.filter((c) => c.incorporada_em === null);
+  if (abertas.length === 0) return false;
+
+  const maisAntiga = abertas.reduce((velha, c) => (c.em < velha.em ? c : velha));
+  const referencia = indice.visitado_em ?? maisAntiga.em;
+
+  return diasEntre(referencia, agora) >= INTERVALO_SUGESTAO_DIAS;
+}
+
+/**
+ * As correções que o `calibracao-1` deve ler: **em aberto e do extrator**.
+ *
+ * O recorte por agente é o que a spec chama de "captura os três, calibra um de
+ * cada vez". `resolucao` e `grafo` continuam acumulando etiquetados, para a
+ * fatia que os calibrar — mandá-los ao agente da extração só produziria regra
+ * de extração para erro que não é dela.
+ */
+export const paraCalibrar = (indice: IndiceCalibracao): Correcao[] =>
+  indice.correcoes.filter((c) => c.incorporada_em === null && c.agente === "extracao");
