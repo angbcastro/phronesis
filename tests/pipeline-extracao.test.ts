@@ -154,6 +154,60 @@ describe("re-extração forçada", () => {
     expect(vi.mocked(putJson).mock.calls[0][2]).toEqual({});
   });
 
+  it("guarda a proposta que ela substituiu, para eu poder comparar depois", async () => {
+    // A única defesa contra regressão silenciosa da slice 4.6: ver a lista
+    // anterior ao lado da nova. Sem métrica, sem placar — olho no olho.
+    r2.set(CHAVE_TRANSCRICAO, transcricao);
+    r2.set(CHAVE_EXTRACAO, proposta("extracao-5"));
+    vi.mocked(extrair).mockResolvedValue(proposta("extracao-5+a3f91c7d") as never);
+
+    await extrairSessao("s1", { forcar: true });
+
+    const copia = vi
+      .mocked(putJson)
+      .mock.calls.find(([key]) => key === "sessoes/s1/extracao-anterior.json");
+    expect(copia).toBeDefined();
+    expect(copia![1]).toMatchObject({ prompt_version: "extracao-5" });
+  });
+
+  it("a cópia vem depois da proposta nova — é ela que importa se algo morrer no meio", async () => {
+    r2.set(CHAVE_TRANSCRICAO, transcricao);
+    r2.set(CHAVE_EXTRACAO, proposta("extracao-5"));
+    vi.mocked(extrair).mockResolvedValue(proposta("extracao-6") as never);
+
+    await extrairSessao("s1", { forcar: true });
+
+    const chaves = vi.mocked(putJson).mock.calls.map(([key]) => key);
+    expect(chaves.indexOf(CHAVE_EXTRACAO)).toBeLessThan(
+      chaves.indexOf("sessoes/s1/extracao-anterior.json"),
+    );
+  });
+
+  it("falhar ao guardar a cópia não derruba a re-extração", async () => {
+    r2.set(CHAVE_TRANSCRICAO, transcricao);
+    r2.set(CHAVE_EXTRACAO, proposta("extracao-5"));
+    vi.mocked(extrair).mockResolvedValue(proposta("extracao-6") as never);
+    vi.mocked(putJson).mockImplementation(async (key: string) => {
+      if (key.endsWith("extracao-anterior.json")) throw new Error("R2 fora do ar");
+      return { etag: null };
+    });
+
+    const r = await extrairSessao("s1", { forcar: true });
+
+    expect(r.status).toBe("em_revisao");
+    expect(r.extracao).toMatchObject({ prompt_version: "extracao-6" });
+  });
+
+  it("primeira extração da sessão não inventa uma anterior", async () => {
+    r2.set(CHAVE_TRANSCRICAO, transcricao);
+    vi.mocked(extrair).mockResolvedValue(proposta("extracao-5") as never);
+
+    await extrairSessao("s1", { forcar: true });
+
+    const chaves = vi.mocked(putJson).mock.calls.map(([key]) => key);
+    expect(chaves).not.toContain("sessoes/s1/extracao-anterior.json");
+  });
+
   it("sem forcar, a trava continua valendo", async () => {
     r2.set(CHAVE_TRANSCRICAO, transcricao);
     r2.set(CHAVE_EXTRACAO, proposta("extracao-2"));

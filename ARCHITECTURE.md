@@ -1186,6 +1186,26 @@ No rodapé, atrás de um botão, os `descartados` da extração agrupados por mo
 nunca os renderizou. É o outro lado da correção: ali eu digo o que ficou torto,
 aqui o código diz o que nem passou.
 
+#### Antes e depois, sem inventar métrica
+
+`extrairSessao({forcar:true})` copia para `extracao-anterior.json` a proposta que
+substituiu — **só a última**, não um histórico. A cópia acontece **depois** do
+PUT da proposta nova, e a ordem é deliberada: o que eu pedi foi a re-extração, e
+perder a cópia custa a comparação daquela sessão enquanto perder a proposta
+custaria a chamada de modelo inteira. Falhar ali só escreve no log.
+
+`GET /extracao` devolve `anterior` como **cabeçalho** (`{atomos, prompt_version,
+modelo, criado_em}`); a lista de átomos antigos só vem com `?anterior=1`, porque
+mandá-la sempre dobraria o payload da tela mais apertada do sistema por um caso
+raro. Na revisão, **quando a versão do prompt mudou**, uma linha discreta no fim
+da lista oferece "ver a anterior", e ela renderiza a lista antiga somente
+leitura — sem checkbox e sem editor, porque o que eu confirmo é a proposta
+corrente. Re-extração com a mesma versão não mostra linha nenhuma: comparar duas
+saídas do mesmo prompt é ruído na tela que tem 60 s.
+
+Sem diff colorido, sem "melhorou/piorou", sem placar. É a única defesa contra
+regressão silenciosa que esta fatia pode oferecer, e ela é olho no olho.
+
 #### Quando roda, e o que se perde se não rodar
 
 Dentro do `waitUntil`, depois da resposta, num `try/catch` que nunca derruba o
@@ -1756,6 +1776,7 @@ sessoes/<id>/chunk_000.opus     áudio importado — a extensão é a do arquivo
 sessoes/<id>/chunk_000.json     transcrição do bloco, offsets relativos, modelo, granularidade
 sessoes/<id>/transcricao.json   final, offsets absolutos
 sessoes/<id>/extracao.json      proposta: átomos ancorados, referências resolvidas (com o `porque` da camada 3b), marcas de perfil, entidades agregadas, procedência dos dois agentes
+sessoes/<id>/extracao-anterior.json  a proposta que o `forcar` substituiu — só a última, para eu comparar
 sessoes/<id>/correcoes.json     o que eu corrigi naquela revisão — fotografia do momento da confirmação, escrita uma vez só
 calibracao/indice.json          a mesa de trabalho: as correções acumuladas de todas as sessões, teto de 500
 _smoke/                         objetos temporários do `pnpm smoke`, apagados no fim
@@ -1784,7 +1805,7 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha **e extrai** em `waitUntil` | `ja_finalizada` a partir de `em_revisao`; antes disso, é o retry da extração |
 | `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s, `force-dynamic`; `completa` é sobre a transcrição, não sobre a sessão |
 | `POST /api/sessoes/:id/extrair` | dispara extração **e resolução** de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` refaz as duas e sobrescreve |
-| `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5 — contrato inalterado, campo novo |
+| `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5; `anterior` vem como cabeçalho, e a lista antiga só com `?anterior=1` |
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
 | `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo, com `:PERFILA`, e apura as correções em `waitUntil` | `ja_confirmada` na segunda; procedência relida do R2, não do corpo; `gestos` é **opcional** e corpo sem ele confirma igual |
 | `GET /api/calibracao` | o índice de correções, para a tela de calibração | marca `visitado_em` em `waitUntil` — best-effort, e só se o índice já existe |

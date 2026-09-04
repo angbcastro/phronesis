@@ -6,7 +6,13 @@
  * para, só falta o último bloco. Terminada a transcrição, a extração dispara
  * sozinha — ninguém aperta nada entre parar de falar e ter a proposta.
  */
-import { chaveChunkAudio, chaveChunkTranscricao, chaveExtracao, chaveTranscricao } from "./chaves";
+import {
+  chaveChunkAudio,
+  chaveChunkTranscricao,
+  chaveExtracao,
+  chaveExtracaoAnterior,
+  chaveTranscricao,
+} from "./chaves";
 import { extrair } from "./extracao";
 import {
   atualizarManifest,
@@ -229,10 +235,20 @@ export async function extrairSessao(
 
   try {
     const extracao = await extrair(transcricao.valor);
+
+    // A que está lá agora, lida antes de o PUT passar por cima dela. Só no
+    // forçado: no caminho automático não existe proposta anterior nenhuma.
+    const substituida = forcar ? await getJson<Extracao>(key) : null;
+
     // Forçado sobrescreve: é o modo de calibrar o prompt contra uma sessão já
     // gravada. Sem `ifNoneMatch` não há corrida a perder — quem forçou quer
     // exatamente a proposta nova no lugar da antiga.
     await putJson(key, extracao, forcar ? {} : { ifNoneMatch: "*" });
+
+    // A cópia vai **depois**, e a ordem é deliberada: o PUT que importa é o da
+    // proposta nova, que é o que eu pedi. Perder a cópia custa a comparação
+    // lado a lado daquela sessão; perder a proposta custaria a re-extração.
+    if (substituida) await guardarAnterior(sessao_id, substituida.valor);
     await marcarEmRevisao(sessao_id);
     return { status: "em_revisao", extracao };
   } catch (e) {
@@ -248,6 +264,25 @@ export async function extrairSessao(
     console.error(`[extracao] sessão ${sessao_id} falhou:`, e);
     await atualizarSessao(sessao_id, { status: "erro" }); // transcrição intacta, retry manual
     return { status: "erro" };
+  }
+}
+
+/**
+ * Guarda em `extracao-anterior.json` a proposta que o `forcar` substituiu.
+ *
+ * É a única defesa contra regressão silenciosa que a slice 4.6 oferece: com uma
+ * regra nova em vigor, ver a lista anterior ao lado da nova é o que permite
+ * dizer "piorou" olhando, sem inventar métrica de qualidade nenhuma.
+ *
+ * **Nunca derruba a re-extração**, e guarda só a última tentativa — histórico
+ * de propostas seria acumular no R2 o que eu nunca vou reler. Sem condicional
+ * no PUT de propósito: a anterior à anterior não interessa mais.
+ */
+async function guardarAnterior(sessao_id: string, substituida: Extracao): Promise<void> {
+  try {
+    await putJson(chaveExtracaoAnterior(sessao_id), substituida);
+  } catch (e) {
+    console.error(`[extracao] sessão ${sessao_id}: não consegui guardar a proposta anterior:`, e);
   }
 }
 

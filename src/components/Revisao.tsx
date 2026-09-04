@@ -62,6 +62,17 @@ interface Proposta {
     prompt_version_resolucao?: string | null;
   };
   blocos: BlocoAbsoluto[];
+  /**
+   * A proposta que o `forcar` sobrescreveu, se houver (slice 4.6). Vem como
+   * cabeçalho; a lista de átomos só chega com `?anterior=1`.
+   */
+  anterior?: {
+    atomos: number;
+    prompt_version: string;
+    modelo: string;
+    criado_em: string;
+    lista?: AtomoProposto[];
+  } | null;
 }
 
 /**
@@ -277,6 +288,8 @@ export function Revisao({ id }: { id: string }) {
   const [abertos, setAbertos] = useState<Set<number>>(new Set());
   const [filtros, setFiltros] = useState<Record<number, TipoEntidade | "todas">>({});
   const [gravando, setGravando] = useState(false);
+  /** A lista da proposta anterior, buscada só quando eu peço para ver. */
+  const [anterior, setAnterior] = useState<AtomoProposto[] | null>(null);
 
   const audio = useRef<HTMLAudioElement | null>(null);
 
@@ -417,6 +430,25 @@ export function Revisao({ id }: { id: string }) {
 
   /** Atribuições que o agente não teve certeza. Destacam, não travam. */
   const duvidosos = aprovados.filter((a) => !referenciaDe(a).certo);
+
+  /**
+   * Só quando a versão do prompt mudou. Re-extrair com o mesmo prompt produz
+   * uma lista que eu não tenho por que comparar — e uma linha que aparece
+   * sempre vira ruído na tela mais apertada do sistema.
+   */
+  const mudouDeVersao =
+    proposta?.anterior != null &&
+    proposta.anterior.prompt_version !== proposta.extracao.prompt_version;
+
+  /** A lista antiga custa uma ida à rede, e só quando eu peço. */
+  async function verAnterior() {
+    const r = await fetch(`/api/sessoes/${id}/extracao?anterior=1`, { cache: "no-store" }).catch(
+      () => null,
+    );
+    if (!r || !r.ok) return;
+    const d = (await r.json()) as { anterior?: { lista?: AtomoProposto[] } };
+    setAnterior(d.anterior?.lista ?? []);
+  }
 
   /** Pendente primeiro: é o que precisa da minha atenção. */
   const ordenadas = useMemo(
@@ -741,6 +773,46 @@ export function Revisao({ id }: { id: string }) {
           );
         })}
       </ol>
+
+      {mudouDeVersao && (
+        // Uma linha, no fim da lista, e fechada por padrão: comparar duas
+        // propostas é trabalho de calibração, não de revisão — e a revisão
+        // tem 60 s. Sem diff colorido e sem "melhorou/piorou": a defesa contra
+        // regressão que esta fatia oferece é olho no olho, não placar.
+        <div className="anterior">
+          <p className="aguardando">
+            esta sessão foi re-extraída · antes eram {proposta.anterior?.atomos} item(ns), por{" "}
+            {proposta.anterior?.prompt_version}
+            {anterior === null ? (
+              <button className="ver-anterior" onClick={() => void verAnterior()}>
+                ver a anterior
+              </button>
+            ) : (
+              <button className="ver-anterior" onClick={() => setAnterior(null)}>
+                fechar
+              </button>
+            )}
+          </p>
+
+          {anterior !== null && (
+            <ol className="atomos antiga">
+              {anterior.map((a) => (
+                // Somente leitura: sem checkbox e sem editor. O que eu confirmo
+                // é a proposta corrente; esta lista está aqui para eu olhar.
+                <li key={a.indice} className="atomo">
+                  <div className="linha">
+                    <div className="corpo">
+                      <span className="tipo">{a.tipo}</span>
+                      <p>{a.texto}</p>
+                      <p className="meta">sobre {sobreDe(a).entidade}</p>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
 
       <section className="entidades">
         <h2>entidades</h2>

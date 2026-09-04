@@ -7,6 +7,7 @@
  *   sessoes/<id>/chunk_000.json
  *   sessoes/<id>/transcricao.json
  *   sessoes/<id>/extracao.json
+ *   sessoes/<id>/extracao-anterior.json
  *   sessoes/<id>/correcoes.json
  *   calibracao/indice.json
  */
@@ -22,6 +23,16 @@ export const chaveTranscricao = (id: string) => `${prefixoSessao(id)}/transcrica
  * proposta que já pode ter sido revisada.
  */
 export const chaveExtracao = (id: string) => `${prefixoSessao(id)}/extracao.json`;
+
+/**
+ * A proposta que o `forcar` sobrescreveu — **só a última**, não um histórico.
+ *
+ * É a única defesa contra regressão silenciosa que esta fatia oferece: com uma
+ * regra nova em vigor, poder ver a lista anterior ao lado da nova é o que
+ * permite dizer "piorou" olhando, sem inventar métrica de qualidade nenhuma.
+ */
+export const chaveExtracaoAnterior = (id: string) =>
+  `${prefixoSessao(id)}/extracao-anterior.json`;
 
 /**
  * O registro permanente do que eu corrigi naquela revisão (slice 4.6).

@@ -852,6 +852,24 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .gaveta:not(.aberta) { transform: translateX(-100%); }
 }
 
+/* A proposta anterior, na revisão: uma linha discreta no fim da lista, e a
+   lista antiga somente leitura quando eu peço para ver. Sem cor de diff e sem
+   placar — a comparação é minha, não da tela. */
+.anterior { display: flex; flex-direction: column; gap: 0.5rem; }
+.anterior p { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.ver-anterior {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--texto-fraco);
+  font-size: 0.9rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ver-anterior:hover { color: var(--texto); }
+.atomos.antiga { opacity: 0.6; }
+.atomos.antiga .atomo { border-style: dashed; }
+
 /* ── calibração: o que eu já corrigi ───────────────────────────────────────
    O material manda no desenho. Metade das correções são parágrafos de 200 a
    660 caracteres, então o cartão é largo, o texto respira, e o par longo vem
