@@ -19,8 +19,9 @@
   --sobre-acento: #ffffff;
   --status: rgba(255, 255, 255, 0.7);
 
-  /* O halo do botão de gravar, e o diâmetro dele. 220px é o alvo; o `min`
-     existe só para o círculo não estourar um aparelho estreito. */
+  /* O halo do botão de gravar, e o diâmetro dele. 264px é o alvo desde o
+     redesenho (§11.1); o `min` existe só para o círculo não estourar um
+     aparelho estreito. */
   --glow: rgba(214, 90, 49, 0.55);
   --circulo: min(72vw, 264px);
 
@@ -285,7 +286,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: var(--raio);
   border: none;
   background: var(--acento);
-  color: #fff;
+  color: var(--sobre-acento);
   font-size: 1rem;
 }
 
@@ -506,7 +507,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .confirmar {
   width: 100%;
   background: var(--acento);
-  color: #fff;
+  color: var(--sobre-acento);
   border: none;
   border-radius: var(--raio);
   padding: 0.9rem 1rem;
@@ -518,7 +519,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: inline-block;
   margin-top: 1.25rem;
   background: var(--acento);
-  color: #fff;
+  color: var(--sobre-acento);
   text-decoration: none;
   border-radius: var(--raio);
   padding: 0.7rem 1.1rem;
