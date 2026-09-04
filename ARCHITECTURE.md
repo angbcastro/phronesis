@@ -138,7 +138,7 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   r2.ts           S3 SigV4 via aws4fetch: get/put/head, presign, PUT condicional
   chaves.ts       layout do R2 num lugar só + validação de id (barra path traversal)
   manifest.ts     verdade sobre quais blocos existem; read-modify-write por etag
-  estados.ts      máquina de estados da sessão e regra de abandono
+  estados.ts      máquina de estados da sessão e as predicadas de leitura
   modelos.ts      porta única de modelo: todo LLM sai pelo Vercel AI Gateway,
                   e o diagnóstico de resposta vazia que os três agentes usam
   embedding.ts    a porta do vetor: texto → embedding, e a string canônica da
@@ -351,13 +351,27 @@ não se espalha pelo código.
 
 `tests/gateway.test.ts` varre `src/` e `scripts/` a cada `pnpm test` e falha se
 algum dos quatro pontos da tabela for furado. É o que sustenta a promessa de
-"uma chave, um lugar para ver custo" quando a extração chegar.
+"uma chave, um lugar para ver custo" a cada agente novo que entra.
 
-**Hoje passam por aqui o STT e a extração** — `modeloStt()` (padrão
-`xai/grok-stt`, trocável por `STT_MODEL`) e `modeloExtracao()` (padrão
-`zai/glm-5.3-flash`, trocável por `EXTRACAO_MODEL`). Deduplicação é slice 3 e não
-existe: o que existe é a porta por onde ela vai passar, e a guarda que impede que
-passe por fora.
+**Hoje passam por aqui sete consumidores**, cada um com sua função em
+`modelos.ts` e sua variável de ambiente (§12), e todos os sete com caixa no
+painel de `/agentes` (§4.13):
+
+| Função | Agente | Padrão |
+|---|---|---|
+| `modeloStt()` | STT | `xai/grok-stt` |
+| `modeloExtracao()` | `extracao-5` | `zai/glm-5.3-flash` |
+| `modeloResolucao()` | `resolucao-2` | o da extração |
+| `modeloPerfil()` | `perfil-1` | o da extração |
+| `modeloCalibracao()` | `calibracao-1` | o da extração |
+| `modeloDuplicatas()` | `duplicatas-1` | `zai/glm-5.3-flash` |
+| `modeloEmbedding()` | embedding | `openai/text-embedding-3-small` |
+
+A deduplicação de **entidade** chegou na slice 3 e é o `duplicatas-1`. O que
+continua não existindo é a deduplicação de **átomo** (slice 5): dizer a mesma
+coisa em duas sessões ainda cria dois. A porta por onde ela vai passar é esta, e
+`tests/agentes.test.ts` é a guarda que impede um agente oitavo de nascer por
+fora dela.
 
 ### 4.2.1 Por que o STT é o `xai/grok-stt`, e não um melhor de texto
 
@@ -534,8 +548,8 @@ parcial nunca é lido fora de ordem.
 
 **Dispara sozinha** quando a transcrição termina, emendada no mesmo `waitUntil`
 do `finalizarSessao` — ninguém aperta nada entre parar de falar e ter a proposta
-(aceite 1 da slice 2). O que ainda não existe é quem a leia: a tela de revisão e
-o confirmar.
+(aceite 1 da slice 2). Quem a lê é a revisão (§4.7), e é o confirmar dela que
+leva a proposta ao grafo.
 
 `extracao.ts` monta o prompt, valida a resposta item por item e carimba a
 procedência. Sai pelo Gateway como o STT, por
@@ -837,7 +851,7 @@ de perfil da entidade (8.3).
 transcrição ──▶ agente 1: extracao-5   devolve o nome cru: "Rafa"
                       │
                       ▼
-                agente 2: resolucao-1  vê os átomos + as entidades com perfil
+                agente 2: resolucao-2  vê os átomos + as entidades com perfil
                       │                decide POR MENÇÃO: qual nó, ou nova
                       ▼                marca o que é informação de perfil
                 revisão ──▶ confirmar ──▶ grafo
@@ -877,9 +891,16 @@ reusando `proximidade` de `duplicatas.ts` — que pega o homófono de brinde, po
 
 | Situação da menção | O que acontece |
 |---|---|
-| um candidato exato, nenhum parecido | resolve ali, `certo: true`, de graça |
-| nenhum candidato | entidade nova, `certo: true`, de graça |
+| a união tem **um** candidato, e ele é exato | resolve ali, `certo: true`, de graça |
+| a união está vazia | entidade nova, `certo: true`, de graça |
 | qualquer outra coisa | vai ao agente |
+
+**A conta é sobre a união deduplicada das quatro camadas** (§4.10), não sobre a
+camada de string sozinha — foi o que mudou na 4.5, quando as duas camadas
+semânticas entraram. O caso comum de uma sessão sem ambiguidade é a grafia casar
+com um nó **e** os vizinhos votarem no mesmo nó: união de tamanho 1, decisão de
+graça, agente 2 não chamado. `decidir()` (`resolucao.ts:265`) diz o mesmo com
+todas as letras no próprio cabeçalho.
 
 A última linha cobre o caso traiçoeiro, e é por isso que ela não é "dois ou mais
 candidatos": o STT escreve "Rapha" exatamente, o casamento de string acerta **por
@@ -1122,9 +1143,9 @@ entidade, e uma edição minha não pode virar dez correções.
 #### O que uma correção guarda, e de quem é a culpa
 
 `Correcao` (`tipos.ts`) tem `antes`, `depois`, o texto proposto, as âncoras do
-átomo (para o player da tela que ainda não existe), a procedência **do átomo da
-proposta** — nunca do corpo, regra 7 —, `tocado` e `incorporada_em` (`null` = em
-aberto).
+átomo (é delas que sai o `▶ mm:ss` da tela de calibração, mais abaixo nesta
+seção), a procedência **do átomo da proposta** — nunca do corpo, regra 7 —,
+`tocado` e `incorporada_em` (`null` = em aberto).
 
 A chave **não** é sempre `${atomo_id}|${tipo}`. Três tipos não têm átomo, e com
 um id fixo por tipo os três colapsariam num registro só, uma correção nova
@@ -1243,19 +1264,30 @@ começa.
 
 ### 4.12 O prompt aprende: as regras e o `calibracao-1` (slice 4.6)
 
-O prompt de extração passou a ter **duas fontes**: `INSTRUCOES_BASE`, no git, e
-as regras aprovadas, no R2. O custo está declarado no §14 — ler o prompt efetivo
-exige os dois lugares, e `git revert` sozinho não reverte mais o prompt inteiro.
+O prompt de extração passou a ter **duas fontes** nesta fatia: `INSTRUCOES_BASE`,
+no git, e as regras aprovadas, no R2. Na 4.7 entrou a **terceira, e é a que
+vence a base**: o prompt que eu editei no painel, em
+`config/prompt-extracao-<hash>.json` (§4.13). Quem monta a chamada pede o texto
+em vigor a `efetivo("extracao", { prompt: BASE, … })` e as regras a `regras()` —
+esta seção descreve a segunda fonte, e o §4.13 descreve a terceira. O custo está
+declarado no §14: ler o prompt efetivo exige os três lugares, e `git revert`
+sozinho não reverte mais o prompt inteiro.
 
 #### A montagem, e o no-op
 
 ```
-montarPrompt(texto, regras) = INSTRUCOES_BASE + blocoDeRegras(regras) + FORMATO + texto
+montarPrompt(texto, regras, base = INSTRUCOES_BASE)
+    = comRegras(base, regras) + texto
+    = base, com blocoDeRegras(regras) inserido antes do cabeçalho FORMATO
 ```
 
-O corte entre as duas metades é o ponto exato onde uma regra entra: depois de
-tudo o que instrui, antes do que descreve o envelope de saída. Regra enfiada
-depois do `FORMATO` seria lida como parte do exemplo de JSON.
+O ponto de inserção é onde uma regra entra: depois de tudo o que instrui, antes
+do que descreve o envelope de saída. Regra enfiada depois do `FORMATO` seria
+lida como parte do exemplo de JSON. Enquanto o prompt eram duas constantes, esse
+ponto era a emenda entre elas; desde a 4.7 é um cabeçalho procurado no texto
+(`lastIndexOf` do cabeçalho `FORMATO`, em `comRegras`), porque o `base` pode ser
+um prompt que eu escrevi. O resultado é idêntico quando o `base` é o do git, que é
+o caso sem override.
 
 **`blocoDeRegras([]) === ""`, e isso não é detalhe:** sem regra aprovada o
 prompt sai **byte a byte igual** ao de antes desta fatia — verificado contra o
@@ -2631,21 +2663,22 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **A extração roda no mesmo `waitUntil` da transcrição.** Em dev isso é o mesmo
   processo: fechar a janela do servidor no meio mata o job e a sessão fica em
   `extraindo`. O retry é chamar `/finalizar` de novo.
-- **A resolução rodou contra um grafo com entidades, uma vez.** As duas
-  entidades nasceram às 13:28:17 e a sessão seguinte só começou às 13:28:37, então
-  a extração dela encontrou as duas já lá e o caminho de "já conhecida"
-  funcionou de verdade — o segundo confirmar reaproveitou os nós em vez de criar
-  novos. O que continua sem uso é o grafo **cheio**: com duas entidades, nada
-  disputa nome parecido.
+- **O caminho de "já conhecida" funciona, medido.** As duas primeiras entidades
+  nasceram às 13:28:17 e a sessão seguinte só começou às 13:28:37: a extração
+  dela encontrou as duas já lá e o segundo confirmar reaproveitou os nós em vez
+  de criar novos.
 - **`zai/glm-5.3-flash` é modelo de raciocínio.** Ele chegou a gastar 1720 tokens
   pensando para 122 de texto, daí `maxOutputTokens: 8000` e a segunda tentativa
   automática. Trocar é `EXTRACAO_MODEL`, sem tocar em código.
 - **O alvo de 10 a 20 átomos por 15 min ainda é aposta.** O prompt está em
   `extracao-5` e as sessões julgadas até agora são curtas; a primeira sessão longa
   confirma ou derruba o número.
-- **Transcrição longa pode truncar a resposta da extração.** Não há corte em
-  pedaços nem limite de saída declarado; JSON truncado vira `ExtracaoError` na
-  primeira sessão em que acontecer.
+- **Transcrição longa pode truncar a resposta da extração.** O teto declarado é
+  `maxOutputTokens: 8000` (`extracao.ts`), calibrado para o raciocínio do
+  `zai/glm-5.3-flash`, e não há corte da transcrição em pedaços: uma sessão que
+  precise de mais que isso volta com JSON truncado, que vira `ExtracaoError` na
+  primeira vez em que acontecer. O teto é um número medido contra sessões
+  curtas, não um limite do modelo.
 - **Não haverá medida automática da qualidade da extração.** A avaliação é à mão,
   na tela de revisão; sem gabarito rotulado nem percentual de recall, regressão de
   prompt não aparece em teste — só na revisão seguinte.
@@ -2670,10 +2703,14 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   grafo não tiver nomes parecidos, o agente 3 vive de perfil escrito à mão. A
   saída, se incomodar, é chamar o agente também quando houver átomo com cara de
   perfil — o que troca "sessão limpa é de graça" por "perfil acumula sozinho".
-- **A resolução nunca julgou um homófono de verdade.** O grafo tem `Isinha` e
-  `eu`; nada disputa nome parecido, então o `resolucao-2` só rodou contra teste.
-  O caso concreto de que eu sei a resposta — a sessão com o Rapha e o Raffa —
-  depende dos dois estarem **cadastrados antes da primeira menção**.
+- **A resolução ainda não julgou um homófono de verdade.** O grafo já tem nomes
+  próprios reais — as 5 sessões confirmadas de 04/09 puseram lá "Behring
+  Founders", "Adapta" e "Giampaolo Lepore" —, mas nomes próprios não são a mesma
+  coisa que nomes **em disputa**: enquanto nada no grafo soar como outra coisa,
+  o `resolucao-2` decide de graça pela união de tamanho 1 e o modelo não é
+  chamado. O caso concreto de que eu sei a resposta — a sessão com o Rapha e o
+  Raffa — depende dos dois estarem **cadastrados antes da primeira menção**. Que
+  nomes estão lá hoje se vê em `/entidades`, não neste arquivo.
 - **O agente 2 só enxerga os candidatos da menção, não o grafo inteiro.** Quem
   não casa por chave nem se parece por string nunca chega ao prompt: um apelido
   sem nenhuma letra em comum com o nome do nó ("Bidu" para "Roberto") vira
@@ -2718,11 +2755,11 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   daquela extração morreu, a sessão fica girando "lendo o que você disse…" e a
   saída é o **reextrair** da lista. `transcrito` e `erro`, esses, o corredor
   empurra sozinho.
-- **O prompt passa a ter duas fontes** — `INSTRUCOES_BASE` no git, as regras no
-  R2. O hash e os snapshots imutáveis impedem a procedência de mentir, mas ler o
-  prompt efetivo passa a exigir os dois lugares, e `git revert` sozinho não
-  reverte mais o prompt inteiro. Para revogar uma regra aprovada, o caminho é
-  submeter a lista sem ela em `/calibracao`, não apagar o snapshot.
+- **Para revogar uma regra aprovada, o caminho é submeter a lista sem ela** em
+  `/calibracao` — não apagar o snapshot, que é imutável de propósito: é por ele
+  que um átomo carimbado resolve o texto que o produziu. O custo de o prompt ter
+  mais de uma fonte está no primeiro item desta seção, que conta os sete
+  agentes.
 - **Regra nova pode piorar o que já presta, e nenhum teste automático vê.**
   Consequência direta de não haver medida automática de qualidade — e não vai
   haver. As defesas são o teto de 12 regras, o `extracao-anterior` lado a lado,
