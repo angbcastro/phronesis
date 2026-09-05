@@ -52,6 +52,7 @@ vi.mock("@/lib/manifest", () => ({
   tudoTranscrito: vi.fn(() => false),
 }));
 
+import { atualizarSessao } from "@/lib/sessoes";
 import { ESPERA_MAX_MS, finalizarSessao } from "@/lib/pipeline";
 
 /** Passar do prazo do laço, seja ele qual for — a constante é quem manda. */
@@ -118,5 +119,30 @@ describe("falha de transcrição deixa rastro no log", () => {
     await p;
 
     expect(erros.find((e) => e.includes("desistiu"))).not.toContain("rate limit");
+  });
+});
+
+/**
+ * `confirmada` é o único estado terminal da máquina (§5), e o que o protege é a
+ * guarda de cada escrita — não a tabela de `estados.ts`, que nenhum caminho de
+ * produção consulta. Sem ela, um `/finalizar` numa sessão já confirmada cuja
+ * `transcricao.json` tivesse sumido do R2 gravava `erro` por cima: os átomos
+ * continuariam no grafo e a sessão apareceria como falha.
+ */
+describe("uma sessão confirmada não vira erro", () => {
+  it("a escrita de erro parte de qualquer estado menos confirmada", async () => {
+    const p = finalizarSessao("s1");
+    await vi.advanceTimersByTimeAsync(ALEM_DO_PRAZO);
+    await p;
+
+    const paraErro = vi
+      .mocked(atualizarSessao)
+      .mock.calls.filter((c) => (c[1] as { status?: string }).status === "erro");
+
+    expect(paraErro.length, "nenhuma escrita de erro nesta execução").toBeGreaterThan(0);
+    for (const [, , sePartirDe] of paraErro) {
+      expect(sePartirDe, "escrita de erro sem guarda nenhuma").toBeDefined();
+      expect(sePartirDe).not.toContain("confirmada");
+    }
   });
 });

@@ -28,7 +28,7 @@ import { atualizarSessao, buscarSessao } from "./sessoes";
 import { temTranscricao } from "./estados";
 import { transcrever } from "./stt";
 import { concatenar, prefixoContiguo } from "./transcricao";
-import type { Extracao, Transcricao, TranscricaoBloco } from "./tipos";
+import type { Extracao, StatusSessao, Transcricao, TranscricaoBloco } from "./tipos";
 
 /**
  * Transcreve um bloco e grava `chunk_NNN.json`.
@@ -174,7 +174,8 @@ export async function finalizarSessao(sessao_id: string): Promise<{
           : "") +
         `O motivo de cada um está nas linhas [pipeline] acima. Áudio intacto no R2.`,
     );
-    await atualizarSessao(sessao_id, { status: "erro" }); // áudio intacto, retry manual
+    // Áudio intacto, retry manual.
+    await atualizarSessao(sessao_id, { status: "erro" }, DE_ONDE_SE_CAI_EM_ERRO);
     return { status: "erro", faltando };
   }
 
@@ -227,7 +228,7 @@ export async function extrairSessao(
   const transcricao = await getJson<Transcricao>(chaveTranscricao(sessao_id));
   if (!transcricao) {
     console.error(`[extracao] sessão ${sessao_id}: sem transcricao.json, não há o que extrair`);
-    await atualizarSessao(sessao_id, { status: "erro" });
+    await atualizarSessao(sessao_id, { status: "erro" }, DE_ONDE_SE_CAI_EM_ERRO);
     return { status: "erro" };
   }
 
@@ -262,7 +263,8 @@ export async function extrairSessao(
     }
     // A tela só sabe dizer que falhou; sem esta linha o motivo se perde.
     console.error(`[extracao] sessão ${sessao_id} falhou:`, e);
-    await atualizarSessao(sessao_id, { status: "erro" }); // transcrição intacta, retry manual
+    // Transcrição intacta, retry manual.
+    await atualizarSessao(sessao_id, { status: "erro" }, DE_ONDE_SE_CAI_EM_ERRO);
     return { status: "erro" };
   }
 }
@@ -285,6 +287,27 @@ async function guardarAnterior(sessao_id: string, substituida: Extracao): Promis
     console.error(`[extracao] sessão ${sessao_id}: não consegui guardar a proposta anterior:`, e);
   }
 }
+
+/**
+ * De onde se pode cair em `erro`, e é a lista inteira menos `confirmada`.
+ *
+ * Sem esta guarda, um `/finalizar` numa sessão já confirmada cuja
+ * `transcricao.json` tivesse sumido do R2 gravava `erro` por cima de
+ * `confirmada` — e `confirmada` é o único estado terminal desta máquina (§5).
+ * Os átomos continuariam no grafo, e a sessão apareceria como falha.
+ *
+ * A guarda vai explícita em cada escrita, e não derivada de `estados.ts`:
+ * quem lê a chamada vê o que a impede, sem ir a outro arquivo.
+ */
+const DE_ONDE_SE_CAI_EM_ERRO: StatusSessao[] = [
+  "gravando",
+  "finalizando",
+  "transcrevendo",
+  "transcrito",
+  "extraindo",
+  "em_revisao",
+  "erro",
+];
 
 /** `confirmada` não volta para `em_revisao`: a guarda é quem impede. */
 const marcarEmRevisao = (sessao_id: string) =>

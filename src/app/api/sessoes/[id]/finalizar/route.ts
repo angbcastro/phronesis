@@ -46,7 +46,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   waitUntil(
     finalizarSessao(id).catch((e) => {
       console.error(`[finalizar] sessão ${id} falhou:`, e);
-      return atualizarSessao(id, { status: "erro" });
+      // Menos `confirmada`, que é terminal: uma sessão já no grafo não vira
+      // falha porque um objeto do R2 sumiu. Mesma guarda das três escritas de
+      // `erro` em `pipeline.ts`.
+      return atualizarSessao(id, { status: "erro" }, [
+        "gravando",
+        "finalizando",
+        "transcrevendo",
+        "transcrito",
+        "extraindo",
+        "em_revisao",
+        "erro",
+      ]);
     }),
   );
 

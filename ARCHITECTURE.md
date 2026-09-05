@@ -1560,17 +1560,43 @@ agente: os sete são os que o código tem, e um oitavo nasce escrevendo código.
 
 ```
 gravando → finalizando → transcrevendo → transcrito → extraindo → em_revisao → confirmada
-                  ↓              ↓                         ↓
-                 erro          erro                       erro    (o que está no R2 fica
-                                                                   intacto, retry manual)
+                                                          ▲            │
+                                                          └────────────┘  reextrair
+   qualquer um destes ────────────────────────────────────────────▶ erro
+   (menos confirmada)                                               │
+                                                                    └──▶ retry manual:
+                                                                        finalizando,
+                                                                        transcrevendo,
+                                                                        transcrito ou
+                                                                        extraindo
 ```
 
 `transcrito` **não é mais terminal**: a extração emenda nele. O fim da linha é
 `confirmada`, e quem confirma sou eu, na revisão — `estaConcluida` mudou junto.
-`confirmada` não tem transição de saída.
+`confirmada` **não tem transição de saída**, e desde 05/09 isso vale de fato: as
+quatro escritas de `erro` (três em `pipeline.ts`, uma na rota `/finalizar`)
+levam a lista de onde se pode cair em `erro`, e ela é a máquina inteira menos
+`confirmada`. Antes elas iam sem guarda nenhuma, e um `/finalizar` numa sessão
+já confirmada cuja `transcricao.json` tivesse sumido do R2 gravava `erro` por
+cima: os átomos continuavam no grafo e a sessão aparecia como falha.
 
-`estados.ts` guarda as transições permitidas. Quatro predicadas dizem o que cada
-estado significa para as telas:
+O `erro` sai de qualquer estado porque qualquer passo pode falhar — o que ele
+não pode é desfazer o único estado terminal. `em_revisao → extraindo` é o botão
+"reextrair" da lista de sessões, e a volta a partir de `erro` é retry manual.
+
+**Há duas representações desta máquina, e só uma roda.** `estados.ts` é a
+**declarada**: `PERMITIDAS`, `podeIrPara` e as predicadas, verificadas por
+`tests/estados.test.ts` e não importadas por nenhum caminho de produção. A que
+roda é o `sePartirDe` do Cypher, escrita a escrita — e é ela que está descrita
+no fim desta seção. As duas têm de contar a mesma história; quando divergirem,
+quem está errada é a declarada. Unificá-las foi considerado e recusado: derivar
+a guarda de `PERMITIDAS` dentro de `atualizarSessao` tiraria do ponto de uso a
+resposta a "o que impede esta escrita", e poria guarda implícita em escritas que
+levam dado junto do status — `pipeline.ts` grava `transcrito` com
+`chunks_total` e `duracao_s` no mesmo `SET`, e uma guarda que falhasse ali
+engoliria os três em silêncio.
+
+Quatro predicadas dizem o que cada estado significa para as telas:
 
 | Predicada | Verdadeira em | Para quê |
 |---|---|---|
@@ -1613,6 +1639,12 @@ A guarda real da idempotência está no Cypher: `atualizarSessao(id, mudança,
 sePartirDe)` só grava se o status atual estiver na lista, então um segundo
 `finalizar` não rebaixa uma sessão já `em_revisao`, e nada devolve `confirmada`
 para trás.
+
+**Guarda que não casa não estoura: devolve `null`.** A cláusula é um `WHERE`, e
+não casar é resultado vazio, não exceção — o chamador segue como se tivesse
+gravado. É o que faz a trava ser barata e idempotente, e é também o que faz uma
+guarda errada ser invisível. Quem precisa saber se a transição aconteceu tem de
+olhar o retorno; hoje ninguém precisa.
 
 ### 5.1 Onde o motivo de uma falha aparece
 
