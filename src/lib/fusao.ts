@@ -4,9 +4,10 @@
  * aqui ele recebe as correções que eu faço depois, em `/entidades`.
  *
  * **Fundir é criar alias, não apagar** (regra 6). O nó perdedor fica, ganha
- * `status = 'fundida'` e uma aresta `:FUNDIDA_EM` para o vencedor; as arestas
- * `:SOBRE` e `:MENCIONA` migram por `MERGE`, então átomo que citava as duas
- * grafias fica com uma aresta, não duas.
+ * `status = 'fundida'` e uma aresta `:FUNDIDA_EM` para o vencedor; as três
+ * arestas que apontam para entidade — `:SOBRE`, `:MENCIONA` e `:PERFILA` —
+ * migram por `MERGE`, então átomo que citava as duas grafias fica com uma
+ * aresta, não duas.
  *
  * O ponto do desenho: como o perdedor mantém o `nome_normalizado` — constraint
  * única desde a 002 —, a grafia morta **nunca renasce como nó novo**. Dita
@@ -38,7 +39,7 @@ export class FusaoError extends Error {
 export interface ResultadoFusao {
   vencedora: string;
   perdedora: string;
-  /** Arestas :SOBRE + :MENCIONA movidas. Um átomo com as duas conta duas vezes. */
+  /** Arestas :SOBRE, :MENCIONA e :PERFILA movidas. Um átomo com duas conta duas vezes. */
   arestas_migradas: number;
 }
 
@@ -95,6 +96,29 @@ export async function fundir(
     );
     migrados += r[0]?.n ?? 0;
   }
+
+  // `:PERFILA` migra também, e fora do laço: ela carrega `campo` (migration
+  // 005), e o `MERGE` do destino tem de casar o par (átomo, campo) — a
+  // identidade da aresta é essa. Generalizar o laço para propriedade custaria
+  // mais do que repetir a consulta uma vez.
+  //
+  // Sem isto a marca de perfil fica pendurada no nó morto, e o efeito é
+  // assimétrico e silencioso: `atomosMarcados` atravessa do alias para o
+  // vencedor, então perguntar pela grafia morta acharia os átomos do vencedor,
+  // e perguntar pelo vencedor **não** acharia os que ficaram no alias. O botão
+  // de perfil pararia de ver átomos que o agente 2 marcou, sem erro e sem
+  // aviso — e fusão não tem desfazer.
+  const perfis = await query<{ n: number }>(
+    `MATCH (p:Entidade { nome_normalizado: $perdedora })
+     MATCH (v:Entidade { nome_normalizado: $vencedora })
+     MATCH (a:Atomo)-[r:PERFILA]->(p)
+     WITH a, v, r, r.campo AS campo
+     MERGE (a)-[:PERFILA { campo: campo }]->(v)
+     DELETE r
+     RETURN count(r) AS n`,
+    { vencedora, perdedora },
+  );
+  migrados += perfis[0]?.n ?? 0;
 
   // Um átomo podia citar as duas grafias: sujeito numa, menção na outra. Depois
   // da migração isso viraria :SOBRE e :MENCIONA para o mesmo nó, e o contrato

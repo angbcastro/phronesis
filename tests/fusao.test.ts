@@ -31,6 +31,7 @@ function grafoComAsDuas() {
       return [{ v: "id-v", p: "id-p", jaFundida: false }] as never;
     }
     if (statement.includes("count(DISTINCT a) AS n")) return [{ n: 2 }] as never;
+    if (statement.includes("count(r) AS n")) return [{ n: 1 }] as never;
     return [] as never;
   });
 }
@@ -60,7 +61,32 @@ describe("fundir", () => {
     const cypher = todoCypher();
     expect(cypher).toContain("MERGE (a)-[:SOBRE]->(v)");
     expect(cypher).toContain("MERGE (a)-[:MENCIONA]->(v)");
-    expect(r.arestas_migradas).toBe(4); // 2 por tipo, no mock
+    expect(r.arestas_migradas).toBe(5); // 2 por tipo + 1 :PERFILA, no mock
+  });
+
+  /**
+   * A marca de perfil é a terceira aresta que aponta para entidade, e a única
+   * com propriedade. Deixá-la para trás não dá erro: o perfil do vencedor
+   * simplesmente para de ver os átomos que estavam no alias, porque
+   * `atomosMarcados` atravessa do alias para o vencedor e não o contrário.
+   * Fusão não tem desfazer, então o teste é aqui.
+   */
+  it("migra :PERFILA junto, preservando o campo", async () => {
+    grafoComAsDuas();
+    await fundir("Raffa", "Rapha");
+
+    const cypher = todoCypher();
+    expect(cypher).toContain("MATCH (a:Atomo)-[r:PERFILA]->(p)");
+    // O `campo` viaja: sem ele a aresta migrada não diria de que campo é.
+    expect(cypher).toContain("MERGE (a)-[:PERFILA { campo: campo }]->(v)");
+  });
+
+  it("as três arestas de entidade migram, e nenhuma outra", async () => {
+    grafoComAsDuas();
+    await fundir("Exxmed", "Exx Med");
+
+    const migradas = [...todoCypher().matchAll(/MERGE \(a\)-\[:(\w+)/g)].map((m) => m[1]);
+    expect(new Set(migradas)).toEqual(new Set(["SOBRE", "MENCIONA", "PERFILA"]));
   });
 
   it("normaliza os dois lados — a chave é que casa, não a grafia", async () => {

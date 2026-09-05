@@ -1970,9 +1970,15 @@ parecidas: "Exxmed" e "Exx Med" normalizam para chaves diferentes.
 ```
 
 **Fundir não apaga** (regra 6). O perdedor fica com `status = 'fundida'` e uma
-aresta `:FUNDIDA_EM`; as arestas `:SOBRE` e `:MENCIONA` migram por `MERGE`, uma
-consulta por tipo — Neo4j não aceita tipo de relação vindo de parâmetro, e
-repetir duas linhas é bem menos frágil que uma subquery com `UNION`.
+aresta `:FUNDIDA_EM`; as **três** arestas que apontam para entidade — `:SOBRE`,
+`:MENCIONA` e `:PERFILA` — migram por `MERGE`, uma consulta por tipo: Neo4j não
+aceita tipo de relação vindo de parâmetro, e repetir a linha é bem menos frágil
+que uma subquery com `UNION`.
+
+`:PERFILA` migra **fora do laço** das outras duas, e é a única que precisa
+disso: ela carrega `campo` (migration 005), então o `MERGE` do destino tem de
+casar o par (átomo, campo), que é a identidade da aresta. Generalizar o laço
+para propriedade custaria mais que repetir a consulta uma vez.
 
 O ponto do desenho: **como o perdedor mantém o `nome_normalizado`, a grafia
 morta nunca renasce como nó novo.** Dita outra vez, ela casa com o alias e a
@@ -1984,7 +1990,8 @@ Quem atravessa o alias:
 | Onde | Por quê |
 |---|---|
 | `buscarConhecidas` / `resolver` | "Exx Med" numa sessão nova volta como conhecida, com o nome do vencedor |
-| `gravarAtomos` (`:SOBRE` e `:MENCIONA`) | proposta montada antes da fusão penduraria átomo em nó morto — a trava é no servidor, não na tela |
+| `gravarAtomos` (`:SOBRE`, `:MENCIONA` e `:PERFILA`) | proposta montada antes da fusão penduraria átomo em nó morto — a trava é no servidor, não na tela |
+| `fundir` (as mesmas três) | a fusão leva junto tudo que apontava para a perdedora; o que ficasse para trás não daria erro, daria silêncio |
 | `nomesParaVocabulario` | mandar a grafia rejeitada ensinaria o STT a reproduzi-la |
 | `listarEntidades` | o alias vira histórico do nome, não linha própria |
 
@@ -2067,8 +2074,14 @@ sabe fazer".
 **Idempotente por construção**: o `campo` vai **dentro** do `MERGE`, então o par
 (átomo, campo, entidade) é a identidade da aresta e reconfirmar não a dobra
 (regra 4). Fora do `MERGE`, um `SET` depois criaria uma aresta nova a cada
-confirmação. Como `:SOBRE` e `:MENCIONA`, ela **atravessa alias** (8.2): proposta
-montada antes de uma fusão penduraria a marca num nó morto.
+confirmação. Como `:SOBRE` e `:MENCIONA`, ela **atravessa alias na escrita** e
+**migra na fusão** (8.2): proposta montada antes de uma fusão penduraria a marca
+num nó morto, e uma fusão posterior a deixaria lá.
+
+A travessia sozinha não bastaria, e a assimetria é o motivo: `atomosMarcados`
+vai do **alias para o vencedor**, nunca ao contrário. Marca esquecida no nó
+perdido sumiria do perfil do vencedor sem erro e sem aviso — e fusão não tem
+desfazer.
 
 Neo4j também não aceita **nome de propriedade** vindo de parâmetro, então
 `perfil.ts` monta o `SET alvo.<campo>` com o nome literal — mesmo padrão do label
