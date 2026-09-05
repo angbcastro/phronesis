@@ -3088,8 +3088,16 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   ignorar "não repita, estenda" produz um segundo átomo sobre o mesmo assunto —
   ou um segundo `ROTINA` —, e a revisão abre com mais itens do que devia, que é a
   condição de morte da visão §8. O código impede a corrupção (`ref` inválida vira
-  descarte) mas não a duplicação; quem vê é a revisão, e o conserto é o prompt,
-  sem deploy. **Ainda não foi medido contra uma sessão real de 15 min.**
+  descarte) mas não a duplicação; quem vê é a revisão. **Ainda não foi medido
+  contra uma sessão real de 15 min.**
+- **O bloco da janela não é editável em `/agentes`.** O painel edita o prompt de
+  um agente, que para a extração é `BASE` (§4.13); o bloco que `blocoDaJanela`
+  injeta é montado em código, com o orçamento calculado e a lista do acumulado
+  dentro. Então metade do que o extrator lê hoje se ajusta sem deploy e a outra
+  metade não — e a metade que não é justamente a que carrega a instrução do
+  `estende`, que é a que mais provavelmente vai precisar de ajuste. Torná-lo
+  editável é decidir como um prompt com partes calculadas entra num campo de
+  texto, e isso é fatia, não linha.
 - **A janela não sabe o que ainda vai ser dito.** Se eu digo "ela" no minuto 2 e
   só nomeio a Marina no minuto 10, a janela 1 não tinha como resolver, e o átomo
   dela nasce com o pronome — `precisa_nome` trava o confirmar até eu nomear. O
