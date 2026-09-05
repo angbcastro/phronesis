@@ -1778,9 +1778,17 @@ Os dois pontos que falam com modelo no caminho automático estão cobertos: `stt
 e `extracao.ts`. A extração é a mais exposta das duas, apesar de ser uma chamada
 só: ela roda logo depois dos 30 blocos de STT, que é exatamente quando o limite
 está mais perto de estourar — sem a espera, a sessão transcreve inteira e morre
-no último passo. Resolução, perfil, duplicatas e embedding **não** estão
-cobertos: são chamados sob demanda, a partir de um clique meu na revisão, e ali
-a falha aparece na tela em vez de matar uma sessão em `waitUntil`.
+no último passo.
+
+Perfil, duplicatas e embedding **não** estão cobertos: saem de um clique meu, e
+ali a falha aparece na tela em vez de matar uma sessão em `waitUntil`. **A
+resolução também não está**, e essa é a que incomoda: ela roda dentro da
+extração, no caminho automático, desde a slice 4 — o que este documento dizia
+("chamada sob demanda") descrevia o `perfil-1`, não o `resolucao-2`. Um limite
+ativo faz o agente 2 falhar em vez de esperar, e a degradação já é a certa: as
+menções voltam como dúvida e a revisão me deixa escolher (§4.8). Passar
+`comEsperaDeLimite` para lá é conserto de uma linha, e não foi feito aqui para
+não misturar duas mudanças no mesmo lugar.
 
 Quando a espera não basta, a linha de desistência diz isso com todas as letras —
 "a causa foi rate limit do AI Gateway… chamar /finalizar de novo daqui a alguns
@@ -2799,10 +2807,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   novo mais tarde. **Uma sessão gravada de 15 min são 30 blocos e nunca foi
   transcrita inteira sob limite** — o que se mediu foram chamadas soltas.
 - **Resolução, perfil, duplicatas e embedding não esperam o rate limit.** Só STT
-  e extração chamam `comEsperaDeLimite` (§5.3). É deliberado — os outros quatro
-  saem de um clique meu e falham na minha frente, não dentro de um `waitUntil` —,
-  mas quer dizer que um limite ativo faz o botão de rascunho de perfil dar erro
-  em vez de esperar.
+  e extração chamam `comEsperaDeLimite` (§5.3). Para perfil, duplicatas e
+  embedding é deliberado: saem de um clique meu e falham na minha frente. **Para
+  a resolução não é** — ela roda no caminho automático, dentro da extração, e um
+  limite ativo a faz falhar em vez de esperar. A degradação é a certa (as menções
+  voltam como dúvida, nunca como atribuição errada), mas é degradação. Conserto
+  de uma linha, não feito ainda.
 - **`config/vocabulario.txt`** ainda tem só os três nomes de exemplo. Desde a
   slice 3 ele não é mais a lista inteira — as entidades do grafo entram junto —
   mas continua sendo o único jeito de ensinar um nome **antes** de falá-lo pela
