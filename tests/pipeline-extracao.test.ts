@@ -17,7 +17,14 @@ vi.mock("@/lib/r2", () => ({
   ConflitoR2Error: class ConflitoR2Error extends Error {},
 }));
 
-vi.mock("@/lib/extracao", () => ({ extrair: vi.fn() }));
+// `extrairJanela` e `PROMPT_VERSION` entram no mock porque `pipeline.ts` e
+// `janela.ts` os importam desde a slice 4.8 — sem eles, o módulo carregaria com
+// `undefined` e a falha só apareceria no caminho que os usa.
+vi.mock("@/lib/extracao", () => ({
+  extrair: vi.fn(),
+  extrairJanela: vi.fn(),
+  PROMPT_VERSION: "extracao-6",
+}));
 
 vi.mock("@/lib/sessoes", () => ({
   buscarSessao: vi.fn(),
@@ -56,6 +63,15 @@ const proposta = (marca: string) => ({
 let r2: Map<string, unknown>;
 let erros: string[];
 
+/**
+ * O PUT da proposta, achado pela chave e não pela posição.
+ *
+ * Desde a slice 4.8 ele não é mais necessariamente o primeiro: uma re-extração
+ * forçada zera `parcial.json` antes de refazer as janelas.
+ */
+const putDaProposta = () =>
+  vi.mocked(putJson).mock.calls.find(([key]) => key === CHAVE_EXTRACAO);
+
 /** Último status para o qual a sessão foi movida. */
 const statusGravados = () =>
   vi.mocked(atualizarSessao).mock.calls.map((c) => (c[1] as { status?: string }).status);
@@ -86,7 +102,7 @@ describe("extração dispara sozinha", () => {
     const r = await extrairSessao("s1");
 
     expect(r.status).toBe("em_revisao");
-    expect(vi.mocked(putJson).mock.calls[0][0]).toBe(CHAVE_EXTRACAO);
+    expect(vi.mocked(putJson).mock.calls.map(([k]) => k)).toContain(CHAVE_EXTRACAO);
     expect(statusGravados()).toEqual(["extraindo", "em_revisao"]);
   });
 
@@ -96,7 +112,7 @@ describe("extração dispara sozinha", () => {
 
     await extrairSessao("s1");
 
-    expect(vi.mocked(putJson).mock.calls[0][2]).toEqual({ ifNoneMatch: "*" });
+    expect(putDaProposta()?.[2]).toEqual({ ifNoneMatch: "*" });
   });
 });
 
@@ -151,7 +167,7 @@ describe("re-extração forçada", () => {
 
     await extrairSessao("s1", { forcar: true });
 
-    expect(vi.mocked(putJson).mock.calls[0][2]).toEqual({});
+    expect(putDaProposta()?.[2]).toEqual({});
   });
 
   it("guarda a proposta que ela substituiu, para eu poder comparar depois", async () => {

@@ -544,3 +544,46 @@ describe("as duas camadas semânticas (slice 4.5)", () => {
     expect(PROMPT_VERSION_RESOLUCAO).toBe("resolucao-2");
   });
 });
+
+/**
+ * A resolução por janela (slice 4.8). O agente passou a ser chamado uma vez por
+ * janela, sobre as menções daquela janela — e recebe as anteriores como
+ * contexto, para não decidir sobre a Rafa do minuto 2 sem saber que já houve
+ * uma Rafa no minuto 1.
+ */
+describe("o que as janelas anteriores propuseram", () => {
+  const pendente = {
+    n: 1,
+    mencao: { atomo: 0, papel: "sobre" as const, ordem: 0, citado: "Rafa" },
+    candidatos: [
+      { entidade: RAFFA, camada: "string" as const, similaridade: null, porque: [] },
+      { entidade: RAPHA, camada: "string" as const, similaridade: null, porque: [] },
+    ],
+  };
+
+  it("sem acumulado, o prompt sai igual ao de antes da fatia", () => {
+    const semNada = montarPrompt([atomo("Rafa")], [pendente], [RAFFA, RAPHA]);
+    const comLista = montarPrompt([atomo("Rafa")], [pendente], [RAFFA, RAPHA], undefined, []);
+    expect(comLista).toBe(semNada);
+  });
+
+  it("com acumulado, ele entra como contexto — e antes dos átomos desta janela", () => {
+    const p = montarPrompt([atomo("Rafa")], [pendente], [RAFFA, RAPHA], undefined, [
+      { tipo: "FATO", texto: "combinei o slackline com a Raffa", sobre: "Raffa" },
+    ]);
+
+    expect(p).toContain("combinei o slackline com a Raffa");
+    expect(p).toContain("não decida sobre eles");
+    expect(p.indexOf("ANTES DESTA JANELA")).toBeLessThan(p.indexOf("ÁTOMOS DESTA SESSÃO:"));
+  });
+
+  it("o átomo anterior não vira menção a resolver", () => {
+    // Ele já foi atribuído quando nasceu; reabrir a decisão a cada janela seria
+    // pagar a mesma pergunta oito vezes — e podia trocar a resposta no meio.
+    const p = montarPrompt([atomo("Rafa")], [pendente], [RAFFA, RAPHA], undefined, [
+      { tipo: "FATO", texto: "combinei o slackline com a Raffa", sobre: "Raffa" },
+    ]);
+    expect(p.match(/MENÇÕES EM DÚVIDA:/g)).toHaveLength(1);
+    expect(p.slice(p.indexOf("MENÇÕES EM DÚVIDA:"))).not.toContain("slackline com a Raffa");
+  });
+});

@@ -2,7 +2,7 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.7.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.8.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
@@ -10,13 +10,14 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.7.md`.
 
 **Estado: slice 2 fechada e validada; slices 3 (higiene do grafo), 4
 (identidade por contexto), 4.5 (o grafo ganha vetor), 4.6 (o prompt aprende
-com a revisão) e 4.7 (o painel dos agentes) construídas.**
-Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. Terminada
-a transcrição, a extração dispara sozinha, grava a proposta em `extracao.json` e
-deixa a sessão em `em_revisao` (seções 4.6 e 5); o confirmar da revisão grava
-`:Atomo` e `:Entidade` no Neo4j (seções 4.7 e 8). Sessões reais já foram
-confirmadas e os átomos conferidos no banco, com âncoras, `prompt_version` e
-`modelo`.
+com a revisão), 4.7 (o painel dos agentes) e 4.8 (a extração acompanha a fala)
+construídas.**
+Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. A
+extração acontece **durante** a gravação, janela a janela, e quando eu paro
+sobra só a janela do fim; a proposta vai para `extracao.json` e a sessão para
+`em_revisao` (seções 4.6 e 5); o confirmar da revisão grava `:Atomo` e
+`:Entidade` no Neo4j (seções 4.7 e 8). Sessões reais já foram confirmadas e os
+átomos conferidos no banco, com âncoras, `prompt_version` e `modelo`.
 
 **O grafo agora cuida do próprio nome** (seção 8.2). O vocabulário do STT é
 gerado das entidades do grafo, em união com `config/vocabulario.txt`; e
@@ -28,7 +29,7 @@ o vencedor na sessão seguinte em vez de renascer como nó novo.
 **O sistema descobre de quem eu estou falando pelo contexto, e não pela grafia
 do nome** (seções 4.8 e 8.3). "Raffa" e "Rapha" são o mesmo som: o STT escreve
 uma grafia só para os dois, e a grafia carrega **zero** sinal sobre quem é. Por
-isso são **dois agentes e não um** — o `extracao-5` extrai e devolve o nome cru,
+isso são **dois agentes e não um** — o `extracao-6` extrai e devolve o nome cru,
 e o `resolucao-2` atribui cada menção a um nó, lendo os três campos de perfil da
 entidade. Dúvida **destaca, não trava**: a revisão marca o átomo, mostra o motivo
 e o confirmar continua liberado. Sessão em que nenhuma menção é ambígua não
@@ -86,12 +87,28 @@ sufixo no `prompt_version`. Sem override nenhum, todo agente sai byte a byte
 igual ao de antes desta fatia, e é `tests/agentes.test.ts` quem cobra isso — mais
 a varredura que impede um agente novo de nascer fora do painel.
 
+**E a extração deixou de ser um evento no fim: virou um processo** (seções 4.1,
+4.6 e 6). A transcrição já era por bloco de 30 s desde a slice 1, mas tudo o que
+vem depois dela esperava eu parar de falar — uma chamada de raciocínio com a
+transcrição inteira, mais a resolução, mais os embeddings. Era isso que fazia a
+espera entre parar e revisar durar um a dois minutos, contra os "poucos
+segundos" que a visão §3 promete. Agora, **a cada quatro blocos transcritos uma
+janela de 2 min fecha durante a própria gravação**: extrai, resolve, e soma os
+átomos ao acumulado em `parcial.json`. Quando eu paro, sobra a janela do fim.
+
+A janela vê o que as anteriores propuseram e **estende** um átomo em vez de
+duplicá-lo — inclusive o `ROTINA`, que é no máximo um por sessão. É esse
+mecanismo, e não uma passada de costura no fim, que segura o volume da lista.
+`extracao-6` é a mesma `INSTRUCOES_BASE` da 4.7, byte a byte, mais um bloco
+injetado; e numa sessão que cabe numa janela só — arquivo importado, gravação
+curta — o bloco some e o prompt sai idêntico ao de antes desta fatia.
+
 O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
 ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
 deduplicação de **átomo** — dizer a mesma coisa em duas sessões ainda cria dois.
 A 4.6 está construída inteira — captura, tela, regras e o `calibracao-1`. O que
 falta é **uso**: nenhuma regra foi aprovada ainda, e enquanto não for, o
-`extracao-5` continua saindo byte a byte igual ao de antes dela.
+`extracao-6` continua saindo byte a byte igual ao de antes dela.
 Tudo slice 5, e tudo dependente de material acumulado: uma pergunta boa precisa
 saber de quem se está falando, que é o que a slice 4 entrega, e achar o que já foi
 dito sem varrer o grafo inteiro, que é o que a 4.5 entrega.
@@ -117,7 +134,7 @@ Três planos de dado, cada um com uma responsabilidade única:
 | Onde | O que guarda | Por quê |
 |---|---|---|
 | IndexedDB (navegador) | bloco de áudio até o PUT confirmar | fechar a aba no meio da gravação não pode perder fala |
-| Cloudflare R2 | áudio, manifest, transcrição de bloco, transcrição final | blob e texto grande não pertencem ao grafo |
+| Cloudflare R2 | áudio, manifest, transcrição de bloco, transcrição final, proposta parcial e final | blob e texto grande não pertencem ao grafo |
 | Neo4j Aura | `:Sessao` com estado e **chaves** do R2; `:Atomo` e `:Entidade` a partir do confirmar | o grafo é para relação e afirmação, não para blob nem para texto corrido |
 
 O áudio **nunca** atravessa uma function da Vercel (regra inviolável 1): o
@@ -148,7 +165,10 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   transcricao.ts  offsets absolutos, prefixo contíguo, concatenação — e o
                   caminho de volta, do segundo para o bloco que o contém  (client)
   texto.ts        normalização, nome_normalizado e lista de pronomes       (client)
-  extracao.ts     átomos a partir da transcrição: prompt, JSON estrito, procedência
+  extracao.ts     átomos a partir de uma janela: prompt, JSON estrito, procedência
+                  — e o bloco que diz de que minutos ela é e o que já foi proposto
+  janela.ts       a unidade de extração: fatiar o manifest, reivindicar a janela,
+                  somar o que ela produziu ao acumulado. NÃO fala com modelo
   offsets.ts      trecho do modelo → segundo do áudio (modelo não dá timestamp)
   resolucao.ts    agente 2: de quem eu estava falando — atribui menção a menção,
                   com as quatro camadas de candidato, o teto e os pisos
@@ -173,7 +193,8 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   tipografia.ts   qual tela é ritual e qual é gestão — a regra da fonte  (client)
   atomos.ts       escreve :Atomo, :Entidade e :PERFILA — só o confirmar chama;
                   e embute o átomo depois de gravá-lo, nunca antes
-  pipeline.ts     transcrever bloco / finalizar sessão (o orquestrador)
+  pipeline.ts     transcrever bloco / avançar janelas / finalizar sessão
+                  (o orquestrador)
   auth.ts         magic link HMAC, cookie httpOnly
   backoff.ts      backoff exponencial com jitter                          (client)
   audio.ts        formatos aceitos na importação, limites de arquivo       (client)
@@ -224,8 +245,13 @@ loop a cada 30 s:
   PUT ────────────────────────────────────────────────────────────▶ chunk_NNN.webm
   POST /chunks/:i/pronto ───────────▶ HEAD confere bytes
                                       manifest += bloco
-                                      waitUntil(transcrever) ─────▶ STT
+                                      waitUntil: transcrever ─────▶ STT
                                                                     chunk_NNN.json
+                                          e, na sequência,
+                                        avancarJanelas: a cada 4
+                                        blocos transcritos, extrai
+                                        + resolve a janela ───────▶ Gateway
+                                                                    parcial.json
   apaga do IndexedDB                  (só depois do PUT confirmado)
 parar ──▶ /sessao/:id            (Processando: não mostra a transcrição)
   espera a fila esvaziar
@@ -233,7 +259,8 @@ parar ──▶ /sessao/:id            (Processando: não mostra a transcrição
                                       waitUntil: espera pendentes,
                                       concatena offsets ──────────▶ transcricao.json
                                       status = transcrito
-                                      waitUntil: extrai ──────────▶ extracao.json
+                                      waitUntil: fecha a janela do
+                                      fim e monta a proposta ─────▶ extracao.json
                                       status = em_revisao
   GET /api/sessoes/:id a cada 2 s ──▶ acompanha o status
   em_revisao ──▶ /sessao/:id/revisar   (replace: o corredor não volta)
@@ -307,12 +334,37 @@ fechada com bloco ainda por subir.
 
 ## 4. Transcrição
 
-### 4.1 Paralela, não no fim
+### 4.1 Paralela, não no fim — e desde a 4.8 isso vale para a extração também
 
 Cada bloco é transcrito assim que sobe, disparado por `waitUntil` na rota
 `/pronto` — o cliente não espera pelo STT, ele volta a gravar. Quando a gravação
 de 15 minutos para, só falta o último bloco. É isso que faz o sistema parecer
 rápido (aceite 5).
+
+**Isso resolvia metade do problema.** A transcrição acompanhava a fala desde a
+slice 1, mas tudo o que vem depois dela — a extração sobre a transcrição
+inteira, a resolução, os embeddings — esperava eu parar. Numa sessão de 15 min
+era uma chamada de raciocínio com ~15 mil caracteres de entrada, e ela sozinha
+respondia por quase toda a espera entre parar de falar e revisar.
+
+Na mesma rota `/pronto`, encadeado no mesmo `waitUntil`, roda agora
+`avancarJanelas`: a cada `JANELA_BLOCOS` (4) blocos transcritos, uma janela de
+2 minutos é extraída e resolvida, e os átomos dela vão para `parcial.json`
+(§4.6). Quando eu paro, `/finalizar` fecha a janela do fim — no máximo 3 blocos
+— e monta a proposta a partir do acumulado.
+
+Três consequências que valem estar escritas:
+
+- **A chamada mais cara deixou de acontecer logo depois de 30 chamadas de STT**,
+  que era exatamente o pior momento para o rate limit da conta (§5.3). Agora ela
+  é oito chamadas pequenas espalhadas pelos 15 minutos, e durante a gravação
+  esperar o limite passar é de graça — não há prazo a estourar.
+- **A resposta da extração parou de poder truncar.** Nenhuma janela chega perto
+  de `maxOutputTokens: 8000`; era limite conhecido do §14 e saiu de lá.
+- **O caminho de uma janela só continua existindo, e é o mesmo código.** Arquivo
+  importado (um bloco), gravação de menos de dois minutos, e o fallback de
+  quando alguma janela não fecha: todos passam por uma janela que se declara a
+  sessão inteira, com o prompt saindo byte a byte igual ao de antes da 4.8.
 
 ### 4.2 Porta única de modelo (Vercel AI Gateway)
 
@@ -361,7 +413,7 @@ painel de `/agentes` (§4.13):
 | Função | Agente | Padrão |
 |---|---|---|
 | `modeloStt()` | STT | `xai/grok-stt` |
-| `modeloExtracao()` | `extracao-5` | `zai/glm-5.3-flash` |
+| `modeloExtracao()` | `extracao-6` | `zai/glm-5.3-flash` |
 | `modeloResolucao()` | `resolucao-2` | o da extração |
 | `modeloPerfil()` | `perfil-1` | o da extração |
 | `modeloCalibracao()` | `calibracao-1` | o da extração |
@@ -564,19 +616,88 @@ Enquanto processa, a tela mostra só o **prefixo contíguo** dos blocos prontos
 (`prefixoContiguo`): se o bloco 2 ainda está no STT, o 3 não aparece — texto
 parcial nunca é lido fora de ordem.
 
-### 4.6 Extração de átomos
+**As duas funções servem à janela desde a 4.8**, e não foi coincidência: uma
+janela é `concatenar` sobre um subconjunto de blocos, o que devolve uma
+`Transcricao` com offsets já absolutos — nada na âncora nem no player precisa
+saber que ela é um pedaço. E `janelasDe` fatia o mesmo prefixo contíguo pela
+mesma razão de sempre: com um buraco no meio, a janela leria fala fora de ordem.
 
-**Dispara sozinha** quando a transcrição termina, emendada no mesmo `waitUntil`
-do `finalizarSessao` — ninguém aperta nada entre parar de falar e ter a proposta
-(aceite 1 da slice 2). Quem a lê é a revisão (§4.7), e é o confirmar dela que
-leva a proposta ao grafo.
+### 4.6 Extração de átomos, janela a janela
+
+**Dispara sozinha**, e desde a slice 4.8 já durante a gravação: a cada quatro
+blocos transcritos, `avancarJanelas` fecha uma janela de 2 minutos no mesmo
+`waitUntil` que transcreveu o bloco. Ninguém aperta nada entre parar de falar e
+ter a proposta (aceite 1 da slice 2) — e agora isso custa segundos, porque o que
+falta quando eu paro é uma janela de no máximo 90 s de fala. Quem lê a proposta
+é a revisão (§4.7), e é o confirmar dela que a leva ao grafo.
 
 `extracao.ts` monta o prompt, valida a resposta item por item e carimba a
 procedência. Sai pelo Gateway como o STT, por
-`modeloExtracao()`. Devolve uma `Extracao` — a proposta, que pertence ao R2 e não
-ao grafo (regra 5). Cada átomo leva `id` determinístico (`<sessao_id>-<índice>`,
-que é o que fará o `MERGE` do confirmar ser idempotente), `prompt_version` e
-`modelo` (regra 7).
+`modeloExtracao()`. Devolve um `ResultadoDaJanela` — os átomos daquela fatia, já
+ancorados e resolvidos. Cada átomo leva `id` determinístico
+(`<sessao_id>-<índice>`, que é o que faz o `MERGE` do confirmar ser idempotente),
+`prompt_version` e `modelo` (regra 7). Nada disso vai ao grafo (regra 5): o
+acumulado vive em `parcial.json`, no R2.
+
+#### A janela, e por que a extração não é a soma de oito extrações
+
+Uma janela é uma corrida contígua de `JANELA_BLOCOS = 4` blocos **do prefixo
+transcrito** — um buraco no meio segura a janela, pelo mesmo motivo que a
+transcrição parcial só mostra o prefixo (§4.5). `concatenar` monta o texto dela,
+com os offsets já absolutos, e é contra as palavras da própria janela que os
+trechos são ancorados; o cursor de `offsets.ts` deixa de poder varrer a sessão
+inteira atrás de um trecho, o que é ganho e não perda.
+
+**4 blocos, e não 1.** O número é o meio-termo entre duas pressões opostas.
+Menor, a janela corta frase no meio e multiplica a chamada de modelo, que é
+justamente a rajada que o free tier recusa. Maior, sobra fala demais para a
+janela do fim e a espera depois de parar volta a crescer. `JANELA_BLOCOS = 0`
+desliga o caminho incremental e devolve o sistema ao de antes da fatia — é o
+botão de pânico, e existe para ser usado sem deploy de emergência.
+
+**O prompt base não mudou um byte.** `INSTRUCOES_BASE` e `FORMATO` são os
+mesmos da 4.7 — cinco versões de calibração produziram o que está lá, e
+reescrevê-lo por causa de janela seria arriscar o que está bom. O que entra é um
+bloco injetado no **mesmo ponto** em que a regra aprovada entra (§4.12), pelo
+mesmo `inserirAntesDoFormato`: depois de tudo o que instrui, antes do envelope.
+Ele carrega quatro coisas:
+
+| O que | Por quê |
+|---|---|
+| "dos minutos 4 a 6", e que a fala continua depois | o modelo precisa saber que está lendo trecho, não sessão — senão ele conclui em cima de uma frase cortada |
+| o orçamento, em proporção | a base pede 10 a 20 por 15 min; uma janela de 2 min pede de 1 a 3. Calculado (`orcamentoDaJanela`), não escrito à mão |
+| a lista numerada do que já foi proposto | é o que o `ref` do `estende` endereça |
+| a chave `estende` no JSON | a operação que impede a lista de virar trinta átomos |
+
+**`blocoDaJanela` devolve string vazia quando a janela é a sessão inteira e o
+acumulado está vazio.** Não é detalhe: é o que faz o arquivo importado, a
+gravação de menos de dois minutos e o fallback de passe único continuarem
+recebendo exatamente o prompt de antes desta fatia.
+
+#### `estende`: o que substitui a passada de costura
+
+A janela devolve, além de `atomos`, uma lista `estende` de
+`{ ref, texto, trechos }`: "o átomo 3 continua neste trecho; aqui está a
+afirmação reescrita e o pedaço novo". `aplicarJanela` engorda o átomo referido —
+texto novo, trechos somados — sem mexer no `id` nem na posição.
+
+**Uma passada de costura no fim foi considerada e recusada.** Ela consertaria
+volume e ROTINA duplicada depois do fato, ao custo de um oitavo agente, mais um
+prompt para calibrar à mão para sempre, e ~10 s acrescentados exatamente à
+espera que esta fatia existe para cortar. O `estende` faz o mesmo trabalho
+**antes de o erro existir**, e o preço é o inverso: se o modelo ignorar a
+instrução, a revisão abre com mais itens do que devia. Isso é coisa que eu vejo
+na primeira sessão real, e conserto no prompt sem deploy (§4.13).
+
+Duas coisas que o `estende` deliberadamente **não** faz:
+
+- **não mexe em `sobre` nem em `menciona`.** É o que mantém a resolução
+  estritamente incremental: átomo já atribuído não é reaberto a cada janela.
+  Trocar o sujeito de um átomo é gesto meu, na revisão;
+- **não apaga átomo.** `ref` fora da faixa vira `Descarte` com o motivo, nas
+  duas pontas — no parser, contra a contagem que o prompt mostrou, e em
+  `aplicarJanela`, contra a lista que está sendo gravada. É o único caminho por
+  onde uma resposta de modelo escreveria sobre um átomo que já existe.
 
 Item malformado não derruba a extração inteira: vai para `descartados` com o
 motivo. Lista de descarte crescendo é sinal de prompt piorando — e é o único
@@ -620,7 +741,7 @@ modelo devolveu um átomo dizendo que o texto era confuso e circular; falar
 desorganizado é o esperado num diário falado, e lista vazia é a resposta certa
 quando não há o que extrair.
 
-#### O que o prompt manda fazer (`extracao-5`)
+#### O que o prompt manda fazer (`extracao-6`)
 
 A primeira versão pedia "uma afirmação por item" e só descartava hesitação. Numa
 sessão real de 45 s isso rendeu 9 átomos — "acordei", "pedalei", "nadei", "fui
@@ -868,7 +989,7 @@ resolver, por construção. Só o contexto resolve, e o contexto são os três c
 de perfil da entidade (8.3).
 
 ```
-transcrição ──▶ agente 1: extracao-5   devolve o nome cru: "Rafa"
+janela ──────▶ agente 1: extracao-6   devolve o nome cru: "Rafa"
                       │
                       ▼
                 agente 2: resolucao-2  vê os átomos + as entidades com perfil
@@ -902,6 +1023,29 @@ existindo, agora como **visão agregada** do que foi resolvido.
 porque o que o extrator disse era tudo o que havia e destacar dúvida ali seria
 inventar uma que ninguém teve. É o que impede a tela de quebrar numa sessão que
 já estava esperando em `em_revisao`.
+
+#### Uma vez por janela, sobre as menções daquela janela (slice 4.8)
+
+O agente 2 continua rodando **dentro** da extração, e por isso ele também virou
+por janela: as menções que nascem numa janela são decididas quando ela fecha, e
+nunca reabertas. Duas consequências opostas, e as duas são deliberadas:
+
+- **ele não perde o que veio antes.** `montarPrompt` recebe os átomos já
+  propostos num bloco de contexto próprio — "não decida sobre eles" —, antes dos
+  átomos desta janela. Uma "Rafa" do minuto 8 é julgada sabendo da "Raffa" do
+  minuto 2;
+- **ele não vê o que ainda vai vir.** É a mesma limitação da extração, e o
+  conserto é o mesmo: eu, na revisão.
+
+`PROMPT_VERSION_RESOLUCAO` **não** subiu com isso, e a razão é o contrário da
+que fez a extração subir: o texto do prompt é o mesmo, o bloco de contexto some
+quando está vazio, e o que um `prompt_version` precisa resolver é um texto
+(§4.13). O que mudou foi o recorte da sessão que ele enxerga — está aqui e no
+§14, e não num número.
+
+O custo é até uma chamada de resolução por janela em vez de uma por sessão. A
+trava que a torna condicional continua valendo, agora por janela: janela sem
+menção ambígua não chama o agente e não paga nada.
 
 #### Só chama o modelo quando há o que decidir
 
@@ -969,7 +1113,7 @@ estética: os campos entram no prompt do agente 2, e sem ele o custo daquela
 chamada cresceria junto com o grafo.
 
 **Quem aponta o que é perfil é o agente 2**, que já está olhando átomo e entidade
-juntos — mais uma razão para o `extracao-5` não mudar. A marca vira
+juntos — mais uma razão para o `extracao-6` não mudar. A marca vira
 `(:Atomo)-[:PERFILA { campo }]->(:Entidade)` no confirmar (8.3), e só ali
 (regra 5). A validação é dupla: o agente só pode marcar uma entidade que o
 **próprio átomo** cita, e o servidor só grava campo do schema e entidade
@@ -996,8 +1140,8 @@ grafo não escreveu. O vetor é a primeira comparação daqui que não passa por
 letra.
 
 **O que isto não é.** Não é economia de token: o gasto dominante continua sendo
-o `extracao-5`, que manda a transcrição inteira, e embedding não corta um token
-dele. O que ele compra é a **seleção de candidato**, que na slice 5 vira a única
+o `extracao-6`, que manda a fala inteira ao modelo — hoje repartida em janelas
+(§4.6), o que não muda o total —, e embedding não corta um token dele. O que ele compra é a **seleção de candidato**, que na slice 5 vira a única
 forma possível de deduplicar átomo — cinco sessões por semana a 15 átomos dão
 ~3.900 átomos por ano, ou ~7,6 milhões de pares, que não é caro: é impossível.
 
@@ -1185,7 +1329,7 @@ Cada correção sai etiquetada com o agente que a produziu:
 
 | Tipo | Agente | Por quê |
 |---|---|---|
-| `rejeitado`, `texto`, `tipo`, `faltou` | `extracao` | é o `extracao-5` produzindo o que não presta |
+| `rejeitado`, `texto`, `tipo`, `faltou` | `extracao` | é o `extracao-6` produzindo o que não presta |
 | `entidade_recusada` | `extracao` | listou como entidade o que não é pessoa, projeto nem objetivo |
 | `entidade_tipo` | `extracao` | errou o palpite de tipo na lista `entidades` |
 | `sujeito`, `mencao_removida` | `resolucao` ou `extracao` | **por átomo**: `sobre.conhecida` decide |
@@ -1296,18 +1440,23 @@ sozinho não reverte mais o prompt inteiro.
 #### A montagem, e o no-op
 
 ```
-montarPrompt(texto, regras, base = INSTRUCOES_BASE)
-    = comRegras(base, regras) + texto
-    = base, com blocoDeRegras(regras) inserido antes do cabeçalho FORMATO
+montarPrompt(texto, regras, base = INSTRUCOES_BASE, janela?)
+    = inserirAntesDoFormato(comRegras(base, regras), blocoDaJanela(janela)) + texto
+    = base, com blocoDeRegras(regras) e depois blocoDaJanela(janela)
+      inseridos antes do cabeçalho FORMATO
 ```
 
 O ponto de inserção é onde uma regra entra: depois de tudo o que instrui, antes
 do que descreve o envelope de saída. Regra enfiada depois do `FORMATO` seria
 lida como parte do exemplo de JSON. Enquanto o prompt eram duas constantes, esse
 ponto era a emenda entre elas; desde a 4.7 é um cabeçalho procurado no texto
-(`lastIndexOf` do cabeçalho `FORMATO`, em `comRegras`), porque o `base` pode ser
-um prompt que eu escrevi. O resultado é idêntico quando o `base` é o do git, que é
-o caso sem override.
+(`lastIndexOf` do cabeçalho `FORMATO`, em `inserirAntesDoFormato`), porque o
+`base` pode ser um prompt que eu escrevi. O resultado é idêntico quando o `base`
+é o do git, que é o caso sem override.
+
+**São dois blocos injetados no mesmo ponto desde a 4.8**, e a ordem entre eles é
+esta: a regra primeiro, porque ela vale sobre tudo e sobre toda sessão; a janela
+depois, porque ela é sobre esta chamada e mais nenhuma (§4.6).
 
 **`blocoDeRegras([]) === ""`, e isso não é detalhe:** sem regra aprovada o
 prompt sai **byte a byte igual** ao de antes desta fatia — verificado contra o
@@ -1315,8 +1464,8 @@ arquivo anterior, 4620 caracteres nos dois. A slice inteira é um no-op até a
 minha primeira aprovação, e portanto incapaz de piorar nada enquanto eu não
 mandar. `tests/regras.test.ts` trava a junção exata das duas metades.
 
-`versaoDoPrompt` substitui o `PROMPT_VERSION` fixo: `extracao-5` sem regra,
-`extracao-5+a3f91c7d` com. **O hash sai das regras usadas na chamada, não do
+`versaoDoPrompt` substitui o `PROMPT_VERSION` fixo: `extracao-6` sem regra,
+`extracao-6+a3f91c7d` com. **O hash sai das regras usadas na chamada, não do
 arquivo** — se o R2 falhar, entram zero regras e a versão é a base. A
 procedência é verdadeira nos dois caminhos, que é o ponto: carimbar `+a3f91c7d`
 numa extração que rodou sem regra seria mentira gravada no grafo para sempre.
@@ -1415,8 +1564,8 @@ caixa abrindo o prompt e o modelo que a comandam.
 | Agente | Módulo | Quando | Modelo | Envelope que o parser exige |
 |---|---|---|---|---|
 | STT (sem prompt) | `stt.ts` | automático, por bloco | `STT_MODEL` | — |
-| `extracao-5` | `extracao.ts` | automático, no fim da transcrição | `EXTRACAO_MODEL` | `atomos`, `entidades` |
-| `resolucao-2` | `resolucao.ts` | condicional: só com menção ambígua | `RESOLUCAO_MODEL` | `referencias`, `perfil` |
+| `extracao-6` | `extracao.ts` | automático, por janela de 2 min | `EXTRACAO_MODEL` | `atomos`, `entidades` |
+| `resolucao-2` | `resolucao.ts` | condicional: por janela, só com menção ambígua | `RESOLUCAO_MODEL` | `referencias`, `perfil` |
 | `calibracao-1` | `calibracao.ts` | sob demanda, em `/calibracao` | `CALIBRACAO_MODEL` | `regras`, `cita` |
 | `perfil-1` | `perfil.ts` | sob demanda, em `/entidades` | `PERFIL_MODEL` | `texto` |
 | `duplicatas-1` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
@@ -1454,10 +1603,10 @@ hash resolve:
 
 | Carimbo | Quem produziu | Resolve em |
 |---|---|---|
-| `extracao-5` | a base do git, sem regra aprovada | o próprio git |
-| `extracao-5+a3f91c7d` | a base do git, com regra aprovada | `calibracao/regras-<hash>.json` |
-| `extracao-5+p1b2c3d4` | prompt editado no painel | `config/prompt-extracao-<hash>.json` |
-| `extracao-5+p1b2c3d4+a3f91c7d` | prompt editado **e** regra aprovada | os dois objetos, nesta ordem |
+| `extracao-6` | a base do git, sem regra aprovada | o próprio git |
+| `extracao-6+a3f91c7d` | a base do git, com regra aprovada | `calibracao/regras-<hash>.json` |
+| `extracao-6+p1b2c3d4` | prompt editado no painel | `config/prompt-extracao-<hash>.json` |
+| `extracao-6+p1b2c3d4+a3f91c7d` | prompt editado **e** regra aprovada | os dois objetos, nesta ordem |
 
 Sem o `p`, ler um carimbo antigo viraria adivinhação: um hash só não teria como
 resolver dois objetos diferentes. O hash sai do **conteúdo**, então salvar o
@@ -1656,11 +1805,15 @@ com prefixo:
 
 | Linha | Quem escreve | Quando |
 |---|---|---|
-| `[stt] sessão <id> bloco <i> falhou:` | rota `/chunks/:i/pronto` | o bloco falhou ao ser transcrito na subida |
+| `[stt] sessão <id> bloco <i> falhou:` | rota `/chunks/:i/pronto` | o bloco falhou ao ser transcrito na subida (ou o avanço das janelas estourou) |
 | `[pipeline] sessão <id> bloco <i> não transcreveu:` | laço de espera em `finalizarSessao` | a retentativa da finalização falhou |
 | `[pipeline] sessão <id>: desistiu após 150s…` | `finalizarSessao` | o prazo estourou; lista os blocos que faltaram, e diz se a causa foi rate limit |
 | `[limite] <rótulo>: rate limit do Gateway — esperando Ns` | `comEsperaDeLimite` | o Gateway recusou por excesso e vai haver outra tentativa |
 | `[limite] <rótulo>: sem orçamento para esperar Ns` | `comEsperaDeLimite` | o limite ainda vale, mas esperar estouraria o prazo de quem chamou |
+| `[janela] sessão <id> janela <n> (blocos a-b): +N átomo(s)…` | `avancarJanelas` | uma janela fechou — é o `console.log` que mostra a extração acontecendo durante a gravação |
+| `[janela] sessão <id> janela <n> falhou:` | `avancarJanelas` | a janela não fechou; ela fica `falhou` no `parcial.json` e é retentada na passada seguinte |
+| `[janela] sessão <id>: sem orçamento para a janela <n>` | `avancarJanelas` | o prazo do `finalizar` acabou antes de a janela do fim rodar |
+| `[janela] sessão <id>: janela(s) N não fecharam…` | `propostaDaSessao` | a proposta caiu no passe único sobre a sessão inteira — o fallback da 4.8 |
 | `[extracao] sessão <id> falhou:` | `extrairSessao` | o modelo estourou, ou a resposta não era JSON válido |
 | `[extracao] sessão <id>: sem transcricao.json…` | `extrairSessao` | pediram extração de uma sessão sem transcrição gravada |
 | `[finalizar] sessão <id> falhou:` | rota `/finalizar` | `finalizarSessao` estourou uma exceção |
@@ -1769,16 +1922,18 @@ de a espera não servir para nada. São duas e não cinco porque o teto de cima 
 `maxDuration` de 300 s da rota, e a extração ainda roda depois.
 
 Quem chama dentro de um prazo passa o seu (`ate`): `finalizarSessao` tem 150 s
-para os blocos que faltam, e uma espera que não caiba nesse orçamento é pior que
-não esperar — o `waitUntil` morre antes de a chamada voltar, e a falha fica sem
-nem o log. Onde não há prazo — a rota `chunks/:i/pronto`, que cuida de um bloco
-só —, não se passa nada.
+para os blocos que faltam, e a janela do fim tem os 120 s de
+`ORCAMENTO_JANELAS_MS`. Uma espera que não caiba nesse orçamento é pior que não
+esperar — o `waitUntil` morre antes de a chamada voltar, e a falha fica sem nem
+o log. **Onde não há prazo não se passa nada**, e desde a 4.8 esse caso é o que
+mais importa: as janelas que fecham durante a gravação vão sem `ate`, porque ali
+esperar o limite passar é de graça — eu ainda estou falando.
 
-Os dois pontos que falam com modelo no caminho automático estão cobertos: `stt.ts`
-e `extracao.ts`. A extração é a mais exposta das duas, apesar de ser uma chamada
-só: ela roda logo depois dos 30 blocos de STT, que é exatamente quando o limite
-está mais perto de estourar — sem a espera, a sessão transcreve inteira e morre
-no último passo.
+Os dois pontos que falam com modelo no caminho automático estão cobertos:
+`stt.ts` e `extracao.ts`. A extração era a mais exposta das duas justamente por
+rodar logo depois dos 30 blocos de STT, que é quando o limite está mais perto de
+estourar; **a slice 4.8 desfez essa concentração** — são oito chamadas menores
+espalhadas pela gravação, e sete delas sem prazo nenhum para esperar.
 
 Perfil, duplicatas e embedding **não** estão cobertos: saem de um clique meu, e
 ali a falha aparece na tela em vez de matar uma sessão em `waitUntil`. **A
@@ -1787,8 +1942,8 @@ extração, no caminho automático, desde a slice 4 — o que este documento diz
 ("chamada sob demanda") descrevia o `perfil-1`, não o `resolucao-2`. Um limite
 ativo faz o agente 2 falhar em vez de esperar, e a degradação já é a certa: as
 menções voltam como dúvida e a revisão me deixa escolher (§4.8). Passar
-`comEsperaDeLimite` para lá é conserto de uma linha, e não foi feito aqui para
-não misturar duas mudanças no mesmo lugar.
+`comEsperaDeLimite` para lá é conserto de uma linha, e não foi feito nesta fatia
+para não misturar duas mudanças no mesmo lugar.
 
 Quando a espera não basta, a linha de desistência diz isso com todas as letras —
 "a causa foi rate limit do AI Gateway… chamar /finalizar de novo daqui a alguns
@@ -1804,6 +1959,10 @@ com cada fatia, e hoje são estas:
 | Trava | Onde | Efeito |
 |---|---|---|
 | `chunk_NNN.json` existir | `pipeline.transcreverBloco` | não rechama o STT nem sobrescreve resultado pronto |
+| janela `pronta` no `parcial.json` | `janela.reivindicar` | janela fechada não é reextraída nem repaga, por mais vezes que `/pronto` chame |
+| lease `em_curso` com prazo (`LEASE_MS`, 120 s) | `janela.reivindicar` | dois `waitUntil` não extraem a mesma janela; worker morto libera a janela em vez de travá-la |
+| `If-Match` + laço de retry no `parcial.json` | `janela.atualizarParcial` | duas janelas concorrentes se somam em vez de se sobrescrever |
+| o `id` do átomo é carimbado **na escrita**, não na extração | `janela.aplicarJanela` | duas janelas nunca produzem o mesmo `<sessao_id>-<índice>` — que é o que faz o `MERGE` do confirmar ser idempotente |
 | `extracao.json` existir | `pipeline.extrairSessao` | não rechama o modelo nem sobrescreve proposta que eu já posso ter revisado |
 | `If-None-Match: *` no PUT da proposta | `pipeline.extrairSessao` | dois workers na mesma sessão geram uma proposta só: quem chega em segundo usa a do primeiro |
 | entrada no manifest por `i` | `manifest.registrarChunk` | reenviar o mesmo bloco não duplica nem reabre bloco transcrito |
@@ -1825,7 +1984,7 @@ com cada fatia, e hoje são estas:
 A trava de `extracao.json` vale para **os dois agentes**: proposta pronta não
 rechama nem a extração nem a resolução, e `forcar` refaz as duas. Calibrar o
 `resolucao-2` custa, sim, uma extração junto — o que a arquitetura de dois
-agentes barateia é o contrário: mexer no `resolucao-2` não mexe no `extracao-5`.
+agentes barateia é o contrário: mexer no `resolucao-2` não mexe no `extracao-6`.
 
 **A única saída da trava é `extrairSessao(id, { forcar: true })`**, exposta por
 `POST /api/sessoes/:id/extrair` com `{"forcar": true}`. Ela existe para calibrar
@@ -2105,7 +2264,7 @@ hoje. Sem índice: ninguém busca por perfil.
 
 **Por que aresta, e não propriedade do átomo.** Duas razões, e a primeira é a que
 manda: a marca precisa dizer **de quem** é a informação. "fui no parque andar de
-slackline com o Raffa" é `sobre: "eu"` pelas regras de tipo do `extracao-5`, e a
+slackline com o Raffa" é `sobre: "eu"` pelas regras de tipo do `extracao-6`, e a
 informação de perfil é do Raffa. A segunda é que Neo4j não guarda array de mapa
 como propriedade — foi isso que forçou as listas paralelas da 003. Aresta com
 propriedade ele guarda bem, e fica consultável: "todo átomo que diz o que o Rapha
@@ -2219,6 +2378,7 @@ sessoes/<id>/chunk_000.webm     áudio do bloco gravado no navegador
 sessoes/<id>/chunk_000.opus     áudio importado — a extensão é a do arquivo de origem
 sessoes/<id>/chunk_000.json     transcrição do bloco, offsets relativos, modelo, granularidade
 sessoes/<id>/transcricao.json   final, offsets absolutos
+sessoes/<id>/parcial.json       a proposta enquanto cresce: { janelas: [{n, de, ate, estado, em, procedência}], atomos, entidades, descartados }
 sessoes/<id>/extracao.json      proposta: átomos ancorados, referências resolvidas (com o `porque` da camada 3b), marcas de perfil, entidades agregadas, procedência dos dois agentes
 sessoes/<id>/extracao-anterior.json  a proposta que o `forcar` substituiu — só a última, para eu comparar
 sessoes/<id>/correcoes.json     o que eu corrigi naquela revisão — fotografia do momento da confirmação, escrita uma vez só
@@ -2233,6 +2393,13 @@ _smoke/                         objetos temporários do `pnpm smoke`, apagados n
 o índice de correções nem a configuração dos agentes são de sessão nenhuma. E são
 dois prefixos e não um porque são duas coisas: `calibracao/` é material que o
 sistema acumulou sozinho, `config/` é o que eu escrevi.
+
+**`parcial.json` e `extracao.json` são dois objetos e não um** porque têm donos
+diferentes no tempo. O parcial é escrito por vários `waitUntil` concorrentes, com
+read-modify-write por etag; a proposta é escrita uma vez, com `If-None-Match`, e
+essa escrita única **é** a trava de idempotência da extração (§6). Um objeto só
+não poderia ser as duas coisas. O parcial fica no R2 depois de a proposta existir
+— é onde o motivo de uma janela que falhou continua legível.
 
 `chaves.ts` é o único lugar que monta chave — rota, worker e teste passam por ele.
 Por isso é lá que a extensão é validada contra a lista de `audio.ts`, e não só na
@@ -2251,7 +2418,7 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/sessoes` | cria `:Sessao {status:'gravando'}` | devolve `id` |
 | `GET /api/sessoes` | a lista de sessões, da mais recente para a mais antiga | teto de 50; **esconde sessão sem bloco** que não esteja `gravando` — ver abaixo |
 | `POST /api/sessoes/:id/chunks/:i/url` | presigned PUT de 5 min | corpo `{ext?}`; 415 fora da lista; o áudio não passa por aqui |
-| `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT)` | corpo `{ext?, duracao_s?}` |
+| `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT → janelas)` | corpo `{ext?, duracao_s?}` |
 | `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha **e extrai** em `waitUntil` | `ja_finalizada` a partir de `em_revisao`; antes disso, é o retry da extração |
 | `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s; `completa` é sobre a transcrição, não sobre a sessão |
 | `POST /api/sessoes/:id/extrair` | dispara extração **e resolução** de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` refaz as duas e sobrescreve |
@@ -2642,7 +2809,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 13. Verificação
 
-- `pnpm test` — **45 arquivos, 652 testes**, sem credencial e sem rede. A lista
+- `pnpm test` — **47 arquivos, 723 testes**, sem credencial e sem rede. A lista
   abaixo comenta os que valem uma explicação; a cobertura inteira se lê em
   `tests/`. Os que não têm bullet próprio cobrem a lógica pura da slice 1
   (chaves, manifest, estados, offsets, vocabulário, backoff, retry de rede,
@@ -2651,6 +2818,18 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   `calibracao-tela`, `catalogo`, `texto`, `transcricao`, `modelos`, `extracao`
   (o parser, o envelope e a normalização de tipo — **não** a qualidade da
   extração, que é o bullet mais abaixo) e `pipeline-extracao`.
+- `tests/janela.test.ts` — as três invariantes da slice 4.8 que não aparecem em
+  tela nenhuma: que o `id` do átomo nunca se repete entre janelas (id repetido só
+  apareceria no confirmar, sobrescrevendo átomo no grafo), que o lease impede
+  dois `waitUntil` de pagarem a mesma janela — e devolve a janela quando o worker
+  morre —, e que um `estende` com `ref` inválida vira descarte em vez de escrita
+  no átomo errado. Mais o fatiamento: buraco no meio segura a janela, arquivo
+  importado é uma janela só, `fechando` não inventa janela vazia.
+- `tests/pipeline-janela.test.ts` — o gatilho: quatro blocos fecham a janela sem
+  ninguém pedir, a janela seguinte recebe o que a anterior propôs, janela pronta
+  não é reextraída, janela que falha deixa rastro e **não** deixa a seguinte
+  passar na frente, e o fallback — janela que não fecha cai no passe único e a
+  sessão não morre.
 - `tests/audio.test.ts` — resolução de formato, incluindo o `.opus` do WhatsApp
   que chega com `File.type` vazio, e os limites de tamanho e duração.
 - `tests/agentes.test.ts` — a **varredura** (todo `generateText`/`transcribe`/
@@ -2805,14 +2984,17 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   a janela medida (~75 s) — não cobre um limite que dure minutos. Aí a sessão vai
   para `erro` dizendo que foi rate limit, e o conserto é chamar `/finalizar` de
   novo mais tarde. **Uma sessão gravada de 15 min são 30 blocos e nunca foi
-  transcrita inteira sob limite** — o que se mediu foram chamadas soltas.
+  transcrita inteira sob limite** — o que se mediu foram chamadas soltas. A
+  slice 4.8 mexeu nos dois sentidos: são ~8 chamadas de extração a mais na
+  conta, mas espalhadas pelos 15 minutos e sem prazo para esperar, em vez de uma
+  rajada no fim. Também não medido.
 - **Resolução, perfil, duplicatas e embedding não esperam o rate limit.** Só STT
   e extração chamam `comEsperaDeLimite` (§5.3). Para perfil, duplicatas e
   embedding é deliberado: saem de um clique meu e falham na minha frente. **Para
-  a resolução não é** — ela roda no caminho automático, dentro da extração, e um
-  limite ativo a faz falhar em vez de esperar. A degradação é a certa (as menções
-  voltam como dúvida, nunca como atribuição errada), mas é degradação. Conserto
-  de uma linha, não feito ainda.
+  a resolução não é** — ela roda no caminho automático, dentro da extração de
+  cada janela, e um limite ativo a faz falhar em vez de esperar. A degradação é
+  a certa (as menções voltam como dúvida, nunca como atribuição errada), mas é
+  degradação. Conserto de uma linha, não feito ainda.
 - **`config/vocabulario.txt`** ainda tem só os três nomes de exemplo. Desde a
   slice 3 ele não é mais a lista inteira — as entidades do grafo entram junto —
   mas continua sendo o único jeito de ensinar um nome **antes** de falá-lo pela
@@ -2878,7 +3060,10 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   como limite conhecido, e não como decisão boa.
 - **A extração roda no mesmo `waitUntil` da transcrição.** Em dev isso é o mesmo
   processo: fechar a janela do servidor no meio mata o job e a sessão fica em
-  `extraindo`. O retry é chamar `/finalizar` de novo.
+  `extraindo`. O retry é chamar `/finalizar` de novo. Desde a 4.8 vale também
+  para as janelas, com a diferença de que uma janela morta assim fica `em_curso`
+  no `parcial.json` até o lease vencer (120 s) — depois disso qualquer passada a
+  reivindica de novo.
 - **O caminho de "já conhecida" funciona, medido.** As duas primeiras entidades
   nasceram às 13:28:17 e a sessão seguinte só começou às 13:28:37: a extração
   dela encontrou as duas já lá e o segundo confirmar reaproveitou os nós em vez
@@ -2887,14 +3072,40 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   pensando para 122 de texto, daí `maxOutputTokens: 8000` e a segunda tentativa
   automática. Trocar é `EXTRACAO_MODEL`, sem tocar em código.
 - **O alvo de 10 a 20 átomos por 15 min ainda é aposta.** O prompt está em
-  `extracao-5` e as sessões julgadas até agora são curtas; a primeira sessão longa
-  confirma ou derruba o número.
-- **Transcrição longa pode truncar a resposta da extração.** O teto declarado é
-  `maxOutputTokens: 8000` (`extracao.ts`), calibrado para o raciocínio do
-  `zai/glm-5.3-flash`, e não há corte da transcrição em pedaços: uma sessão que
-  precise de mais que isso volta com JSON truncado, que vira `ExtracaoError` na
-  primeira vez em que acontecer. O teto é um número medido contra sessões
-  curtas, não um limite do modelo.
+  `extracao-6` e as sessões julgadas até agora são curtas; a primeira sessão longa
+  confirma ou derruba o número. Desde a 4.8 ele é pedido **em proporção**, janela
+  a janela (`orcamentoDaJanela`), o que troca uma aposta por outra: oito janelas
+  pedindo de 1 a 3 dão de 8 a 24, e é o `estende` que tem de puxar o número para
+  baixo. Mais um motivo para a primeira sessão longa ser a medição que importa.
+- **A janela do fim tem 120 s (`ORCAMENTO_JANELAS_MS`) para fechar**, dentro do
+  `maxDuration` de 300 s de `/finalizar`, dos quais até 150 s podem ter ido nos
+  blocos pendentes. Estourado o orçamento, a proposta cai no passe único — que
+  então roda com pouco tempo sobrando. É o caso ruim de um caso já raro (as
+  janelas anteriores já fecharam durante a gravação), e o retry continua sendo
+  chamar `/finalizar` de novo.
+- **O `estende` é a única coisa que segura o volume da lista, e ele é uma
+  instrução de prompt** (slice 4.8). Sem passada de costura no fim, a janela que
+  ignorar "não repita, estenda" produz um segundo átomo sobre o mesmo assunto —
+  ou um segundo `ROTINA` —, e a revisão abre com mais itens do que devia, que é a
+  condição de morte da visão §8. O código impede a corrupção (`ref` inválida vira
+  descarte) mas não a duplicação; quem vê é a revisão, e o conserto é o prompt,
+  sem deploy. **Ainda não foi medido contra uma sessão real de 15 min.**
+- **A janela não sabe o que ainda vai ser dito.** Se eu digo "ela" no minuto 2 e
+  só nomeio a Marina no minuto 10, a janela 1 não tinha como resolver, e o átomo
+  dela nasce com o pronome — `precisa_nome` trava o confirmar até eu nomear. O
+  painel de entidades da revisão conserta isso **num gesto**, reapontando todos os
+  átomos (`nomeFinal()`, §4.7), e por isso não foi construída uma operação de
+  renome na janela: seria antecipar máquina para o que a tela já resolve. Vale
+  igual para o agente 2, que decide sobre a sessão até aquela janela (§4.8).
+- **A extração agora custa oito chamadas por sessão em vez de uma.** O total de
+  tokens de entrada é parecido — a fala é a mesma —, mas o prompt base viaja em
+  cada janela, e a lista do acumulado cresce a cada uma. É o preço declarado da
+  fatia, e a contrapartida é a espera depois de parar de falar.
+- **Uma janela extraída duas vezes é possível, e é o lado barato do erro.** O
+  lease de 120 s expira, e um `waitUntil` lento pode ver a própria janela
+  reivindicada por outro. Duas extrações custam uma chamada; uma janela travada
+  para sempre custaria a sessão. O que **não** acontece é átomo duplicado: quem
+  perde a corrida do `If-Match` relê e reaplica.
 - **Não haverá medida automática da qualidade da extração.** A avaliação é à mão,
   na tela de revisão; sem gabarito rotulado nem percentual de recall, regressão de
   prompt não aparece em teste — só na revisão seguinte.
@@ -3003,7 +3214,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   fielmente o que a transcrição dizia —, mas elas saem como `extracao` (correção
   de texto) ou `grafo` (renome), porque nenhum sinal no material distingue "o
   modelo escreveu errado" de "o microfone ouviu errado". O risco concreto é o
-  `calibracao-1` ver quatro casos do mesmo padrão e propor, para o `extracao-5`,
+  `calibracao-1` ver quatro casos do mesmo padrão e propor, para o `extracao-6`,
   uma regra que conserta algo que nunca chegou até ele.
   **A saída decidida não é etiqueta nem regra de prompt**: é um agente de
   pré-resolução de entidades, rodando antes da resolução, que busca as entidades

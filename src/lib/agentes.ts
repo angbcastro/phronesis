@@ -41,7 +41,7 @@ export type Faixa = "ingestao" | "eu" | "higiene";
 
 export interface Agente {
   id: AgenteId;
-  /** O que vai no carimbo: `extracao-5`. `null` em quem não tem prompt. */
+  /** O que vai no carimbo: `extracao-6`. `null` em quem não tem prompt. */
   versao: string | null;
   /** Como eu chamo na tela. */
   rotulo: string;
@@ -104,9 +104,9 @@ export const AGENTES: readonly Agente[] = [
     id: "extracao",
     versao: VERSAO_EXTRACAO,
     rotulo: "extração",
-    papel: "lê a transcrição e propõe os átomos, com o nome cru de cada entidade",
+    papel: "lê uma janela de 2 min e propõe os átomos, com o nome cru de cada entidade",
     quando: "automatico",
-    gatilho: "emendada no finalizar, quando a transcrição termina",
+    gatilho: "a cada 4 blocos transcritos, durante a própria gravação",
     base: BASE_EXTRACAO,
     padrao: modeloExtracao,
     variavel: "EXTRACAO_MODEL",
@@ -120,7 +120,7 @@ export const AGENTES: readonly Agente[] = [
     rotulo: "resolução",
     papel: "decide de quem eu estava falando, lendo o perfil de cada candidato",
     quando: "condicional",
-    gatilho: "dentro da extração, e só se alguma menção ficou ambígua",
+    gatilho: "dentro da extração de cada janela, e só se alguma menção ficou ambígua",
     base: BASE_RESOLUCAO,
     padrao: modeloResolucao,
     variavel: "RESOLUCAO_MODEL",
@@ -250,7 +250,7 @@ export const NOS: readonly NoDoFluxo[] = [
   { id: "transcricao", rotulo: "transcrição", tipo: "dado", faixa: "ingestao", coluna: 2, linha: 3, nota: "no R2; no grafo vai só a chave" },
   { id: "extracao", rotulo: "extração", tipo: "agente", agente: "extracao", faixa: "ingestao", coluna: 2, linha: 4 },
   { id: "resolucao", rotulo: "resolução", tipo: "agente", agente: "resolucao", faixa: "ingestao", coluna: 2, linha: 5 },
-  { id: "proposta", rotulo: "proposta", tipo: "dado", faixa: "ingestao", coluna: 2, linha: 6, nota: "extracao.json — nada disto está no grafo ainda" },
+  { id: "proposta", rotulo: "proposta", tipo: "dado", faixa: "ingestao", coluna: 2, linha: 6, nota: "parcial.json enquanto cresce, extracao.json no fim — nada disto está no grafo ainda" },
 
   { id: "revisao", rotulo: "revisão", tipo: "eu", faixa: "eu", coluna: 2, linha: 7, nota: "eu. nada entra no grafo antes daqui" },
 
@@ -269,7 +269,7 @@ export const ARESTAS: readonly ArestaDoFluxo[] = [
   { de: "audio", para: "stt" },
   { de: "vocabulario", para: "stt" },
   { de: "stt", para: "transcricao" },
-  { de: "transcricao", para: "extracao" },
+  { de: "transcricao", para: "extracao", rotulo: "por janela de 2 min" },
   { de: "extracao", para: "resolucao", rotulo: "só com menção ambígua" },
   { de: "resolucao", para: "proposta" },
   { de: "proposta", para: "revisao" },

@@ -41,7 +41,7 @@ describe("sem regra aprovada, nada muda (critério 4)", () => {
 
   it("a versão sai sem sufixo", () => {
     expect(versaoDoPrompt([])).toBe(PROMPT_VERSION);
-    expect(versaoDoPrompt([])).toBe("extracao-5");
+    expect(versaoDoPrompt([])).toBe("extracao-6");
   });
 });
 
@@ -62,7 +62,7 @@ describe("com regra aprovada", () => {
 
   it("a versão ganha o sufixo do hash das regras usadas", () => {
     const v = versaoDoPrompt([regra("qualquer coisa")]);
-    expect(v).toMatch(/^extracao-5\+[0-9a-f]{8}$/);
+    expect(v).toMatch(/^extracao-6\+[0-9a-f]{8}$/);
   });
 
   it("o hash sai do conteúdo, não da identidade do rascunho", () => {
@@ -175,7 +175,7 @@ describe("a sugestão de calibrar", () => {
       tipo_atomo: null,
       texto_proposto: "",
       inicios_s: [],
-      prompt_version: "extracao-5",
+      prompt_version: "extracao-6",
       modelo: "m",
       tocado: true,
       em,
@@ -241,7 +241,7 @@ describe("o recorte que o calibracao-1 lê", () => {
       tipo_atomo: null,
       texto_proposto: "",
       inicios_s: [],
-      prompt_version: "extracao-5",
+      prompt_version: "extracao-6",
       modelo: "m",
       tocado: true,
       em: "2026-09-04T00:00:00.000Z",

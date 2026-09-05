@@ -12,13 +12,18 @@
  * pode resolver, por construção. Só o contexto resolve, e o contexto mora nos
  * três campos de perfil da entidade (migration 005).
  *
- * **O `extracao-5` não muda.** Cinco versões de calibração produziram uma
+ * **O prompt da extração não muda.** Cinco versões de calibração produziram uma
  * extração que presta; enfiar o catálogo de entidades e a desambiguação dentro
  * daquele prompt arriscaria justamente o que está bom, por um problema que não é
  * dele. Os dois agentes têm `prompt_version` própria (regra 7), calibram
  * separado, e um erro de atribuição se conserta sem tocar na extração. De
  * quebra, este agente roda **sem re-extrair**: calibrar a resolução não custa
  * uma chamada de extração a cada tentativa.
+ *
+ * **Desde a slice 4.8 ele roda por janela**, dentro da extração de cada fatia de
+ * 2 min: decide as menções daquela janela e recebe as anteriores como contexto,
+ * sem reabri-las. Ele não vê o que ainda vai ser dito — mesma limitação da
+ * extração, mesmo conserto: eu, na revisão.
  *
  * **Nada é escrito no grafo.** Este módulo só lê o catálogo e devolve
  * atribuições; quem grava é o confirmar, depois da revisão (regra 5).
@@ -395,12 +400,35 @@ function porqueDoCandidato(c: Candidato): string {
   }
 }
 
+/**
+ * Um átomo de uma janela anterior, como esta chamada o vê: contexto, não
+ * pergunta. Mesma forma que `extracao.ts` monta para o bloco da janela.
+ */
+export interface AtomoAnterior {
+  tipo: string;
+  texto: string;
+  sobre: string;
+}
+
 export function montarPrompt(
   atomos: readonly AtomoCru[],
   pendentes: readonly Pendente[],
   catalogo: readonly EntidadeDoGrafo[],
   /** O prompt em vigor — a base do git, ou o que eu editei no painel (4.7). */
   base: string = INSTRUCOES,
+  /**
+   * O que as janelas anteriores desta sessão já propuseram (slice 4.8).
+   *
+   * Entra como bloco à parte, **antes** dos átomos desta janela, e sem número:
+   * quem é numerado no prompt são os átomos desta janela, que é a numeração que
+   * as menções em dúvida endereçam. Duas listas contando do zero no mesmo texto
+   * seriam duas leituras possíveis de "no átomo 0".
+   *
+   * O bloco some quando está vazio — que é o caso do passe único. Assim o
+   * prompt de uma sessão não fatiada continua saindo byte a byte igual ao de
+   * antes da fatia, e por isso `PROMPT_VERSION_RESOLUCAO` não muda com ela.
+   */
+  jaPropostos: readonly AtomoAnterior[] = [],
 ): string {
   const listaAtomos = atomos
     .map((a, i) => `${i}. [${a.tipo}] ${a.texto}\n   trecho: ${(a.trechos ?? [])[0] ?? ""}`)
@@ -420,8 +448,16 @@ export function montarPrompt(
     )
     .join("\n");
 
-  return `${base}
+  const anteriores =
+    jaPropostos.length === 0
+      ? ""
+      : `
+ÁTOMOS JÁ PROPOSTOS ANTES DESTA JANELA (contexto; não decida sobre eles):
+${jaPropostos.map((a) => `- [${a.tipo}] ${a.texto} (é de: ${a.sobre})`).join("\n")}
+`;
 
+  return `${base}
+${anteriores}
 ÁTOMOS DESTA SESSÃO:
 ${listaAtomos}
 
@@ -505,6 +541,13 @@ const normalizarCampo = (v: unknown): CampoPerfil | null =>
 export async function resolverReferencias(
   atomos: readonly AtomoCru[],
   catalogo: readonly EntidadeDoGrafo[],
+  /**
+   * Os átomos das janelas anteriores desta sessão (slice 4.8). Entram como
+   * contexto no prompt e **não** são resolvidos de novo: eles já foram
+   * atribuídos quando nasceram, e reabrir a decisão a cada janela seria pagar a
+   * mesma pergunta oito vezes.
+   */
+  { jaPropostos = [] }: { jaPropostos?: readonly AtomoAnterior[] } = {},
 ): Promise<Atribuicoes> {
   const mencoes = listarMencoes(atomos);
   const resolvidas = new Map<Mencao, ReferenciaResolvida>();
@@ -565,7 +608,7 @@ export async function resolverReferencias(
     const meu = await efetivo("resolucao", { prompt: INSTRUCOES, modelo: modeloResolucao() });
     modelo = meu.modelo;
     hashPrompt = meu.hash;
-    prompt = montarPrompt(atomos, pendentes, [...envolvidas.values()], meu.prompt);
+    prompt = montarPrompt(atomos, pendentes, [...envolvidas.values()], meu.prompt, jaPropostos);
 
     // Guardada fora do `try` porque é no `catch` que ela interessa: este agente
     // usa o mesmo modelo de raciocínio da extração e tem o mesmo modo de falha —

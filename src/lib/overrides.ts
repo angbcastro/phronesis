@@ -129,11 +129,11 @@ export async function resolver(
  * `resolucao-2+p1b2c3d4` com.
  *
  * **O `p` não é enfeite: ele diz por qual chave o hash resolve.** A extração já
- * carimbava `extracao-5+a3f91c7d` para as regras aprovadas, e aquele hash se
+ * carimbava `extracao-6+a3f91c7d` para as regras aprovadas, e aquele hash se
  * acha em `calibracao/regras-<hash>.json`; este se acha em
  * `config/prompt-<agente>-<hash>.json`. São dois objetos diferentes, e um
  * átomo com prompt editado **e** regra aprovada carrega os dois sufixos
- * (`extracao-5+p1b2c3d4+a3f91c7d`) justamente porque um hash só não teria como
+ * (`extracao-6+p1b2c3d4+a3f91c7d`) justamente porque um hash só não teria como
  * resolver os dois. Sem prefixo, ler um carimbo antigo viraria adivinhação.
  */
 export const carimbo = (versaoBase: string, hash: string | null): string =>

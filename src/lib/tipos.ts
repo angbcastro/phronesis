@@ -497,7 +497,7 @@ export interface Regra {
 /**
  * `calibracao/regras-<hash>.json` — **imutável para sempre**.
  *
- * Existe porque `prompt_version` passa a carregar um sufixo (`extracao-5+a3f91c7d`)
+ * Existe porque `prompt_version` passa a carregar um sufixo (`extracao-6+a3f91c7d`)
  * e um hash tem que resolver para um texto: sem o snapshot, aquele carimbo
  * apontaria para uma versão de prompt que não está versionada em lugar nenhum.
  */
@@ -582,4 +582,98 @@ export interface VersaoDePrompt {
   /** Hash do que esta substituiu, ou `null` quando veio direto da base. */
   anterior: string | null;
   criada_em: string;
+}
+
+// ───────── Slice 4.8: a extração acompanha a fala ─────────
+
+/**
+ * Quantos blocos formam uma janela de extração — 4 × 30 s = 2 min.
+ *
+ * O número é o meio-termo entre duas pressões opostas. Menor, a janela corta
+ * frase no meio e multiplica a chamada de modelo, que é exatamente a rajada que
+ * o rate limit da conta recusa (§5.3). Maior, sobra fala demais para a janela
+ * do fim e a espera depois de parar volta a crescer.
+ *
+ * `0` desliga o caminho incremental: nenhuma janela fecha durante a gravação e
+ * a sessão inteira sai num passe só, como antes desta fatia. É o botão de
+ * pânico, e é por isso que ele existe.
+ */
+export const JANELA_BLOCOS = 4;
+
+/**
+ * De quantos átomos uma sessão de 15 min deve render — o par que o prompt base
+ * anuncia. A janela pede a sua fatia disto, em proporção à própria duração.
+ */
+export const ORCAMENTO_POR_15_MIN = [10, 20] as const;
+
+/**
+ * Uma fatia contígua de blocos, a unidade de extração.
+ *
+ * `de` e `ate` são índices de bloco, ambos inclusive. A janela do fim pode ter
+ * menos que `JANELA_BLOCOS` — é a única que pode.
+ */
+export interface Janela {
+  n: number;
+  de: number;
+  ate: number;
+}
+
+/**
+ * Em que pé está uma janela.
+ *
+ * `em_curso` é um *lease*: dois `waitUntil` podem chegar ao mesmo bloco, e é
+ * este carimbo de tempo que impede os dois de extraírem a mesma janela — e que
+ * libera a janela quando o worker que a reivindicou morreu no meio.
+ */
+export type EstadoDaJanela = "em_curso" | "pronta" | "falhou";
+
+export interface EstadoJanela extends Janela {
+  estado: EstadoDaJanela;
+  /** ISO da última mudança. É dele que o lease vence. */
+  em: string;
+  /** Procedência do que esta janela produziu (regra 7). */
+  prompt_version?: string;
+  modelo?: string;
+  prompt_version_resolucao?: string | null;
+  modelo_resolucao?: string | null;
+  /** Só em `falhou`, e é o que aparece no log `[janela]`. */
+  motivo?: string;
+}
+
+/**
+ * `sessoes/<id>/parcial.json` — a proposta enquanto ela ainda cresce.
+ *
+ * Vive no R2 e não no grafo, como `extracao.json`: nada é gravado antes da
+ * confirmação na revisão (regra 5). A diferença entre os dois é o tempo — este
+ * é escrito durante a gravação, aquele é montado a partir dele quando a última
+ * janela fecha.
+ */
+export interface Parcial {
+  sessao_id: string;
+  janelas: EstadoJanela[];
+  /** A lista acumulada, já ancorada e resolvida, na ordem em que nasceu. */
+  atomos: AtomoProposto[];
+  /** A dica de tipo do extrator, somada janela a janela. */
+  entidades: EntidadePropostaFrase[];
+  descartados: Descarte[];
+  atualizado_em: string;
+}
+
+/**
+ * Um átomo que a janela mandou **engordar** em vez de duplicar.
+ *
+ * É o mecanismo que carrega a disciplina de volume, já que não há passada de
+ * costura no fim: a janela vê o que já foi proposto e continua o átomo que já
+ * existe — inclusive o `ROTINA`, que é no máximo um por sessão.
+ *
+ * `ref` é a posição na lista acumulada que o prompt mostrou. Ela **não** mexe
+ * em `sobre` nem em `menciona`: é o que mantém a resolução estritamente
+ * incremental, sem retrabalho sobre átomo já atribuído.
+ */
+export interface Extensao {
+  ref: number;
+  /** A afirmação reescrita com o que a janela acrescentou. */
+  texto: string;
+  /** Os trechos novos, literais da janela. Somam-se aos que o átomo já tinha. */
+  trechos: string[];
 }

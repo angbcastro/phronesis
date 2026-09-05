@@ -3,8 +3,13 @@
  * `sessao_id` (+ `chunk_index` quando aplicável) — regra 4.
  *
  * Cada bloco é transcrito assim que sobe, não no fim: quando a gravação
- * para, só falta o último bloco. Terminada a transcrição, a extração dispara
- * sozinha — ninguém aperta nada entre parar de falar e ter a proposta.
+ * para, só falta o último bloco.
+ *
+ * Desde a slice 4.8 a **extração faz o mesmo**: a cada `JANELA_BLOCOS` blocos
+ * transcritos uma janela fecha durante a própria gravação e soma os átomos dela
+ * ao acumulado (`janela.ts`). Quando eu paro, sobra a janela do fim, e a
+ * proposta é montada a partir do que já estava lá. Ninguém aperta nada entre
+ * parar de falar e ter a proposta — só que agora isso custa segundos.
  */
 import {
   chaveChunkAudio,
@@ -13,7 +18,21 @@ import {
   chaveExtracaoAnterior,
   chaveTranscricao,
 } from "./chaves";
-import { extrair } from "./extracao";
+import { listarEntidades } from "./entidades";
+import { extrair, extrairJanela } from "./extracao";
+import {
+  aplicarJanela,
+  atualizarParcial,
+  carregarParcial,
+  estadoDaJanela,
+  indicesDa,
+  janelasDe,
+  marcarFalha,
+  montarExtracao,
+  reivindicarJanela,
+  todasProntas,
+  zerarParcial,
+} from "./janela";
 import {
   atualizarManifest,
   carregarManifest,
@@ -87,6 +106,71 @@ export async function transcricaoParcial(sessao_id: string): Promise<{ texto: st
 
   const blocos = await blocosProntos(sessao_id, transcritos.map((c) => c.i));
   return { texto: concatenar(sessao_id, blocos).texto, blocos: blocos.length };
+}
+
+/**
+ * Fecha as janelas que os blocos já transcritos permitem fechar.
+ *
+ * Chamada de dois lugares, e a diferença entre eles é o prazo:
+ *
+ *   `/chunks/:i/pronto`  depois de transcrever o bloco, **sem prazo** — a
+ *                        gravação continua, e esperar o rate limit ali é de
+ *                        graça (§5.3)
+ *   `extrairSessao`      com `fechando: true` e um orçamento, para a janela do
+ *                        fim, que divide o `waitUntil` com o resto do finalizar
+ *
+ * **Em ordem, e parando na primeira janela que não fechar.** A janela `n`
+ * recebe no prompt o que a `n-1` propôs — é assim que ela estende um átomo em
+ * vez de duplicá-lo, e é o que segura o volume da lista sem passada de costura.
+ * Pular uma janela quebraria essa corrente em silêncio.
+ */
+export async function avancarJanelas(
+  sessao_id: string,
+  { ate, fechando = false }: { ate?: number; fechando?: boolean } = {},
+): Promise<void> {
+  const m = await carregarManifest(sessao_id);
+  const lista = janelasDe(m, { fechando });
+  if (lista.length === 0) return;
+
+  // Uma janela só, fechando a sessão: é a sessão inteira. Arquivo importado
+  // (um bloco), gravação curta demais para fechar janela durante a fala. O
+  // prompt então sai sem o bloco de janela, byte a byte igual ao da 4.7.
+  const unica = fechando && lista.length === 1;
+
+  for (const j of lista) {
+    if (ate !== undefined && Date.now() >= ate) {
+      console.error(`[janela] sessão ${sessao_id}: sem orçamento para a janela ${j.n}`);
+      return;
+    }
+
+    const parcial = await carregarParcial(sessao_id);
+    if (estadoDaJanela(parcial, j.n)?.estado === "pronta") continue;
+
+    // Outro `waitUntil` já está nela. Parar, e não pular: ver acima.
+    if (!(await reivindicarJanela(sessao_id, j))) return;
+
+    try {
+      const blocos = await blocosProntos(sessao_id, indicesDa(j));
+      const trecho = concatenar(sessao_id, blocos);
+      const r = await extrairJanela(trecho, { jaPropostos: parcial.atomos, unica, ate });
+
+      await atualizarParcial(sessao_id, (p) => aplicarJanela(p, j, r, new Date()));
+      console.log(
+        `[janela] sessão ${sessao_id} janela ${j.n} (blocos ${j.de}-${j.ate}): ` +
+          `+${r.novos.length} átomo(s), ${r.estende.length} estendido(s)`,
+      );
+    } catch (e) {
+      const motivo = e instanceof Error ? e.message : String(e);
+      // A marca da falha é o que faz a próxima passada retentar esta janela em
+      // vez de esperar o lease vencer. Se nem ela conseguir gravar, o lease
+      // ainda cobre — por isso a falha aqui não pode derrubar o log de baixo.
+      await atualizarParcial(sessao_id, (p) => marcarFalha(p, j, motivo, new Date())).catch(
+        () => {},
+      );
+      console.error(`[janela] sessão ${sessao_id} janela ${j.n} falhou:`, e);
+      return;
+    }
+  }
 }
 
 /**
@@ -235,7 +319,17 @@ export async function extrairSessao(
   await atualizarSessao(sessao_id, { status: "extraindo" }, ["transcrito", "extraindo", "erro"]);
 
   try {
-    const extracao = await extrair(transcricao.valor);
+    // Forçar recalibra o caminho que **roda de verdade**, e não um paralelo:
+    // zera o acumulado e refaz janela por janela. Sem isso, calibrar o prompt
+    // exercitaria o passe único enquanto a gravação usa as janelas.
+    if (forcar) await zerarParcial(sessao_id);
+
+    await avancarJanelas(sessao_id, {
+      fechando: true,
+      ate: Date.now() + ORCAMENTO_JANELAS_MS,
+    });
+
+    const extracao = await propostaDaSessao(sessao_id, transcricao.valor);
 
     // A que está lá agora, lida antes de o PUT passar por cima dela. Só no
     // forçado: no caminho automático não existe proposta anterior nenhuma.
@@ -267,6 +361,49 @@ export async function extrairSessao(
     await atualizarSessao(sessao_id, { status: "erro" }, DE_ONDE_SE_CAI_EM_ERRO);
     return { status: "erro" };
   }
+}
+
+/**
+ * Quanto tempo a finalização dá às janelas que faltam fechar.
+ *
+ * O teto de cima é o `maxDuration` de 300 s da rota, dos quais até 150 s já
+ * podem ter ido nos blocos pendentes (`ESPERA_MAX_MS`). No caminho normal isto
+ * cobre uma janela de menos de dois minutos de fala e sobra; o número existe
+ * para o caso ruim, em que ele decide **quando desistir e cair no passe único**
+ * em vez de o `waitUntil` morrer sem deixar proposta nenhuma.
+ */
+export const ORCAMENTO_JANELAS_MS = 120_000;
+
+/**
+ * A proposta da sessão: a lista que as janelas acumularam, ou o passe único.
+ *
+ * O fallback é o seguro desta fatia. Janela que não fechou — modelo fora,
+ * limite de taxa que não cedeu, resposta sem JSON duas vezes — não pode custar
+ * a sessão: o passe único é o caminho de antes da 4.8, com o mesmo prompt e o
+ * mesmo parser, e no pior caso a espera volta a ser a de antes.
+ */
+async function propostaDaSessao(sessao_id: string, transcricao: Transcricao): Promise<Extracao> {
+  const m = await carregarManifest(sessao_id);
+  const janelas = janelasDe(m, { fechando: true });
+  const parcial = await carregarParcial(sessao_id);
+
+  if (todasProntas(parcial, janelas)) {
+    return montarExtracao(parcial, transcricao, await listarEntidades());
+  }
+
+  // Sem janela nenhuma não há o que ter falhado: é o manifest vazio, e o passe
+  // único é o caminho certo, não o de recuperação. Só o outro caso é erro.
+  if (janelas.length > 0) {
+    const faltando = janelas
+      .filter((j) => estadoDaJanela(parcial, j.n)?.estado !== "pronta")
+      .map((j) => j.n);
+    console.error(
+      `[janela] sessão ${sessao_id}: janela(s) ${faltando.join(", ")} não fecharam; ` +
+        `extraindo a sessão inteira num passe só. O motivo de cada uma está em ` +
+        `parcial.json e nas linhas [janela] acima.`,
+    );
+  }
+  return extrair(transcricao);
 }
 
 /**

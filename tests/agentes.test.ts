@@ -134,7 +134,7 @@ describe("sem override, nada muda", () => {
 
   it("a versão sai sem sufixo nenhum", () => {
     expect(versaoDoPrompt([])).toBe(PROMPT_VERSION);
-    expect(versaoDoPrompt([], null)).toBe("extracao-5");
+    expect(versaoDoPrompt([], null)).toBe("extracao-6");
   });
 
   it("resolver devolve a base e o modelo padrão, sem ir ao R2 pelo texto", async () => {
@@ -167,7 +167,7 @@ describe("as regras aprovadas continuam entrando antes do FORMATO", () => {
   });
 
   it("a versão com regra é a de antes: sufixo sem prefixo", () => {
-    expect(versaoDoPrompt([r])).toBe(`extracao-5+${hashDeRegras([r])}`);
+    expect(versaoDoPrompt([r])).toBe(`extracao-6+${hashDeRegras([r])}`);
   });
 });
 
@@ -181,7 +181,7 @@ describe("o carimbo diz por qual chave o hash resolve", () => {
 
   it("prompt editado e regra aprovada carregam os dois sufixos, nesta ordem", () => {
     const r = regra("Junte o que é o mesmo assunto.");
-    expect(versaoDoPrompt([r], "a1b2c3d4")).toBe(`extracao-5+pa1b2c3d4+${hashDeRegras([r])}`);
+    expect(versaoDoPrompt([r], "a1b2c3d4")).toBe(`extracao-6+pa1b2c3d4+${hashDeRegras([r])}`);
   });
 
   it("o hash sai do conteúdo: mesmo texto, mesmo hash; texto de volta, carimbo de volta", () => {
@@ -245,7 +245,7 @@ describe("com override", () => {
 
   it("ponteiro que não resolve texto cai na base — e o hash volta null junto", async () => {
     // Carimbar uma versão que não foi a usada é procedência falsa, que é pior
-    // que procedência nenhuma. O átomo tem de sair dizendo "extracao-5".
+    // que procedência nenhuma. O átomo tem de sair dizendo "extracao-6".
     vi.mocked(getJson).mockResolvedValue(null as never);
 
     const e = await resolver(
@@ -255,7 +255,7 @@ describe("com override", () => {
     );
     expect(e.prompt).toBe(BASE);
     expect(e.hash).toBeNull();
-    expect(versaoDoPrompt([], e.hash)).toBe("extracao-5");
+    expect(versaoDoPrompt([], e.hash)).toBe("extracao-6");
   });
 
   it("o modelo editado vence a variável de ambiente", async () => {
@@ -393,7 +393,7 @@ describe("R2 fora do ar não derruba agente nenhum", () => {
 
     const e = await resolver("extracao", { prompt: BASE, modelo: "zai/glm-5.3-flash" }, cfg);
     expect(e.prompt).toBe(BASE);
-    expect(versaoDoPrompt([], e.hash)).toBe("extracao-5");
+    expect(versaoDoPrompt([], e.hash)).toBe("extracao-6");
   });
 });
 

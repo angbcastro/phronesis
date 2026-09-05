@@ -25,7 +25,7 @@ export const runtime = "nodejs";
  * **Mandar o texto igual ao da base revoga.** Não é atalho: um override cujo
  * texto é byte a byte o do git não é uma edição, e guardá-lo faria o painel
  * dizer "editado" sobre um agente que está na base — além de carimbar
- * `extracao-5+p<hash>` num átomo produzido pelo prompt original.
+ * `extracao-6+p<hash>` num átomo produzido pelo prompt original.
  *
  * As duas guardas vivem aqui, no servidor, e não só na tela: regra que só vale
  * no navegador não é regra.

@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   PROMPT_VERSION,
   ancorar,
+  ancorarTrechos,
+  blocoDaJanela,
   isolarJson,
   montarPrompt,
   normalizarTipo,
+  orcamentoDaJanela,
   parsearResposta,
 } from "@/lib/extracao";
 import type { Atribuicoes } from "@/lib/resolucao";
@@ -286,5 +289,146 @@ describe("prompt não deixa o modelo comentar o material", () => {
     const p = montarPrompt("x");
     expect(p).toMatch(/NÃO COMENTE A TRANSCRIÇÃO/);
     expect(p).toContain('{"atomos":[],"entidades":[]}');
+  });
+});
+
+/**
+ * O bloco da janela (slice 4.8) — o que transforma o prompt de sessão inteira
+ * em prompt de trecho, sem mexer num byte de `INSTRUCOES_BASE`.
+ */
+describe("o bloco da janela", () => {
+  const propostos = [
+    { tipo: "ROTINA" as const, texto: "acordei cedo e pedalei", sobre: "eu" },
+    { tipo: "FATO" as const, texto: "o contrato atrasou", sobre: "Exxmed" },
+  ];
+
+  it("some quando a janela é a sessão inteira e não há acumulado", () => {
+    // É o que faz o arquivo importado, a gravação curta e o fallback de passe
+    // único continuarem recebendo o prompt de antes desta fatia.
+    expect(blocoDaJanela({ de_s: 0, ate_s: 900, unica: true, jaPropostos: [] })).toBe("");
+    expect(blocoDaJanela(undefined)).toBe("");
+  });
+
+  it("sem contexto, o prompt sai igual ao de sempre", () => {
+    const contexto = { de_s: 0, ate_s: 900, unica: true, jaPropostos: [] };
+    expect(montarPrompt("bla", [], undefined, contexto)).toBe(montarPrompt("bla"));
+  });
+
+  it("diz de que minutos a janela é, e que a fala continua depois", () => {
+    const b = blocoDaJanela({ de_s: 240, ate_s: 360, unica: false, jaPropostos: [] });
+    expect(b).toContain("dos minutos 4 a 6");
+    expect(b).toContain("a fala continua depois dele");
+  });
+
+  it("o orçamento é a proporção do prompt base, e escala com a duração", () => {
+    // A base pede 10 a 20 numa sessão de 15 min; a janela pede a fatia dela.
+    expect(orcamentoDaJanela(15 * 60)).toEqual([10, 20]);
+    expect(orcamentoDaJanela(2 * 60)).toEqual([1, 3]);
+    // Nunca zero: uma janela que pode render zero átomos não precisaria de teto,
+    // mas pedir "de 0 a 1" convida o modelo a não fazer nada.
+    expect(orcamentoDaJanela(5)[0]).toBe(1);
+    expect(orcamentoDaJanela(5)[1]).toBeGreaterThan(orcamentoDaJanela(5)[0]);
+  });
+
+  it("mostra o acumulado numerado — é o que o `ref` do estende endereça", () => {
+    const b = blocoDaJanela({ de_s: 120, ate_s: 240, unica: false, jaPropostos: propostos });
+    expect(b).toContain("0. [ROTINA] acordei cedo e pedalei (sobre: eu)");
+    expect(b).toContain("1. [FATO] o contrato atrasou (sobre: Exxmed)");
+  });
+
+  it("manda estender em vez de duplicar — é o que segura o volume da lista", () => {
+    const b = blocoDaJanela({ de_s: 120, ate_s: 240, unica: false, jaPropostos: propostos });
+    expect(b).toContain("estende");
+    expect(b).toMatch(/ROTINA, que é no máximo UMA/);
+  });
+
+  it("sem acumulado não fala de estender: não há o que estender", () => {
+    const b = blocoDaJanela({ de_s: 0, ate_s: 120, unica: false, jaPropostos: [] });
+    expect(b).toContain("dos minutos 0 a 2");
+    expect(b).not.toContain("estende");
+  });
+
+  it("o bloco entra antes do FORMATO, junto com as regras aprovadas", () => {
+    const p = montarPrompt("bla", [], undefined, {
+      de_s: 120,
+      ate_s: 240,
+      unica: false,
+      jaPropostos: propostos,
+    });
+    expect(p.indexOf("ESTA JANELA")).toBeLessThan(p.indexOf("\nFORMATO\n"));
+    expect(p.indexOf("NÃO COMENTE")).toBeLessThan(p.indexOf("ESTA JANELA"));
+  });
+});
+
+describe("estende", () => {
+  const comEstende = (itens: unknown[]) => JSON.stringify({ atomos: [], estende: itens });
+
+  it("resposta sem a chave não é erro — a janela 0 não tem o que estender", () => {
+    expect(parsearResposta(resposta([]))).toMatchObject({ estende: [] });
+  });
+
+  it("aceita a extensão que aponta para um átomo da lista", () => {
+    const r = parsearResposta(comEstende([{ ref: 1, texto: "novo texto", trechos: ["e mais isso"] }]), 3);
+    expect(r.estende).toEqual([{ ref: 1, texto: "novo texto", trechos: ["e mais isso"] }]);
+    expect(r.descartados).toHaveLength(0);
+  });
+
+  it("`ref` fora da faixa vira descarte, e não escrita no átomo errado", () => {
+    const r = parsearResposta(comEstende([{ ref: 5, texto: "x", trechos: [] }]), 2);
+    expect(r.estende).toEqual([]);
+    expect(r.descartados[0].motivo).toContain("não está na lista");
+  });
+
+  it("`ref` sem lista acumulada nenhuma é sempre inválida", () => {
+    expect(parsearResposta(comEstende([{ ref: 0, texto: "x", trechos: [] }])).estende).toEqual([]);
+  });
+
+  it("extensão que não acrescenta nada é descartada", () => {
+    const r = parsearResposta(comEstende([{ ref: 0, texto: "  ", trechos: [] }]), 1);
+    expect(r.estende).toEqual([]);
+    expect(r.descartados[0].motivo).toContain("não acrescenta nada");
+  });
+
+  it("só trecho novo, sem texto novo, é extensão legítima", () => {
+    const r = parsearResposta(comEstende([{ ref: 0, texto: "", trechos: ["mais um pedaço"] }]), 1);
+    expect(r.estende).toEqual([{ ref: 0, texto: "", trechos: ["mais um pedaço"] }]);
+  });
+});
+
+describe("ancoragem por janela", () => {
+  const t = transcricao("hoje o contrato da exxmed vai atrasar de novo e isso me irritou");
+  const cru: AtomoCru[] = [
+    {
+      texto: "Isso me irritou",
+      tipo: "SENTIMENTO",
+      sobre: "eu",
+      menciona: [],
+      trechos: ["isso me irritou"],
+    },
+  ];
+
+  it("o deslocamento continua a numeração da janela anterior", () => {
+    // Sem ele, a janela 1 numeraria a partir do zero e o `MERGE` do confirmar
+    // sobrescreveria os átomos da janela 0 — e só na hora de confirmar.
+    const [a] = ancorar("s1", cru, t, "m", novas(cru), PROMPT_VERSION, 7);
+    expect(a.id).toBe("s1-7");
+    expect(a.indice).toBe(7);
+  });
+
+  it("sem deslocamento, nada muda", () => {
+    expect(ancorar("s1", cru, t, "m", novas(cru))[0].id).toBe("s1-0");
+  });
+
+  it("o trecho de um estende é casado com o áudio da própria janela", () => {
+    const [tr] = ancorarTrechos(["isso me irritou"], t);
+    expect(tr.ancora).toBe("exata");
+    expect(tr.inicio_s).not.toBeNull();
+  });
+
+  it("trecho que não está na janela fica sem âncora, como qualquer outro", () => {
+    expect(ancorarTrechos(["nada disso foi dito aqui"], t)[0]).toMatchObject({
+      ancora: "nenhuma",
+      inicio_s: null,
+    });
   });
 });
