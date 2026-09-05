@@ -130,18 +130,16 @@ export async function fundir(
     { vencedora },
   );
 
-  // O alias. `status` e a aresta são o que faz toda leitura pular este nó.
+  // O alias. `status` e a aresta são o que faz toda leitura pular este nó, e são
+  // as duas únicas coisas que a fusão carimba: o schema canônico
+  // (`db/migrations/004`) declara `status`, e propriedade que não está lá não
+  // se inventa a partir do código (`CLAUDE.md`).
   await query(
     `MATCH (p:Entidade { nome_normalizado: $perdedora })
      MATCH (v:Entidade { nome_normalizado: $vencedora })
-     SET p.status = $fundida, p.fundida_em = $agora
+     SET p.status = $fundida
      MERGE (p)-[:FUNDIDA_EM]->(v)`,
-    {
-      vencedora,
-      perdedora,
-      fundida: STATUS_ENTIDADE_FUNDIDA,
-      agora: new Date().toISOString(),
-    },
+    { vencedora, perdedora, fundida: STATUS_ENTIDADE_FUNDIDA },
   );
 
   return { vencedora, perdedora, arestas_migradas: migrados };
@@ -196,7 +194,7 @@ export async function renomear(chaveAtual: string, nomeNovo: string): Promise<vo
      SET e.nome = $novo, e.nome_normalizado = $chaveNova
      CREATE (alias:Entidade {
        id: $idAlias, nome: nomeVelho, nome_normalizado: $atual,
-       criado_em: $agora, status: $fundida, fundida_em: $agora
+       criado_em: $agora, status: $fundida
      })
      MERGE (alias)-[:FUNDIDA_EM]->(e)`,
     {
