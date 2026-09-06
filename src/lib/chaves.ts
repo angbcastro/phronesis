@@ -5,6 +5,7 @@
  *   sessoes/<id>/chunk_000.webm   (gravado no navegador)
  *   sessoes/<id>/chunk_000.opus   (arquivo importado — a extensão é a de origem)
  *   sessoes/<id>/chunk_000.json
+ *   sessoes/<id>/candidatas_000.json
  *   sessoes/<id>/transcricao.json
  *   sessoes/<id>/parcial.json
  *   sessoes/<id>/extracao.json
@@ -129,3 +130,14 @@ export const chaveChunkTranscricao = (id: string, i: number) =>
 export function idValido(id: string): boolean {
   return /^[0-9a-z]{8,40}$/.test(id);
 }
+
+/**
+ * As candidatas que o grafo aponta para um bloco (slice 4.9).
+ *
+ * **Espelho exato de `chunk_NNN.json`**, e de propósito: a existência do objeto
+ * é a trava de idempotência do RAG, como a do bloco é a da transcrição (regra
+ * 4). Um bloco já consultado não é reconsultado nem repago, por mais vezes que
+ * `/pronto` e `/finalizar` passem por ele.
+ */
+export const chaveChunkCandidatas = (id: string, i: number) =>
+  `${prefixoSessao(id)}/candidatas_${indiceChunk(i)}.json`;
