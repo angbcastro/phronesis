@@ -196,6 +196,10 @@ export function aplicarJanela(
       modelo: r.modelo,
       prompt_version_resolucao: r.prompt_version_resolucao,
       modelo_resolucao: r.modelo_resolucao,
+      // O dossiê que esta janela viu (4.9) — procedência, e a resposta a "por
+      // que ele apontou aquele nó" três meses depois. O grafo de hoje não
+      // reconstrói a foto de então.
+      candidatas: r.candidatas,
     },
   );
 }

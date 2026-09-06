@@ -19,7 +19,10 @@ import {
   chaveTranscricao,
 } from "./chaves";
 import { listarEntidades } from "./entidades";
+import type { EntidadeDoGrafo } from "./entidades";
 import { extrair, extrairJanela } from "./extracao";
+import { candidatasDaJanela, dossieDaJanela, entidadesJaAtribuidas } from "./recuperacao";
+import type { Dossie } from "./recuperacao";
 import {
   aplicarJanela,
   atualizarParcial,
@@ -47,7 +50,14 @@ import { atualizarSessao, buscarSessao } from "./sessoes";
 import { temTranscricao } from "./estados";
 import { transcrever } from "./stt";
 import { concatenar, prefixoContiguo } from "./transcricao";
-import type { Extracao, StatusSessao, Transcricao, TranscricaoBloco } from "./tipos";
+import type {
+  AtomoProposto,
+  Extracao,
+  Janela,
+  StatusSessao,
+  Transcricao,
+  TranscricaoBloco,
+} from "./tipos";
 
 /**
  * Transcreve um bloco e grava `chunk_NNN.json`.
@@ -123,6 +133,12 @@ export async function transcricaoParcial(sessao_id: string): Promise<{ texto: st
  * recebe no prompt o que a `n-1` propôs — é assim que ela estende um átomo em
  * vez de duplicá-lo, e é o que segura o volume da lista sem passada de costura.
  * Pular uma janela quebraria essa corrente em silêncio.
+ *
+ * **Desde a 4.9 ela monta o dossiê antes de extrair** (§4.14): as candidatas dos
+ * blocos daquela janela, calculando as que faltarem — catch-up idempotente,
+ * dentro do `ate` que ela já recebe. `fechando` é o que autoriza refazer o bloco
+ * cuja camada semântica caiu, e é por isso que esse conserto acontece uma vez, no
+ * `/finalizar`, e não a cada passada.
  */
 export async function avancarJanelas(
   sessao_id: string,
@@ -152,12 +168,29 @@ export async function avancarJanelas(
     try {
       const blocos = await blocosProntos(sessao_id, indicesDa(j));
       const trecho = concatenar(sessao_id, blocos);
-      const r = await extrairJanela(trecho, { jaPropostos: parcial.atomos, unica, ate });
+
+      // O grafo lido uma vez por janela, e usado duas: aqui, para montar o
+      // dossiê, e dentro de `extrairJanela`, para a resolução. Sem tratamento
+      // próprio de propósito — o catálogo já era condição da resolução antes
+      // desta fatia, e uma janela que não consegue lê-lo falha e é retentada,
+      // como sempre foi. O que degrada em silêncio é a busca **dentro** dele
+      // (`candidatasDaJanela`), não a leitura.
+      const catalogo = await listarEntidades();
+      const dossie = await montarDossie(sessao_id, j, parcial.atomos, catalogo, fechando);
+
+      const r = await extrairJanela(trecho, {
+        jaPropostos: parcial.atomos,
+        unica,
+        ate,
+        dossie,
+        catalogo,
+      });
 
       await atualizarParcial(sessao_id, (p) => aplicarJanela(p, j, r, new Date()));
       console.log(
         `[janela] sessão ${sessao_id} janela ${j.n} (blocos ${j.de}-${j.ate}): ` +
-          `+${r.novos.length} átomo(s), ${r.estende.length} estendido(s)`,
+          `+${r.novos.length} átomo(s), ${r.estende.length} estendido(s), ` +
+          `dossiê de ${dossie.length} entidade(s)`,
       );
     } catch (e) {
       const motivo = e instanceof Error ? e.message : String(e);
@@ -170,6 +203,37 @@ export async function avancarJanelas(
       console.error(`[janela] sessão ${sessao_id} janela ${j.n} falhou:`, e);
       return;
     }
+  }
+}
+
+/**
+ * O dossiê de uma janela: quem o grafo acha que ela cita (slice 4.9).
+ *
+ * **Nada aqui pode custar a janela.** Dossiê vazio faz o extrator se comportar
+ * exatamente como na 4.8, então qualquer tropeço na busca vira lista vazia com
+ * uma linha `[candidatas]` no log — a mesma precedência do vetor (§4.10). O que
+ * **não** é engolido é a leitura do catálogo, que já era condição da resolução
+ * antes desta fatia e continua sendo de quem chama.
+ */
+async function montarDossie(
+  sessao_id: string,
+  j: Janela,
+  jaPropostos: readonly AtomoProposto[],
+  catalogo: EntidadeDoGrafo[],
+  fechando: boolean,
+): Promise<Dossie> {
+  try {
+    return dossieDaJanela({
+      blocos: await candidatasDaJanela(sessao_id, indicesDa(j), {
+        catalogo,
+        refazerDegradado: fechando,
+      }),
+      jaAtribuidas: entidadesJaAtribuidas(jaPropostos),
+      catalogo,
+    });
+  } catch (e) {
+    console.error(`[candidatas] sessão ${sessao_id} janela ${j.n}: sem dossiê:`, e);
+    return [];
   }
 }
 

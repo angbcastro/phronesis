@@ -659,6 +659,17 @@ export interface EstadoJanela extends Janela {
   modelo?: string;
   prompt_version_resolucao?: string | null;
   modelo_resolucao?: string | null;
+  /**
+   * As chaves do dossiê que esta janela viu (slice 4.9).
+   *
+   * É procedência (regra 7), e é o que responde três meses depois "por que ele
+   * apontou aquele nó": o dossiê é uma foto do grafo no momento da janela, e o
+   * grafo de hoje não a reconstrói.
+   *
+   * Opcional em JSON do R2: parcial escrito antes da 4.9 não tem, e nada a
+   * migrar — ausente é "esta janela rodou sem dossiê", que é o certo.
+   */
+  candidatas?: string[];
   /** Só em `falhou`, e é o que aparece no log `[janela]`. */
   motivo?: string;
 }

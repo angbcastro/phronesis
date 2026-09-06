@@ -34,6 +34,7 @@ import { comEsperaDeLimite, ehLimiteDeTaxa } from "./limite";
 import { diagnostico, garantirGateway, modeloExtracao } from "./modelos";
 import { criarLocalizador } from "./offsets";
 import { carimbo, efetivo } from "./overrides";
+import type { Dossie } from "./recuperacao";
 import { sobreDe } from "./referencias";
 import { hashDeRegras, regras } from "./regras";
 import { resolverReferencias } from "./resolucao";
@@ -596,6 +597,11 @@ export interface ResultadoDaJanela {
   prompt_version_resolucao: string | null;
   modelo_resolucao: string | null;
   catalogo: EntidadeDoGrafo[];
+  /**
+   * As chaves do dossiê que esta janela recebeu (slice 4.9). Vai carimbada no
+   * `EstadoJanela` — é o que diz depois com que lista na mão ela decidiu.
+   */
+  candidatas: string[];
 }
 
 export interface OpcoesDeJanela {
@@ -605,6 +611,17 @@ export interface OpcoesDeJanela {
   unica?: boolean;
   /** Prazo de quem chama, repassado à espera de rate limit (`limite.ts`). */
   ate?: number;
+  /**
+   * Quem o grafo acha que esta janela cita (slice 4.9). Vazio ou ausente faz a
+   * chamada sair **byte a byte igual à da 4.8** — é o mesmo no-op que
+   * `blocoDeRegras([]) === ""` garante desde a 4.6.
+   */
+  dossie?: Dossie;
+  /**
+   * O catálogo que quem chama já leu. `pipeline.ts` precisa dele para montar o
+   * dossiê, e sem isto a mesma consulta sairia duas vezes por janela.
+   */
+  catalogo?: EntidadeDoGrafo[];
 }
 
 /** Onde a janela começa e termina, em segundos da sessão. */
@@ -637,7 +654,8 @@ export async function extrairJanela(
 ): Promise<ResultadoDaJanela> {
   garantirGateway(); // falha cedo, antes de mandar a transcrição para qualquer lugar
 
-  const { jaPropostos = [], unica = false, ate } = opcoes;
+  const { jaPropostos = [], unica = false, ate, dossie = [], catalogo: catalogoLido } = opcoes;
+  const candidatas = dossie.map((d) => d.entidade.nome_normalizado);
 
   if (janela.texto.trim() === "") {
     if (unica) throw new ExtracaoError("transcrição vazia — não há o que extrair");
@@ -651,6 +669,7 @@ export async function extrairJanela(
       prompt_version_resolucao: null,
       modelo_resolucao: null,
       catalogo: [],
+      candidatas,
     };
   }
 
@@ -730,8 +749,9 @@ export async function extrairJanela(
 
   // Lê o grafo; não escreve nada nele (regra 5). O catálogo é o mesmo objeto que
   // a tela de manutenção mostra — inclusive os três campos de perfil, que são o
-  // que o agente 2 usa para desambiguar.
-  const catalogo = await listarEntidades();
+  // que o agente 2 usa para desambiguar. Quem montou o dossiê já o leu (4.9), e
+  // reler seria pagar duas vezes pela mesma pergunta.
+  const catalogo = catalogoLido ?? (await listarEntidades());
   const atribuicoes = await resolverReferencias(atomos, catalogo, { jaPropostos: anteriores });
 
   return {
@@ -756,6 +776,7 @@ export async function extrairJanela(
     prompt_version_resolucao: atribuicoes.prompt_version,
     modelo_resolucao: atribuicoes.modelo,
     catalogo,
+    candidatas,
   };
 }
 

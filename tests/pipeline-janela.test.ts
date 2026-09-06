@@ -21,9 +21,13 @@ vi.mock("@/lib/extracao", () => ({
   PROMPT_VERSION: "extracao-6",
 }));
 
-vi.mock("@/lib/entidades", () => ({
+// O módulo real, com as duas idas ao banco trocadas: `acharPorChave` e a
+// travessia de alias continuam valendo, que é o que o dossiê da 4.9 usa.
+vi.mock("@/lib/entidades", async (original) => ({
+  ...(await original<typeof import("@/lib/entidades")>()),
   listarEntidades: vi.fn(async () => []),
   agregarCandidatas: vi.fn(() => []),
+  candidatosSemanticos: vi.fn(async (textos: readonly string[]) => textos.map(() => [])),
 }));
 
 vi.mock("@/lib/manifest", () => ({
@@ -42,8 +46,11 @@ vi.mock("@/lib/sessoes", () => ({
 
 import { avancarJanelas, extrairSessao } from "@/lib/pipeline";
 import { extrair, extrairJanela } from "@/lib/extracao";
+import { listarEntidades } from "@/lib/entidades";
 import { carregarManifest } from "@/lib/manifest";
 import { getJson, putJson } from "@/lib/r2";
+import type { EntidadeDoGrafo } from "@/lib/entidades";
+import type { Dossie } from "@/lib/recuperacao";
 import type { Parcial, Transcricao } from "@/lib/tipos";
 
 const CHAVE_PARCIAL = "sessoes/s1/parcial.json";
@@ -109,6 +116,8 @@ const resultado = (novos: number, extra: Record<string, unknown> = {}) => ({
   prompt_version_resolucao: null,
   modelo_resolucao: null,
   catalogo: [],
+  candidatas: [],
+  ...extra,
 });
 
 const parcial = () => r2.get(CHAVE_PARCIAL)?.valor as Parcial | undefined;
@@ -198,6 +207,68 @@ describe("a janela fecha durante a gravação", () => {
 
     expect(extrairJanela).toHaveBeenCalledTimes(1);
     expect(parcial()?.atomos).toHaveLength(2);
+  });
+});
+
+describe("o dossiê da janela (slice 4.9)", () => {
+  /** O nó que o STT nunca escreve certo — o caso medido em 04/09. */
+  const GIAMPAOLO: EntidadeDoGrafo = {
+    id: "e1",
+    nome: "Giampaolo Lepore",
+    nome_normalizado: "giampaolo lepore",
+    chaves: ["giampaolo lepore"],
+    tipo: "Pessoa",
+    sessoes: 3,
+    atomos: 7,
+    aliases: [],
+    perfil: { contexto: "sócio na Adapta", pode_ajudar_com: "", fizemos_juntos: "" },
+  };
+
+  const dossieDaChamada = (n = 0): Dossie =>
+    (vi.mocked(extrairJanela).mock.calls[n][1] as { dossie: Dossie }).dossie;
+
+  beforeEach(() => {
+    vi.mocked(listarEntidades).mockResolvedValue([GIAMPAOLO] as never);
+    // O bloco 0 diz "giam", que é o que o prefixo alcança e a camada de string
+    // da resolução não alcançaria nunca.
+    r2.set("sessoes/s1/chunk_000.json", {
+      valor: { ...bloco(0), texto: "falei com o giam sobre o contrato" },
+      etag: "b",
+    });
+  });
+
+  it("a janela recebe o nó que o bloco cita, ainda que eu tenha dito 'giam'", async () => {
+    await avancarJanelas("s1");
+    expect(dossieDaChamada().map((d) => d.entidade.nome)).toEqual(["Giampaolo Lepore"]);
+  });
+
+  it("as candidatas do bloco ficam gravadas, e o bloco não é reconsultado", async () => {
+    await avancarJanelas("s1");
+    expect(r2.get("sessoes/s1/candidatas_000.json")).toBeDefined();
+
+    const antes = r2.get("sessoes/s1/candidatas_000.json");
+    await avancarJanelas("s1");
+    expect(r2.get("sessoes/s1/candidatas_000.json")).toBe(antes);
+  });
+
+  it("as chaves que a janela viu ficam no parcial — é procedência (regra 7)", async () => {
+    vi.mocked(extrairJanela).mockResolvedValue(
+      resultado(1, { candidatas: ["giampaolo lepore"] }) as never,
+    );
+    await avancarJanelas("s1");
+    expect(parcial()?.janelas[0].candidatas).toEqual(["giampaolo lepore"]);
+  });
+
+  it("busca que estoura não custa a janela: o dossiê fica vazio e a extração vai", async () => {
+    // Sem o texto do bloco não há o que procurar — e isso não é falha da janela.
+    r2.delete("sessoes/s1/chunk_000.json");
+    r2.delete("sessoes/s1/chunk_001.json");
+    r2.delete("sessoes/s1/chunk_002.json");
+    r2.delete("sessoes/s1/chunk_003.json");
+
+    await avancarJanelas("s1");
+    expect(extrairJanela).toHaveBeenCalledTimes(1);
+    expect(dossieDaChamada()).toEqual([]);
   });
 });
 

@@ -5,6 +5,7 @@ import { chaveChunkAudio } from "@/lib/chaves";
 import { atualizarManifest, registrarChunk } from "@/lib/manifest";
 import { existe } from "@/lib/r2";
 import { avancarJanelas, transcreverBloco } from "@/lib/pipeline";
+import { recuperarCandidatas } from "@/lib/recuperacao";
 import { atualizarSessao } from "@/lib/sessoes";
 import { erro, parametros } from "@/lib/rotas";
 import { DURACAO_CHUNK_S } from "@/lib/tipos";
@@ -58,13 +59,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; i:
 
   await atualizarSessao(id, { chunks_total: manifest.chunks.length, duracao_s }, ["gravando"]);
 
-  // Transcrever o bloco e, na sequência, fechar as janelas que ele permitiu
-  // fechar. As duas coisas no mesmo `waitUntil` e não em dois: a janela precisa
-  // deste bloco já transcrito, e o cliente não espera por nenhuma das duas —
-  // ele volta a gravar. Falhar aqui não derruba a gravação: o áudio já está no
-  // R2, e `/finalizar` retenta o que ficou para trás.
+  // Transcrever o bloco, perguntar ao grafo quem ele cita, e só então fechar as
+  // janelas que ele permitiu fechar. As três coisas no mesmo `waitUntil` e não
+  // em três: cada uma precisa da anterior — a busca precisa do texto, a janela
+  // precisa das candidatas dos blocos dela —, e o cliente não espera por nenhuma
+  // delas, ele volta a gravar. Falhar aqui não derruba a gravação: o áudio já
+  // está no R2, e `/finalizar` retenta o que ficou para trás.
+  //
+  // O passo do meio **nunca** derruba os outros dois (slice 4.9): sem
+  // `candidatas_NNN.json` o dossiê fica menor, e dossiê vazio faz o extrator se
+  // comportar exatamente como na 4.8. É a mesma precedência do vetor — nada no
+  // caminho da busca impede uma gravação.
   waitUntil(
     transcreverBloco(id, i)
+      .then(() =>
+        recuperarCandidatas(id, i).catch((e) => {
+          console.error(`[candidatas] sessão ${id} bloco ${i}:`, e);
+          return null;
+        }),
+      )
       .then(() => avancarJanelas(id))
       .catch((e) => {
         console.error(`[stt] sessão ${id} bloco ${i} falhou:`, e);

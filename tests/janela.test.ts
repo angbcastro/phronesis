@@ -90,6 +90,7 @@ function resultado(parcial: Partial<ResultadoDaJanela> = {}): ResultadoDaJanela 
     prompt_version_resolucao: null,
     modelo_resolucao: null,
     catalogo: [],
+    candidatas: [],
     ...parcial,
   };
 }
