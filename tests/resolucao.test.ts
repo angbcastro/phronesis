@@ -263,11 +263,76 @@ describe("o agente atribui menção por menção", () => {
 });
 
 describe("resposta ruim degrada para dúvida, nunca para atribuição errada", () => {
-  it("menção que o agente não respondeu volta incerta", async () => {
+  it("resposta sem julgamento nenhum marca falha e vai ao log (A1)", async () => {
+    // Ele respondeu, e a chamada foi paga. Dizer "não respondeu" aqui é a
+    // etiqueta errada, e é ela que eu leio para decidir se o agente funciona.
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
     responder({ referencias: [], perfil: [] });
     const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
+
     expect(r.sobre[0].certo).toBe(false);
-    expect(r.sobre[0].motivo).toMatch(/não respondeu/);
+    expect(r.sobre[0].motivo).toMatch(/não julgou nenhuma menção/);
+    expect(log.mock.calls.map((c) => String(c[0])).join(" | ")).toContain("[resolucao]");
+    log.mockRestore();
+  });
+
+  it("a menção que ele pulou continua dizendo que ele não respondeu por ela (C1)", async () => {
+    // Duas pendentes, uma julgada: aqui o silêncio é mesmo daquela menção, e a
+    // frase antiga é a verdadeira.
+    responder({ referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
+    const r = await resolverReferencias(
+      [atomo("Rafa"), atomo("Rafa", { texto: "Fiz uma call com o Rafa" })],
+      [RAFFA, RAPHA],
+    );
+
+    expect(r.sobre[0].entidade).toBe("Raffa");
+    expect(r.sobre[1].motivo).toMatch(/não respondeu por esta menção/);
+  });
+
+  it("resposta em array solto é lida, não engolida (A1)", async () => {
+    // Sem a tolerância ao `[`, isto pegava do primeiro `{` ao último `}`,
+    // devolvia um objeto sem `referencias` e virava silêncio pago.
+    chamar.mockResolvedValue({
+      text: JSON.stringify([{ n: 1, entidade: "raffa", certo: true, motivo: "slackline" }]),
+      response: { modelId: "zai/glm-5.3-flash" },
+    } as never);
+
+    const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
+    expect(r.sobre[0]).toMatchObject({ entidade: "Raffa", certo: true });
+  });
+
+  it("chave fora dos candidatos tem motivo próprio, e nomeia a chave (C1)", async () => {
+    responder({ referencias: [{ n: 1, entidade: "pedro", certo: true, motivo: "" }], perfil: [] });
+    const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
+
+    expect(r.sobre[0].certo).toBe(false);
+    expect(r.sobre[0].motivo).toContain("pedro");
+    expect(r.sobre[0].motivo).not.toMatch(/não respondeu/);
+  });
+
+  it('"NOVA" que colide com um nó existente volta incerta (C2)', async () => {
+    // A constraint de `nome_normalizado` (migration 002) impede o segundo nó:
+    // o átomo vai cair no que já existe, e o agente tinha dito o contrário.
+    // Sem esta marca, o sistema fazia o oposto do que o agente disse em
+    // silêncio, com `certo: true`.
+    responder({ referencias: [{ n: 1, entidade: "NOVA", certo: true, motivo: "" }], perfil: [] });
+    const r = await resolverReferencias([atomo("Rapha")], [RAFFA, RAPHA]);
+
+    expect(r.sobre[0].certo).toBe(false);
+    expect(r.sobre[0].motivo).toContain("Rapha");
+    // E o nome escolhido não se oferece como alternativa de si mesmo.
+    expect(r.sobre[0].alternativas).toEqual(["Raffa"]);
+  });
+
+  it("o fallback do exato leva a evidência dos outros candidatos (C3)", async () => {
+    // A camada `exato` tem sempre `porque: []`, e `??` não passa por `[]`:
+    // a evidência dos vizinhos sumia justo quando eu tenho de decidir na mão.
+    semantica.mockImplementation(async (textos) => textos.map(() => [porVizinhos("raffa")]));
+    responder({ referencias: [], perfil: [] });
+    const r = await resolverReferencias([atomo("Rapha")], [RAFFA, RAPHA]);
+
+    expect(r.sobre[0]).toMatchObject({ entidade: "Rapha", conhecida: true, certo: false });
+    expect(r.sobre[0].porque.map((e) => e.atomo_id)).toEqual(["velho-0"]);
   });
 
   it("entidade inventada, fora dos candidatos, não é aceita", async () => {
@@ -296,6 +361,53 @@ describe("resposta ruim degrada para dúvida, nunca para atribuição errada", (
     chamar.mockResolvedValue({ text: "desculpe, não consegui" } as never);
     const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
     expect(r.sobre[0].certo).toBe(false);
+  });
+});
+
+/**
+ * O que a slice 4.8.1 acrescentou de trava: a mesma pergunta não se paga duas
+ * vezes dentro do mesmo átomo, e a chave do Gateway se confere antes da
+ * primeira coisa que sai por ele.
+ */
+describe("a mesma pergunta não vai duas vezes", () => {
+  it("duas menções iguais no mesmo átomo viram uma pergunta só (D2)", async () => {
+    responder({ referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
+    const r = await resolverReferencias(
+      [atomo("eu", { menciona: ["Rafa", "rafa"] })],
+      [no("eu"), RAFFA, RAPHA],
+    );
+
+    const prompt = String((chamar.mock.calls[0][0] as { prompt: string }).prompt);
+    expect(prompt).toContain("1. no átomo 0");
+    expect(prompt).not.toContain("2. no átomo 0");
+
+    // A resposta vale para as duas posições, e cada uma guarda a grafia dela.
+    expect(r.menciona[0].map((m) => m.entidade)).toEqual(["Raffa", "Raffa"]);
+    expect(r.menciona[0].map((m) => m.citado)).toEqual(["Rafa", "rafa"]);
+  });
+
+  it("entre átomos elas continuam duas — é o ponto inteiro da slice 4", async () => {
+    responder({ referencias: [], perfil: [] });
+    await resolverReferencias(
+      [atomo("Rafa"), atomo("Rafa", { texto: "Fiz uma call com o Rafa" })],
+      [RAFFA, RAPHA],
+    );
+
+    const prompt = String((chamar.mock.calls[0][0] as { prompt: string }).prompt);
+    expect(prompt).toContain("1. no átomo 0");
+    expect(prompt).toContain("2. no átomo 1");
+  });
+
+  it("a chave do Gateway é conferida antes de embutir, não depois (E2)", async () => {
+    delete process.env.AI_GATEWAY_API_KEY;
+    await expect(resolverReferencias([atomo("Isinha")], [no("Isinha")])).rejects.toThrow();
+    expect(semantica).not.toHaveBeenCalled();
+  });
+
+  it("catálogo vazio não exige a chave: por ali nada sai pelo Gateway", async () => {
+    delete process.env.AI_GATEWAY_API_KEY;
+    const r = await resolverReferencias([atomo("Marina")], []);
+    expect(r.sobre[0].entidade).toBe("Marina");
   });
 });
 
@@ -391,6 +503,12 @@ describe("mecânica", () => {
   it("aceita JSON embrulhado em cerca de markdown", () => {
     const r = parsearResposta('```json\n{"referencias":[{"n":1}],"perfil":[]}\n```');
     expect(r.referencias).toHaveLength(1);
+  });
+
+  it("array solto é a lista de julgamentos, como na extração", () => {
+    const r = parsearResposta('[{"n":1,"entidade":"raffa","certo":true,"motivo":"x"}]');
+    expect(r.referencias).toHaveLength(1);
+    expect(r.perfil).toEqual([]);
   });
 
   it("resposta sem JSON nenhum estoura com o que veio junto", () => {

@@ -1095,15 +1095,48 @@ dúvida mataria os 60 s da revisão. "Ignorar é sempre uma saída válida"
 
 | O que aconteceu | O que o sistema faz |
 |---|---|
-| o agente não respondeu por uma menção | `certo: false`, com o motivo dizendo isso |
-| respondeu uma entidade fora dos candidatos | idem, e a resposta é descartada |
+| o agente julgou outras menções e não esta | `certo: false`, com o motivo dizendo isso |
+| respondeu uma chave fora dos candidatos **daquela** menção | idem, e o motivo **nomeia a chave que veio** — a resposta é descartada, mas a frase não afirma silêncio onde houve resposta |
+| respondeu, e **nenhum** julgamento veio | todas as pendentes voltam `certo: false` dizendo que ele respondeu sem julgar, e `[resolucao]` no log leva o `diagnostico()` e uma amostra da resposta crua |
 | o agente falhou ou veio sem JSON | todas as pendentes voltam `certo: false`, com `[resolucao]` no log — e o mesmo `diagnostico()` da extração junto, porque o modo de falha é o mesmo |
+
+As três frases são diferentes de propósito (4.8.1): a do meio existia como "o
+agente não respondeu por esta menção" nos três casos, e era ela que eu lia para
+decidir se o agente estava funcionando. A terceira linha é o instrumento que
+faltava — sem ela, uma resposta que o parser não entende sai paga e muda para
+"ninguém respondeu". `parsearResposta` também passou a aceitar **array solto**,
+como `isolarJson` na extração: `[{"n":1,…}]` era lido do primeiro `{` ao último
+`}` e virava um objeto sem `referencias`, ou seja, uma janela inteira decidida
+sem segunda opinião e sem uma linha de log.
 
 Falha do agente **não derruba a extração**, que já foi paga: a proposta abre com
 as dúvidas destacadas e eu escolho na mão. E o fallback é sempre o casamento
 exato quando existe, ou entidade nova quando não — **nunca o parecido**. Duas
 entidades a mais eu conserto em `/entidades`; fundir duas pessoas por um palpite
-não tem desfazer.
+não tem desfazer. A evidência que vai junto do fallback é a do **primeiro
+candidato que tem alguma**, e não a do exato: a camada `exato` nunca traz
+`porque`, então o `??` de antes apagava a evidência dos vizinhos justamente no
+caso em que eu preciso dela para decidir.
+
+**`NOVA` que colide com um nó existente também é dúvida.** Quando o agente
+responde `NOVA` e a grafia citada já é o `nome_normalizado` de alguém, o
+confirmar **não** cria um segundo nó — a constraint da migration 002 não deixa,
+`agregarCandidatas` remapeia e o átomo cai no nó que existe. Ou seja, o agente
+diz "é outra pessoa" e o sistema faz o oposto. A causa é legítima e fica; o que
+mudou é o sinal: `certo: false`, com o motivo nomeando o conflito, que é o que
+me manda renomear uma das duas.
+
+**Duas menções iguais dentro do mesmo átomo viram uma pergunta só.** Elas têm a
+mesma lista de candidatos por construção — as camadas de string olham o citado,
+as semânticas são calculadas por átomo —, então numerá-las duas vezes pagava a
+mesma pergunta duas vezes e ainda admitia duas respostas diferentes para a mesma
+coisa. A resposta única vale para as duas posições, cada uma guardando a grafia
+dela. **Entre átomos elas continuam duas**: é o ponto inteiro da slice 4.
+
+A conferência da chave do Gateway (`garantirGateway()`) acontece **antes de
+embutir**, e não só no ramo com pendentes: embutir o texto do átomo já é tráfego
+de modelo. Catálogo vazio continua não exigindo chave nenhuma — por ali nada sai
+pelo Gateway.
 
 ### 4.9 O perfil, e o agente 3 (`perfil-1`)
 

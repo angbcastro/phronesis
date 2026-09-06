@@ -374,6 +374,19 @@ interface Pendente {
   n: number;
   mencao: Mencao;
   candidatos: Candidato[];
+  /**
+   * Todas as menções que esta pergunta responde — a representada e as iguais a
+   * ela **no mesmo átomo** (slice 4.8.1).
+   *
+   * Duas menções com a mesma grafia dentro do mesmo átomo têm, por construção,
+   * a mesma lista de candidatos: as camadas de string olham o citado e as
+   * semânticas são calculadas por átomo. Numerá-las duas vezes pagava a mesma
+   * pergunta duas vezes e ainda admitia duas respostas diferentes para a mesma
+   * coisa. **Entre átomos elas não colapsam** — é o ponto inteiro da slice 4.
+   *
+   * Ausente é a menção sozinha: quem monta prompt em teste não precisa dela.
+   */
+  iguais?: Mencao[];
 }
 
 /**
@@ -486,11 +499,28 @@ export interface RespostaResolucao {
   perfil: MarcaCru[];
 }
 
-/** Mesma tolerância da extração: cerca de markdown, frase antes, array solto. */
+/**
+ * Mesma tolerância da extração (`isolarJson`), e agora de verdade: cerca de
+ * markdown, frase antes, **e array solto**.
+ *
+ * O comentário anterior prometia o array e o código não entregava: procurando
+ * só `{`, uma resposta `[{"n":1,…}]` não estourava — pegava do primeiro `{` ao
+ * último `}` e devolvia um julgamento único sem `referencias`, ou seja, duas
+ * listas vazias. A chamada tinha sido paga, o agente tinha respondido, e cada
+ * menção saía com "o agente não respondeu por esta menção". Promessa que o
+ * código não cumpre é pior que limite declarado: ela esconde o modo de falha.
+ *
+ * Array solto é lido como a lista de julgamentos sem o envelope — é o que o
+ * modelo omite quando omite alguma coisa, e é o que o `perfil` vazio custa
+ * nada em assumir.
+ */
 export function parsearResposta(bruto: string): RespostaResolucao {
   const semCerca = bruto.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "");
-  const inicio = semCerca.indexOf("{");
-  const fim = semCerca.lastIndexOf("}");
+
+  // Objeto ou lista solta, o que vier primeiro — igual à extração.
+  const aberturas = [semCerca.indexOf("{"), semCerca.indexOf("[")].filter((i) => i >= 0);
+  const inicio = aberturas.length === 0 ? -1 : Math.min(...aberturas);
+  const fim = inicio === -1 ? -1 : semCerca.lastIndexOf(semCerca[inicio] === "{" ? "}" : "]");
   if (inicio === -1 || fim <= inicio) {
     throw new ResolucaoError(`resposta sem JSON reconhecível: ${bruto.slice(0, AMOSTRA_ERRO)}`);
   }
@@ -504,6 +534,10 @@ export function parsearResposta(bruto: string): RespostaResolucao {
         `Vieram ${bruto.length} caractere(s): ${bruto.slice(0, AMOSTRA_ERRO)}`,
     );
   }
+
+  // A lista solta é a de julgamentos: é a que o prompt pede primeiro, e a que
+  // o modelo devolve quando devolve só uma.
+  if (Array.isArray(cru)) return { referencias: cru as JulgamentoCru[], perfil: [] };
 
   const obj = (cru ?? {}) as { referencias?: unknown; perfil?: unknown };
   return {
@@ -561,14 +595,26 @@ export async function resolverReferencias(
   // Catálogo vazio pula tudo: sem entidade no grafo não há em que o vetor
   // acertar, e pagar uma chamada de embedding para descobrir isso seria gastar
   // por nada na primeira sessão da vida do sistema.
-  const semanticos =
-    catalogo.length === 0
-      ? atomos.map(() => [] as CandidatoSemantico[])
-      : await candidatosSemanticos(
-          atomos.map((a) => a.texto),
-          { perfil: PISO_PERFIL, vizinhos: PISO_VIZINHOS },
-          ALCANCE,
-        );
+  //
+  // `garantirGateway()` vem **antes** desta chamada, e não só no ramo com
+  // pendentes: embutir o texto do átomo já é tráfego de modelo, e conferir a
+  // chave depois de o Gateway ter sido chamado é conferir tarde. Continua fora
+  // do ramo do catálogo vazio — lá nada sai pelo Gateway, e exigir a chave
+  // seria cobrar por um caminho que não gasta.
+  let semanticos: CandidatoSemantico[][];
+  if (catalogo.length === 0) {
+    semanticos = atomos.map(() => []);
+  } else {
+    garantirGateway();
+    semanticos = await candidatosSemanticos(
+      atomos.map((a) => a.texto),
+      { perfil: PISO_PERFIL, vizinhos: PISO_VIZINHOS },
+      ALCANCE,
+    );
+  }
+
+  /** `átomo|chave` → a pergunta que já cobre esta menção neste átomo (D2). */
+  const jaPerguntada = new Map<string, Pendente>();
 
   for (const m of mencoes) {
     const decisao = decidir(candidatosDe(m.citado, catalogo, semanticos[m.atomo] ?? []));
@@ -577,7 +623,20 @@ export async function resolverReferencias(
     } else if (decisao.tipo === "nova") {
       resolvidas.set(m, referenciaNova(m.citado));
     } else {
-      pendentes.push({ n: pendentes.length + 1, mencao: m, candidatos: decisao.candidatos });
+      const chave = `${m.atomo}|${normalizarNome(m.citado)}`;
+      const ja = jaPerguntada.get(chave);
+      if (ja) {
+        ja.iguais!.push(m);
+        continue;
+      }
+      const p: Pendente = {
+        n: pendentes.length + 1,
+        mencao: m,
+        candidatos: decisao.candidatos,
+        iguais: [m],
+      };
+      jaPerguntada.set(chave, p);
+      pendentes.push(p);
     }
   }
 
@@ -596,6 +655,13 @@ export async function resolverReferencias(
   let julgamentos = new Map<number, JulgamentoCru>();
   let marcas: MarcaCru[] = [];
   let modelo: string | null = null;
+  /**
+   * A frase que vale para **todas** as pendentes quando a chamada inteira se
+   * perdeu — o agente caiu, ou respondeu sem julgar ninguém. `null` quando a
+   * chamada produziu julgamentos: aí cada menção responde por si, e a frase
+   * dela distingue "não respondeu por esta" de "respondeu fora dos candidatos"
+   * (C1).
+   */
   let falha: string | null = null;
   /** O hash do prompt editado no painel, ou `null` — vira o carimbo lá embaixo. */
   let hashPrompt: string | null = null;
@@ -633,20 +699,45 @@ export async function resolverReferencias(
         lido.referencias.flatMap((j) => (typeof j.n === "number" ? [[j.n, j] as const] : [])),
       );
       marcas = lido.perfil;
+
+      // A chamada foi paga, o agente respondeu, e **nada** do que veio é
+      // julgamento. Antes isso descia calado e virava "o agente não respondeu
+      // por esta menção" em cada pendente — a etiqueta errada, porque ele
+      // respondeu. Aqui é onde o instrumento entra: o log com o diagnóstico e
+      // uma amostra da resposta é o que me diz o que aconteceu com a janela,
+      // e a frase na tela para de afirmar silêncio onde houve resposta (A1).
+      if (julgamentos.size === 0) {
+        falha = "o agente respondeu, mas não julgou nenhuma menção — escolha você";
+        console.error(
+          `[resolucao] resposta sem julgamento nenhum; ` +
+            `${pendentes.length} menção(ões) ficam em dúvida:`,
+          `${diagnostico(r)} — ${(r.text ?? "").slice(0, AMOSTRA_ERRO)}`,
+        );
+      }
     } catch (e) {
-      falha = e instanceof Error ? e.message : String(e);
+      const causa = e instanceof Error ? e.message : String(e);
+      falha = "o agente de resolução falhou nesta sessão — escolha você";
       console.error(
         `[resolucao] o agente falhou; ${pendentes.length} menção(ões) ficam em dúvida:`,
-        resposta ? `${falha} — ${diagnostico(resposta)}` : falha,
+        resposta ? `${causa} — ${diagnostico(resposta)}` : causa,
       );
     }
   }
 
-  for (const { n, mencao, candidatos } of pendentes) {
+  for (const { n, mencao, candidatos, iguais } of pendentes) {
     const nomes = candidatos.map((c) => c.entidade.nome);
     const j = julgamentos.get(n);
     const escolhida = typeof j?.entidade === "string" ? j.entidade.trim() : "";
     const motivo = typeof j?.motivo === "string" ? j.motivo.trim() : "";
+
+    /**
+     * A resposta vale para todas as menções que esta pergunta cobriu (D2). O
+     * `citado` é o de cada uma: a chave normalizada é que as juntou, e as
+     * grafias podem diferir em caixa.
+     */
+    const responder = (r: Omit<ReferenciaResolvida, "citado">) => {
+      for (const m of iguais ?? [mencao]) resolvidas.set(m, { citado: m.citado, ...r });
+    };
 
     const alvo =
       escolhida === "" || escolhida.toUpperCase() === NOVA
@@ -654,21 +745,44 @@ export async function resolverReferencias(
         : candidatos.find((c) => c.entidade.chaves.includes(normalizarNome(escolhida)));
 
     if (escolhida.toUpperCase() === NOVA) {
-      resolvidas.set(mencao, {
-        citado: mencao.citado,
-        entidade: mencao.citado.trim(),
+      const nome = mencao.citado.trim();
+      /**
+       * O agente disse "é outra pessoa" e a grafia **já é** o nome de um nó.
+       *
+       * A causa é legítima: `nome_normalizado` é único no grafo inteiro
+       * (migration 002), então o `MERGE` do confirmar não tem como criar um
+       * segundo nó — `agregarCandidatas` remapeia para o que existe e o átomo
+       * cai nele. O que faltava era o sinal: até aqui isso acontecia com
+       * `certo: true` e nada na tela, ou seja, o agente dizia uma coisa e o
+       * sistema fazia a oposta em silêncio. Marcar a dúvida é o que me manda
+       * renomear um dos dois (C2).
+       */
+      const colidiu = acharPorChave(normalizarNome(nome), catalogo);
+      responder({
+        entidade: nome,
         conhecida: false,
-        certo: j?.certo !== false,
-        alternativas: nomes,
-        motivo: motivo || "o agente não viu nenhuma das conhecidas neste átomo",
+        certo: colidiu ? false : j?.certo !== false,
+        // Sem o próprio nome escolhido: oferecer como alternativa aquilo que
+        // já está escolhido é linha morta na frase de dúvida.
+        alternativas: [
+          ...new Set(
+            [...nomes, ...(colidiu ? [colidiu.nome] : [])].filter(
+              (x) => normalizarNome(x) !== normalizarNome(nome),
+            ),
+          ),
+        ],
+        motivo: colidiu
+          ? `o agente disse que não é nenhuma das conhecidas, mas "${nome}" já é uma ` +
+            `entidade no grafo ("${colidiu.nome}") e o átomo vai cair nela — ` +
+            `renomeie uma das duas`
+          : motivo || "o agente não viu nenhuma das conhecidas neste átomo",
         porque: [],
       });
       continue;
     }
 
     if (alvo) {
-      resolvidas.set(mencao, {
-        citado: mencao.citado,
+      responder({
         entidade: alvo.entidade.nome,
         conhecida: true,
         certo: j?.certo !== false,
@@ -690,21 +804,35 @@ export async function resolverReferencias(
     const exato = candidatos.find((c) =>
       c.entidade.chaves.includes(normalizarNome(mencao.citado)),
     );
-    resolvidas.set(mencao, {
-      citado: mencao.citado,
+
+    // **Primeiro não-vazio, não primeiro não-nulo.** `exato?.porque ??
+    // candidatos[0]?.porque` nunca caía para o segundo termo: `??` só passa por
+    // `null`/`undefined`, e a camada `exato` tem sempre `porque: []`. Quando o
+    // fallback era o exato, a evidência dos outros candidatos sumia justamente
+    // no caso em que eu tenho de decidir na mão (C3).
+    const comEvidencia = [exato, ...candidatos].find((c) => (c?.porque.length ?? 0) > 0);
+
+    responder({
       entidade: exato ? exato.entidade.nome : mencao.citado.trim(),
       conhecida: Boolean(exato),
       certo: false,
       alternativas: exato
         ? nomes.filter((nome) => nome !== exato.entidade.nome)
         : nomes,
-      motivo: falha
-        ? "o agente de resolução falhou nesta sessão — escolha você"
-        : "o agente não respondeu por esta menção",
+      // Três coisas diferentes, três frases diferentes: a chamada inteira se
+      // perdeu; o agente julgou outras menções e não esta; ou ele respondeu uma
+      // chave que não está entre os candidatos **desta** menção. A frase antiga
+      // afirmava silêncio nos três casos, e é ela que eu leio para decidir se o
+      // agente está funcionando (C1).
+      motivo:
+        falha ??
+        (escolhida === ""
+          ? "o agente não respondeu por esta menção"
+          : `o agente respondeu "${escolhida}", que não está entre os candidatos desta menção`),
       // A evidência dos candidatos que sobraram vai junto mesmo sem escolha
       // feita: é justamente quando eu tenho que decidir na mão que saber quais
       // átomos passados puxaram para cada lado vale mais.
-      porque: exato?.porque ?? candidatos[0]?.porque ?? [],
+      porque: comEvidencia?.porque ?? [],
     });
   }
 
