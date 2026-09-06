@@ -21,8 +21,13 @@ import type { TipoEntidade } from "./tipos";
 
 /**
  * Uma entidade como `GET /api/entidades` a devolve — o subconjunto que a busca
- * usa. É o mesmo objeto que `listarEntidades()` monta (o `perfil` fica de fora:
- * a revisão não o lê, e ele é o campo mais pesado da resposta).
+ * usa. É o que `listarEntidades()` monta **sem o `perfil`**: a revisão não o lê,
+ * e ele é o campo mais pesado da resposta.
+ *
+ * Isto foi comentário mentindo até a 4.8.1: a rota devolvia `listarEntidades()`
+ * inteiro, com os três campos, e a revisão baixava o perfil do grafo todo a cada
+ * abertura. Quem quer os campos agora pede `?perfil=1`, que é o que `/entidades`
+ * faz.
  */
 export interface EntidadeDoCatalogo {
   nome: string;

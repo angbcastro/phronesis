@@ -43,10 +43,12 @@ import type { Catalogo, EntidadeDoCatalogo } from "@/lib/catalogo";
 import type {
   AtomoProposto,
   BlocoAbsoluto,
+  Camada,
   CampoPerfil,
   EntidadeCandidata,
   Gestos,
   MarcaPerfil,
+  ReferenciaResolvida,
   TipoAtomo,
   TipoEntidade,
 } from "@/lib/tipos";
@@ -132,6 +134,102 @@ export interface AtomoEditado {
   menciona: string[];
   perfila: MarcaPerfil[];
 }
+
+/**
+ * Uma referência do átomo com **onde** ela está.
+ *
+ * A tela precisa disso porque a dúvida deixou de ser só do sujeito (4.8.1):
+ * `resolucao.ts` calcula `certo`, `motivo`, `alternativas` e `porque` **por
+ * menção**, e até aqui a revisão lia tudo de `sobreDe` — discordância sobre
+ * menção era invisível, mesmo com o `ARCHITECTURE.md` §4.7 prometendo o
+ * contrário.
+ */
+export interface ReferenciaNoAtomo {
+  papel: "sobre" | "menciona";
+  /** A posição na lista de menções. `-1` no sujeito. */
+  ordem: number;
+  ref: ReferenciaResolvida;
+}
+
+/**
+ * As referências do átomo — sujeito e menções —, na ordem em que a tela as
+ * mostra.
+ *
+ * **A armadilha, e ela é silenciosa:** as menções na tela são uma lista de
+ * strings por posição, e a referência casa com a posição **por índice**. Assim
+ * que eu acrescento ou removo uma menção, o índice desloca e a sugestão
+ * apareceria na linha errada — dizendo "escolhi Raffa" ao lado de outro nome.
+ *
+ * A trava é `mencoesEditadas`: enquanto eu não mexi na lista, ela é a da
+ * proposta e o índice vale; a partir da primeira edição as menções saem daqui e
+ * o átomo fica só com a dúvida do **sujeito**, que é um valor só e não desloca.
+ * Perder a sugestão é o preço, e é o certo: sugestão na linha errada é pior que
+ * sugestão nenhuma.
+ */
+export function referenciasDoAtomo(
+  a: AtomoProposto,
+  conhecidas?: ReadonlySet<string>,
+  mencoesEditadas = false,
+): ReferenciaNoAtomo[] {
+  const lista: ReferenciaNoAtomo[] = [
+    { papel: "sobre", ordem: -1, ref: sobreDe(a, conhecidas) },
+  ];
+  if (mencoesEditadas) return lista;
+  mencoesDe(a, conhecidas).forEach((ref, ordem) =>
+    lista.push({ papel: "menciona", ordem, ref }),
+  );
+  return lista;
+}
+
+/** As que o agente não teve certeza. Destacam, não travam (4.8). */
+export const incertasDoAtomo = (
+  a: AtomoProposto,
+  conhecidas?: ReadonlySet<string>,
+  mencoesEditadas = false,
+): ReferenciaNoAtomo[] =>
+  referenciasDoAtomo(a, conhecidas, mencoesEditadas).filter((i) => !i.ref.certo);
+
+/**
+ * As referências cuja sugestão veio de uma camada **semântica**, ou que trazem
+ * evidência junto.
+ *
+ * É a lista que a tela mostra **sempre**, e não só na dúvida (4.8.1). O §4.10, o
+ * tipo e o cabeçalho de `candidatosPorVizinhos` dizem a mesma frase: a camada 3b
+ * herda atribuição passada, e a única coisa que a torna aceitável é estar na
+ * tela — "sem o `porque`, esta camada não entraria". Ela estava na tela só
+ * quando o agente hesitava; no caminho comum (`certo: true`) a herança era
+ * invisível.
+ *
+ * `exato` e `string` ficam de fora de propósito: ali nada foi herdado — a grafia
+ * é o que eu mesmo falei —, e uma linha em todo átomo viraria ruído na tela que
+ * tem 60 s.
+ */
+export const herdadasDoAtomo = (
+  a: AtomoProposto,
+  conhecidas?: ReadonlySet<string>,
+  mencoesEditadas = false,
+): ReferenciaNoAtomo[] =>
+  referenciasDoAtomo(a, conhecidas, mencoesEditadas).filter(
+    (i) => i.ref.porque.length > 0 || i.ref.camada === "perfil" || i.ref.camada === "vizinhos",
+  );
+
+/** Como a tela chama a posição: "sobre" ou "menção 2". */
+export const ondeEstaA = (i: ReferenciaNoAtomo): string =>
+  i.papel === "sobre" ? "sobre" : `menção ${i.ordem + 1}`;
+
+/**
+ * O que cada camada tem a dizer de si, na primeira pessoa da tela.
+ *
+ * É o que separa "a grafia bateu" de "dois átomos seus votaram" — sem isto o
+ * `porque` chega sem dizer se decidiu alguma coisa. A slice 4.9 acrescenta
+ * `"extrator"`.
+ */
+export const FRASE_DA_CAMADA: Record<Camada, string> = {
+  exato: "a grafia bateu com o nome no grafo",
+  string: "o nome é parecido com o que eu falei",
+  perfil: "o perfil dela se parece com este átomo",
+  vizinhos: "átomos passados seus votaram",
+};
 
 export interface CorpoDoConfirmar {
   aprovados: (Omit<AtomoEditado, "menciona"> & { menciona: string[] })[];
@@ -428,8 +526,29 @@ export function Revisao({ id }: { id: string }) {
     (e) => e.precisa_nome && usada(e) && ehPronome(finalDe(e).nome),
   );
 
+  /** Eu já mexi na lista de menções deste átomo? É a trava do índice (4.8.1). */
+  const mexeuNasMencoes = useCallback(
+    (a: AtomoProposto) => edicoes[a.indice]?.menciona !== undefined,
+    [edicoes],
+  );
+
+  /**
+   * As referências incertas do átomo — **sujeito e menções**. Até a 4.8.1 só o
+   * sujeito contava, e discordância sobre menção não aparecia em lugar nenhum.
+   */
+  const incertasDe = useCallback(
+    (a: AtomoProposto) => incertasDoAtomo(a, conhecidas, mexeuNasMencoes(a)),
+    [conhecidas, mexeuNasMencoes],
+  );
+
+  /** As sugestões que vieram de camada semântica, ou com evidência junto. */
+  const herdadasDe = useCallback(
+    (a: AtomoProposto) => herdadasDoAtomo(a, conhecidas, mexeuNasMencoes(a)),
+    [conhecidas, mexeuNasMencoes],
+  );
+
   /** Atribuições que o agente não teve certeza. Destacam, não travam. */
-  const duvidosos = aprovados.filter((a) => !referenciaDe(a).certo);
+  const duvidosos = aprovados.filter((a) => incertasDe(a).length > 0);
 
   /**
    * Só quando a versão do prompt mudou. Re-extrair com o mesmo prompt produz
@@ -561,7 +680,12 @@ export function Revisao({ id }: { id: string }) {
           const v = valorDe(a);
           const ref = referenciaDe(a);
           const sobre = nomeFinal(v.sobre);
-          const incerto = !ref.certo;
+          // As referências desta lista casam com a posição **por índice**, e a
+          // trava contra o índice deslocado está em `referenciasDoAtomo`.
+          const incertas = incertasDe(a);
+          const herdadas = herdadasDe(a);
+          const mencoesDaProposta = mexeuNasMencoes(a) ? [] : mencoesDe(a, conhecidas);
+          const incerto = incertas.length > 0;
           // Do valor editado, não da proposta: tirar uma menção tem de sumir
           // com ela da linha de resumo na hora, sem eu fechar o editor.
           const mencoes = v.menciona
@@ -602,26 +726,52 @@ export function Revisao({ id }: { id: string }) {
                   {incerto && (
                     // Destaca, não trava. A sugestão já está preenchida no
                     // seletor; o motivo é o que me deixa decidir em um segundo.
+                    //
+                    // **Um** parágrafo por átomo, com uma linha por referência
+                    // incerta — e não um bloco por referência. Esta é a tela
+                    // mais apertada do sistema, e o formato é a mitigação
+                    // declarada do custo (4.8.1).
                     <p className="duvida">
-                      de quem é? escolhi <strong>{sobre}</strong>
-                      {ref.citado !== "" && ref.citado !== sobre && ` para "${ref.citado}"`}
-                      {ref.motivo !== "" && ` — ${ref.motivo}`}
-                      {ref.alternativas.length > 0 && ` · também podia ser ${ref.alternativas.join(", ")}`}
+                      {incertas.map((i) => {
+                        const escolhida = nomeFinal(i.ref.entidade);
+                        return (
+                          <span key={`${i.papel}${i.ordem}`}>
+                            {i.papel === "sobre" ? "de quem é?" : `${ondeEstaA(i)}:`} escolhi{" "}
+                            <strong>{escolhida}</strong>
+                            {i.ref.citado !== "" &&
+                              i.ref.citado !== escolhida &&
+                              ` para "${i.ref.citado}"`}
+                            {i.ref.motivo !== "" && ` — ${i.ref.motivo}`}
+                            {i.ref.alternativas.length > 0 &&
+                              ` · também podia ser ${i.ref.alternativas.join(", ")}`}
+                          </span>
+                        );
+                      })}
                     </p>
                   )}
 
-                  {incerto && ref.porque.length > 0 && (
-                    // O porquê da camada dos vizinhos (slice 4.5). Ela sugere
-                    // por semelhança com átomos que já são de alguém, o que é
-                    // herdar atribuição passada — e a única coisa que torna
-                    // isso aceitável é estar na tela, com o átomo à mão. Sem
-                    // esta lista, a camada não entraria.
+                  {herdadas.length > 0 && (
+                    // A procedência da sugestão, **sempre que houver**, e não só
+                    // na dúvida (4.8.1). A camada dos vizinhos sugere por
+                    // semelhança com átomos que já são de alguém — herda
+                    // atribuição passada —, e a única coisa que torna isso
+                    // aceitável é estar na tela, com o átomo à mão. No caminho
+                    // comum (`certo: true`) a herança era invisível, que é
+                    // justamente onde ela mais acontece.
                     <ul className="porque">
-                      {ref.porque.map((e) => (
-                        <li key={e.atomo_id}>
-                          parece com o que você disse
-                          {diaMes(e.valido_em) !== "" && ` em ${diaMes(e.valido_em)}`}:{" "}
-                          <span>“{e.texto}”</span>
+                      {herdadas.map((i) => (
+                        <li key={`de-onde-${i.papel}${i.ordem}`}>
+                          {i.papel === "menciona" && `${ondeEstaA(i)} · `}
+                          <strong>{nomeFinal(i.ref.entidade)}</strong>
+                          {i.ref.camada && `: ${FRASE_DA_CAMADA[i.ref.camada]}`}
+                          {i.ref.porque.map((e) => (
+                            <span key={e.atomo_id} className="trecho">
+                              {diaMes(e.valido_em) !== ""
+                                ? `você disse em ${diaMes(e.valido_em)}: `
+                                : "você disse: "}
+                              “{e.texto}”
+                            </span>
+                          ))}
                         </li>
                       ))}
                     </ul>
@@ -748,6 +898,12 @@ export function Revisao({ id }: { id: string }) {
                             }
                             catalogo={catalogo}
                             filtro={filtros[a.indice] ?? "todas"}
+                            // As alternativas **daquela** menção (4.8.1). A
+                            // lista é a da proposta enquanto eu não mexi nela;
+                            // depois disso `mencoesDaProposta` fica vazia e a
+                            // barra volta a abrir sem sugestão, porque o índice
+                            // deslocou e a sugestão apareceria na linha errada.
+                            sugestoes={mencoesDaProposta[k]?.alternativas ?? []}
                             rotulo={`menção ${k + 1}`}
                           />
                         ))}

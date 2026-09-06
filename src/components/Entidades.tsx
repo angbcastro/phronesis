@@ -90,7 +90,9 @@ export function Entidades() {
   const [propostas, setPropostas] = useState<Record<string, Rascunho>>({});
 
   const carregar = useCallback(async () => {
-    const r = await fetch("/api/entidades", { cache: "no-store" }).catch(() => null);
+    // `?perfil=1`: esta é a tela que edita os três campos. A revisão não pede,
+    // e por isso não baixa o campo mais pesado da resposta (4.8.1).
+    const r = await fetch("/api/entidades?perfil=1", { cache: "no-store" }).catch(() => null);
     if (!r?.ok) {
       setFalha("não deu para ler o grafo");
       return;

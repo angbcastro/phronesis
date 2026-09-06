@@ -160,6 +160,17 @@ export interface Evidencia {
 }
 
 /**
+ * De que camada saiu a sugestão. A ordem é a da força do sinal.
+ *
+ * Mora aqui, e não em `resolucao.ts`, porque `ReferenciaResolvida` a carrega até
+ * a revisão: a tela precisa do tipo, e ela não importa o módulo que fala com o
+ * Gateway. A slice 4.9 acrescenta `"extrator"` a esta lista.
+ */
+export const CAMADAS_DE_CANDIDATO = ["exato", "string", "perfil", "vizinhos"] as const;
+
+export type Camada = (typeof CAMADAS_DE_CANDIDATO)[number];
+
+/**
  * Uma menção do extrator já atribuída a alguém — **por menção, não por sessão**.
  *
  * É a diferença que carrega a slice 4. Até a 3, todas as menções ao mesmo nome
@@ -188,6 +199,18 @@ export interface ReferenciaResolvida {
    * à mão. É a condição de a camada 3b existir, não um enfeite dela.
    */
   porque: Evidencia[];
+  /**
+   * Qual camada achou a entidade escolhida (slice 4.8.1).
+   *
+   * É o que deixa a tela dizer **por que** aquele nome foi escolhido — "a
+   * grafia bateu" contra "dois átomos seus votaram" são coisas muito
+   * diferentes, e sem este campo o `porque` chega sem dizer se decidiu alguma
+   * coisa.
+   *
+   * Opcional, e assim fica: proposta anterior à 4.8.1 não tem, e ausente é
+   * "não sei de onde veio" — mesma degradação de `certo` e `porque`.
+   */
+  camada?: Camada;
 }
 
 /**

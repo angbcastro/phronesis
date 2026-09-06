@@ -481,6 +481,13 @@ export async function candidatosPorPerfil(
  * que a torna corrigível em vez de silenciosa. **Sem ele, esta camada não
  * entra.**
  *
+ * O `collect` é `DISTINCT` pelo mesmo motivo que o `count`: se um átomo
+ * apontasse para a entidade por `:SOBRE` **e** por `:MENCIONA`, o `MATCH`
+ * daria duas linhas e o mesmo átomo apareceria duas vezes na evidência. Hoje o
+ * par é impossível — `atomos.ts` e `fusao.ts` descartam a menção redundante —,
+ * mas é invariante mantida a distância, e a evidência é o que sustenta a
+ * camada inteira.
+ *
  * Um detalhe que só aparece ao reextrair uma sessão já confirmada: os átomos
  * dela estão no grafo e votam em si mesmos, com similaridade perto de 1. Não é
  * defeito — a atribuição que eu confirmei é evidência boa —, mas explica por
@@ -513,7 +520,7 @@ export async function candidatosPorVizinhos(
      RETURN i, alvo.nome_normalizado AS chave,
             count(DISTINCT a) AS votos,
             max(similaridade) AS similaridade,
-            collect({ atomo_id: a.id,
+            collect(DISTINCT { atomo_id: a.id,
                       valido_em: coalesce(a.valido_em, ''),
                       texto: left(a.texto, $trecho),
                       similaridade: similaridade })[0..$evidencias] AS porque

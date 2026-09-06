@@ -643,6 +643,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--acento);
 }
 .duvida strong { font-weight: 600; }
+/* Uma linha por referência incerta, num parágrafo só (4.8.1): a dúvida deixou
+   de ser só do sujeito, e um bloco por referência não caberia nos 60 s. */
+.duvida span { display: block; }
 
 /* ---- slice 4.5: por que o vetor sugeriu quem sugeriu ----
    A camada dos vizinhos herda atribuição passada. O que a torna aceitável não
@@ -663,6 +666,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
   opacity: 0.6;
 }
 .porque span { font-style: italic; }
+/* O trecho do átomo que votou, embaixo da linha que diz de que camada veio a
+   sugestão (4.8.1). */
+.porque .trecho { display: block; }
 
 /* O que este átomo vai acrescentar ao perfil de alguém, se eu confirmar. */
 .meta.perfila { display: block; margin-top: 0.25rem; opacity: 0.9; }

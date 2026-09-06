@@ -90,3 +90,27 @@ describe("proposta torta não derruba a tela", () => {
     expect(comoReferencia(sujo).alternativas).toEqual(["Rapha"]);
   });
 });
+
+/**
+ * A camada nasceu na 4.8.1, e é o que deixa a tela dizer **por que** aquele
+ * nome foi escolhido — "a grafia bateu" contra "dois átomos seus votaram". O
+ * campo é opcional e assim fica: proposta anterior não tem, e ausente é "não sei
+ * de onde veio", que é a mesma degradação de `certo` e `porque`.
+ */
+describe("de que camada veio a sugestão", () => {
+  it("proposta antiga não tem camada, e nenhuma é inventada", () => {
+    expect(sobreDe(antigo, conhecidas).camada).toBeUndefined();
+    expect(comoReferencia({ ...nova, camada: undefined }).camada).toBeUndefined();
+  });
+
+  it("camada conhecida passa inteira", () => {
+    expect(comoReferencia({ ...nova, camada: "vizinhos" }).camada).toBe("vizinhos");
+  });
+
+  it("camada que não existe some, em vez de chegar à tela sem frase", () => {
+    // `FRASE_DA_CAMADA` é um `Record<Camada, string>`: um valor de fora da lista
+    // viraria `undefined` no meio da linha de procedência.
+    const sujo = { ...nova, camada: "extrator" } as unknown as ReferenciaResolvida;
+    expect(comoReferencia(sujo).camada).toBeUndefined();
+  });
+});

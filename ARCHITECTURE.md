@@ -934,6 +934,13 @@ O catálogo vem de `GET /api/entidades`, rota que já existia — **rota nova
 nenhuma, migration nenhuma**. Se ela falhar, as barras voltam a ser texto livre,
 que era o comportamento anterior; `tests/revisao.test.ts` fixa isso.
 
+**O perfil não vem nesse payload** (4.8.1). A revisão baixa o grafo inteiro a
+cada abertura (§14) e usa nome, chaves e tipo; os três campos de perfil são o
+campo mais pesado da resposta e ninguém os lê ali. Quem quer os campos pede
+`?perfil=1`, que é o que `/entidades` faz — a tela que os edita. O corte é campo
+a campo e não `delete`, para que campo novo em `EntidadeDoGrafo` não vaze para o
+contrato do catálogo sem alguém decidir.
+
 **As menções são editáveis** — acrescentar e tirar, uma barra por menção.
 Antes elas eram texto morto no item: menção errada só se consertava rejeitando o
 átomo inteiro ou renomeando a entidade no rodapé, e as duas são grandes demais
@@ -942,6 +949,32 @@ isso não dá para distinguir "não mexi" de "apaguei todas".
 
 **Átomo com atribuição incerta aparece marcado**, com a sugestão já preenchida, o
 motivo do agente e as alternativas ao lado. O confirmar **não** trava: ver 4.8.
+
+**A dúvida é de cada referência, e não só do sujeito.** O agente 2 decide por
+menção (4.8) e devolve `certo`, `motivo`, `alternativas` e `porque` em cada uma;
+até a 4.8.1 a tela lia tudo do `sobre`, e discordância sobre **menção** não
+aparecia em lugar nenhum — o átomo passava aprovado, sem marca, com a menção
+atribuída a quem o agente não teve certeza de ser. Agora a marca do átomo, o
+bloco de dúvida e a barra de cada menção olham a lista de referências incertas:
+`referenciasDoAtomo` devolve o sujeito e as menções na ordem da tela, e
+`incertasDoAtomo` filtra. As duas são funções puras exportadas da `Revisao`, pelo
+mesmo motivo que `montarCorpoDoConfirmar`: é lógica que quebra em silêncio, e
+`tests/revisao.test.ts` a fixa sem render.
+
+O formato é **um** parágrafo por átomo, com uma linha por referência incerta
+("de quem é? escolhi X" para o sujeito, "menção 2: escolhi Y"), e não um bloco
+por referência. É a mitigação declarada do custo: esta é a tela mais apertada do
+sistema, e o "menos de 60 s" segue sem medição (§14).
+
+**A armadilha do índice, e ela é silenciosa.** As menções na tela são uma lista
+por posição, e a referência casa com a posição **por índice**. Assim que eu
+acrescento ou removo uma menção daquele átomo, o índice desloca e a sugestão
+apareceria na linha errada — dizendo "escolhi Raffa" ao lado de outro nome. A
+trava é a edição: enquanto `edicoes[indice].menciona` for `undefined` a lista é a
+da proposta e o índice vale; a partir da primeira edição as menções saem da
+conta e sobra a dúvida do **sujeito**, que é um valor só e não desloca. Perder a
+sugestão é o preço, e é o certo — sugestão na linha errada é pior que sugestão
+nenhuma. Está no teste, e não só no comentário.
 
 **As marcas de perfil aparecem, e não são editáveis.** Quando o agente 2 aponta
 que um átomo diz algo do perfil de alguém, a linha "vai para o perfil: Raffa ·
@@ -1009,7 +1042,7 @@ chamada de extração por tentativa.
 delas:
 
 ```ts
-{ citado, entidade, conhecida, certo, alternativas, motivo }
+{ citado, entidade, conhecida, certo, alternativas, motivo, porque, camada? }
 ```
 
 `citado` guarda o que o extrator escreveu; `entidade` é a quem foi atribuído.
@@ -1084,8 +1117,9 @@ resto seria pagar por texto que não muda resposta nenhuma.
 
 #### Dúvida destaca, não trava
 
-Átomo com `certo: false` aparece marcado na revisão, com a sugestão preenchida e
-o motivo ao lado. O confirmar continua liberado. Diferente do pronome, que trava:
+Referência com `certo: false` — o sujeito **ou** qualquer menção — deixa o átomo
+marcado na revisão, com a sugestão preenchida na barra daquela posição e o motivo
+ao lado (§4.7). O confirmar continua liberado. Diferente do pronome, que trava:
 ali o resultado seria um nó chamado "ela", grafo apodrecido garantido. Aqui o
 pior caso é uma atribuição trocada, que eu conserto depois — e travar a cada
 dúvida mataria os 60 s da revisão. "Ignorar é sempre uma saída válida"
@@ -1269,6 +1303,22 @@ que você disse em 12/ago: «…»"*. Isso não é enfeite. Esta camada herda at
 passada — um erro de atribuição pode sugerir o próximo —, e a única coisa que a
 torna aceitável é ser **um voto entre `k`, com o átomo na tela**: visível e
 corrigível. Sem o `porque`, esta camada não entraria.
+
+**E ele aparece com o agente certo, não só quando ele hesitou** (4.8.1). Até ali
+a linha só saía junto do bloco de dúvida, ou seja, a herança era invisível
+exatamente no caminho comum (`certo: true`), que é onde ela mais acontece — a
+condição declarada da camada valia para a minoria dos casos. Agora a procedência
+sai sempre que houver: uma linha discreta, não o bloco de dúvida.
+
+`ReferenciaResolvida` ganhou `camada?: Camada` no mesmo gesto, porque o `porque`
+sozinho chega sem dizer se decidiu alguma coisa: é o campo que separa "a grafia
+bateu" de "átomos passados seus votaram", e `FRASE_DA_CAMADA` é o que a tela diz
+de cada uma. `exato` e `string` ficam fora dessa linha de propósito — ali nada
+foi herdado, é o que eu mesmo falei, e uma linha em todo átomo viraria ruído. O
+campo é **opcional e assim fica**: proposta anterior à 4.8.1 não tem, e ausente é
+"não sei de onde veio", a mesma degradação de `certo` e `porque`
+(`referencias.ts`). Valor fora de `CAMADAS_DE_CANDIDATO` é lido como ausente, e
+não repassado. A slice 4.9 acrescenta `"extrator"` à lista.
 
 #### Teto e piso são obrigatórios
 
@@ -2562,7 +2612,7 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `GET /api/calibracao/sugestao` | `{ sugerir: boolean }` | **puro, nunca escreve**; a gaveta o consulta ao abrir |
 | `POST /api/calibracao/rascunho` | o `calibracao-1` propõe até duas regras | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/calibracao/regras` | a lista inteira que passa a valer, e o que ela fecha | o **único** lugar que escreve regra; lista vazia revoga tudo |
-| `GET /api/entidades` | o que está no grafo, com átomos, sessões, aliases e perfil | só leitura; nó fundido vira alias do vencedor; alimenta também o seletor da revisão |
+| `GET /api/entidades` | o que está no grafo, com átomos, sessões e aliases; `?perfil=1` traz os três campos | só leitura; nó fundido vira alias do vencedor; alimenta também o seletor da revisão, que não pede o perfil |
 | `POST /api/entidades/duplicatas` | propõe pares que parecem a mesma coisa | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/entidades/fundir` | `{vencedora, perdedora}` — migra arestas, marca alias | idempotente pela guarda de `status` |
 | `POST /api/entidades/distintas` | `{a, b}` — a recusa que impede a pergunta de voltar | |
@@ -3145,7 +3195,17 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   migration nova, e nada hoje lê essa distinção.
 - **O "menos de 60 s" da revisão continua sem medição.** A tela já foi usada em
   sessões reais e o caminho inteiro fecha, mas ninguém cronometrou uma revisão de
-  sessão de 15 min.
+  sessão de 15 min. E ela ficou **mais densa** na 4.8.1: a dúvida passou a ser de
+  cada referência e a procedência da sugestão passou a aparecer sempre, não só na
+  dúvida. Se incomodar, o botão é o formato do parágrafo — não voltar a esconder
+  a informação, que é a condição declarada da camada 3b (§4.10).
+- **A sugestão de menção some assim que eu mexo na lista.** A referência casa com
+  a posição por índice; acrescentar ou remover uma menção desloca tudo, e a trava
+  desliga as sugestões daquele átomo em vez de arriscar mostrá-las na linha
+  errada (§4.7). Reabrir a sessão não as traz de volta — a edição já está no
+  estado da tela.
+- **`ReferenciaResolvida.camada` nasce opcional e assim fica.** Proposta anterior
+  à 4.8.1 não a tem, e naquelas sessões a tela não diz de onde veio a sugestão.
 - **Editar não muda a procedência.** Reescrever o texto de um átomo mantém os
   offsets do trecho original — é o certo, mas quer dizer que um texto muito
   editado aponta para um áudio que já não o sustenta palavra por palavra.
@@ -3291,7 +3351,8 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   átomo, então "Bidu" vira "Roberto" na revisão em vez de virar nó e fusão.
 - **A revisão carrega o grafo inteiro para buscar nele.** `GET /api/entidades`
   não tem `q`, nem limite, nem paginação, e não há índice de texto sobre `nome` —
-  a busca é no cliente, sobre a lista toda. Num grafo de dezenas de entidades
+  a busca é no cliente, sobre a lista toda. A 4.8.1 tirou o perfil do payload
+  padrão (§4.7), o que enxuga a resposta e não muda o desenho. Num grafo de dezenas de entidades
   isso é mais rápido que ida ao servidor por tecla; em milhares, deixa de ser, e
   a saída é uma rota de busca com uma migration de índice atrás dela.
 - **Não dá para retomar uma gravação interrompida.** O botão "retomar" morava no

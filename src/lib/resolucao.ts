@@ -39,11 +39,17 @@ import { normalizarNome } from "./texto";
 import { CAMPOS_PERFIL } from "./tipos";
 import type {
   AtomoCru,
+  Camada,
   CampoPerfil,
   Evidencia,
   MarcaPerfil,
   ReferenciaResolvida,
 } from "./tipos";
+
+// A camada mora em `tipos.ts` desde a 4.8.1: `ReferenciaResolvida` a carrega até
+// a revisão, e a tela não importa o módulo que fala com o Gateway. Reexportada
+// aqui porque é aqui que ela se decide.
+export type { Camada };
 
 /**
  * Muda sempre que o prompt mudar — mesma disciplina da extração (regra 7).
@@ -151,9 +157,6 @@ export interface Mencao {
   ordem: number;
   citado: string;
 }
-
-/** De que camada veio um candidato. A ordem é a da força do sinal. */
-export type Camada = "exato" | "string" | "perfil" | "vizinhos";
 
 /** Um candidato da união, com a camada que o achou e o que ela tem a dizer. */
 export interface Candidato {
@@ -339,6 +342,9 @@ const referenciaAoNo = (citado: string, no: EntidadeDoGrafo, motivo: string): Re
   // Sem dúvida não há o que auditar: esta é a menção que resolveu de graça,
   // e a revisão não mostra nada sobre ela.
   porque: [],
+  // Mas a tela diz de onde veio: "a grafia bateu" é a frase que separa esta
+  // sugestão de uma herdada de átomos passados (4.8.1).
+  camada: "exato",
 });
 
 const referenciaNova = (citado: string): ReferenciaResolvida => ({
@@ -857,6 +863,8 @@ export async function resolverReferencias(
         // 12/ago", com o trecho à mão. Sem isto na tela, a camada dos vizinhos
         // seria realimentação invisível — e não entraria.
         porque: alvo.porque,
+        // De onde veio o candidato que o agente escolheu (4.8.1).
+        camada: alvo.camada,
       });
       continue;
     }
@@ -897,6 +905,8 @@ export async function resolverReferencias(
       // feita: é justamente quando eu tenho que decidir na mão que saber quais
       // átomos passados puxaram para cada lado vale mais.
       porque: comEvidencia?.porque ?? [],
+      // O fallback do exato veio da grafia; o outro não veio de camada nenhuma.
+      camada: exato?.camada,
     });
   }
 

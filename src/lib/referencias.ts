@@ -16,7 +16,14 @@
  * que o confirmar. Duas implementações divergiriam, e a da tela venceria calada.
  */
 import { normalizarNome } from "./texto";
-import type { AtomoProposto, ReferenciaResolvida } from "./tipos";
+import { CAMADAS_DE_CANDIDATO } from "./tipos";
+import type { AtomoProposto, Camada, ReferenciaResolvida } from "./tipos";
+
+/** Camada que a proposta afirma, quando é uma das que existem. */
+const camadaDe = (v: unknown): Camada | undefined =>
+  typeof v === "string" && (CAMADAS_DE_CANDIDATO as readonly string[]).includes(v)
+    ? (v as Camada)
+    : undefined;
 
 /**
  * Uma referência a partir do que estiver gravado.
@@ -44,6 +51,9 @@ export function comoReferencia(
       // Nasceu na slice 4.5; proposta anterior não tem, e ausente é lista
       // vazia — a revisão simplesmente não mostra o "porque" naquela sessão.
       porque: Array.isArray(valor.porque) ? valor.porque : [],
+      // Nasceu na 4.8.1, e some quando não é uma das camadas conhecidas: a tela
+      // deixa de dizer de onde veio a sugestão, e não inventa uma origem.
+      camada: camadaDe(valor.camada),
     };
   }
 
