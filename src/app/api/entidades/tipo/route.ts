@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { normalizarTipoEntidade } from "@/lib/entidades";
+import { waitUntil } from "@vercel/functions";
+import { normalizarTipoEntidade, passadaDeVetores } from "@/lib/entidades";
 import { FusaoError, trocarTipo } from "@/lib/fusao";
 import { erro } from "@/lib/rotas";
 
@@ -25,6 +26,8 @@ export async function POST(req: Request) {
 
   try {
     await trocarTipo(chave, tipo);
+    // O tipo entra na string canônica da entidade (4.8.1).
+    waitUntil(passadaDeVetores("tipo"));
     return NextResponse.json({ ok: true, tipo });
   } catch (e) {
     if (e instanceof FusaoError) return erro(e.message, 400);

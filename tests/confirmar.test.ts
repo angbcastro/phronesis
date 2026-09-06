@@ -16,9 +16,16 @@ vi.mock("@/lib/atomos", () => ({
   gravarAtomos: vi.fn(async () => {}),
   gravarEntidades: vi.fn(async () => {}),
 }));
+// Só a passada de vetores é trocada: `ehPronome` e as normalizações desta rota
+// são as de verdade, e testá-las contra um dublê não diria nada.
+vi.mock("@/lib/entidades", async (original) => ({
+  ...(await original<typeof import("@/lib/entidades")>()),
+  passadaDeVetores: vi.fn(async () => {}),
+}));
 
 import { POST } from "@/app/api/sessoes/[id]/confirmar/route";
 import { gravarAtomos, gravarEntidades } from "@/lib/atomos";
+import { passadaDeVetores } from "@/lib/entidades";
 import { getJson } from "@/lib/r2";
 import { buscarSessao } from "@/lib/sessoes";
 import type { AtomoParaGravar, EntidadeParaGravar } from "@/lib/atomos";
@@ -78,6 +85,31 @@ beforeEach(() => {
     } as never);
   vi.mocked(gravarAtomos).mockReset().mockResolvedValue(undefined);
   vi.mocked(gravarEntidades).mockReset().mockResolvedValue(undefined);
+  vi.mocked(passadaDeVetores).mockClear();
+});
+
+/**
+ * O gancho do vetor (slice 4.8.1). A entidade que acabou de nascer não tem
+ * vetor, e sem vetor ela não existe para a camada de perfil — que era o buraco:
+ * `garantirEmbeddings` não tinha chamador nenhum no caminho de uso.
+ */
+describe("o confirmar põe os vetores em dia depois de gravar", () => {
+  it("dispara a passada quando a gravação aconteceu", async () => {
+    await chamar({
+      aprovados: [{ indice: 0, texto: "t", tipo: "FATO", sobre: "Marina", menciona: [] }],
+      entidades: [{ nome: "Marina", tipo: "Pessoa" }],
+    });
+    expect(passadaDeVetores).toHaveBeenCalledTimes(1);
+  });
+
+  it("não dispara quando a requisição foi recusada", async () => {
+    const r = await chamar({
+      aprovados: [{ indice: 0, texto: "t", tipo: "FATO", sobre: "ela", menciona: [] }],
+      entidades: [{ nome: "ela", tipo: "Pessoa" }],
+    });
+    expect(r.status).toBe(400);
+    expect(passadaDeVetores).not.toHaveBeenCalled();
+  });
 });
 
 describe("renomear a entidade na revisão", () => {

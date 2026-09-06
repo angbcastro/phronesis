@@ -4,7 +4,12 @@ import { gravarAtomos, gravarEntidades } from "@/lib/atomos";
 import { capturarCorrecoes } from "@/lib/calibracao";
 import { chaveExtracao } from "@/lib/chaves";
 import { normalizarGestos } from "@/lib/correcoes";
-import { ehPronome, normalizarNome, normalizarTipoEntidade } from "@/lib/entidades";
+import {
+  ehPronome,
+  normalizarNome,
+  normalizarTipoEntidade,
+  passadaDeVetores,
+} from "@/lib/entidades";
 import { normalizarTipo } from "@/lib/extracao";
 import { normalizarCampo } from "@/lib/perfil";
 import { getJson } from "@/lib/r2";
@@ -214,6 +219,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // recebido tudo e fora do caminho da resposta (slice 4.6). Falhar aqui não
   // desfaz nem atrasa nada: o diário está gravado, o que se perde é material
   // de calibração — e é por isso que o `catch` engole em vez de subir.
+  // As entidades que acabaram de nascer não têm vetor, e sem vetor elas não
+  // existem para a camada de perfil (4.10). A passada vai aqui, ao lado da
+  // apuração de correções e pela mesma razão: fora do caminho da resposta, e
+  // engolindo a falha — o diário já está gravado, e o que se perde é uma
+  // vizinhança melhor na próxima sessão, não conteúdo.
+  waitUntil(passadaDeVetores(`confirmar ${id}`));
+
   waitUntil(
     capturarCorrecoes({
       proposta: proposta.valor,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { normalizarTipoEntidade } from "@/lib/entidades";
+import { waitUntil } from "@vercel/functions";
+import { normalizarTipoEntidade, passadaDeVetores } from "@/lib/entidades";
 import { criarEntidade, FusaoError } from "@/lib/fusao";
 import { erro } from "@/lib/rotas";
 
@@ -28,7 +29,12 @@ export async function POST(req: Request) {
   if (nome.trim() === "") return erro("corpo inválido: espera { nome, tipo }", 400);
 
   try {
-    return NextResponse.json(await criarEntidade(nome, tipo));
+    const r = await criarEntidade(nome, tipo);
+    // É o "passo zero" do perfil: a entidade nasce aqui e só entra na camada 3a
+    // quando tiver vetor. Sem esta passada, o nó semeado à mão nunca é
+    // encontrado por perfil parecido (4.8.1).
+    waitUntil(passadaDeVetores("criar"));
+    return NextResponse.json(r);
   } catch (e) {
     if (e instanceof FusaoError) return erro(e.message, 400);
     console.error("[criar entidade]", e);

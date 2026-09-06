@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
+import { passadaDeVetores } from "@/lib/entidades";
 import { FusaoError, renomear } from "@/lib/fusao";
 import { ehPronome, normalizarNome } from "@/lib/texto";
 import { erro } from "@/lib/rotas";
@@ -31,6 +33,8 @@ export async function POST(req: Request) {
 
   try {
     await renomear(chave, nome);
+    // Nome novo e alias novo: a string canônica mudou dos dois lados (4.8.1).
+    waitUntil(passadaDeVetores("renomear"));
     return NextResponse.json({ ok: true, nome });
   } catch (e) {
     if (e instanceof FusaoError) return erro(e.message, 400);

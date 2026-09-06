@@ -273,12 +273,23 @@ export interface ResumoEmbeddings {
 /**
  * Põe em dia o vetor das entidades — e só das que saíram de dia.
  *
- * **A comparação é de hash, e é o que dispensa gancho.** Editar o perfil em
- * `/entidades`, fundir, renomear, trocar o tipo, semear um nome: cinco rotas
- * mexem em entidade, e nenhuma precisa lembrar de invalidar o vetor. A string
- * canônica muda, o hash muda, e a próxima passada por aqui reembute. O caminho
- * oposto — um gancho em cada rota — é um lugar a mais para alguém esquecer, e
- * vetor velho não dá erro: dá vizinhança errada.
+ * **A comparação é de hash, e é ela que decide quem reembute.** Editar o perfil
+ * em `/entidades`, fundir, renomear, trocar o tipo, semear um nome: seis
+ * caminhos mexem em entidade, e nenhum precisa lembrar de invalidar o vetor. A
+ * string canônica muda, o hash muda, e a próxima passada por aqui reembute.
+ *
+ * **Quem faz essa próxima passada acontecer é `passadaDeVetores`**, logo abaixo,
+ * chamada em `waitUntil` pelo confirmar e pelas cinco rotas de `/entidades`
+ * (4.8.1). Até a 4.8 a única chamadora era `POST /api/entidades/embutir`, que
+ * nenhuma tela chama: a "próxima passada" descrita aqui não existia, e entidade
+ * nascida num confirmar ficava sem vetor **para sempre** — a camada 3a
+ * (candidatos por perfil) era código que não podia achar nada.
+ *
+ * O argumento contra o gancho continua registrado, e é bom: um lugar a mais
+ * onde alguém esquece de invalidar. Ele não se aplica aqui porque **o gancho
+ * não invalida nada** — quem decide é o hash. Esquecer um call site custa
+ * atraso, não vetor velho: a próxima passada de qualquer outro alcança. É
+ * exatamente isso que `embedding_fonte` compra.
  *
  * Três razões para reembutir, e as três são a mesma pergunta ("o que está
  * gravado corresponde ao que a entidade é hoje?"):
@@ -353,6 +364,30 @@ export async function garantirEmbeddings(limite = 500): Promise<ResumoEmbeddings
   );
 
   return { conferidas: linhas.length, embutidas: foraDeDia.length, modelo };
+}
+
+/**
+ * Uma passada de `garantirEmbeddings()` **fora do caminho da resposta**.
+ *
+ * Sempre em `waitUntil`, sempre engolindo a falha: nada no caminho do vetor
+ * pode impedir uma gravação, que é a mesma precedência do embedding de átomo
+ * (4.10). O sinal de que falhou é a linha `[entidades]` no log — e é mais uma
+ * coisa acontecendo depois do clique que eu não vejo (§14).
+ *
+ * Rodar com nada fora de dia custa **uma consulta e zero chamada de modelo**: a
+ * comparação de hash acontece no cliente, e a passada nem chega a escrever.
+ * Por isso o gancho pode ser generoso — chamar à toa é barato, esquecer de
+ * chamar é a camada 3a calada.
+ */
+export async function passadaDeVetores(origem: string): Promise<void> {
+  try {
+    const r = await garantirEmbeddings();
+    if (r.embutidas > 0) {
+      console.log(`[entidades] ${origem}: ${r.embutidas} entidade(s) reembutida(s)`);
+    }
+  } catch (e) {
+    console.error(`[entidades] ${origem}: não consegui pôr os vetores em dia:`, e);
+  }
 }
 
 // ─────────────── Slice 4.5: as duas camadas semânticas ───────────────

@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
+import { passadaDeVetores } from "@/lib/entidades";
 import { gravarCampo, normalizarCampo, PerfilError } from "@/lib/perfil";
 import { erro } from "@/lib/rotas";
 
@@ -36,7 +38,11 @@ export async function POST(req: Request) {
   }
 
   try {
-    return NextResponse.json({ ok: true, campo, ...(await gravarCampo(chave, campo, texto)) });
+    const r = await gravarCampo(chave, campo, texto);
+    // O perfil é o que mais muda a string canônica da entidade — e, portanto, o
+    // vetor dela. De todos os ganchos da 4.8.1, este é o que mais rende.
+    waitUntil(passadaDeVetores("perfil"));
+    return NextResponse.json({ ok: true, campo, ...r });
   } catch (e) {
     if (e instanceof PerfilError) return erro(e.message, 400);
     console.error("[perfil]", e);

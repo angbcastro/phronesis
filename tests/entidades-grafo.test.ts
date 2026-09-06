@@ -22,6 +22,7 @@ import {
   garantirEmbeddings,
   listarEntidades,
   nomesParaVocabulario,
+  passadaDeVetores,
 } from "@/lib/entidades";
 import type { EntidadeDoGrafo } from "@/lib/entidades";
 import { embutirVarios, fonteDaEntidade, hashDaFonte } from "@/lib/embedding";
@@ -240,5 +241,79 @@ describe("o vetor da entidade (slice 4.5)", () => {
     expect(String(escrita[0])).toContain("e.embedding_fonte = v.fonte");
     const params = escrita[1] as { entidades: { fonte: string }[] };
     expect(params.entidades[0].fonte).toBe(emDia(l));
+  });
+});
+
+/**
+ * O gancho (slice 4.8.1).
+ *
+ * `garantirEmbeddings()` tinha um chamador só — `POST /api/entidades/embutir` —
+ * e nenhuma tela chama essa rota. A "próxima passada" que o §8.4 descreve não
+ * existia: entidade nascida num confirmar ficava sem vetor para sempre, e a
+ * camada 3a era código que não podia achar nada.
+ */
+describe("a passada de vetores que o confirmar e as rotas disparam", () => {
+  const linha = (extra: Record<string, unknown> = {}) => ({
+    id: "id-raffa",
+    nome: "Raffa",
+    labels: ["Entidade", "Pessoa"],
+    aliases: [],
+    contexto: "amigo de infância",
+    pode_ajudar_com: null,
+    fizemos_juntos: null,
+    embedding_fonte: null,
+    embedding_modelo: null,
+    ...extra,
+  });
+
+  const emDia = (l: ReturnType<typeof linha>) =>
+    hashDaFonte(
+      fonteDaEntidade({
+        nome: l.nome,
+        tipo: "Pessoa",
+        aliases: l.aliases as string[],
+        perfil: {
+          contexto: l.contexto ?? "",
+          pode_ajudar_com: l.pode_ajudar_com ?? "",
+          fizemos_juntos: l.fizemos_juntos ?? "",
+        },
+      }),
+    );
+
+  it("a primeira passada embute, a segunda não embute de novo (regra 4)", async () => {
+    const l = linha();
+    // Primeira: a entidade não tem vetor. Segunda: o hash já é o de hoje —
+    // que é o estado em que a primeira a deixou.
+    consulta
+      .mockResolvedValueOnce([l] as never)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([
+        { ...l, embedding_fonte: emDia(l), embedding_modelo: modeloEmbedding() },
+      ] as never);
+
+    await passadaDeVetores("teste");
+    await passadaDeVetores("teste");
+
+    expect(embutir).toHaveBeenCalledTimes(1);
+  });
+
+  it("rodar com nada fora de dia custa uma consulta e zero chamada de modelo", async () => {
+    const l = linha();
+    consulta.mockResolvedValueOnce([
+      { ...l, embedding_fonte: emDia(l), embedding_modelo: modeloEmbedding() },
+    ] as never);
+
+    await passadaDeVetores("teste");
+    expect(consulta).toHaveBeenCalledTimes(1);
+    expect(embutir).not.toHaveBeenCalled();
+  });
+
+  it("falhar não sobe: nada no caminho do vetor impede uma gravação", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    consulta.mockRejectedValueOnce(new Error("neo4j fora"));
+
+    await expect(passadaDeVetores("confirmar abc")).resolves.toBeUndefined();
+    expect(log.mock.calls.map((c) => String(c[0])).join(" | ")).toContain("[entidades]");
+    log.mockRestore();
   });
 });

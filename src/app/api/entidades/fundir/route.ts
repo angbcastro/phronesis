@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
+import { passadaDeVetores } from "@/lib/entidades";
 import { fundir, FusaoError } from "@/lib/fusao";
 import { erro } from "@/lib/rotas";
 
@@ -25,7 +27,11 @@ export async function POST(req: Request) {
   }
 
   try {
-    return NextResponse.json(await fundir(vencedora, perdedora));
+    const r = await fundir(vencedora, perdedora);
+    // A fusão acrescenta alias ao vencedor, e alias entra em `fonteDaEntidade`:
+    // o hash muda, e o vetor tem de acompanhar (4.8.1).
+    waitUntil(passadaDeVetores("fundir"));
+    return NextResponse.json(r);
   } catch (e) {
     if (e instanceof FusaoError) return erro(e.message, 400);
     console.error("[fundir]", e);
