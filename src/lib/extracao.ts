@@ -39,7 +39,13 @@ import { sobreDe } from "./referencias";
 import { hashDeRegras, regras } from "./regras";
 import { resolverReferencias } from "./resolucao";
 import type { Atribuicoes } from "./resolucao";
-import { DURACAO_CHUNK_S, ORCAMENTO_POR_15_MIN, TIPOS_ATOMO } from "./tipos";
+import { normalizarNome } from "./texto";
+import {
+  DURACAO_CHUNK_S,
+  ORCAMENTO_POR_15_MIN,
+  TIPOS_ATOMO,
+  TIPOS_SEMPRE_EU,
+} from "./tipos";
 import type { EntidadeDoGrafo } from "./entidades";
 import type {
   AtomoCru,
@@ -48,6 +54,7 @@ import type {
   EntidadePropostaFrase,
   Extensao,
   Extracao,
+  MencaoCrua,
   Regra,
   TipoAtomo,
   TrechoAncorado,
@@ -64,8 +71,13 @@ import type {
  * palavra por palavra idêntico o prompt produz outra saída. É o mesmo motivo
  * pelo qual o `resolucao-2` subiu de versão na 4.5 — a versão acompanha a
  * entrada, não só a redação.
+ *
+ * Subiu para `extracao-7` na 4.9 pelo mesmo critério, e desta vez a entrada
+ * mudou de natureza: o extrator passou a receber o dossiê do que o grafo acha
+ * que aquele trecho cita, e a devolver `{citado, chave}` em vez de um nome
+ * solto. `INSTRUCOES_BASE` e `FORMATO` continuam sem mudar um byte.
  */
-export const PROMPT_VERSION = "extracao-6";
+export const PROMPT_VERSION = "extracao-7";
 
 export class ExtracaoError extends Error {
   /** Mesma distinção de `SttError`: voltar mais tarde, ou mexer no código. */
@@ -178,6 +190,48 @@ export function blocoDeRegras(lista: readonly Regra[]): string {
   return `AJUSTES QUE EU PEDI
 Vieram da minha revisão de sessões reais e valem sobre tudo o que está acima. Onde um ajuste contradisser uma seção anterior, o ajuste vence.
 ${linhas.join("\n")}
+
+`;
+}
+
+/**
+ * O bloco do dossiê, ou string vazia (slice 4.9).
+ *
+ * **Dossiê vazio devolve `""`, e aí a chamada sai byte a byte igual à da 4.8.**
+ * Grafo vazio, primeira sessão da vida do sistema, Gateway fora: tudo como
+ * antes. É o mesmo no-op que `blocoDeRegras([]) === ""` garante desde a 4.6, e
+ * é o que permite esta fatia inteira ser reversível olhando uma linha.
+ *
+ * Ele declara a chave nova **de dentro de si** — o precedente é o `estende` da
+ * 4.8: quem pede um campo é quem explica o campo, e sem o bloco não há campo
+ * nenhum a pedir. `INSTRUCOES_BASE` e `FORMATO` continuam intactos.
+ *
+ * A amarra do fim é a que evita o pior efeito colateral possível: a lista de
+ * entidades conhecidas na frente do modelo é convite para ele pendurar um
+ * SENTIMENTO em alguém que não é `eu`. A frase pede; o parse recusa.
+ */
+export function blocoDasCandidatas(dossie: Dossie): string {
+  if (dossie.length === 0) return "";
+
+  const lista = dossie
+    .map(({ entidade: e }) => {
+      const alias = e.aliases.length > 0 ? `; também escrito: ${e.aliases.join(", ")}` : "";
+      const contexto = e.perfil.contexto ? `\n    ${e.perfil.contexto}` : "";
+      return `- chave "${e.nome_normalizado}" — ${e.nome} (${e.tipo.toLowerCase()}${alias})${contexto}`;
+    })
+    .join("\n");
+
+  return `QUEM O DIÁRIO JÁ CONHECE
+Estas entidades já existem no diário, e este trecho parece citar alguma delas. A grafia da transcrição pode estar errada: quem transcreve erra nome próprio o tempo todo — "Jean" por "Giampaolo Lepore", "Dapta" por "Adapta".
+${lista}
+
+Então, em "sobre" e em cada item de "menciona", devolva um objeto e não um nome solto:
+{"citado":"<a grafia como ela aparece na transcrição>","chave":"<uma chave da lista, ou null>"}
+
+- "citado" é sempre o que a transcrição escreveu, sem consertar nada.
+- "chave" é a chave da lista quando a menção for uma delas, e null quando não for. NUNCA invente chave fora da lista acima.
+- Quando você apontar uma chave, escreva no "texto" do átomo o NOME GRAVADO daquela entidade, e não o que a transcrição escreveu: se a transcrição diz "giam" e a chave é "giampaolo lepore", o texto do átomo diz "Giampaolo Lepore". **Só o nome próprio se troca** — no resto continua valendo tudo o que está acima, inclusive COM AS MINHAS PALAVRAS.
+- Isto não abre exceção na regra do "sobre": SENTIMENTO, APRENDIZADO e ROTINA continuam sendo sempre de "eu", por mais que a lista acima ofereça um nome que combine com o assunto.
 
 `;
 }
@@ -307,20 +361,25 @@ export const comRegras = (base: string, lista: readonly Regra[]): string =>
   inserirAntesDoFormato(base, blocoDeRegras(lista));
 
 /**
- * O prompt de uma chamada: base + regras aprovadas + o bloco da janela + o
- * texto. Os dois blocos injetados entram no **mesmo** ponto, na ordem em que
- * aparecem aqui — regra primeiro, porque ela vale sobre tudo, e a janela
- * depois, porque ela é sobre esta chamada e mais nenhuma.
+ * O prompt de uma chamada: base + regras aprovadas + o dossiê + o bloco da
+ * janela + o texto. Os três blocos injetados entram no **mesmo** ponto, na ordem
+ * em que aparecem aqui — regra primeiro, porque ela vale sobre tudo; o dossiê
+ * depois, porque ele é material; e a janela por último, porque ela é sobre esta
+ * chamada e mais nenhuma.
  *
- * Sem `contexto`, sai byte a byte igual ao de antes da slice 4.8.
+ * Sem `contexto` e sem dossiê, sai byte a byte igual ao de antes da slice 4.8.
  */
 export const montarPrompt = (
   texto: string,
   lista: readonly Regra[] = [],
   base: string = BASE,
   contexto?: ContextoDeJanela,
+  dossie: Dossie = [],
 ): string =>
-  inserirAntesDoFormato(comRegras(base, lista), blocoDaJanela(contexto)) + texto.trim();
+  inserirAntesDoFormato(
+    inserirAntesDoFormato(comRegras(base, lista), blocoDasCandidatas(dossie)),
+    blocoDaJanela(contexto),
+  ) + texto.trim();
 
 /**
  * A versão que vai carimbada no átomo (regra 7).
@@ -382,6 +441,46 @@ function listaDeTexto(v: unknown): string[] {
   return v.map(texto).filter((x) => x !== "");
 }
 
+/**
+ * Uma menção, **nas duas formas** (slice 4.9).
+ *
+ * String vira `{ citado, chave: null }`. É o que mantém intacto o caminho sem
+ * dossiê — onde o bloco das candidatas não entra, o modelo continua devolvendo
+ * o nome solto que o `extracao-6` pedia — e é o que lê qualquer resposta no
+ * formato antigo sem uma linha de migração.
+ *
+ * A chave sai normalizada: o modelo às vezes devolve "Giampaolo Lepore" onde a
+ * lista dizia `giampaolo lepore`, e recusar por causa da caixa seria jogar fora
+ * a resposta certa. Quem confere se ela existe no catálogo é a resolução, que é
+ * quem tem o catálogo na mão.
+ */
+export function comoMencaoCrua(v: unknown): MencaoCrua | null {
+  if (typeof v === "string") {
+    const citado = texto(v);
+    return citado === "" ? null : { citado, chave: null };
+  }
+  if (!v || typeof v !== "object") return null;
+
+  const o = v as Record<string, unknown>;
+  const citado = texto(o.citado);
+  const chave = normalizarNome(texto(o.chave));
+
+  // Sem citado e sem chave não há menção nenhuma. Com chave e sem citado, a
+  // chave serve de grafia: é pior perder a menção do que mostrar o nome do nó
+  // onde deveria estar o que eu falei.
+  if (citado === "" && chave === "") return null;
+  return { citado: citado === "" ? chave : citado, chave: chave === "" ? null : chave };
+}
+
+/** As menções de `menciona`, aceitando item solto como lista de um. */
+function listaDeMencoes(v: unknown): MencaoCrua[] {
+  const itens = Array.isArray(v) ? v : [v];
+  return itens.flatMap((x) => {
+    const m = comoMencaoCrua(x);
+    return m ? [m] : [];
+  });
+}
+
 export interface RespostaExtrator {
   atomos: AtomoCru[];
   /** Só uma dica de tipo: quem decide o que vira nó é a revisão. */
@@ -433,18 +532,24 @@ export function parsearResposta(
     const tipo = normalizarTipo(i.tipo);
     const t = texto(i.texto);
     const trechos = listaDeTexto(i.trechos);
-    const sobre = texto(i.sobre);
+    const sobre = comoMencaoCrua(i.sobre);
 
     if (t === "") descartados.push({ motivo: "texto vazio", bruto: item });
     else if (tipo === null) descartados.push({ motivo: `tipo desconhecido: ${String(i.tipo)}`, bruto: item });
     else if (trechos.length === 0) descartados.push({ motivo: "sem trecho — não haveria como ligar ao áudio", bruto: item });
-    else if (sobre === "") descartados.push({ motivo: "sem sujeito", bruto: item });
+    else if (sobre === null) descartados.push({ motivo: "sem sujeito", bruto: item });
     else {
       atomos.push({
         texto: t,
         tipo,
-        sobre,
-        menciona: listaDeTexto(i.menciona),
+        // A guarda do `eu` (4.8.1), do lado da extração: o dossiê não pode
+        // fazer o sujeito de um SENTIMENTO, APRENDIZADO ou ROTINA apontar para
+        // um nó do grafo. A lista de conhecidos na frente do modelo é convite
+        // exatamente para isso, e o prompt pede o contrário — aqui a chave cai,
+        // e o `citado` fica como veio: quem arbitra o sujeito errado do
+        // extrator é a revisão, não este código.
+        sobre: TIPOS_SEMPRE_EU.includes(tipo) ? { ...sobre, chave: null } : sobre,
+        menciona: listaDeMencoes(i.menciona),
         trechos,
       });
     }
@@ -693,7 +798,7 @@ export async function extrairJanela(
     sobre: sobreDe(a).entidade,
   }));
   const contexto: ContextoDeJanela = { jaPropostos: anteriores, ...faixaDaJanela(janela), unica };
-  const prompt = montarPrompt(janela.texto, aprovadas, meu.prompt, contexto);
+  const prompt = montarPrompt(janela.texto, aprovadas, meu.prompt, contexto, dossie);
 
   async function chamar() {
     try {

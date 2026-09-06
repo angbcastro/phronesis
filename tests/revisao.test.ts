@@ -255,7 +255,7 @@ describe("as referências que a tela destaca", () => {
     menciona,
     trechos: [],
     perfila: [],
-    prompt_version: "extracao-6",
+    prompt_version: "extracao-7",
     modelo: "zai/glm-5.3-flash",
   });
 

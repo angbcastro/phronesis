@@ -18,7 +18,7 @@ vi.mock("@/lib/r2", () => ({
 vi.mock("@/lib/extracao", () => ({
   extrair: vi.fn(),
   extrairJanela: vi.fn(),
-  PROMPT_VERSION: "extracao-6",
+  PROMPT_VERSION: "extracao-7",
 }));
 
 // O módulo real, com as duas idas ao banco trocadas: `acharPorChave` e a
@@ -105,13 +105,13 @@ const resultado = (novos: number, extra: Record<string, unknown> = {}) => ({
     menciona: [],
     perfila: [],
     trechos: [],
-    prompt_version: "extracao-6",
+    prompt_version: "extracao-7",
     modelo: "zai/glm-5.3-flash",
   })),
   estende: [],
   entidades: [],
   descartados: [],
-  prompt_version: "extracao-6",
+  prompt_version: "extracao-7",
   modelo: "zai/glm-5.3-flash",
   prompt_version_resolucao: null,
   modelo_resolucao: null,
@@ -351,7 +351,7 @@ describe("a proposta final", () => {
       atomos: [],
       entidades: [],
       descartados: [],
-      prompt_version: "extracao-6",
+      prompt_version: "extracao-7",
       modelo: "zai/glm-5.3-flash",
       prompt_version_resolucao: null,
       modelo_resolucao: null,

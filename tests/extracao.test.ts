@@ -4,6 +4,8 @@ import {
   ancorar,
   ancorarTrechos,
   blocoDaJanela,
+  blocoDasCandidatas,
+  comoMencaoCrua,
   isolarJson,
   montarPrompt,
   normalizarTipo,
@@ -29,8 +31,8 @@ const novas = (crus: AtomoCru[]): Atribuicoes => {
     porque: [],
   });
   return {
-    sobre: crus.map((a) => ref(a.sobre)),
-    menciona: crus.map((a) => a.menciona.map(ref)),
+    sobre: crus.map((a) => ref(a.sobre.citado)),
+    menciona: crus.map((a) => a.menciona.map((m) => ref(m.citado))),
     perfila: crus.map(() => []),
     modelo: null,
     prompt_version: null,
@@ -40,7 +42,7 @@ const novas = (crus: AtomoCru[]): Atribuicoes => {
 const item = (extra: Record<string, unknown> = {}) => ({
   texto: "O contrato da Exxmed vai atrasar",
   tipo: "FATO",
-  sobre: "Exxmed",
+  sobre: { citado: "Exxmed", chave: null },
   menciona: [],
   trechos: ["o contrato da exxmed vai atrasar"],
   ...extra,
@@ -155,7 +157,8 @@ describe("parse", () => {
   });
 
   it("menciona ausente ou malformado não quebra o átomo", () => {
-    const menciona = (v: unknown) => parsearResposta(resposta([item({ menciona: v })])).atomos[0].menciona;
+    const menciona = (v: unknown) =>
+      parsearResposta(resposta([item({ menciona: v })])).atomos[0].menciona.map((m) => m.citado);
     expect(menciona(undefined)).toEqual([]);
     expect(menciona(42)).toEqual([]);
     expect(menciona(["Exxmed", "", 7])).toEqual(["Exxmed"]);
@@ -171,14 +174,14 @@ describe("ancoragem", () => {
     {
       texto: "O contrato da Exxmed vai atrasar",
       tipo: "FATO",
-      sobre: "Exxmed",
+      sobre: { citado: "Exxmed", chave: null },
       menciona: [],
       trechos: ["o contrato da exxmed vai atrasar"],
     },
     {
       texto: "Isso me irritou",
       tipo: "SENTIMENTO",
-      sobre: "Exxmed",
+      sobre: { citado: "Exxmed", chave: null },
       menciona: [],
       trechos: ["isso me irritou"],
     },
@@ -228,7 +231,7 @@ describe("ancoragem", () => {
       {
         texto: "Treinei, e treinar tem me segurado",
         tipo: "SENTIMENTO",
-        sobre: "eu",
+        sobre: { citado: "eu", chave: null },
         menciona: [],
         trechos: ["fui treinar de manha", "treinar tem me segurado"],
       },
@@ -247,14 +250,14 @@ describe("ancoragem", () => {
       {
         texto: "O assunto, do começo ao fim",
         tipo: "FATO",
-        sobre: "eu",
+        sobre: { citado: "eu", chave: null },
         menciona: [],
         trechos: ["primeiro assunto", "o assunto de novo"],
       },
       {
         texto: "Teve um meio qualquer",
         tipo: "FATO",
-        sobre: "eu",
+        sobre: { citado: "eu", chave: null },
         menciona: [],
         trechos: ["um meio qualquer"],
       },
@@ -360,6 +363,103 @@ describe("o bloco da janela", () => {
   });
 });
 
+describe("o bloco das candidatas (slice 4.9)", () => {
+  const GIAMPAOLO = {
+    id: "e1",
+    nome: "Giampaolo Lepore",
+    nome_normalizado: "giampaolo lepore",
+    chaves: ["giampaolo lepore"],
+    tipo: "Pessoa" as const,
+    sessoes: 3,
+    atomos: 7,
+    aliases: ["Giam"],
+    perfil: { contexto: "sócio na Adapta", pode_ajudar_com: "", fizemos_juntos: "" },
+  };
+  const dossie = [{ entidade: GIAMPAOLO, camada: "prefixo" as const, score: 0.5 }];
+
+  it("dossiê vazio devolve vazio — e o prompt sai byte a byte igual ao da 4.8", () => {
+    expect(blocoDasCandidatas([])).toBe("");
+    expect(montarPrompt("bla", [], undefined, undefined, [])).toBe(montarPrompt("bla"));
+  });
+
+  it("lista chave, nome gravado, tipo, alias e contexto", () => {
+    const b = blocoDasCandidatas(dossie);
+    expect(b).toContain('chave "giampaolo lepore"');
+    expect(b).toContain("Giampaolo Lepore (pessoa; também escrito: Giam)");
+    expect(b).toContain("sócio na Adapta");
+  });
+
+  it("manda devolver a chave da lista, ou null — e nunca inventar uma", () => {
+    const b = blocoDasCandidatas(dossie);
+    expect(b).toContain('"citado"');
+    expect(b).toContain('"chave"');
+    expect(b).toMatch(/NUNCA invente chave fora da lista/);
+  });
+
+  it("manda o texto do átomo levar o nome gravado, e só o nome próprio", () => {
+    const b = blocoDasCandidatas(dossie);
+    expect(b).toContain("NOME GRAVADO");
+    expect(b).toMatch(/Só o nome próprio se troca/);
+  });
+
+  it("não abre exceção na regra do sujeito de SENTIMENTO", () => {
+    expect(blocoDasCandidatas(dossie)).toMatch(/SENTIMENTO, APRENDIZADO e ROTINA continuam/);
+  });
+
+  it("entra depois das regras e antes da janela, tudo antes do FORMATO", () => {
+    const p = montarPrompt(
+      "bla",
+      [{ id: "r1", texto: "regra aprovada", cita: [], aprovada_em: "2026-09-06" }],
+      undefined,
+      { de_s: 120, ate_s: 240, unica: false, jaPropostos: [] },
+      dossie,
+    );
+    expect(p.indexOf("AJUSTES QUE EU PEDI")).toBeLessThan(p.indexOf("QUEM O DIÁRIO JÁ CONHECE"));
+    expect(p.indexOf("QUEM O DIÁRIO JÁ CONHECE")).toBeLessThan(p.indexOf("ESTA JANELA"));
+    expect(p.indexOf("ESTA JANELA")).toBeLessThan(p.indexOf("\nFORMATO\n"));
+  });
+});
+
+describe("a menção nas duas formas (slice 4.9)", () => {
+  it("nome solto continua valendo — é o caminho sem dossiê, e o formato antigo", () => {
+    expect(comoMencaoCrua("Exxmed")).toEqual({ citado: "Exxmed", chave: null });
+    const { atomos } = parsearResposta(resposta([item({ sobre: "Exxmed" })]));
+    expect(atomos[0].sobre).toEqual({ citado: "Exxmed", chave: null });
+  });
+
+  it("o par guarda a grafia falada E o nó — é o ponto da fatia", () => {
+    const { atomos } = parsearResposta(
+      resposta([item({ sobre: { citado: "Jean", chave: "Giampaolo Lepore" } })]),
+    );
+    // A chave sai normalizada: recusar por causa da caixa seria jogar fora a
+    // resposta certa.
+    expect(atomos[0].sobre).toEqual({ citado: "Jean", chave: "giampaolo lepore" });
+  });
+
+  it("menção sem citado nenhum não é menção", () => {
+    expect(comoMencaoCrua({ chave: "", citado: "" })).toBeNull();
+    expect(comoMencaoCrua(42)).toBeNull();
+  });
+
+  it("um SENTIMENTO não aponta para nó nenhum, por mais que a lista ofereça", () => {
+    // A guarda do `eu` (4.8.1) do lado da extração: a lista de conhecidos na
+    // frente do modelo é convite para pendurar sentimento em outra pessoa.
+    const { atomos } = parsearResposta(
+      resposta([
+        item({ tipo: "SENTIMENTO", sobre: { citado: "Jean", chave: "giampaolo lepore" } }),
+      ]),
+    );
+    expect(atomos[0].sobre).toEqual({ citado: "Jean", chave: null });
+  });
+
+  it("num FATO a chave fica: lá o sujeito é o assunto mesmo", () => {
+    const { atomos } = parsearResposta(
+      resposta([item({ tipo: "FATO", sobre: { citado: "Dapta", chave: "adapta" } })]),
+    );
+    expect(atomos[0].sobre.chave).toBe("adapta");
+  });
+});
+
 describe("estende", () => {
   const comEstende = (itens: unknown[]) => JSON.stringify({ atomos: [], estende: itens });
 
@@ -401,7 +501,7 @@ describe("ancoragem por janela", () => {
     {
       texto: "Isso me irritou",
       tipo: "SENTIMENTO",
-      sobre: "eu",
+      sobre: { citado: "eu", chave: null },
       menciona: [],
       trechos: ["isso me irritou"],
     },

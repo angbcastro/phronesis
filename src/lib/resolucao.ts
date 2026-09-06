@@ -324,9 +324,9 @@ export function decidir(c: Candidatos): Decisao {
 export function listarMencoes(atomos: readonly AtomoCru[]): Mencao[] {
   const lista: Mencao[] = [];
   atomos.forEach((a, atomo) => {
-    lista.push({ atomo, papel: "sobre", ordem: 0, citado: a.sobre });
-    (a.menciona ?? []).forEach((citado, ordem) =>
-      lista.push({ atomo, papel: "menciona", ordem, citado }),
+    lista.push({ atomo, papel: "sobre", ordem: 0, citado: a.sobre.citado });
+    (a.menciona ?? []).forEach((m, ordem) =>
+      lista.push({ atomo, papel: "menciona", ordem, citado: m.citado }),
     );
   });
   return lista;

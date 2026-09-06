@@ -74,7 +74,7 @@ const atomo = (n: number, texto: string, sobre = "eu"): AtomoProposto => ({
   menciona: [],
   perfila: [],
   trechos: [{ texto, inicio_s: n, fim_s: n + 1, ancora: "exata" }],
-  prompt_version: "extracao-6",
+  prompt_version: "extracao-7",
   modelo: "zai/glm-5.3-flash",
 });
 
@@ -85,7 +85,7 @@ function resultado(parcial: Partial<ResultadoDaJanela> = {}): ResultadoDaJanela 
     estende: [],
     entidades: [],
     descartados: [],
-    prompt_version: "extracao-6",
+    prompt_version: "extracao-7",
     modelo: "zai/glm-5.3-flash",
     prompt_version_resolucao: null,
     modelo_resolucao: null,
@@ -224,12 +224,12 @@ describe("somar a janela ao acumulado", () => {
     const p = aplicarJanela(
       parcialVazio("s1"),
       j(0, 0, 3),
-      resultado({ prompt_version: "extracao-6+a1b2c3d4", modelo: "zai/glm-5.3-flash" }),
+      resultado({ prompt_version: "extracao-7+a1b2c3d4", modelo: "zai/glm-5.3-flash" }),
       AGORA,
     );
     expect(estadoDaJanela(p, 0)).toMatchObject({
       estado: "pronta",
-      prompt_version: "extracao-6+a1b2c3d4",
+      prompt_version: "extracao-7+a1b2c3d4",
       modelo: "zai/glm-5.3-flash",
     });
   });
@@ -423,7 +423,7 @@ describe("do acumulado para a proposta", () => {
 
   it("o cabeçalho leva a procedência da última janela que chamou um modelo", () => {
     const e = montarExtracao(comAtomos(), transcricao, []);
-    expect(e.prompt_version).toBe("extracao-6");
+    expect(e.prompt_version).toBe("extracao-7");
     expect(e.modelo).toBe("zai/glm-5.3-flash");
     expect(e.prompt_version_resolucao).toBe("resolucao-2");
   });

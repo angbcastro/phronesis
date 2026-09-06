@@ -233,12 +233,44 @@ export interface MarcaPerfil {
  */
 export type Ancora = "exata" | "aproximada" | "nenhuma";
 
+/**
+ * Uma entidade citada, como o extrator a devolve desde a slice 4.9.
+ *
+ * Eram duas strings — `sobre: "Jean"` — e viraram um par, porque o extrator
+ * passou a receber o dossiê do que o grafo acha que aquele trecho cita
+ * (`recuperacao.ts`) e agora responde as duas coisas: **o que a transcrição
+ * escreveu** e **qual nó é**, quando ele reconhece um.
+ *
+ * `chave` é `null` quando a menção não é nenhuma das candidatas — e é sempre
+ * `null` no caminho sem dossiê, que é o que faz aquele caminho continuar se
+ * comportando como na 4.8. Chave que não existe no catálogo é descartada em
+ * silêncio na resolução, mesma regra que o vetor já tem.
+ */
+export interface MencaoCrua {
+  /** A grafia como ela aparece na transcrição: "Jean", "giam", "Dapta". */
+  citado: string;
+  /** `nome_normalizado` do nó apontado, ou `null`. */
+  chave: string | null;
+}
+
+/**
+ * Os três tipos cujo sujeito é `eu` **por contrato do prompt da extração**:
+ * "SENTIMENTO, APRENDIZADO e ROTINA → SEMPRE 'eu'". Sentimento é meu por
+ * definição mesmo quando foi outra pessoa que o provocou; quem provocou vai em
+ * `menciona`.
+ *
+ * Mora aqui desde a 4.9 porque são dois lugares que não podem divergir: o parse
+ * da extração, que recusa a chave do dossiê no sujeito desses tipos, e a
+ * resolução, que recusa o julgamento que tira o sujeito de `eu`.
+ */
+export const TIPOS_SEMPRE_EU: readonly TipoAtomo[] = ["SENTIMENTO", "APRENDIZADO", "ROTINA"];
+
 /** O que o modelo devolve, antes de qualquer casamento com o áudio. */
 export interface AtomoCru {
   texto: string;
   tipo: TipoAtomo;
-  sobre: string;
-  menciona: string[];
+  sobre: MencaoCrua;
+  menciona: MencaoCrua[];
   /**
    * Pedaços literais da transcrição que sustentam o átomo — 1..n.
    *

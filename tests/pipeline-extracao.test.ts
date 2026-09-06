@@ -23,7 +23,7 @@ vi.mock("@/lib/r2", () => ({
 vi.mock("@/lib/extracao", () => ({
   extrair: vi.fn(),
   extrairJanela: vi.fn(),
-  PROMPT_VERSION: "extracao-6",
+  PROMPT_VERSION: "extracao-7",
 }));
 
 vi.mock("@/lib/sessoes", () => ({
@@ -189,7 +189,7 @@ describe("re-extração forçada", () => {
   it("a cópia vem depois da proposta nova — é ela que importa se algo morrer no meio", async () => {
     r2.set(CHAVE_TRANSCRICAO, transcricao);
     r2.set(CHAVE_EXTRACAO, proposta("extracao-5"));
-    vi.mocked(extrair).mockResolvedValue(proposta("extracao-6") as never);
+    vi.mocked(extrair).mockResolvedValue(proposta("extracao-7") as never);
 
     await extrairSessao("s1", { forcar: true });
 
@@ -202,7 +202,7 @@ describe("re-extração forçada", () => {
   it("falhar ao guardar a cópia não derruba a re-extração", async () => {
     r2.set(CHAVE_TRANSCRICAO, transcricao);
     r2.set(CHAVE_EXTRACAO, proposta("extracao-5"));
-    vi.mocked(extrair).mockResolvedValue(proposta("extracao-6") as never);
+    vi.mocked(extrair).mockResolvedValue(proposta("extracao-7") as never);
     vi.mocked(putJson).mockImplementation(async (key: string) => {
       if (key.endsWith("extracao-anterior.json")) throw new Error("R2 fora do ar");
       return { etag: null };
@@ -211,7 +211,7 @@ describe("re-extração forçada", () => {
     const r = await extrairSessao("s1", { forcar: true });
 
     expect(r.status).toBe("em_revisao");
-    expect(r.extracao).toMatchObject({ prompt_version: "extracao-6" });
+    expect(r.extracao).toMatchObject({ prompt_version: "extracao-7" });
   });
 
   it("primeira extração da sessão não inventa uma anterior", async () => {

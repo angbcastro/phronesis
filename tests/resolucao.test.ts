@@ -40,7 +40,7 @@ import {
 } from "@/lib/resolucao";
 import { normalizarNome } from "@/lib/texto";
 import type { CandidatoSemantico, EntidadeDoGrafo } from "@/lib/entidades";
-import type { AtomoCru, ReferenciaResolvida } from "@/lib/tipos";
+import type { AtomoCru, MencaoCrua, ReferenciaResolvida } from "@/lib/tipos";
 
 const chamar = vi.mocked(generateText);
 const semantica = vi.mocked(candidatosSemanticos);
@@ -92,10 +92,13 @@ const no = (nome: string, extra: Partial<EntidadeDoGrafo> = {}): EntidadeDoGrafo
   };
 };
 
+/** O que o extrator devolve por menção desde a 4.9: a grafia, e o nó ou nada. */
+const cita = (citado: string, chave: string | null = null): MencaoCrua => ({ citado, chave });
+
 const atomo = (sobre: string, extra: Partial<AtomoCru> = {}): AtomoCru => ({
   texto: "Fui no parque andar de slackline",
   tipo: "FATO",
-  sobre,
+  sobre: cita(sobre),
   menciona: [],
   trechos: ["fui no parque andar de slack"],
   ...extra,
@@ -184,7 +187,7 @@ describe("só chama o modelo quando há o que decidir", () => {
 
 describe("sessão sem ambiguidade não paga nada", () => {
   it("nenhuma menção duvidosa, nenhuma chamada de modelo (critério 5)", async () => {
-    const atomos = [atomo("eu", { menciona: ["Isinha"] })];
+    const atomos = [atomo("eu", { menciona: [cita("Isinha")] })];
     const r = await resolverReferencias(atomos, [no("eu"), no("Isinha")]);
 
     expect(chamar).not.toHaveBeenCalled();
@@ -204,7 +207,7 @@ describe("sessão sem ambiguidade não paga nada", () => {
 
 describe("o agente atribui menção por menção", () => {
   const atomos = [
-    atomo("eu", { texto: "Fui no parque andar de slackline com o Rafa", menciona: ["Rafa"] }),
+    atomo("eu", { texto: "Fui no parque andar de slackline com o Rafa", menciona: [cita("Rafa")] }),
     atomo("Rafa", { texto: "Fiz uma call com o Rafa para fechar o evento" }),
   ];
 
@@ -374,7 +377,7 @@ describe("a mesma pergunta não vai duas vezes", () => {
   it("duas menções iguais no mesmo átomo viram uma pergunta só (D2)", async () => {
     responder({ referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
     const r = await resolverReferencias(
-      [atomo("eu", { menciona: ["Rafa", "rafa"] })],
+      [atomo("eu", { menciona: [cita("Rafa"), cita("rafa")] })],
       [no("eu"), RAFFA, RAPHA],
     );
 
@@ -419,7 +422,7 @@ describe("a mesma pergunta não vai duas vezes", () => {
  * dele: `"eu"` casa exato, a 3b traz de quem são os vizinhos, e a menção vai ao
  * agente — que pode responder outra pessoa. É o único achado da fatia que
  * corrompia dado em toda sessão gravada, e o conserto é o código recusar a
- * resposta que quebra o contrato do `extracao-6`, não deixar de perguntar.
+ * resposta que quebra o contrato do `extracao-7`, não deixar de perguntar.
  */
 describe("SENTIMENTO, APRENDIZADO e ROTINA são sempre de eu", () => {
   const EU = no("eu");
@@ -470,7 +473,7 @@ describe("SENTIMENTO, APRENDIZADO e ROTINA são sempre de eu", () => {
     });
 
     const r = await resolverReferencias(
-      [atomo("eu", { tipo: "SENTIMENTO", menciona: ["Rafa"] })],
+      [atomo("eu", { tipo: "SENTIMENTO", menciona: [cita("Rafa")] })],
       [EU, RAFFA, RAPHA],
     );
 
@@ -571,7 +574,7 @@ describe("as marcas de perfil", () => {
 
 describe("mecânica", () => {
   it("as menções saem na ordem em que a revisão as mostra", () => {
-    expect(listarMencoes([atomo("eu", { menciona: ["a", "b"] })])).toEqual([
+    expect(listarMencoes([atomo("eu", { menciona: [cita("a"), cita("b")] })])).toEqual([
       { atomo: 0, papel: "sobre", ordem: 0, citado: "eu" },
       { atomo: 0, papel: "menciona", ordem: 0, citado: "a" },
       { atomo: 0, papel: "menciona", ordem: 1, citado: "b" },
