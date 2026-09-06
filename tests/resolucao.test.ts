@@ -34,6 +34,7 @@ import {
   montarPrompt,
   parsearResposta,
   resolverReferencias,
+  travadoEmEu,
   unir,
   validarMarcas,
 } from "@/lib/resolucao";
@@ -408,6 +409,103 @@ describe("a mesma pergunta não vai duas vezes", () => {
     delete process.env.AI_GATEWAY_API_KEY;
     const r = await resolverReferencias([atomo("Marina")], []);
     expect(r.sobre[0].entidade).toBe("Marina");
+  });
+});
+
+/**
+ * A guarda do `"eu"` (slice 4.8.1, A2).
+ *
+ * As camadas semânticas são calculadas por átomo e entregues a todas as menções
+ * dele: `"eu"` casa exato, a 3b traz de quem são os vizinhos, e a menção vai ao
+ * agente — que pode responder outra pessoa. É o único achado da fatia que
+ * corrompia dado em toda sessão gravada, e o conserto é o código recusar a
+ * resposta que quebra o contrato do `extracao-6`, não deixar de perguntar.
+ */
+describe("SENTIMENTO, APRENDIZADO e ROTINA são sempre de eu", () => {
+  const EU = no("eu");
+
+  /** O vizinho vetorial vota noutra pessoa, e é o que põe a menção em julgamento. */
+  const comVizinhoRaffa = () =>
+    semantica.mockImplementation(async (textos) => textos.map(() => [porVizinhos("raffa")]));
+
+  it("o sujeito continua eu mesmo quando o agente responde outra pessoa", async () => {
+    comVizinhoRaffa();
+    responder({
+      referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "o slackline é dele" }],
+      perfil: [],
+    });
+
+    const r = await resolverReferencias(
+      [atomo("eu", { tipo: "SENTIMENTO", texto: "Fiquei feliz depois do parque" })],
+      [EU, RAFFA],
+    );
+
+    expect(r.sobre[0]).toMatchObject({ entidade: "eu", conhecida: true, certo: false });
+    expect(r.sobre[0].motivo).toContain("SENTIMENTO");
+  });
+
+  it("a recusa aparece na tela, em vez de acontecer calada", async () => {
+    // Um agente querendo tirar um APRENDIZADO de `eu` costuma ser sinal de que
+    // o tipo do átomo está errado — e isso eu só conserto se vir.
+    comVizinhoRaffa();
+    responder({ referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
+
+    const r = await resolverReferencias(
+      [atomo("eu", { tipo: "APRENDIZADO", texto: "Aprendi a montar a fita sozinho" })],
+      [EU, RAFFA],
+    );
+
+    expect(r.sobre[0].certo).toBe(false);
+    expect(r.sobre[0].porque).toEqual([]);
+  });
+
+  it("a guarda é do sujeito: a menção do mesmo átomo continua livre", async () => {
+    comVizinhoRaffa();
+    responder({
+      referencias: [
+        { n: 1, entidade: "raffa", certo: true, motivo: "" },
+        { n: 2, entidade: "raffa", certo: true, motivo: "" },
+      ],
+      perfil: [],
+    });
+
+    const r = await resolverReferencias(
+      [atomo("eu", { tipo: "SENTIMENTO", menciona: ["Rafa"] })],
+      [EU, RAFFA, RAPHA],
+    );
+
+    expect(r.sobre[0].entidade).toBe("eu");
+    expect(r.menciona[0][0]).toMatchObject({ entidade: "Raffa", certo: true });
+  });
+
+  it("num FATO o agente continua podendo tirar o sujeito de eu", async () => {
+    // A regra é dos três tipos, não de todo átomo: em FATO, OPINIAO, CONQUISTA
+    // e DECISAO o sujeito é o assunto, e `eu` ali é só o padrão de quando não há
+    // outro.
+    comVizinhoRaffa();
+    responder({ referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
+
+    const r = await resolverReferencias([atomo("eu", { tipo: "FATO" })], [EU, RAFFA]);
+    expect(r.sobre[0]).toMatchObject({ entidade: "Raffa", certo: true });
+  });
+
+  it("o extrator que já pôs outra pessoa no SENTIMENTO não é reescrito aqui", async () => {
+    // A guarda impede **tirar** o sujeito de `eu`. Se o extrator violou o
+    // próprio contrato, quem arbitra é a revisão, não este código.
+    responder({ referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
+    const r = await resolverReferencias(
+      [atomo("Rafa", { tipo: "SENTIMENTO" })],
+      [EU, RAFFA, RAPHA],
+    );
+    expect(r.sobre[0]).toMatchObject({ entidade: "Raffa", certo: true });
+  });
+
+  it("travadoEmEu diz quando a guarda vale", () => {
+    expect(travadoEmEu("SENTIMENTO", "sobre", "eu")).toBe(true);
+    expect(travadoEmEu("ROTINA", "sobre", "Eu")).toBe(true);
+    expect(travadoEmEu("SENTIMENTO", "menciona", "eu")).toBe(false);
+    expect(travadoEmEu("FATO", "sobre", "eu")).toBe(false);
+    expect(travadoEmEu("SENTIMENTO", "sobre", "Rafa")).toBe(false);
   });
 });
 

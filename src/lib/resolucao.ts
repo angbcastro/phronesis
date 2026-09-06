@@ -109,6 +109,32 @@ const AMOSTRA_ERRO = 400;
 /** O que o modelo responde quando a menção não é nenhuma das entidades listadas. */
 const NOVA = "NOVA";
 
+/** O dono do diário, como chave. Não é pronome (`texto.ts`): é uma entidade. */
+const EU = "eu";
+
+/**
+ * Os três tipos cujo sujeito é `eu` **por contrato do `extracao-6`**: "SENTIMENTO,
+ * APRENDIZADO e ROTINA → SEMPRE 'eu'". Sentimento é meu por definição mesmo
+ * quando foi outra pessoa que o provocou; quem provocou vai em `menciona`.
+ */
+const TIPOS_SEMPRE_EU: readonly string[] = ["SENTIMENTO", "APRENDIZADO", "ROTINA"];
+
+/**
+ * O sujeito desta menção está travado em `eu` pelo tipo do átomo?
+ *
+ * Só o **sujeito**, e só quando o extrator de fato escreveu `eu`: se ele já
+ * violou o próprio contrato e pôs outra pessoa ali, não é este código que
+ * arbitra — a guarda existe para impedir que a resolução **tire** o sujeito de
+ * `eu`, não para reescrever o que veio da extração.
+ */
+export function travadoEmEu(tipo: string | undefined, papel: Papel, citado: string): boolean {
+  return (
+    papel === "sobre" &&
+    TIPOS_SEMPRE_EU.includes(String(tipo ?? "").toUpperCase()) &&
+    normalizarNome(citado) === EU
+  );
+}
+
 export class ResolucaoError extends Error {
   constructor(message: string) {
     super(message);
@@ -731,12 +757,50 @@ export async function resolverReferencias(
     const motivo = typeof j?.motivo === "string" ? j.motivo.trim() : "";
 
     /**
+     * A guarda do `"eu"` (A2).
+     *
+     * As camadas semânticas são calculadas **por átomo** e entregues a todas as
+     * menções dele sem filtro pelo citado. `"eu"` casa exato, a 3b traz de quem
+     * são os vizinhos, a união vira 2 e a menção vai ao agente — que então pode
+     * responder outra pessoa. Foi assim que um `SENTIMENTO` saiu
+     * `sobre: "Giampaolo Lepore"` com `certo: true`, sem marca nenhuma na tela.
+     *
+     * **O conserto é validação, não atalho.** Não mandar `eu` ao agente
+     * contradiria a decisão de continuar validando toda menção; o agente
+     * continua vendo a menção e é o **código** que recusa a resposta que quebra
+     * o contrato de quem veio antes — a mesma forma de `validarMarcas`, que
+     * deixa o agente opinar e recusa a marca sobre entidade que o átomo não
+     * cita. A frase equivalente no prompt fica para o `resolucao-3` (4.9): ela
+     * poupa a decisão, esta guarda é que impede o dado errado.
+     *
+     * A recusa **aparece**: `certo: false` com o motivo dizendo o que houve. Um
+     * agente querendo tirar um SENTIMENTO de `eu` costuma ser sinal de que o
+     * tipo do átomo está errado, e isso eu só conserto se vir.
+     */
+    const travado = travadoEmEu(atomos[mencao.atomo]?.tipo, mencao.papel, mencao.citado);
+    const euNoGrafo = candidatos.find((c) => c.entidade.chaves.includes(EU));
+
+    const recusarSaidaDeEu = (
+      r: Omit<ReferenciaResolvida, "citado">,
+    ): Omit<ReferenciaResolvida, "citado"> => ({
+      entidade: euNoGrafo ? euNoGrafo.entidade.nome : mencao.citado.trim(),
+      conhecida: Boolean(euNoGrafo),
+      certo: false,
+      alternativas: [],
+      motivo:
+        `o agente pôs este ${atomos[mencao.atomo]?.tipo} em "${r.entidade}", e ` +
+        `${atomos[mencao.atomo]?.tipo} é sempre de "eu" — mantive o sujeito`,
+      porque: [],
+    });
+
+    /**
      * A resposta vale para todas as menções que esta pergunta cobriu (D2). O
      * `citado` é o de cada uma: a chave normalizada é que as juntou, e as
      * grafias podem diferir em caixa.
      */
     const responder = (r: Omit<ReferenciaResolvida, "citado">) => {
-      for (const m of iguais ?? [mencao]) resolvidas.set(m, { citado: m.citado, ...r });
+      const decidida = travado && normalizarNome(r.entidade) !== EU ? recusarSaidaDeEu(r) : r;
+      for (const m of iguais ?? [mencao]) resolvidas.set(m, { citado: m.citado, ...decidida });
     };
 
     const alvo =

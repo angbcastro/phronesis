@@ -1091,6 +1091,38 @@ pior caso é uma atribuição trocada, que eu conserto depois — e travar a cad
 dúvida mataria os 60 s da revisão. "Ignorar é sempre uma saída válida"
 (visão §5.3).
 
+#### A regra de tipo é arbitrada pelo código, e não só pedida ao extrator
+
+O `extracao-6` diz, sem exceção: **SENTIMENTO, APRENDIZADO e ROTINA são sempre
+de `eu`** — sentimento é meu por definição mesmo quando foi outra pessoa que o
+provocou, e quem provocou vai em `menciona`. A resolução não respeitava isso, e
+não por descuido do agente: as camadas semânticas são calculadas **por átomo**
+(4.10) e entregues a todas as menções dele sem filtro pelo citado, então `"eu"`
+casa exato, a 3b traz de quem são os vizinhos, a união vira 2 e a menção vai ao
+agente. Ele então pode responder outra pessoa — e um `SENTIMENTO` saía
+`sobre: "Giampaolo Lepore"` com `certo: true`, sem marca nenhuma na tela.
+
+A guarda é **validação, não atalho**: o agente continua vendo a menção, e o
+código recusa o julgamento que tira o sujeito de `eu` nesses três tipos. É a
+mesma forma de `validarMarcas` — deixar o agente opinar e recusar o que quebra o
+contrato de quem veio antes. Deixar de perguntar seria a outra saída, e ela
+contradiz a decisão de validar toda menção (4.9 do `Specs/`).
+
+Duas fronteiras, e as duas são de propósito:
+
+- **só o sujeito**, e só quando o extrator de fato escreveu `eu`. Se ele já
+  violou o próprio contrato e pôs outra pessoa ali, quem arbitra é a revisão;
+- **a recusa aparece** — `certo: false` com o motivo dizendo o que houve. Um
+  agente querendo tirar um SENTIMENTO de `eu` costuma ser sinal de que o tipo do
+  átomo está errado, e isso só se conserta se eu vir.
+
+A frase equivalente dentro de `INSTRUCOES` — repetir a regra de tipo para o
+agente não gastar a decisão à toa — fica para o `resolucao-3` (slice 4.9): mudar
+o texto sobe a versão do prompt (regra 7), e por uma frase não vale queimar o
+número que a fatia seguinte já reservou. Enquanto isso a regra é arbitrada em
+dois lugares — pedida no prompt da extração, imposta no código da resolução —, e
+isso está no §14.
+
 #### Resposta ruim degrada para dúvida, nunca para atribuição errada
 
 | O que aconteceu | O que o sistema faz |
@@ -3211,6 +3243,11 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   apontar outra entidade — é a única das três relações do átomo que continua sem
   controle na tela, agora que `menciona` ganhou o dele (4.7). Se o agente 2 errar o campo com
   frequência, o que se ajusta é o `resolucao-2`.
+- **A regra de tipo é arbitrada em dois lugares** (4.8.1): pedida ao extrator
+  no `extracao-6` e imposta pelo código na resolução, que recusa o julgamento
+  tirando um SENTIMENTO, APRENDIZADO ou ROTINA de `eu`. Enquanto a frase não
+  entrar no `resolucao-3` (slice 4.9), o agente 2 continua gastando decisão numa
+  pergunta cuja resposta o código já sabe.
 - **O perfil realimenta a resolução, e isso é o risco declarado da slice.** O
   agente 2 lê o perfil para desambiguar; um perfil errado contamina toda
   atribuição futura, e átomo atribuído por engano vira evidência daquele mesmo
