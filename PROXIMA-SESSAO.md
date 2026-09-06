@@ -8,6 +8,15 @@ Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
 sistema funciona hoje) e `Specs/slice-4.8.md` (o que a fatia atual tem que ser).
 Este arquivo só diz o que fazer a seguir.
 
+> **Atualizado em 06/09.** A `Specs/slice-4.8.1.md` foi escrita e executada
+> inteira, menos o passo 4 — que é justamente a **seção 2 deste arquivo**. Estão
+> commitados: o lote de `resolucao.ts` (parser, motivos, fallback, dedupe,
+> gateway), a guarda do `"eu"`, o gancho que põe o vetor da entidade em dia, a
+> cadeia de fusão, e a dúvida de menção chegando à tela. O que falta é **gravar e
+> olhar**: nenhuma janela real foi extraída até agora, e a `Specs/slice-4.9.md`
+> tem esta seção como pré-requisito escrito. A pendência da seção 3 abaixo
+> (`comEsperaDeLimite` na resolução) continua de pé, e é a 4.9 que a resolve.
+
 > **Substitui o checkpoint de 02/09**, que descrevia a slice 4.5 como planejada e
 > não escrita. Desde então foram construídas a 4.5, a 4.6, a 4.7 e a 4.8. O que
 > restou de lá e continua valendo está na seção 4 — **não conferido nesta

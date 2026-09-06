@@ -189,6 +189,29 @@ rajada em que o STT já disputa o limite da conta.
 **`PROMPT_VERSION_RESOLUCAO` sobe para `resolucao-3`:** a entrada mudou duas
 vezes — a chave do extrator, e o fato de a lista ser de todas as menções.
 
+> **Emenda da 4.8.1 — o que mais entra no `resolucao-3`.** Como esta fatia é a
+> que sobe a versão do prompt, as duas frases que a 4.8.1 recusou subir por conta
+> própria vêm junto, e com elas uma decisão de ordem:
+>
+> - **a regra de tipo, em `INSTRUCOES`**: "SENTIMENTO, APRENDIZADO e ROTINA são
+>   sempre de `eu`". A guarda de código já existe desde a 4.8.1 e recusa o
+>   julgamento que quebra a regra; a frase é o que impede o agente de gastar a
+>   decisão numa pergunta cuja resposta o código já sabe. Ela vale igual para o
+>   **extrator**: `blocoDasCandidatas` não pode fazer o `sobre` de um SENTIMENTO
+>   apontar para um nó do dossiê, e a mesma guarda entra no parse do passo 4;
+> - **o escopo das chaves, por menção**: o prompt diz que só as chaves listadas
+>   **naquela** menção valem. A distância entre o que ele mostra (até 30 do
+>   dossiê) e o que o código aceita (4 candidatos) cresce nesta fatia;
+> - **E6, e é decisão, não consequência**: com `TOP_K = 4` e `extrator` na
+>   cabeça, `exato` mais dois parecidos ocupam as quatro vagas e espremem o vetor
+>   para fora da união. Pode estar certo — o dossiê já traz o semântico pelo lado
+>   do extrator —, mas tem de ser escrito aqui, e não sair da ordem do laço.
+>
+> O resto do que a primeira versão desta lista adiava voltou para a 4.8.1 e já
+> está feito: o parser, os motivos, o fallback, a dedupe de menção. O §4 acima
+> diz que "a degradação é a de hoje, item por item" — ou seja, esta fatia herda o
+> que estiver lá, e o lugar de consertar era antes.
+
 ## 5. A grafia vira alias no confirmar
 
 `fusao.ts` ganha `registrarGrafia(chaveDoNo, grafiaFalada)`, que cria o nó de
@@ -198,7 +221,12 @@ alias exatamente como `renomear` já faz: `:Entidade` com `status = 'fundida'` e
 1. grafia vazia, pronome (`ehPronome`), ou igual à chave do próprio nó;
 2. `nome_normalizado` que **já existe como nó ativo** — seria fundir duas
    entidades reais automaticamente, e fusão nunca é automática;
-3. segunda chamada com a mesma grafia é no-op — a checagem prévia é a trava.
+3. `nome_normalizado` que já existe como nó **`fundida` apontando para outro
+   nó** — criar a aresta ali roubaria a grafia de quem já a tem, ou a deixaria
+   com dois destinos (emenda da 4.8.1). Com a reposição de alias que a 4.8.1 pôs
+   em `fundir()` o caso fica raro; a guarda continua sendo correção, não
+   política;
+4. segunda chamada com a mesma grafia é no-op — a checagem prévia é a trava.
 
 `POST /api/sessoes/:id/confirmar` chama **em `waitUntil`, depois de
 `gravarAtomos`**: casa `original.sobre.citado` e `original.menciona[i].citado`
@@ -210,6 +238,13 @@ gravação.
 Dois efeitos de graça: `fonteDaEntidade` inclui aliases, então o hash muda e
 `garantirEmbeddings` reembute a entidade sozinho; e `nomesParaVocabulario`
 exclui fundidos, então "Jean" **não** é ensinado ao STT.
+
+> **Emenda da 4.8.1.** O primeiro só é verdade desde ela. Até a 4.8,
+> `garantirEmbeddings` tinha um chamador só — `POST /api/entidades/embutir`, uma
+> rota que nenhuma tela chama —, e "a próxima passada" não existia. Quem a roda
+> agora é `passadaDeVetores()`, em `waitUntil`, no confirmar e nas cinco rotas de
+> `/entidades`. O alias desta fatia entra na fonte e é reembutido no mesmo gesto
+> que o cria.
 
 **Este alias não é uma fusão.** O nó nasce com zero átomo e nenhuma aresta a
 migrar, então desfazê-lo é apagar a aresta e o nó — ao contrário de uma fusão de
@@ -237,8 +272,12 @@ fatia.
 - **Um agente que julgue a lista de candidatas.** O julgamento é do próprio
   extrator, que já está com a lista e o texto na frente. Um sexto prompt para
   calibrar à mão para sempre não se paga.
-- **Tela.** Nenhuma. O `porque` de cada sugestão já chega à revisão pelo caminho
-  da 4.5.
+- **Tela.** Nenhuma — e agora **porque** a 4.8.1 já mexeu nela. O `porque` de
+  cada sugestão chega à revisão pelo caminho da 4.5, e desde a 4.8.1 ele aparece
+  sempre, não só na dúvida; a discordância entre os dois agentes sobre uma
+  **menção** também aparece, que é o que a linha "discorda → `certo: false`" do
+  §4 promete. Sem aquela fatia, esta prometeria a discordância numa tela que não
+  a mostrava.
 
 ## O que muda de arquivo
 
@@ -273,10 +312,17 @@ Sete passos, cada um verde no `pnpm test` antes do seguinte, e cada um um commit
 > disso nenhuma janela fecha durante a fala e a sessão cai no passe único, sem
 > exercitar o caminho novo uma vez. Empilhar a 4.9 sobre uma 4.8 não medida faz
 > qualquer estranheza de volume ficar sem dono.
+>
+> **E a `Specs/slice-4.8.1.md` inteira antes disso** (emenda dela): ela é quem
+> põe o vetor da entidade em dia — sem isso a camada 3a e a camada `perfil` do
+> RAG são código que não pode achar nada —, quem conserta a cadeia de fusão que
+> `registrarGrafia` vai exercitar em série, e quem faz a discordância de menção
+> chegar à tela.
 
 | # | Passo |
 |---|---|
 | 0 | ✅ feito: a 4.8 está commitada em `b71e860`, sozinha |
+| 0.1 | **a `Specs/slice-4.8.1.md` inteira**, incluindo o passo 4 dela (as validações da 4.8 numa sessão real) — pré-requisito do passo 2 |
 | 1 | esta spec |
 | 2 | o RAG por bloco, puro + semântico, com teste |
 | 3 | encadear no `waitUntil` e o dossiê da janela |
@@ -299,5 +345,11 @@ candidatas são calculadas, gravadas e ignoradas. É o ponto de retorno barato �
 - A camada `prefixo` é heurística **sem medição**: os pisos de 4 e 6 letras
   saíram de raciocínio, não de dado. Quem os ajusta sou eu, olhando a revisão,
   sessão real por sessão real.
+- **O agente 2 continua livre para discordar de si mesmo entre janelas** (emenda
+  da 4.8.1). `ja_nesta_sessao` (§2) amarra o **extrator** às entidades já
+  atribuídas; o agente 2 não, e a mesma grafia pode sair `NOVA` numa janela e
+  cair num nó na seguinte, com o catálogo idêntico. Reduzido, não eliminado. O
+  complemento barato — o mapa `citado → decidido` da sessão entrando como camada
+  em `candidatosDe` — fica anotado, não construído.
 
 E um que **sai** do §14: a linha que diz que a resolução não espera rate limit.

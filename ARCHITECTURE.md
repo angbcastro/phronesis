@@ -3285,6 +3285,18 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   condição de morte da visão §8. O código impede a corrupção (`ref` inválida vira
   descarte) mas não a duplicação; quem vê é a revisão. **Ainda não foi medido
   contra uma sessão real de 15 min.**
+- **O agente 2 pode discordar de si mesmo entre janelas.** Ele vê os átomos já
+  propostos num bloco de contexto (§4.8), mas nada o amarra à decisão anterior:
+  o mesmo "Rafa" pode sair `NOVA` na janela 1 e cair no nó "Raffa" na janela 2,
+  com o catálogo idêntico, fechando a sessão com duas candidatas para uma pessoa.
+  Quem vê é a revisão, e o painel de entidades reaponta as duas num gesto. O
+  complemento barato — o mapa `citado → decidido` da própria sessão entrando como
+  camada em `candidatosDe` — está anotado e não construído.
+- **Um átomo estendido entra no índice com o texto da última janela e a
+  atribuição da primeira.** O `estende` troca o `texto` e não mexe em `sobre` nem
+  em `menciona` (§4.6) — é a decisão certa, e mantém a resolução incremental —,
+  mas `a.texto` é a fonte única do vetor do átomo (§4.10). Quer dizer que o vetor
+  fala do assunto inteiro e a atribuição responde ao que se sabia no minuto 2.
 - **O bloco da janela não é editável em `/agentes`.** O painel edita o prompt de
   um agente, que para a extração é `BASE` (§4.13); o bloco que `blocoDaJanela`
   injeta é montado em código, com o orçamento calculado e a lista do acumulado
