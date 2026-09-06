@@ -24,11 +24,13 @@ import {
 const consulta = vi.mocked(query);
 const todoCypher = () => consulta.mock.calls.map((c) => String(c[0])).join("\n---\n");
 
-/** As duas existem e a perdedora ainda não foi fundida. */
+/** As duas existem, e nenhuma delas foi fundida em outra coisa. */
 function grafoComAsDuas() {
   consulta.mockImplementation(async (statement: string) => {
     if (statement.includes("jaFundida")) {
-      return [{ v: "id-v", p: "id-p", jaFundida: false }] as never;
+      return [
+        { v: "id-v", p: "id-p", jaFundida: false, vencedoraFundida: false },
+      ] as never;
     }
     if (statement.includes("count(DISTINCT a) AS n")) return [{ n: 2 }] as never;
     if (statement.includes("count(r) AS n")) return [{ n: 1 }] as never;
@@ -99,7 +101,9 @@ describe("fundir", () => {
   it("fundir de novo não refaz nada", async () => {
     consulta.mockImplementation(async (statement: string) => {
       if (statement.includes("jaFundida")) {
-        return [{ v: "id-v", p: "id-p", jaFundida: true }] as never;
+        return [
+          { v: "id-v", p: "id-p", jaFundida: true, vencedoraFundida: false },
+        ] as never;
       }
       return [] as never;
     });
@@ -109,13 +113,72 @@ describe("fundir", () => {
     expect(todoCypher()).not.toContain("MERGE (a)-[:SOBRE]->(v)");
   });
 
+  /**
+   * A cadeia (slice 4.8.1). As dez travessias de `:FUNDIDA_EM` do projeto são de
+   * um salto, e o conserto fica no lado da escrita: fusão é rara e é escrita,
+   * leitura é quente. Sem esta consulta, `rapha2 → rapha` seguido de
+   * `rapha → raphael` deixa `rapha2` pendurada num nó fundido — a chave some do
+   * catálogo, e o átomo dito com aquela grafia vai parar num nó que nenhuma
+   * listagem mostra.
+   */
+  it("fundir o vencedor leva os aliases dele junto", async () => {
+    grafoComAsDuas();
+    await fundir("Raphael", "Rapha");
+
+    const cypher = todoCypher();
+    expect(cypher).toContain("MATCH (x:Entidade)-[r:FUNDIDA_EM]->(p:Entidade");
+    expect(cypher).toContain("MERGE (x)-[:FUNDIDA_EM]->(v)");
+  });
+
+  it("a reposição acontece ANTES de a perdedora virar alias", async () => {
+    // Depois seria tarde de um jeito específico: o `MATCH` de reposição casaria
+    // a própria perdedora, que acabou de ganhar sua aresta para o vencedor.
+    grafoComAsDuas();
+    await fundir("Raphael", "Rapha");
+
+    const consultas = consulta.mock.calls.map((c) => String(c[0]));
+    const reposicao = consultas.findIndex((q) => q.includes("MERGE (x)-[:FUNDIDA_EM]->(v)"));
+    const marcacao = consultas.findIndex((q) => q.includes("SET p.status = $fundida"));
+    expect(reposicao).toBeGreaterThanOrEqual(0);
+    expect(reposicao).toBeLessThan(marcacao);
+  });
+
+  it("refazer a cadeia não duplica aresta nem perde alias", async () => {
+    // `MERGE` + `DELETE`, como o resto da fusão: ela não é atômica (§14), e o
+    // contrato é que refazer cura.
+    grafoComAsDuas();
+    await fundir("Raphael", "Rapha");
+
+    const reposicao = consulta.mock.calls
+      .map((c) => String(c[0]))
+      .find((q) => q.includes("MERGE (x)-[:FUNDIDA_EM]->(v)"))!;
+    expect(reposicao).toContain("MERGE");
+    expect(reposicao).toContain("DELETE r");
+    expect(reposicao).not.toContain("CREATE");
+  });
+
+  it("recusa fundir PARA DENTRO de uma grafia já fundida", async () => {
+    // Corrompe do mesmo jeito que a cadeia, e até a 4.8 só a perdedora era
+    // conferida.
+    consulta.mockImplementation(async (statement: string) =>
+      statement.includes("jaFundida")
+        ? ([{ v: "id-v", p: "id-p", jaFundida: false, vencedoraFundida: true }] as never)
+        : ([] as never),
+    );
+
+    await expect(fundir("Rapha", "Rapha2")).rejects.toThrow(/já é uma grafia fundida/);
+    expect(todoCypher()).not.toContain("SET p.status = $fundida");
+  });
+
   it("recusa fundir uma entidade nela mesma", async () => {
     await expect(fundir("Exxmed", "exxmed")).rejects.toThrow(FusaoError);
   });
 
   it("recusa quando um dos lados não está no grafo", async () => {
     consulta.mockImplementation(async (statement: string) =>
-      statement.includes("jaFundida") ? ([{ v: "id-v", p: null, jaFundida: false }] as never) : ([] as never),
+      statement.includes("jaFundida")
+        ? ([{ v: "id-v", p: null, jaFundida: false, vencedoraFundida: false }] as never)
+        : ([] as never),
     );
     await expect(fundir("Exxmed", "Fantasma")).rejects.toThrow(/não está no grafo/);
   });

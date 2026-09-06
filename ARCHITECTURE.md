@@ -2256,6 +2256,39 @@ morta nunca renasce como nó novo.** Dita outra vez, ela casa com o alias e a
 leitura segue até o vencedor. A fusão é o mecanismo de alias, não um efeito
 colateral dele — e é o que faz ela valer para amanhã, não só arrumar o ontem.
 
+#### A cadeia: fundir o vencedor leva os aliases dele junto (4.8.1)
+
+**Todas as travessias de `:FUNDIDA_EM` do projeto são de um salto** — dez
+lugares, em `atomos.ts`, `entidades.ts`, `perfil.ts` e `fusao.ts`. Isso está
+certo e fica: fusão é rara e é escrita; leitura é quente e inclui duas consultas
+de índice vetorial por janela, e pagar expansão de comprimento variável
+(`-[:FUNDIDA_EM*1..]->`) em dez leituras para consertar um caso de escrita é o
+lado errado da conta.
+
+O preço é uma consulta a mais em `fundir()`, antes de marcar a perdedora: os
+aliases que apontavam para ela passam a apontar para o vencedor novo.
+
+```
+MATCH (x:Entidade)-[r:FUNDIDA_EM]->(p:Entidade { nome_normalizado: $perdedora })
+MATCH (v:Entidade { nome_normalizado: $vencedora })
+MERGE (x)-[:FUNDIDA_EM]->(v)
+DELETE r
+```
+
+Sem ela, `rapha2 → rapha` seguido de `rapha → raphael` deixava `rapha2`
+pendurada num nó fundido. O efeito é silencioso e irreversível: a chave `rapha2`
+sai de `chaves` no catálogo, e dita de novo numa sessão nova o `MERGE` do
+confirmar reencontra o nó morto — a constraint da 002 impede o segundo — e
+pendura o `:SOBRE` em **`rapha`**, que nenhuma listagem mostra e que a camada dos
+vizinhos descarta. `MERGE` + `DELETE` como o resto: refazer a fusão cura, que é o
+contrato que o §14 declara para ela não ser atômica.
+
+**E `fundir` recusa vencedora com `status = 'fundida'`.** Até a 4.8 só a
+perdedora era conferida, e fundir **para dentro** de um alias corrompe do mesmo
+jeito. A guarda importa mais a partir da slice 4.9, que passa a criar nó de alias
+automaticamente (`registrarGrafia`): ela fabrica em série exatamente os nós que
+uma cadeia perderia.
+
 Quem atravessa o alias:
 
 | Onde | Por quê |
@@ -3139,10 +3172,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **A qualidade da proposta em caso real não foi medida.** O grafo não tem
   duplicata vinda de sessão, então `duplicatas-1` nunca julgou um par com
   contexto de verdade. A mecânica, sim, está validada ponta a ponta.
-- **Fundir não é atômico.** São cinco consultas pela Query API, sem transação
-  entre elas. Cair no meio deixa as arestas migradas e o perdedor sem alias — um
-  nó de zero átomos aparecendo na lista. **Refazer a fusão cura**: a segunda
-  passada não acha aresta para migrar e marca o alias.
+- **Fundir não é atômico.** São **seis** consultas pela Query API (a sexta é a
+  reposição de alias da 4.8.1), sem transação entre elas. Cair no meio deixa as
+  arestas migradas e o perdedor sem alias — um nó de zero átomos aparecendo na
+  lista —, ou os aliases repostos e a perdedora ainda ativa. **Refazer a fusão
+  cura**: a segunda passada não acha aresta para migrar, repõe o que faltar por
+  `MERGE` e marca o alias. O limite mudou de tamanho, não de natureza.
 - **Não há como desfazer um confirmar.** `confirmada` não tem transição de saída
   e nada apaga átomo (regra 6). Corrigir depois de confirmar depende de edição
   no grafo, que não existe nesta slice.

@@ -15,6 +15,17 @@
  * vencedor (`buscarConhecidas`, em `entidades.ts`). A fusão é o mecanismo de
  * alias, não um efeito colateral dele.
  *
+ * **Fundir o vencedor leva os aliases dele junto** (slice 4.8.1). As dez
+ * travessias de `:FUNDIDA_EM` do projeto são de **um salto**, e é o lado certo
+ * da conta: fusão é rara e é escrita, leitura é quente e inclui duas consultas
+ * de índice vetorial por janela — pagar expansão de comprimento variável ali
+ * para consertar um caso de escrita seria caro no lugar errado. O preço é esta
+ * consulta a mais: antes de marcar a perdedora, os aliases que apontavam para
+ * ela passam a apontar para o vencedor novo. Sem isso, `a → b` seguido de
+ * `b → c` deixava `a` pendurada em `b`: a chave `a` saía do catálogo, o `MERGE`
+ * do confirmar reencontrava o nó morto (a constraint impede o segundo) e o
+ * átomo ia parar num nó que nenhuma listagem mostra.
+ *
  * Nada aqui é automático: quem funde sou eu, na tela. Fundir duas pessoas
  * diferentes é irreversível num sistema que não desfaz, e o custo do erro é
  * assimétrico — duas entidades a mais é grafo um pouco sujo, uma fusão errada é
@@ -63,17 +74,32 @@ export async function fundir(
     throw new FusaoError("uma entidade não se funde nela mesma");
   }
 
-  // As duas existem, e a perdedora ainda não foi fundida em outra coisa.
-  const par = await query<{ v: string | null; p: string | null; jaFundida: boolean }>(
+  // As duas existem, a perdedora ainda não foi fundida em outra coisa — e a
+  // vencedora também não. Fundir **para dentro** de um alias corrompe do mesmo
+  // jeito que a cadeia: o átomo vai para um nó que nenhuma listagem mostra, e
+  // fusão não tem desfazer. Até a 4.8 só a perdedora era conferida.
+  const par = await query<{
+    v: string | null;
+    p: string | null;
+    jaFundida: boolean;
+    vencedoraFundida: boolean;
+  }>(
     `OPTIONAL MATCH (v:Entidade { nome_normalizado: $vencedora })
      OPTIONAL MATCH (p:Entidade { nome_normalizado: $perdedora })
      RETURN v.id AS v, p.id AS p,
-            coalesce(p.status, 'ativa') = 'fundida' AS jaFundida`,
+            coalesce(p.status, 'ativa') = 'fundida' AS jaFundida,
+            coalesce(v.status, 'ativa') = 'fundida' AS vencedoraFundida`,
     { vencedora, perdedora },
   );
   const linha = par[0];
   if (!linha?.v) throw new FusaoError(`"${chaveVencedora}" não está no grafo`);
   if (!linha?.p) throw new FusaoError(`"${chavePerdedora}" não está no grafo`);
+  if (linha.vencedoraFundida) {
+    throw new FusaoError(
+      `"${chaveVencedora}" já é uma grafia fundida em outra entidade — ` +
+        `funda na que venceu, não nela`,
+    );
+  }
   if (linha.jaFundida) {
     return { vencedora, perdedora, arestas_migradas: 0 };
   }
@@ -128,6 +154,25 @@ export async function fundir(
      WHERE (a)-[:SOBRE]->(v)
      DELETE m`,
     { vencedora },
+  );
+
+  // Os aliases da perdedora passam a apontar para o vencedor novo, **antes** de
+  // ela virar alias também. É a consulta que impede a cadeia: sem ela,
+  // `rapha2 → rapha` seguido de `rapha → raphael` deixa `rapha2` pendurada num
+  // nó fundido, e a chave `rapha2` some de `chaves` no catálogo — dita de novo,
+  // o `MERGE` do confirmar reencontra o nó morto (a constraint da 002 impede o
+  // segundo) e pendura o `:SOBRE` num nó que nenhuma listagem mostra e que a
+  // camada dos vizinhos descarta.
+  //
+  // `MERGE` + `DELETE` como o resto: refazer a fusão não duplica aresta nem
+  // perde alias, que é o contrato que o §14 já declara para ela não ser
+  // atômica.
+  await query(
+    `MATCH (x:Entidade)-[r:FUNDIDA_EM]->(p:Entidade { nome_normalizado: $perdedora })
+     MATCH (v:Entidade { nome_normalizado: $vencedora })
+     MERGE (x)-[:FUNDIDA_EM]->(v)
+     DELETE r`,
+    { vencedora, perdedora },
   );
 
   // O alias. `status` e a aresta são o que faz toda leitura pular este nó, e são
