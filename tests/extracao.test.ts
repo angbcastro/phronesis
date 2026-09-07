@@ -8,6 +8,7 @@ import {
   comoMencaoCrua,
   fecharJsonTruncado,
   isolarJson,
+  melhorLeitura,
   montarPrompt,
   normalizarTipo,
   orcamentoDaJanela,
@@ -186,6 +187,53 @@ describe("salvar o JSON cortado no meio", () => {
     expect(fecharJsonTruncado('{"atomos":[{"texto":"o começo')).toBeNull();
     expect(fecharJsonTruncado('{"atomos":[')).toBeNull();
     expect(fecharJsonTruncado("desculpe, não consegui")).toBeNull();
+  });
+
+  it("um JSON íntegro passa pelo caminho estrito, sem tocar no salvamento", () => {
+    const r = parsearResposta(`{"atomos":[${a("um")},${a("dois")}],"entidades":[]}`);
+    expect(r.atomos).toHaveLength(2);
+    expect(r.truncada).toBeUndefined();
+  });
+
+  it("o parser usa o que foi salvo, e diz que a resposta veio cortada", () => {
+    const r = parsearResposta(`{"atomos":[${a("um")},${a("dois")},{"texto":"tres","tip`);
+    expect(r.atomos).toHaveLength(2);
+    expect(r.truncada).toBe(true);
+  });
+
+  it("resposta sem nada aproveitável continua estourando", () => {
+    expect(() => parsearResposta('{"atomos":[{"texto":"o começo')).toThrow(/não é JSON válido/);
+    expect(() => parsearResposta("desculpe, não consegui")).toThrow(/não é JSON válido/);
+  });
+});
+
+describe("entre a primeira e a segunda tentativa", () => {
+  const leitura = (quantos: number, truncada = false) => ({
+    atomos: Array.from({ length: quantos }, () => ({}) as never),
+    entidades: [],
+    estende: [],
+    descartados: [],
+    ...(truncada ? { truncada: true } : {}),
+  });
+
+  // A lição da `mtqoeoqh3e3724514q1f`: a chamada 2 trouxe uns dez átomos, foi
+  // descartada por estar cortada, e a terceira trouxe menos.
+  it("fica com quem trouxe mais átomos, mesmo que tenha vindo cortada", () => {
+    const cortada = leitura(10, true);
+    expect(melhorLeitura(cortada, leitura(3))).toBe(cortada);
+  });
+
+  it("a segunda vence quando ela é que trouxe mais", () => {
+    const segunda = leitura(9);
+    expect(melhorLeitura(leitura(2, true), segunda)).toBe(segunda);
+  });
+
+  // Mesma colheita, e uma delas tem a lista inteira.
+  it("no empate, a íntegra ganha da cortada", () => {
+    const integra = leitura(5);
+    expect(melhorLeitura(leitura(5, true), integra)).toBe(integra);
+    const primeira = leitura(5);
+    expect(melhorLeitura(primeira, leitura(5, true))).toBe(primeira);
   });
 });
 

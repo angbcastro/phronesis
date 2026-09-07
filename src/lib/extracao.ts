@@ -165,7 +165,34 @@ function ler(resposta: RespostaDoModelo, sessao_id: string, jaPropostos: number)
       diagnostico(resposta),
     );
   }
-  return parsearResposta(textoDaResposta(resposta), jaPropostos);
+  const lido = parsearResposta(textoDaResposta(resposta), jaPropostos);
+
+  // Log próprio, e não uma linha a mais no de cima: proposta que veio de uma
+  // resposta cortada merece um olhar mais atento na revisão, e sem a linha uma
+  // lista curta parece decisão do modelo em vez de acidente de teto.
+  if (lido.truncada) {
+    console.warn(
+      `[extracao] sessão ${sessao_id}: resposta cortada, ${lido.atomos.length} átomo(s) recuperado(s).`,
+      diagnostico(resposta),
+    );
+  }
+  return lido;
+}
+
+/**
+ * Qual das duas leituras vale mais: a que trouxe mais átomos.
+ *
+ * É a lição da sessão `mtqoeoqh3e3724514q1f`, onde a segunda chamada trouxe
+ * uns dez átomos, foi descartada por estar cortada, e a terceira trouxe menos.
+ * Empate fica com a íntegra: mesma colheita, e uma delas tem a lista inteira.
+ *
+ * Pura e exportada para ser testável sem rede — nenhum teste deste projeto
+ * simula o `generateText`.
+ */
+export function melhorLeitura(a: RespostaExtrator, b: RespostaExtrator): RespostaExtrator {
+  if (b.atomos.length > a.atomos.length) return b;
+  if (b.atomos.length === a.atomos.length && a.truncada && !b.truncada) return b;
+  return a;
 }
 
 export const INSTRUCOES_BASE = `Você recebe a transcrição de um diário falado, em português, gravado no fim do dia. Sua tarefa é devolver uma versão ESTRUTURADA E ORGANIZADA do que foi dito — não um recorte da transcrição.
@@ -664,6 +691,14 @@ export interface RespostaExtrator {
   /** Os átomos de janelas anteriores que esta janela mandou engordar. */
   estende: Extensao[];
   descartados: Descarte[];
+  /**
+   * A resposta chegou cortada e o que está aqui é o que deu para salvar.
+   *
+   * Ausente é o caso normal — resposta íntegra —, e não `false`, para que o
+   * JSON gravado no R2 continue byte a byte o de antes desta fatia enquanto
+   * nada truncar.
+   */
+  truncada?: boolean;
 }
 
 /**
@@ -681,16 +716,34 @@ export function parsearResposta(
   jaPropostos = 0,
 ): RespostaExtrator {
   let cru: unknown;
+  let truncada = false;
   try {
     cru = JSON.parse(isolarJson(bruto));
   } catch (e) {
-    // A resposta crua vai junto: sem ela, "não é JSON" é indiagnosticável
-    // depois do fato — a mesma lição que o STT já ensinou uma vez.
-    const amostra = bruto.trim().slice(0, AMOSTRA_ERRO);
-    throw new ExtracaoError(
-      `resposta não é JSON válido: ${e instanceof Error ? e.message : String(e)}. ` +
-        `Vieram ${bruto.length} caractere(s): ${amostra === "" ? "(resposta vazia)" : JSON.stringify(amostra)}`,
-    );
+    // Antes de desistir, o salvamento: resposta cortada no teto de saída traz
+    // átomos inteiros até o ponto do corte, e jogá-los fora custou duas
+    // chamadas de modelo na sessão `mtqoeoqh3e3724514q1f`. O caminho estrito
+    // acima continua sendo o primeiro, e resposta íntegra nem passa por aqui.
+    const salvo = fecharJsonTruncado(bruto);
+    if (salvo !== null) {
+      try {
+        cru = JSON.parse(salvo);
+        truncada = true;
+      } catch {
+        // Salvamento que não parseia é bug meu, não resposta ruim: cai no erro
+        // de sempre, com a resposta crua junto.
+      }
+    }
+
+    if (!truncada) {
+      // A resposta crua vai junto: sem ela, "não é JSON" é indiagnosticável
+      // depois do fato — a mesma lição que o STT já ensinou uma vez.
+      const amostra = bruto.trim().slice(0, AMOSTRA_ERRO);
+      throw new ExtracaoError(
+        `resposta não é JSON válido: ${e instanceof Error ? e.message : String(e)}. ` +
+          `Vieram ${bruto.length} caractere(s): ${amostra === "" ? "(resposta vazia)" : JSON.stringify(amostra)}`,
+      );
+    }
   }
 
   const lista = Array.isArray(cru) ? cru : (cru as { atomos?: unknown })?.atomos;
@@ -736,6 +789,7 @@ export function parsearResposta(
     entidades: propostasDeEntidade(cru),
     estende: extensoes(cru, jaPropostos, descartados),
     descartados,
+    ...(truncada ? { truncada: true } : {}),
   };
 }
 
@@ -883,6 +937,13 @@ export interface ResultadoDaJanela {
    * `EstadoJanela` — é o que diz depois com que lista na mão ela decidiu.
    */
   candidatas: string[];
+  /**
+   * A resposta que esta janela usou veio cortada, e o que ela produziu é o que
+   * deu para salvar (slice 4.10). Sobe até a revisão: uma lista curta que veio
+   * de um teto estourado não é a mesma coisa que uma lista curta que o modelo
+   * escolheu, e quem julga a diferença sou eu.
+   */
+  truncada?: boolean;
 }
 
 export interface OpcoesDeJanela {
@@ -1005,10 +1066,20 @@ export async function extrairJanela(
   }
 
   let resposta = await chamar(MAX_TOKENS_SAIDA);
-  let lido;
+  let lido: RespostaExtrator | null = null;
+  let motivoDaRepeticao: string | null = null;
+
   try {
     lido = ler(resposta, janela.sessao_id, jaPropostos.length);
+    // Salvou átomos de uma resposta cortada. Vale repetir com mais orçamento —
+    // o que veio pode estar faltando o fim da lista —, mas agora **com rede**:
+    // se a segunda vier pior, é a primeira que fica.
+    if (lido.truncada) motivoDaRepeticao = `${lido.atomos.length} átomo(s) salvos de uma resposta cortada`;
   } catch (primeira) {
+    motivoDaRepeticao = primeira instanceof Error ? primeira.message : String(primeira);
+  }
+
+  if (motivoDaRepeticao !== null) {
     // Duas causas com consertos diferentes, e a diferença está no `finishReason`
     // (`modelos.ts`). Cortado no meio do pensamento, repetir igual é
     // determinístico com `temperature: 0` — mesmo prompt, mesmo teto, mesmo
@@ -1018,24 +1089,45 @@ export async function extrairJanela(
     const teto = tetoDaSegundaTentativa(resposta);
 
     console.error(
-      `[extracao] sessão ${janela.sessao_id}: primeira tentativa sem JSON, repetindo` +
+      `[extracao] sessão ${janela.sessao_id}: repetindo a primeira tentativa` +
         `${faltou ? ` com teto de ${teto} (o raciocínio comeu o orçamento)` : ""}.`,
-      `${primeira instanceof Error ? primeira.message : primeira} — ${diagnostico(resposta)}`,
+      `${motivoDaRepeticao} — ${diagnostico(resposta)}`,
     );
-    resposta = await chamar(teto);
+
+    const segundaResposta = await chamar(teto);
+    let segundaLeitura: RespostaExtrator | null = null;
     try {
-      lido = ler(resposta, janela.sessao_id, jaPropostos.length);
+      segundaLeitura = ler(segundaResposta, janela.sessao_id, jaPropostos.length);
     } catch (segunda) {
-      // O diagnóstico da SEGUNDA resposta, que é a que de fato derrubou a
-      // janela. Sobe junto com a mensagem porque quem loga o erro final é o
-      // `pipeline.ts`, e lá não há mais resposta nenhuma para consultar.
-      throw new ExtracaoError(
-        `${segunda instanceof Error ? segunda.message : segunda} — ${diagnostico(resposta)}`,
+      // Só derruba a janela se não houver nada salvo da primeira. O diagnóstico
+      // da SEGUNDA resposta sobe junto com a mensagem porque quem loga o erro
+      // final é o `pipeline.ts`, e lá não há mais resposta nenhuma para
+      // consultar.
+      if (lido === null) {
+        throw new ExtracaoError(
+          `${segunda instanceof Error ? segunda.message : segunda} — ${diagnostico(segundaResposta)}`,
+        );
+      }
+      console.error(
+        `[extracao] sessão ${janela.sessao_id}: segunda tentativa também sem JSON — ` +
+          `fico com os ${lido.atomos.length} átomo(s) da primeira.`,
+        `${segunda instanceof Error ? segunda.message : segunda} — ${diagnostico(segundaResposta)}`,
       );
+    }
+
+    if (segundaLeitura !== null) {
+      const escolhida = lido === null ? segundaLeitura : melhorLeitura(lido, segundaLeitura);
+      if (escolhida === segundaLeitura) resposta = segundaResposta;
+      lido = escolhida;
     }
   }
 
-  const { atomos, entidades, estende, descartados } = lido;
+  // Invariante do bloco acima: ou há leitura, ou a janela já estourou. O
+  // TypeScript não a enxerga através do `try`, e afirmar com `!` esconderia um
+  // caminho novo que a quebrasse.
+  if (lido === null) throw new ExtracaoError("nenhuma tentativa produziu JSON");
+
+  const { atomos, entidades, estende, descartados, truncada } = lido;
   const modeloReal = resposta.response?.modelId ?? modelo;
 
   // Lê o grafo; não escreve nada nele (regra 5). O catálogo é o mesmo objeto que
@@ -1074,6 +1166,7 @@ export async function extrairJanela(
     modelo_resolucao: atribuicoes.modelo,
     catalogo,
     candidatas,
+    ...(truncada ? { truncada: true } : {}),
   };
 }
 
@@ -1103,5 +1196,6 @@ export async function extrair(transcricao: Transcricao): Promise<Extracao> {
     modelo_resolucao: r.modelo_resolucao,
     granularidade: transcricao.granularidade,
     criado_em: new Date().toISOString(),
+    ...(r.truncada ? { truncada: true } : {}),
   };
 }

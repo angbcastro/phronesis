@@ -200,6 +200,7 @@ export function aplicarJanela(
       // que ele apontou aquele nó" três meses depois. O grafo de hoje não
       // reconstrói a foto de então.
       candidatas: r.candidatas,
+      ...(r.truncada ? { truncada: true } : {}),
     },
   );
 }
@@ -243,6 +244,9 @@ export function montarExtracao(
     modelo_resolucao: ultimo(p, (j) => j.modelo_resolucao),
     granularidade: transcricao.granularidade,
     criado_em: new Date().toISOString(),
+    // Uma janela cortada basta para a proposta inteira merecer o aviso: os
+    // átomos que faltaram àquela janela faltam à lista que eu vou julgar.
+    ...(p.janelas.some((j) => j.truncada) ? { truncada: true } : {}),
   };
 }
 

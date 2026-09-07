@@ -62,6 +62,12 @@ interface Proposta {
     modelo: string;
     prompt_version: string;
     prompt_version_resolucao?: string | null;
+    /**
+     * A proposta saiu de uma resposta cortada no teto de saída (slice 4.10).
+     * Muda o julgamento: uma lista curta aqui pode ser acidente, e não escolha
+     * do modelo.
+     */
+    truncada?: boolean;
   };
   blocos: BlocoAbsoluto[];
   /**
@@ -681,6 +687,12 @@ export function Revisao({ id }: { id: string }) {
           {duvidosos.length > 0 &&
             ` · ${duvidosos.length} com dúvida de quem é (dá para confirmar assim mesmo)`}
         </p>
+        {proposta.extracao.truncada && (
+          <p className="aviso">
+            a resposta do modelo veio cortada no meio — esta lista é o que deu para salvar, e
+            pode estar faltando o fim dela
+          </p>
+        )}
       </header>
 
       <ol className="atomos">

@@ -439,6 +439,18 @@ export interface Extracao {
   modelo_resolucao: string | null;
   granularidade: Granularidade;
   criado_em: string;
+  /**
+   * Alguma janela desta proposta leu uma resposta cortada no teto de saída, e o
+   * que ela trouxe é o que deu para salvar (slice 4.10).
+   *
+   * Existe para a revisão avisar. Não há como saber o que faltava — o modelo
+   * foi interrompido, não perguntado —, e sem o aviso uma lista curta parece
+   * decisão dele em vez de acidente de teto.
+   *
+   * Opcional, e ausente quando nada truncou: proposta gravada antes desta fatia
+   * não tem o campo, e não há nada a migrar.
+   */
+  truncada?: boolean;
 }
 
 // ───────── Slice 4.6: o prompt aprende com a revisão ─────────
@@ -751,6 +763,8 @@ export interface EstadoJanela extends Janela {
    * migrar — ausente é "esta janela rodou sem dossiê", que é o certo.
    */
   candidatas?: string[];
+  /** A resposta que esta janela leu veio cortada no teto de saída (4.10). */
+  truncada?: boolean;
   /** Só em `falhou`, e é o que aparece no log `[janela]`. */
   motivo?: string;
 }
