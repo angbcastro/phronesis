@@ -30,7 +30,14 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" className={`${gestao.variable} ${ritual.variable}`}>
-      <body>
+      {/* Nada neste app escreve no `<body>`: não há script inline, nem
+          `document.body` em lugar nenhum de `src/`. O descasamento que este
+          atributo cala vem de fora — extensão de navegador que injeta atributo
+          ali antes de o React hidratar. Fica **só** no `<body>`: suprimir
+          hidratação é desligar um alarme, e desligá-lo mais fundo esconderia
+          divergência de verdade entre o que o servidor mandou e o que a tela
+          montou. */}
+      <body suppressHydrationWarning>
         {/* Fica no layout, não em cada tela: assim nenhuma tela nova nasce sem
             caminho de volta. Ela mesma decide onde não aparecer. */}
         <Marca />

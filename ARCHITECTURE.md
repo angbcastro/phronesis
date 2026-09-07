@@ -827,7 +827,7 @@ estouro. A janela 0 da sessão `mtqoeoqh3e3724514q1f` gastou duas chamadas para
 falhar exatamente igual duas vezes. E no caso `stop` a segunda tentativa
 **mascarava** o problema acertando por sorte, e ele voltava na sessão seguinte.
 
-As defesas de hoje, do mais alto para o mais baixo:
+As defesas de hoje, da que conserta para a que só conta o que houve:
 
 | | |
 |---|---|
@@ -3463,7 +3463,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 13. Verificação
 
-- `pnpm test` — **48 arquivos, 842 testes**, sem credencial e sem rede. A lista
+- `pnpm test` — **48 arquivos, 840 testes**, sem credencial e sem rede. A lista
   abaixo comenta os que valem uma explicação; a cobertura inteira se lê em
   `tests/`. Os que não têm bullet próprio cobrem a lógica pura da slice 1
   (chaves, manifest, estados, offsets, vocabulário, backoff, retry de rede,
@@ -3528,6 +3528,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   CORS e uma transcrição de verdade (usa um `.webm` já gravado do bucket, ou
   `SMOKE_AUDIO=<caminho>`). É o script que responde se o Gateway aceita
   webm/opus, se vêm timestamps por palavra e se o `keyterm` passa adiante.
+- `pnpm probe:raciocinio` — mede se dá para pedir a um modelo que pense menos, e
+  sob qual nome de opção. **Não é passo de rotina**: o sistema não limita o
+  pensamento (§4.4), e a sonda existe para o dia em que a pergunta voltar em
+  outro `EXTRACAO_MODEL`. `PROBE_SO=<trecho>` roda só as opções que casam, sem
+  gastar o rate limit da conta com a lista inteira; `PROBE_PROVEDOR=<nome>`
+  repete tudo sob a chave do provedor que de fato atendeu.
 - Qualidade de extração (slice 2) não tem teste automático: a avaliação é à mão,
   na tela de revisão, sessão real por sessão real. Ver `Specs/slice-2.md`.
 - `tests/fusao.test.ts` — que fundir não apaga nó, que a grafia velha vira alias
