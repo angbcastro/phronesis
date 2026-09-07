@@ -6,6 +6,7 @@ import {
   blocoDaJanela,
   blocoDasCandidatas,
   comoMencaoCrua,
+  fecharJsonTruncado,
   isolarJson,
   montarPrompt,
   normalizarTipo,
@@ -122,6 +123,69 @@ describe("isolar o JSON", () => {
 
   it("resposta sem JSON nenhum estoura", () => {
     expect(() => isolarJson("desculpe, não consegui")).toThrow(/sem JSON/);
+  });
+});
+
+describe("salvar o JSON cortado no meio", () => {
+  /** Um átomo inteiro, do jeito que o modelo devolve. */
+  const a = (texto: string) =>
+    `{"texto":${JSON.stringify(texto)},"tipo":"FATO","sobre":"Exxmed","menciona":[],"trechos":["${texto}"]}`;
+
+  const salvo = (bruto: string) => {
+    const s = fecharJsonTruncado(bruto);
+    expect(s).not.toBeNull();
+    return JSON.parse(s!) as { atomos: unknown[] };
+  };
+
+  it("corta no meio de uma string e devolve os átomos que fecharam", () => {
+    const r = salvo(`{"atomos":[${a("um")},${a("dois")},{"texto":"o começo do ter`);
+    expect(r.atomos).toHaveLength(2);
+  });
+
+  it("corta no meio de um objeto", () => {
+    const r = salvo(`{"atomos":[${a("um")},${a("dois")},{"texto":"tres","tipo":"FATO",`);
+    expect(r.atomos).toHaveLength(2);
+  });
+
+  it("corta logo depois de uma vírgula", () => {
+    const r = salvo(`{"atomos":[${a("um")},`);
+    expect(r.atomos).toHaveLength(1);
+  });
+
+  it("corta com a cerca de markdown aberta e nunca fechada", () => {
+    const r = salvo('```json\n{"atomos":[' + a("um") + ',{"texto":"dois"');
+    expect(r.atomos).toHaveLength(1);
+  });
+
+  // O caso que uma implementação ingênua erra: `lastIndexOf("}")` cairia dentro
+  // da fala, e contar chave sem olhar aspas fecharia o array no lugar errado.
+  it("não se perde com chave dentro do texto do átomo", () => {
+    const r = salvo(`{"atomos":[${a("ele disse } e foi embora")},{"texto":"cortad`);
+    expect(r.atomos).toHaveLength(1);
+    expect((r.atomos[0] as { texto: string }).texto).toBe("ele disse } e foi embora");
+  });
+
+  it("não se perde com aspas escapada dentro do texto", () => {
+    const r = salvo(`{"atomos":[${a('ele disse \\"pronto\\" e saiu')},{"texto":"cortad`);
+    expect(r.atomos).toHaveLength(1);
+  });
+
+  it("acha o array certo quando o envelope traz entidades antes", () => {
+    const r = salvo(`{"entidades":[{"nome":"Exxmed","tipo":"ORGANIZACAO"}],"atomos":[${a("um")},{"tex`);
+    expect(r.atomos).toHaveLength(1);
+  });
+
+  it("array solto, sem envelope, também se fecha", () => {
+    const s = fecharJsonTruncado(`[${a("um")},{"texto":"dois`);
+    expect(JSON.parse(s!)).toHaveLength(1);
+  });
+
+  // Sem elemento inteiro não há o que salvar, e devolver [] transformaria um
+  // acidente de teto numa lista vazia legítima.
+  it("devolve null quando nenhum elemento chegou a fechar", () => {
+    expect(fecharJsonTruncado('{"atomos":[{"texto":"o começo')).toBeNull();
+    expect(fecharJsonTruncado('{"atomos":[')).toBeNull();
+    expect(fecharJsonTruncado("desculpe, não consegui")).toBeNull();
   });
 });
 

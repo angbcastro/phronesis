@@ -489,6 +489,110 @@ export function isolarJson(bruto: string): string {
   return semCerca.slice(inicio, fim + 1);
 }
 
+/**
+ * O maior prefixo válido de um JSON cortado no meio, ou `null`.
+ *
+ * O modelo estoura o teto de saída no meio da lista e o que chega é um JSON sem
+ * fim: dez átomos completos, o décimo primeiro pela metade. `isolarJson` acha o
+ * último `}` do texto, o `JSON.parse` estoura, e os dez que estavam inteiros
+ * vão para o lixo junto com o que faltava — foi o que custou duas chamadas de
+ * modelo na sessão `mtqoeoqh3e3724514q1f`.
+ *
+ * Aqui o texto é varrido com uma máquina de estados mínima — dentro/fora de
+ * string, escape, profundidade de `{}` e `[]` — guardando o índice logo depois
+ * de **cada elemento completo do array de átomos**. Corta no último e fecha o
+ * que ficou aberto. Sem elemento completo nenhum, devolve `null`: aí não há o
+ * que salvar, e inventar `[]` seria transformar um acidente de teto numa
+ * resposta legítima de lista vazia.
+ *
+ * **Separada de `isolarJson` de propósito.** Aquela responde "onde começa e
+ * termina o JSON nesta resposta", e para um texto cortado a resposta dela está
+ * certa — o problema é que não há fim. Misturar as duas perguntas faria
+ * `isolarJson` mentir sobre resposta íntegra.
+ *
+ * O array de átomos é achado pela chave `"atomos"`, e não pelo primeiro `[` que
+ * aparece: o envelope pode trazer `"entidades"` antes, e aí o primeiro `[` seria
+ * o array errado. Resposta que é um array solto — o modelo às vezes devolve só
+ * a lista — é ela própria o alvo.
+ */
+export function fecharJsonTruncado(bruto: string): string | null {
+  const semCerca = bruto.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "");
+  const aberturas = [semCerca.indexOf("{"), semCerca.indexOf("[")].filter((i) => i >= 0);
+  if (aberturas.length === 0) return null;
+  const inicio = Math.min(...aberturas);
+
+  const pilha: string[] = [];
+  /** Profundidade em que o array de átomos mora, ou -1 enquanto não achado. */
+  let alvo = -1;
+  /** Os fechadores do que estava aberto por fora dele, do mais interno para fora. */
+  let porFora: string[] = [];
+  /** Índice logo depois do último elemento que fechou inteiro. */
+  let fim = -1;
+  let elementos = 0;
+
+  let emString = false;
+  let escape = false;
+  let inicioString = -1;
+  let ultimaString = "";
+  let chave = "";
+
+  for (let i = inicio; i < semCerca.length; i++) {
+    const c = semCerca[i];
+
+    if (emString) {
+      if (escape) escape = false;
+      else if (c === "\\") escape = true;
+      else if (c === '"') {
+        emString = false;
+        ultimaString = semCerca.slice(inicioString + 1, i);
+      }
+      continue;
+    }
+
+    if (c === '"') {
+      emString = true;
+      inicioString = i;
+      continue;
+    }
+
+    if (c === ":") {
+      chave = ultimaString;
+      continue;
+    }
+
+    if (c === "{" || c === "[") {
+      const ehOAlvo =
+        c === "[" &&
+        alvo < 0 &&
+        (pilha.length === 0 || (pilha[pilha.length - 1] === "{" && chave === "atomos"));
+      if (ehOAlvo) {
+        alvo = pilha.length;
+        porFora = pilha.map((a) => (a === "{" ? "}" : "]")).reverse();
+      }
+      pilha.push(c);
+      chave = "";
+      continue;
+    }
+
+    if (c === "}" || c === "]") {
+      pilha.pop();
+      chave = "";
+      // Um elemento do array de átomos acabou de fechar.
+      if (alvo >= 0 && pilha.length === alvo + 1) {
+        fim = i + 1;
+        elementos++;
+      }
+      // O próprio array fechou: daqui para a frente é outro array, e contar
+      // elemento dele seria salvar a lista errada.
+      if (alvo >= 0 && pilha.length === alvo) break;
+      continue;
+    }
+  }
+
+  if (elementos === 0 || fim < 0) return null;
+  return `${semCerca.slice(inicio, fim)}]${porFora.join("")}`;
+}
+
 /** "OPINIÃO" e "opiniao" são a mesma coisa; qualquer outra não é tipo nenhum. */
 export function normalizarTipo(valor: unknown): TipoAtomo | null {
   if (typeof valor !== "string") return null;
