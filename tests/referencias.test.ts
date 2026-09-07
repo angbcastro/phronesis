@@ -109,8 +109,9 @@ describe("de que camada veio a sugestão", () => {
 
   it("camada que não existe some, em vez de chegar à tela sem frase", () => {
     // `FRASE_DA_CAMADA` é um `Record<Camada, string>`: um valor de fora da lista
-    // viraria `undefined` no meio da linha de procedência.
-    const sujo = { ...nova, camada: "extrator" } as unknown as ReferenciaResolvida;
+    // viraria `undefined` no meio da linha de procedência. (Era "extrator" o
+    // exemplo até a 4.9, quando ela virou camada de verdade.)
+    const sujo = { ...nova, camada: "adivinhacao" } as unknown as ReferenciaResolvida;
     expect(comoReferencia(sujo).camada).toBeUndefined();
   });
 });

@@ -164,9 +164,14 @@ export interface Evidencia {
  *
  * Mora aqui, e não em `resolucao.ts`, porque `ReferenciaResolvida` a carrega até
  * a revisão: a tela precisa do tipo, e ela não importa o módulo que fala com o
- * Gateway. A slice 4.9 acrescenta `"extrator"` a esta lista.
+ * Gateway.
+ *
+ * `extrator` nasceu na 4.9 e vai na frente: é o nó que o **próprio extrator**
+ * apontou, lendo o trecho com o dossiê do grafo na mão (`recuperacao.ts`). É o
+ * sinal mais forte porque é o único que olhou a frase inteira, e é o único que
+ * também mudou o texto do átomo — por isso a revisão o mostra sempre.
  */
-export const CAMADAS_DE_CANDIDATO = ["exato", "string", "perfil", "vizinhos"] as const;
+export const CAMADAS_DE_CANDIDATO = ["extrator", "exato", "string", "perfil", "vizinhos"] as const;
 
 export type Camada = (typeof CAMADAS_DE_CANDIDATO)[number];
 

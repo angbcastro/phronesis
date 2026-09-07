@@ -95,6 +95,7 @@ const no = (nome: string, extra: Partial<EntidadeDoGrafo> = {}): EntidadeDoGrafo
 /** O que o extrator devolve por menção desde a 4.9: a grafia, e o nó ou nada. */
 const cita = (citado: string, chave: string | null = null): MencaoCrua => ({ citado, chave });
 
+
 const atomo = (sobre: string, extra: Partial<AtomoCru> = {}): AtomoCru => ({
   texto: "Fui no parque andar de slackline",
   tipo: "FATO",
@@ -185,17 +186,36 @@ describe("só chama o modelo quando há o que decidir", () => {
   });
 });
 
-describe("sessão sem ambiguidade não paga nada", () => {
-  it("nenhuma menção duvidosa, nenhuma chamada de modelo (critério 5)", async () => {
+describe("toda menção é validada (slice 4.9)", () => {
+  it("menção que casa exato TAMBÉM vai ao agente — o critério 5 morreu aqui", async () => {
+    // Era a promessa da slice 4: sessão sem ambiguidade não pagava nada. A 4.9
+    // a desfaz de propósito — desde que o extrator aponta o nó e escreve o nome
+    // dentro do texto do átomo, nenhuma atribuição dele entra sem segunda
+    // opinião.
+    responder({ referencias: [], perfil: [] });
     const atomos = [atomo("eu", { menciona: [cita("Isinha")] })];
     const r = await resolverReferencias(atomos, [no("eu"), no("Isinha")]);
 
-    expect(chamar).not.toHaveBeenCalled();
-    expect(r.modelo).toBeNull();
-    // Registrar uma versão de prompt que não rodou seria mentira na procedência.
-    expect(r.prompt_version).toBeNull();
+    expect(chamar).toHaveBeenCalledTimes(1);
+    expect(r.prompt_version).toBe(PROMPT_VERSION_RESOLUCAO);
+  });
+
+  it("agente calado devolve o prior: o que a 4.8 decidia de graça, com o certo de lá", async () => {
+    responder({ referencias: [], perfil: [] });
+    const atomos = [atomo("eu", { menciona: [cita("Isinha")] })];
+    const r = await resolverReferencias(atomos, [no("eu"), no("Isinha")]);
+
     expect(r.sobre[0]).toMatchObject({ entidade: "eu", conhecida: true, certo: true });
-    expect(r.menciona[0][0]).toMatchObject({ entidade: "Isinha", conhecida: true });
+    expect(r.menciona[0][0]).toMatchObject({ entidade: "Isinha", conhecida: true, certo: true });
+  });
+
+  it("menção sem candidato nenhum não vira pergunta: não há atribuição a validar", async () => {
+    // É o que mantém a promessa de a primeira sessão da vida do sistema sair
+    // como saía na 4.8 — e o que impede pagar uma chamada para descobrir que
+    // não havia o que perguntar.
+    const r = await resolverReferencias([atomo("Marina")], [no("Isinha")]);
+    expect(chamar).not.toHaveBeenCalled();
+    expect(r.sobre[0]).toMatchObject({ entidade: "Marina", conhecida: false, certo: true });
   });
 
   it("grafo vazio: tudo é entidade nova, e ninguém é chamado", async () => {
@@ -375,15 +395,17 @@ describe("resposta ruim degrada para dúvida, nunca para atribuição errada", (
  */
 describe("a mesma pergunta não vai duas vezes", () => {
   it("duas menções iguais no mesmo átomo viram uma pergunta só (D2)", async () => {
-    responder({ referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
+    responder({ referencias: [{ n: 2, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
     const r = await resolverReferencias(
       [atomo("eu", { menciona: [cita("Rafa"), cita("rafa")] })],
       [no("eu"), RAFFA, RAPHA],
     );
 
+    // O sujeito "eu" é a pergunta 1; as duas menções a "Rafa" viram a 2, e não
+    // a 2 e a 3.
     const prompt = String((chamar.mock.calls[0][0] as { prompt: string }).prompt);
-    expect(prompt).toContain("1. no átomo 0");
-    expect(prompt).not.toContain("2. no átomo 0");
+    expect(prompt).toContain("2. no átomo 0");
+    expect(prompt).not.toContain("3. no átomo 0");
 
     // A resposta vale para as duas posições, e cada uma guarda a grafia dela.
     expect(r.menciona[0].map((m) => m.entidade)).toEqual(["Raffa", "Raffa"]);
@@ -574,10 +596,11 @@ describe("as marcas de perfil", () => {
 
 describe("mecânica", () => {
   it("as menções saem na ordem em que a revisão as mostra", () => {
+    // A menção carrega também o que o extrator apontou (4.9) — aqui, nada.
     expect(listarMencoes([atomo("eu", { menciona: [cita("a"), cita("b")] })])).toEqual([
-      { atomo: 0, papel: "sobre", ordem: 0, citado: "eu" },
-      { atomo: 0, papel: "menciona", ordem: 0, citado: "a" },
-      { atomo: 0, papel: "menciona", ordem: 1, citado: "b" },
+      { atomo: 0, papel: "sobre", ordem: 0, citado: "eu", chave: null },
+      { atomo: 0, papel: "menciona", ordem: 0, citado: "a", chave: null },
+      { atomo: 0, papel: "menciona", ordem: 1, citado: "b", chave: null },
     ]);
   });
 
@@ -687,8 +710,9 @@ describe("as duas camadas semânticas (slice 4.5)", () => {
       candidatosDe("Rafa", catalogo, [porPerfil("bibi"), porPerfil("marcos"), porPerfil("marina")]),
     );
     expect(uniao).toHaveLength(TOP_K);
-    // exato, string, string — o vetor só entra no que sobrar do teto.
-    expect(uniao.map((c) => c.entidade.nome)).toEqual(["Raffa", "Rapha", "Bibi"]);
+    // exato, string, string — e o vetor só entra no que sobrar do teto. Com
+    // `extrator` na cabeça (4.9), a última vaga é a primeira a ser espremida.
+    expect(uniao.map((c) => c.entidade.nome)).toEqual(["Raffa", "Rapha", "Bibi", "Marcos"]);
   });
 
   it("chave que o catálogo não conhece cai fora em silêncio", () => {
@@ -754,13 +778,15 @@ describe("as duas camadas semânticas (slice 4.5)", () => {
     // `candidatosSemanticos` já engole a falha e devolve vazio; o que este
     // teste garante é que a sessão continua resolvendo pelas camadas de string.
     semantica.mockImplementation(async (textos) => textos.map(() => []));
+    responder({ referencias: [], perfil: [] });
     const r = await resolverReferencias([atomo("Isinha")], [no("Isinha")]);
     expect(r.sobre[0].entidade).toBe("Isinha");
-    expect(r.modelo).toBeNull();
   });
 
   it("a versão do prompt subiu porque a ENTRADA do agente mudou", () => {
-    expect(PROMPT_VERSION_RESOLUCAO).toBe("resolucao-2");
+    // `resolucao-2` na 4.5 (o vetor entrou na união), `resolucao-3` na 4.9 (a
+    // chave do extrator entrou, e a lista passou a ser de todas as menções).
+    expect(PROMPT_VERSION_RESOLUCAO).toBe("resolucao-3");
   });
 });
 
@@ -802,7 +828,96 @@ describe("o que as janelas anteriores propuseram", () => {
     const p = montarPrompt([atomo("Rafa")], [pendente], [RAFFA, RAPHA], undefined, [
       { tipo: "FATO", texto: "combinei o slackline com a Raffa", sobre: "Raffa" },
     ]);
-    expect(p.match(/MENÇÕES EM DÚVIDA:/g)).toHaveLength(1);
+    expect(p.match(/MENÇÕES A DECIDIR:/g)).toHaveLength(1);
     expect(p.slice(p.indexOf("MENÇÕES EM DÚVIDA:"))).not.toContain("slackline com a Raffa");
+  });
+});
+
+/**
+ * A quinta camada (slice 4.9): o extrator leu o trecho com o dossiê do grafo na
+ * mão e apontou um nó. Ele não decide — decide o agente 2 —, mas entra na
+ * cabeça da união, e quando os dois discordam a revisão tem de ver.
+ */
+describe("o que o extrator apontou", () => {
+  const GIAMPAOLO = no("Giampaolo Lepore");
+
+  const comChave = (citado: string, chave: string | null) =>
+    atomo("eu", { menciona: [cita(citado, chave)] });
+
+  it("a chave do extrator vira candidato, na frente de todas", () => {
+    const c = candidatosDe("Jean", [GIAMPAOLO], [], "giampaolo lepore");
+    expect(c.doExtrator.map((e) => e.nome)).toEqual(["Giampaolo Lepore"]);
+    expect(unir(c)[0]).toMatchObject({ camada: "extrator" });
+  });
+
+  it("chave que o catálogo não conhece cai fora em silêncio", () => {
+    // Mesma regra que `comoCandidatos` aplica ao que o vetor devolve: candidato
+    // que não existe seria um nome impossível de escolher na revisão.
+    expect(candidatosDe("Jean", [GIAMPAOLO], [], "quem nunca existiu").doExtrator).toEqual([]);
+  });
+
+  it("o prompt diz o que o extrator apontou, por menção", async () => {
+    responder({ referencias: [], perfil: [] });
+    await resolverReferencias([comChave("Jean", "giampaolo lepore")], [no("eu"), GIAMPAOLO]);
+
+    const prompt = String((chamar.mock.calls[0][0] as { prompt: string }).prompt);
+    expect(prompt).toContain('Ele apontou a chave "giampaolo lepore"');
+    expect(prompt).toContain("Ele não apontou nenhuma chave");
+  });
+
+  it("o agente concordando, a menção sai certa e apontando o nó", async () => {
+    responder({
+      referencias: [{ n: 2, entidade: "giampaolo lepore", certo: true, motivo: "é o sócio" }],
+      perfil: [],
+    });
+    const r = await resolverReferencias(
+      [comChave("Jean", "giampaolo lepore")],
+      [no("eu"), GIAMPAOLO],
+    );
+
+    expect(r.menciona[0][0]).toMatchObject({
+      citado: "Jean",
+      entidade: "Giampaolo Lepore",
+      conhecida: true,
+      certo: true,
+      camada: "extrator",
+    });
+  });
+
+  it("os dois discordando, o agente 2 vence — e a dúvida aparece", async () => {
+    // É o que a revisão tem de ver: o texto do átomo já saiu com o nome que o
+    // extrator escolheu, e o agente 2 diz que é outro.
+    // O grafo tem uma "Jean" de verdade: a grafia casa com ela, e o extrator
+    // apontou o Giampaolo. É o par que faz os dois discordarem.
+    responder({
+      referencias: [{ n: 2, entidade: "jean", certo: true, motivo: "o contexto é o dela" }],
+      perfil: [],
+    });
+    const r = await resolverReferencias(
+      [comChave("Jean", "giampaolo lepore")],
+      [no("eu"), GIAMPAOLO, no("Jean")],
+    );
+
+    expect(r.menciona[0][0]).toMatchObject({ entidade: "Jean", certo: false });
+    expect(r.menciona[0][0].motivo).toContain("o extrator apontou");
+    expect(r.menciona[0][0].motivo).toContain("o texto do átomo pode ter saído com o nome errado");
+  });
+
+  it("a espera de rate limit entra na chamada (o conserto que a 4.8 deixou)", async () => {
+    // O agente passou a rodar em toda janela, na mesma rajada em que o STT
+    // disputa o limite da conta. Falhar em vez de esperar era o lado errado da
+    // linha do §5.3.
+    chamar.mockRejectedValueOnce(Object.assign(new Error("rate limit"), { statusCode: 429 }));
+    chamar.mockResolvedValueOnce({
+      text: JSON.stringify({ referencias: [{ n: 1, entidade: "isinha", certo: true }], perfil: [] }),
+      response: { modelId: "zai/glm-5.3-flash" },
+    } as never);
+
+    const r = await resolverReferencias([atomo("Isinha")], [no("Isinha")], { ate: Date.now() });
+
+    // Sem orçamento para esperar, ela desiste na hora — e o prior segura a
+    // menção, como sempre segurou.
+    expect(r.sobre[0].entidade).toBe("Isinha");
+    expect(chamar).toHaveBeenCalledTimes(1);
   });
 });

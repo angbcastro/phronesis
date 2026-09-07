@@ -32,11 +32,12 @@ import { generateText } from "ai";
 import { proximidade } from "./duplicatas";
 import { acharPorChave, candidatosSemanticos } from "./entidades";
 import type { CandidatoSemantico, EntidadeDoGrafo } from "./entidades";
+import { comEsperaDeLimite } from "./limite";
 import { diagnostico, garantirGateway, modeloResolucao } from "./modelos";
 import { carimbo, efetivo } from "./overrides";
 import type { RespostaDoModelo } from "./modelos";
 import { normalizarNome } from "./texto";
-import { CAMPOS_PERFIL } from "./tipos";
+import { CAMPOS_PERFIL, TIPOS_SEMPRE_EU } from "./tipos";
 import type {
   AtomoCru,
   Camada,
@@ -59,21 +60,33 @@ export type { Camada };
  * que o agente recebe passou a incluir os que vieram por vetor, e mesmo palavra
  * por palavra idêntico o prompt produz outra saída — que é o que a regra 7
  * existe para deixar rastreável.
+ *
+ * Subiu para `resolucao-3` na 4.9, e aí a entrada mudou duas vezes: o extrator
+ * passou a apontar uma chave, que entra como quinta camada de candidato, e a
+ * lista deixou de ser "as menções em dúvida" para ser **todas** as menções da
+ * janela. O texto também mudou — a regra de tipo e o escopo das chaves, as duas
+ * frases que a 4.8.1 recusou subir por conta própria.
  */
-export const PROMPT_VERSION_RESOLUCAO = "resolucao-2";
+export const PROMPT_VERSION_RESOLUCAO = "resolucao-3";
 
 /**
- * Teto de candidatos sobre a **união** das quatro camadas.
+ * Teto de candidatos sobre a **união** das cinco camadas.
  *
- * Ele e os pisos abaixo são obrigatórios, e é o mesmo motivo: uma camada
- * semântica sem corte é uma camada que **sempre acha alguém**. Sem teto e sem
- * piso, todo átomo ganha candidato, `decidir()` cai sempre em `julgar`, o agente
- * 2 é chamado em toda sessão, e o critério 5 da slice 4 morre — aquele que diz
- * que sessão sem ambiguidade não paga nada.
+ * Era 3 até a 4.8, e o argumento era o critério 5 da slice 4: sem teto e sem
+ * piso, todo átomo ganha candidato, `decidir()` cai sempre em `julgar` e sessão
+ * sem ambiguidade passa a pagar. **A 4.9 matou esse critério de propósito** — o
+ * agente 2 passou a validar toda menção —, e o teto ficou pelo outro motivo, que
+ * sempre foi o mais forte: é o que cabe numa frase de dúvida na revisão sem
+ * virar lista.
  *
- * Três é o que cabe numa frase de dúvida na revisão sem virar lista.
+ * Subiu para 4 para a camada `extrator` caber **junto** com as três, e não no
+ * lugar de uma. Mesmo assim a conta aperta: `extrator` + `exato` + dois
+ * parecidos ocupam as quatro vagas e espremem o vetor para fora da união. Pode
+ * estar certo — o dossiê já traz o semântico pelo lado do extrator, porque as
+ * camadas `perfil` e `vizinhos` do RAG rodam sobre o texto do bloco —, mas é
+ * decisão escrita, não consequência da ordem do laço (§14).
  */
-export const TOP_K = 3;
+export const TOP_K = 4;
 
 /**
  * Os pisos, **em cosseno** (as consultas de `entidades.ts` desfazem a
@@ -119,13 +132,6 @@ const NOVA = "NOVA";
 const EU = "eu";
 
 /**
- * Os três tipos cujo sujeito é `eu` **por contrato do `extracao-6`**: "SENTIMENTO,
- * APRENDIZADO e ROTINA → SEMPRE 'eu'". Sentimento é meu por definição mesmo
- * quando foi outra pessoa que o provocou; quem provocou vai em `menciona`.
- */
-const TIPOS_SEMPRE_EU: readonly string[] = ["SENTIMENTO", "APRENDIZADO", "ROTINA"];
-
-/**
  * O sujeito desta menção está travado em `eu` pelo tipo do átomo?
  *
  * Só o **sujeito**, e só quando o extrator de fato escreveu `eu`: se ele já
@@ -136,7 +142,7 @@ const TIPOS_SEMPRE_EU: readonly string[] = ["SENTIMENTO", "APRENDIZADO", "ROTINA
 export function travadoEmEu(tipo: string | undefined, papel: Papel, citado: string): boolean {
   return (
     papel === "sobre" &&
-    TIPOS_SEMPRE_EU.includes(String(tipo ?? "").toUpperCase()) &&
+    (TIPOS_SEMPRE_EU as readonly string[]).includes(String(tipo ?? "").toUpperCase()) &&
     normalizarNome(citado) === EU
   );
 }
@@ -156,6 +162,14 @@ export interface Mencao {
   papel: Papel;
   ordem: number;
   citado: string;
+  /**
+   * O nó que o **extrator** apontou para esta menção (slice 4.9), ou `null`.
+   *
+   * Opcional porque nem toda menção vem de uma extração com dossiê: no caminho
+   * sem candidatas, e em toda proposta anterior à 4.9, ela é `null` e a camada
+   * `extrator` simplesmente não existe.
+   */
+  chave?: string | null;
 }
 
 /** Um candidato da união, com a camada que o achou e o que ela tem a dizer. */
@@ -170,6 +184,16 @@ export interface Candidato {
 }
 
 export interface Candidatos {
+  /**
+   * O nó que o extrator apontou (slice 4.9), quando ele existe no catálogo.
+   *
+   * Vai na **cabeça** da união: é o único candidato que saiu de alguém que leu
+   * a frase inteira, e é o único que já mudou o texto do átomo. Chave que não
+   * está no catálogo é descartada em silêncio, mesma regra que `comoCandidatos`
+   * aplica ao que o vetor devolve — candidato que não existe seria um nome que
+   * eu não consigo escolher na revisão.
+   */
+  doExtrator: EntidadeDoGrafo[];
   /** Casamento de chave — inclui as grafias já fundidas no nó (slice 3). */
   exatos: EntidadeDoGrafo[];
   /** Parecidos por string, que é onde o homófono aparece. */
@@ -194,16 +218,27 @@ export function candidatosDe(
   citado: string,
   catalogo: readonly EntidadeDoGrafo[],
   semanticos: readonly CandidatoSemantico[] = [],
+  /** A chave que o extrator apontou para esta menção (slice 4.9). */
+  chaveDoExtrator: string | null = null,
 ): Candidatos {
   const chave = normalizarNome(citado);
   const exato = acharPorChave(chave, catalogo);
   const exatos = exato ? [exato] : [];
 
+  const apontado = chaveDoExtrator
+    ? acharPorChave(normalizarNome(chaveDoExtrator), catalogo)
+    : undefined;
+
   const parecidos = catalogo.filter(
     (e) => e.id !== exato?.id && proximidade(citado, e.nome) !== null,
   );
 
-  return { exatos, parecidos, semanticos: comoCandidatos(semanticos, catalogo) };
+  return {
+    doExtrator: apontado ? [apontado] : [],
+    exatos,
+    parecidos,
+    semanticos: comoCandidatos(semanticos, catalogo),
+  };
 }
 
 /**
@@ -240,10 +275,10 @@ function comoCandidatos(
 }
 
 /**
- * A união das quatro camadas, sem repetição e com teto.
+ * A união das cinco camadas, sem repetição e com teto.
  *
- * **Aditivas, nunca substitutivas**: a ordem é exato, string, vetor, e o mesmo
- * nó achado por duas camadas aparece uma vez só, pela mais forte — mas leva
+ * **Aditivas, nunca substitutivas**: a ordem é extrator, exato, string, vetor, e
+ * o mesmo nó achado por duas camadas aparece uma vez só, pela mais forte — mas leva
  * junto o `porque` da camada dos vizinhos, que é a única que tem o que mostrar.
  *
  * Essa deduplicação é o que faz o critério 5 da slice 4 sobreviver ao vetor. O
@@ -275,6 +310,7 @@ export function unir(c: Candidatos): Candidato[] {
     uniao.push(novo);
   };
 
+  for (const e of c.doExtrator) acrescentar(e, "extrator");
   for (const e of c.exatos) acrescentar(e, "exato");
   for (const e of c.parecidos) acrescentar(e, "string");
   for (const s of c.semanticos) acrescentar(s.entidade, s.camada, s);
@@ -324,9 +360,9 @@ export function decidir(c: Candidatos): Decisao {
 export function listarMencoes(atomos: readonly AtomoCru[]): Mencao[] {
   const lista: Mencao[] = [];
   atomos.forEach((a, atomo) => {
-    lista.push({ atomo, papel: "sobre", ordem: 0, citado: a.sobre.citado });
+    lista.push({ atomo, papel: "sobre", ordem: 0, citado: a.sobre.citado, chave: a.sobre.chave });
     (a.menciona ?? []).forEach((m, ordem) =>
-      lista.push({ atomo, papel: "menciona", ordem, citado: m.citado }),
+      lista.push({ atomo, papel: "menciona", ordem, citado: m.citado, chave: m.chave }),
     );
   });
   return lista;
@@ -359,13 +395,16 @@ const referenciaNova = (citado: string): ReferenciaResolvida => ({
 
 export const INSTRUCOES = `Você recebe os átomos extraídos de um diário falado pessoal, em português, e a lista de pessoas, projetos e objetivos que já existem no diário — cada um com o perfil que o dono escreveu.
 
-Sua tarefa é decidir, para cada MENÇÃO EM DÚVIDA, a qual dessas entidades ela se refere — ou se é alguém/algo novo.
+Sua tarefa é decidir, para cada MENÇÃO, a qual dessas entidades ela se refere — ou se é alguém/algo novo.
 
 POR QUE ISSO É DIFÍCIL
 Nomes que soam igual ("Raffa" e "Rapha") chegam da transcrição com UMA grafia só, escolhida pelo transcritor. A grafia NÃO diz quem é. O que diz é o contexto: o que a pessoa faz, o que ela sabe, o que já foi feito junto com ela. O campo "fizemos juntos" costuma ser o sinal mais forte, porque atividade compartilhada é o que aparece na transcrição.
 
 COMO DECIDIR
 - Compare o que o átomo diz com o perfil de cada candidato.
+- Só valem as chaves listadas NAQUELA menção. Chave que aparece em outra menção, ou no texto do átomo, não é resposta válida para esta.
+- SENTIMENTO, APRENDIZADO e ROTINA são sempre de "eu" — o sujeito desses átomos não muda de dono, por mais que o contexto fale de outra pessoa. Não gaste decisão nisso.
+- Uma menção pode vir com o que O EXTRATOR APONTOU: ele leu o mesmo trecho, com a lista de entidades conhecidas na mão, e escolheu uma. É a opinião de outro leitor do mesmo texto, e não um veredito — concorde quando o contexto sustentar, e diga outra chave quando não sustentar.
 - Cada candidato vem com o MOTIVO de estar na lista: grafia igual, nome parecido, perfil parecido, ou átomos passados parecidos que já são dele. Motivo é pista, não veredito — um candidato que entrou por nome parecido continua podendo ser o certo, e um que entrou por átomo parecido continua podendo ser o errado.
 - Quando o motivo cita átomos passados, eles são o que você tem de mais próximo de evidência de uso: eu já disse aquilo daquela pessoa. Vale mais que semelhança de nome, e menos que o perfil contradizer.
 - Se o átomo casa claramente com o perfil de um deles, escolha esse, com "certo": true.
@@ -401,11 +440,25 @@ function descrever(e: EntidadeDoGrafo): string {
   return cabeca + alias + perfil;
 }
 
-/** Uma menção que sobrou para o agente decidir, com quem ela pode ser. */
+/**
+ * Uma menção que vai ao agente, com quem ela pode ser.
+ *
+ * **Desde a 4.9 são todas**, e não só as que sobraram: nenhuma atribuição do
+ * extrator entra sem segunda opinião. O que `decidir()` produz virou o `prior` —
+ * a resposta que vale se o agente não responder por esta menção.
+ */
 interface Pendente {
   n: number;
   mencao: Mencao;
   candidatos: Candidato[];
+  /**
+   * O que a passada determinística decidiu sozinha. É o fallback, e ele é o
+   * comportamento de antes desta fatia, item por item.
+   *
+   * Ausente é a pendente montada à mão (teste, ou quem só quer o prompt): aí o
+   * fallback é o de uma menção em dúvida, que é o caso conservador.
+   */
+  prior?: Decisao;
   /**
    * Todas as menções que esta pergunta responde — a representada e as iguais a
    * ela **no mesmo átomo** (slice 4.8.1).
@@ -432,6 +485,8 @@ interface Pendente {
  */
 function porqueDoCandidato(c: Candidato): string {
   switch (c.camada) {
+    case "extrator":
+      return "o extrator apontou este nó, lendo o trecho com a lista do diário na mão";
     case "exato":
       return "a grafia bate com o nome dela no grafo (ou com um alias)";
     case "string":
@@ -485,10 +540,15 @@ export function montarPrompt(
     .map(({ n, mencao, candidatos }) =>
       [
         `${n}. no átomo ${mencao.atomo}, o extrator escreveu "${mencao.citado}" ` +
-          `(${mencao.papel === "sobre" ? "sujeito" : "menção"}). Candidatos:`,
-        ...candidatos.map(
-          (c) => `   - "${c.entidade.nome_normalizado}" — ${porqueDoCandidato(c)}`,
-        ),
+          `(${mencao.papel === "sobre" ? "sujeito" : "menção"}). ` +
+          (mencao.chave
+            ? `Ele apontou a chave "${mencao.chave}". Candidatos:`
+            : "Ele não apontou nenhuma chave. Candidatos:"),
+        ...(candidatos.length === 0
+          ? ["   - (nenhum: nada no diário se parece com isto)"]
+          : candidatos.map(
+              (c) => `   - "${c.entidade.nome_normalizado}" — ${porqueDoCandidato(c)}`,
+            )),
       ].join("\n"),
     )
     .join("\n");
@@ -509,7 +569,7 @@ ${listaAtomos}
 ENTIDADES QUE JÁ EXISTEM:
 ${listaEntidades}
 
-MENÇÕES EM DÚVIDA:
+MENÇÕES A DECIDIR:
 ${listaPendentes}`;
 }
 
@@ -613,7 +673,22 @@ export async function resolverReferencias(
    * atribuídos quando nasceram, e reabrir a decisão a cada janela seria pagar a
    * mesma pergunta oito vezes.
    */
-  { jaPropostos = [] }: { jaPropostos?: readonly AtomoAnterior[] } = {},
+  {
+    jaPropostos = [],
+    ate,
+  }: {
+    jaPropostos?: readonly AtomoAnterior[];
+    /**
+     * Prazo de quem chama, repassado à espera de rate limit (slice 4.9).
+     *
+     * A 4.8 deixou isto de fora de propósito; esta fatia é o que torna o
+     * conserto necessário — o agente passou a rodar em **toda** janela, oito
+     * vezes por sessão de 15 min, na mesma rajada em que o STT já disputa o
+     * limite da conta. Ausente é o caminho durante a gravação, onde esperar é
+     * de graça porque eu ainda estou falando (§5.3).
+     */
+    ate?: number;
+  } = {},
 ): Promise<Atribuicoes> {
   const mencoes = listarMencoes(atomos);
   const resolvidas = new Map<Mencao, ReferenciaResolvida>();
@@ -648,28 +723,45 @@ export async function resolverReferencias(
   /** `átomo|chave` → a pergunta que já cobre esta menção neste átomo (D2). */
   const jaPerguntada = new Map<string, Pendente>();
 
+  // **Toda menção vai ao agente** (slice 4.9), e é a decisão mais cara desta
+  // fatia: o critério 5 da slice 4 — "sessão sem ambiguidade não paga nada" —
+  // morre aqui, de propósito. Nenhuma atribuição do extrator entra sem segunda
+  // opinião, e agora é ele quem escreve o nome próprio dentro do texto do átomo.
+  //
+  // O que `decidir()` produzia como resposta virou o **prior**: é o que vale
+  // quando o agente não responder por esta menção, e é, item por item, o
+  // comportamento de antes desta fatia.
   for (const m of mencoes) {
-    const decisao = decidir(candidatosDe(m.citado, catalogo, semanticos[m.atomo] ?? []));
-    if (decisao.tipo === "no") {
-      resolvidas.set(m, referenciaAoNo(m.citado, decisao.no, "casou com o nome no grafo"));
-    } else if (decisao.tipo === "nova") {
-      resolvidas.set(m, referenciaNova(m.citado));
-    } else {
-      const chave = `${m.atomo}|${normalizarNome(m.citado)}`;
-      const ja = jaPerguntada.get(chave);
-      if (ja) {
-        ja.iguais!.push(m);
-        continue;
-      }
-      const p: Pendente = {
-        n: pendentes.length + 1,
-        mencao: m,
-        candidatos: decisao.candidatos,
-        iguais: [m],
-      };
-      jaPerguntada.set(chave, p);
-      pendentes.push(p);
+    const chave = `${m.atomo}|${normalizarNome(m.citado)}`;
+    const ja = jaPerguntada.get(chave);
+    if (ja) {
+      ja.iguais!.push(m);
+      continue;
     }
+
+    const quemPodeSer = candidatosDe(m.citado, catalogo, semanticos[m.atomo] ?? [], m.chave);
+    const prior = decidir(quemPodeSer);
+
+    // **A única menção que não vai ao agente é a que não tem candidato nenhum.**
+    // Ali não há atribuição a validar: a união vazia é entidade nova, e a única
+    // resposta válida seria a que o prior já dá. É o que mantém a promessa de
+    // que uma sessão com o grafo vazio — a primeira da vida do sistema — sai
+    // exatamente como saía na 4.8, sem pagar uma chamada para descobrir que não
+    // havia o que perguntar.
+    if (prior.tipo === "nova") {
+      resolvidas.set(m, referenciaNova(m.citado));
+      continue;
+    }
+
+    const p: Pendente = {
+      n: pendentes.length + 1,
+      mencao: m,
+      candidatos: unir(quemPodeSer),
+      prior,
+      iguais: [m],
+    };
+    jaPerguntada.set(chave, p);
+    pendentes.push(p);
   }
 
   // As entidades que esta sessão pode citar. O catálogo inteiro não vai ao
@@ -704,6 +796,9 @@ export async function resolverReferencias(
     // Só aqui, e não no topo: sessão sem menção ambígua não chama este agente e
     // não paga nada — nem a chamada de modelo, nem a leitura do override.
     const meu = await efetivo("resolucao", { prompt: INSTRUCOES, modelo: modeloResolucao() });
+    // `const` próprio: o `modelo` lá de cima é `string | null` e ainda vai ser
+    // reescrito com o id que de fato atendeu; a chamada precisa do id de agora.
+    const modeloDaChamada = meu.modelo;
     modelo = meu.modelo;
     hashPrompt = meu.hash;
     prompt = montarPrompt(atomos, pendentes, [...envolvidas.values()], meu.prompt, jaPropostos);
@@ -714,13 +809,21 @@ export async function resolverReferencias(
     // log diz "falhou" e não diz o que fazer a respeito (ARCHITECTURE.md §4.6).
     let resposta: RespostaDoModelo | null = null;
     try {
-      const r = await generateText({
-        // String de propósito: id em string sai pelo Gateway (regra 8).
-        model: modelo,
-        prompt,
-        temperature: 0,
-        maxOutputTokens: MAX_TOKENS_SAIDA,
-      });
+      // O rate limit do Gateway é da conta inteira (`limite.ts`), e desde esta
+      // fatia este agente roda em toda janela. Sem a espera, um limite ativo
+      // devolvia a janela inteira como dúvida — degradação certa, mas cara.
+      const r = await comEsperaDeLimite(
+        `resolucao ${modeloDaChamada}`,
+        () =>
+          generateText({
+            // String de propósito: id em string sai pelo Gateway (regra 8).
+            model: modeloDaChamada,
+            prompt,
+            temperature: 0,
+            maxOutputTokens: MAX_TOKENS_SAIDA,
+          }),
+        { ate },
+      );
       resposta = r;
       // Antes do parse: o modelo que de fato atendeu é procedência, e vale
       // registrar mesmo quando a resposta dele não presta.
@@ -756,7 +859,7 @@ export async function resolverReferencias(
     }
   }
 
-  for (const { n, mencao, candidatos, iguais } of pendentes) {
+  for (const { n, mencao, candidatos, prior, iguais } of pendentes) {
     const nomes = candidatos.map((c) => c.entidade.nome);
     const j = julgamentos.get(n);
     const escolhida = typeof j?.entidade === "string" ? j.entidade.trim() : "";
@@ -852,12 +955,31 @@ export async function resolverReferencias(
     }
 
     if (alvo) {
+      /**
+       * **Os dois agentes discordaram** (slice 4.9).
+       *
+       * O extrator apontou um nó, o agente 2 escolheu outro. A resposta do
+       * agente 2 vence — ele é quem valida —, mas a menção fica `certo: false`:
+       * dois agentes discordando é exatamente o que a revisão tem de ver, e é o
+       * único sinal de que o nome que o extrator já escreveu **dentro do texto
+       * do átomo** pode ser o errado.
+       */
+      const discordam =
+        mencao.chave !== null &&
+        mencao.chave !== undefined &&
+        !alvo.entidade.chaves.includes(normalizarNome(mencao.chave));
+
       responder({
         entidade: alvo.entidade.nome,
         conhecida: true,
-        certo: j?.certo !== false,
+        certo: discordam ? false : j?.certo !== false,
         alternativas: nomes.filter((nome) => nome !== alvo.entidade.nome),
-        motivo,
+        motivo: discordam
+          ? `o extrator apontou "${mencao.chave}" e o agente 2 diz que é ` +
+            `"${alvo.entidade.nome_normalizado}"` +
+            (motivo ? `: ${motivo}` : "") +
+            ` — o texto do átomo pode ter saído com o nome errado`
+          : motivo,
         // A evidência do candidato ESCOLHIDO, e só dele: é o que deixa a revisão
         // dizer "sugeri o Raffa porque isto se parece com o que você disse em
         // 12/ago", com o trecho à mão. Sem isto na tela, a camada dos vizinhos
@@ -869,10 +991,39 @@ export async function resolverReferencias(
       continue;
     }
 
-    // Sem resposta, ou resposta que não é nenhum dos candidatos. O fallback é o
-    // casamento exato quando existe, e entidade nova quando não — nunca o
-    // parecido. Duas entidades a mais eu conserto em /entidades; fundir duas
-    // pessoas por um palpite não tem desfazer.
+    /**
+     * Sem resposta, ou resposta que não é nenhum dos candidatos: vale o
+     * **prior** — o que a passada determinística tinha decidido sozinha.
+     *
+     * É a degradação de antes desta fatia, item por item: a menção que resolvia
+     * de graça na 4.8 continua resolvendo de graça e com o `certo` de então, e
+     * só a que ficaria em dúvida lá fica em dúvida aqui. Sem isto, ligar o
+     * agente 2 em toda menção transformaria uma falha dele numa sessão inteira
+     * de dúvidas — a 4.8 decidia sozinha justamente o caso comum.
+     */
+    if (prior?.tipo === "no" && escolhida === "") {
+      responder({
+        entidade: prior.no.nome,
+        conhecida: true,
+        certo: true,
+        alternativas: nomes.filter((nome) => nome !== prior.no.nome),
+        motivo: "casou com o nome no grafo",
+        porque: [],
+        camada: "exato",
+      });
+      continue;
+    }
+
+    if (prior?.tipo === "nova" && escolhida === "") {
+      const { citado: _, ...nova } = referenciaNova(mencao.citado);
+      responder(nova);
+      continue;
+    }
+
+    // O prior era dúvida: o fallback é o casamento exato quando existe, e
+    // entidade nova quando não — **nunca o parecido**. Duas entidades a mais eu
+    // conserto em /entidades; fundir duas pessoas por um palpite não tem
+    // desfazer.
     const exato = candidatos.find((c) =>
       c.entidade.chaves.includes(normalizarNome(mencao.citado)),
     );

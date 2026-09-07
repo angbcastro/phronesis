@@ -857,7 +857,13 @@ export async function extrairJanela(
   // que o agente 2 usa para desambiguar. Quem montou o dossiê já o leu (4.9), e
   // reler seria pagar duas vezes pela mesma pergunta.
   const catalogo = catalogoLido ?? (await listarEntidades());
-  const atribuicoes = await resolverReferencias(atomos, catalogo, { jaPropostos: anteriores });
+  const atribuicoes = await resolverReferencias(atomos, catalogo, {
+    jaPropostos: anteriores,
+    // O mesmo prazo da chamada de extração: desde a 4.9 o agente 2 também
+    // espera o rate limit passar, e essa espera divide o orçamento de quem
+    // chama — na janela do fim, o `waitUntil` do `/finalizar` (§5.3).
+    ate,
+  });
 
   return {
     novos: ancorar(

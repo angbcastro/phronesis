@@ -202,7 +202,8 @@ export const incertasDoAtomo = (
  *
  * `exato` e `string` ficam de fora de propósito: ali nada foi herdado — a grafia
  * é o que eu mesmo falei —, e uma linha em todo átomo viraria ruído na tela que
- * tem 60 s.
+ * tem 60 s. `extrator` entra (4.9): ali o nome dentro do texto do átomo deixou
+ * de ser o que eu falei.
  */
 export const herdadasDoAtomo = (
   a: AtomoProposto,
@@ -210,7 +211,15 @@ export const herdadasDoAtomo = (
   mencoesEditadas = false,
 ): ReferenciaNoAtomo[] =>
   referenciasDoAtomo(a, conhecidas, mencoesEditadas).filter(
-    (i) => i.ref.porque.length > 0 || i.ref.camada === "perfil" || i.ref.camada === "vizinhos",
+    (i) =>
+      i.ref.porque.length > 0 ||
+      i.ref.camada === "perfil" ||
+      i.ref.camada === "vizinhos" ||
+      // `extrator` entra na lista pelo mesmo argumento da 3b, e mais forte: ele
+      // não só herda atribuição passada como **reescreve o texto do átomo** com
+      // o nome gravado do nó (4.9). Se isso não aparecesse na tela, o nome que
+      // eu falei sumiria sem eu ver — e é o `citado` da referência que o guarda.
+      i.ref.camada === "extrator",
   );
 
 /** Como a tela chama a posição: "sobre" ou "menção 2". */
@@ -225,6 +234,7 @@ export const ondeEstaA = (i: ReferenciaNoAtomo): string =>
  * `"extrator"`.
  */
 export const FRASE_DA_CAMADA: Record<Camada, string> = {
+  extrator: "o extrator reconheceu este nome no diário e o escreveu no átomo",
   exato: "a grafia bateu com o nome no grafo",
   string: "o nome é parecido com o que eu falei",
   perfil: "o perfil dela se parece com este átomo",
