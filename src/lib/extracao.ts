@@ -43,6 +43,7 @@ import { normalizarNome } from "./texto";
 import {
   DURACAO_CHUNK_S,
   ORCAMENTO_POR_15_MIN,
+  ROTULO_TIPO_ENTIDADE,
   TIPOS_ATOMO,
   TIPOS_SEMPRE_EU,
 } from "./tipos";
@@ -76,8 +77,15 @@ import type {
  * mudou de natureza: o extrator passou a receber o dossiê do que o grafo acha
  * que aquele trecho cita, e a devolver `{citado, chave}` em vez de um nome
  * solto. `INSTRUCOES_BASE` e `FORMATO` continuam sem mudar um byte.
+ *
+ * Subiu para `extracao-8` com a migration 007, e aqui `INSTRUCOES_BASE` **mudou
+ * de verdade** pela primeira vez desde o `extracao-5`: o tipo HISTORIA e a
+ * seção que o explica, o sujeito travado em `eu` também nele, e ORGANIZACAO na
+ * lista de tipos de entidade. Átomo carimbado `extracao-7` saiu de um prompt
+ * que não conhecia nenhum dos dois — é exatamente isso que o carimbo existe
+ * para dizer.
  */
-export const PROMPT_VERSION = "extracao-7";
+export const PROMPT_VERSION = "extracao-8";
 
 export class ExtracaoError extends Error {
   /** Mesma distinção de `SttError`: voltar mais tarde, ou mexer no código. */
@@ -118,6 +126,10 @@ O QUE MERECE UM ÁTOMO
 A TRIVIALIDADE DO DIA VIRA UM ÁTOMO SÓ
 Tarefa doméstica, rotina de exercício, deslocamento, compra corriqueira, refeição — nada disso merece átomo próprio. Junte TUDO num único átomo de tipo ROTINA, no máximo um por sessão, listando as coisas numa frase. Se a rotina tiver carga ("foi muito bom"), essa parte vira um átomo separado de SENTIMENTO; a lista continua na ROTINA.
 
+A HISTÓRIA GUARDA O DETALHE
+Quando eu conto um episódio — o que aconteceu, com quem, onde, o que foi dito, como terminou —, isso é UM átomo de tipo HISTORIA, e é o único em que o texto pode ser longo. Aqui NÃO resuma: mantenha os detalhes que eu contei, na ordem em que eu contei, porque é deles que a história vive daqui a um ano. Continua valendo COM AS MINHAS PALAVRAS — guardar o detalhe não é bordar em cima dele, e o que eu não contei não entra.
+Não é HISTORIA o dia comum ("acordei, treinei, trabalhei"): isso é ROTINA. Não é HISTORIA o fato solto, sem episódio em volta ("o contrato atrasou"): isso é FATO. Se do episódio saiu uma conclusão ou um sentimento que se sustenta sozinho, ele vira átomo próprio de APRENDIZADO ou SENTIMENTO; a narrativa continua inteira na HISTORIA.
+
 JUNTE O QUE É O MESMO ASSUNTO
 Se eu falo de uma coisa no começo e volto a ela mais tarde, isso é UM átomo, não dois. Reúna o que foi dito nos dois momentos numa afirmação só, e devolva os dois trechos.
 
@@ -133,16 +145,17 @@ OS CAMPOS
   APRENDIZADO o que eu concluí
   CONQUISTA   o que eu consegui
   DECISAO     o que eu decidi fazer ou parar de fazer
+  HISTORIA    um episódio que eu vivi e contei com detalhe
   ROTINA      a trivialidade do dia, colapsada (no máximo um por sessão)
 
 "sobre": exatamente uma entidade, e ela depende do tipo. Esta regra não tem exceção:
-  SENTIMENTO, APRENDIZADO e ROTINA  → SEMPRE "eu". Sentimento é meu por definição, mesmo quando foi outra pessoa que o provocou; quem provocou vai em "menciona". Aprendizado é meu mesmo quando é sobre outra pessoa.
-  FATO, OPINIAO, CONQUISTA, DECISAO → o assunto de que trata: a pessoa, o projeto ou o objetivo. Só use "eu" quando não houver mesmo nenhum outro assunto.
+  SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA → SEMPRE "eu". Sentimento é meu por definição, mesmo quando foi outra pessoa que o provocou; quem provocou vai em "menciona". Aprendizado é meu mesmo quando é sobre outra pessoa. História é minha porque eu a vivi; quem a viveu comigo vai em "menciona".
+  FATO, OPINIAO, CONQUISTA, DECISAO → o assunto de que trata: a pessoa, a organização, o projeto ou o objetivo. Só use "eu" quando não houver mesmo nenhum outro assunto.
 
 "menciona": as OUTRAS entidades citadas, ou []. Nunca repita aqui o que já está em "sobre", e não liste "eu" num átomo que já é sobre "eu".
 
 ENTIDADES
-Devolva também "entidades": cada entidade citada uma vez só, com o tipo proposto — PESSOA, PROJETO ou OBJETIVO. "eu" é PESSOA. Só liste o que for de fato uma pessoa, um projeto ou um objetivo; coisa que não é nenhum dos três não entra nessa lista e fica apenas dentro do texto do átomo.
+Devolva também "entidades": cada entidade citada uma vez só, com o tipo proposto — PESSOA, ORGANIZACAO, PROJETO ou OBJETIVO. "eu" é PESSOA. ORGANIZACAO é a instituição: empresa, ONG, startup, escola, faculdade, igreja, time, cliente, fornecedor — e não o trabalho que corre dentro dela, que é PROJETO. Só liste o que for de fato uma dessas quatro coisas; coisa que não é nenhuma delas não entra nessa lista e fica apenas dentro do texto do átomo.
 
 NOME DE ENTIDADE É NOME
 Procure o nome na transcrição INTEIRA antes de desistir: se em algum momento eu digo "a Marina" e depois passo a falar "ela", a entidade é "Marina" em todos os átomos, inclusive nos que só dizem "ela". O mesmo vale para "meu chefe", "esse cara", "a gente".
@@ -217,7 +230,7 @@ export function blocoDasCandidatas(dossie: Dossie): string {
     .map(({ entidade: e }) => {
       const alias = e.aliases.length > 0 ? `; também escrito: ${e.aliases.join(", ")}` : "";
       const contexto = e.perfil.contexto ? `\n    ${e.perfil.contexto}` : "";
-      return `- chave "${e.nome_normalizado}" — ${e.nome} (${e.tipo.toLowerCase()}${alias})${contexto}`;
+      return `- chave "${e.nome_normalizado}" — ${e.nome} (${ROTULO_TIPO_ENTIDADE[e.tipo]}${alias})${contexto}`;
     })
     .join("\n");
 
@@ -231,7 +244,7 @@ Então, em "sobre" e em cada item de "menciona", devolva um objeto e não um nom
 - "citado" é sempre o que a transcrição escreveu, sem consertar nada.
 - "chave" é a chave da lista quando a menção for uma delas, e null quando não for. NUNCA invente chave fora da lista acima.
 - Quando você apontar uma chave, escreva no "texto" do átomo o NOME GRAVADO daquela entidade, e não o que a transcrição escreveu: se a transcrição diz "giam" e a chave é "giampaolo lepore", o texto do átomo diz "Giampaolo Lepore". **Só o nome próprio se troca** — no resto continua valendo tudo o que está acima, inclusive COM AS MINHAS PALAVRAS.
-- Isto não abre exceção na regra do "sobre": SENTIMENTO, APRENDIZADO e ROTINA continuam sendo sempre de "eu", por mais que a lista acima ofereça um nome que combine com o assunto.
+- Isto não abre exceção na regra do "sobre": SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA continuam sendo sempre de "eu", por mais que a lista acima ofereça um nome que combine com o assunto.
 
 `;
 }
@@ -543,11 +556,11 @@ export function parsearResposta(
         texto: t,
         tipo,
         // A guarda do `eu` (4.8.1), do lado da extração: o dossiê não pode
-        // fazer o sujeito de um SENTIMENTO, APRENDIZADO ou ROTINA apontar para
-        // um nó do grafo. A lista de conhecidos na frente do modelo é convite
-        // exatamente para isso, e o prompt pede o contrário — aqui a chave cai,
-        // e o `citado` fica como veio: quem arbitra o sujeito errado do
-        // extrator é a revisão, não este código.
+        // fazer o sujeito de um SENTIMENTO, APRENDIZADO, HISTORIA ou ROTINA
+        // apontar para um nó do grafo. A lista de conhecidos na frente do
+        // modelo é convite exatamente para isso, e o prompt pede o contrário —
+        // aqui a chave cai, e o `citado` fica como veio: quem arbitra o
+        // sujeito errado do extrator é a revisão, não este código.
         sobre: TIPOS_SEMPRE_EU.includes(tipo) ? { ...sobre, chave: null } : sobre,
         menciona: listaDeMencoes(i.menciona),
         trechos,

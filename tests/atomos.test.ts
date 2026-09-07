@@ -72,6 +72,11 @@ describe("entidades", () => {
     });
   });
 
+  it("grava o label da migration 007 — a empresa deixa de nascer :Pessoa", async () => {
+    await gravarEntidades([{ nome: "Adapta", nome_normalizado: "adapta", tipo: "Organizacao" }]);
+    expect(cypherDe(0)).toContain("n:Organizacao");
+  });
+
   it("não consulta o banco para um tipo sem entidade nenhuma", async () => {
     await gravarEntidades([{ nome: "Rafa", nome_normalizado: "rafa", tipo: "Pessoa" }]);
     expect(consulta).toHaveBeenCalledTimes(1);

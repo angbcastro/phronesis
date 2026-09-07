@@ -37,7 +37,7 @@ import { diagnostico, garantirGateway, modeloResolucao } from "./modelos";
 import { carimbo, efetivo } from "./overrides";
 import type { RespostaDoModelo } from "./modelos";
 import { normalizarNome } from "./texto";
-import { CAMPOS_PERFIL, TIPOS_SEMPRE_EU } from "./tipos";
+import { CAMPOS_PERFIL, ROTULO_TIPO_ENTIDADE, TIPOS_SEMPRE_EU } from "./tipos";
 import type {
   AtomoCru,
   Camada,
@@ -66,8 +66,13 @@ export type { Camada };
  * lista deixou de ser "as menções em dúvida" para ser **todas** as menções da
  * janela. O texto também mudou — a regra de tipo e o escopo das chaves, as duas
  * frases que a 4.8.1 recusou subir por conta própria.
+ *
+ * Subiu para `resolucao-4` com a migration 007: o catálogo passou a ter
+ * organizações, e a regra de tipo passou a travar HISTORIA em `eu` junto com os
+ * outros três. As duas frases do prompt mudaram; a lista de candidatos mudou de
+ * conteúdo. Os dois motivos, de novo, e cada um bastaria.
  */
-export const PROMPT_VERSION_RESOLUCAO = "resolucao-3";
+export const PROMPT_VERSION_RESOLUCAO = "resolucao-4";
 
 /**
  * Teto de candidatos sobre a **união** das cinco camadas.
@@ -393,7 +398,7 @@ const referenciaNova = (citado: string): ReferenciaResolvida => ({
   porque: [],
 });
 
-export const INSTRUCOES = `Você recebe os átomos extraídos de um diário falado pessoal, em português, e a lista de pessoas, projetos e objetivos que já existem no diário — cada um com o perfil que o dono escreveu.
+export const INSTRUCOES = `Você recebe os átomos extraídos de um diário falado pessoal, em português, e a lista de pessoas, organizações, projetos e objetivos que já existem no diário — cada um com o perfil que o dono escreveu.
 
 Sua tarefa é decidir, para cada MENÇÃO, a qual dessas entidades ela se refere — ou se é alguém/algo novo.
 
@@ -403,7 +408,7 @@ Nomes que soam igual ("Raffa" e "Rapha") chegam da transcrição com UMA grafia 
 COMO DECIDIR
 - Compare o que o átomo diz com o perfil de cada candidato.
 - Só valem as chaves listadas NAQUELA menção. Chave que aparece em outra menção, ou no texto do átomo, não é resposta válida para esta.
-- SENTIMENTO, APRENDIZADO e ROTINA são sempre de "eu" — o sujeito desses átomos não muda de dono, por mais que o contexto fale de outra pessoa. Não gaste decisão nisso.
+- SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA são sempre de "eu" — o sujeito desses átomos não muda de dono, por mais que o contexto fale de outra pessoa. Não gaste decisão nisso. Numa HISTORIA, quem a viveu comigo está em "menciona", e é lá que a marca de perfil cai.
 - Uma menção pode vir com o que O EXTRATOR APONTOU: ele leu o mesmo trecho, com a lista de entidades conhecidas na mão, e escolheu uma. É a opinião de outro leitor do mesmo texto, e não um veredito — concorde quando o contexto sustentar, e diga outra chave quando não sustentar.
 - Cada candidato vem com o MOTIVO de estar na lista: grafia igual, nome parecido, perfil parecido, ou átomos passados parecidos que já são dele. Motivo é pista, não veredito — um candidato que entrou por nome parecido continua podendo ser o certo, e um que entrou por átomo parecido continua podendo ser o errado.
 - Quando o motivo cita átomos passados, eles são o que você tem de mais próximo de evidência de uso: eu já disse aquilo daquela pessoa. Vale mais que semelhança de nome, e menos que o perfil contradizer.
@@ -434,7 +439,7 @@ function descrever(e: EntidadeDoGrafo): string {
   const campos = CAMPOS_PERFIL.flatMap((c) =>
     e.perfil[c] ? [`    ${c}: ${e.perfil[c]}`] : [],
   );
-  const cabeca = `- chave "${e.nome_normalizado}" — ${e.nome} (${e.tipo.toLowerCase()}, ${e.sessoes} sessão(ões))`;
+  const cabeca = `- chave "${e.nome_normalizado}" — ${e.nome} (${ROTULO_TIPO_ENTIDADE[e.tipo]}, ${e.sessoes} sessão(ões))`;
   const alias = e.aliases.length > 0 ? `\n    também escrito: ${e.aliases.join(", ")}` : "";
   const perfil = campos.length > 0 ? `\n${campos.join("\n")}` : "\n    (sem perfil escrito)";
   return cabeca + alias + perfil;

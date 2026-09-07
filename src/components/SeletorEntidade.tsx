@@ -22,6 +22,7 @@ import { useId, useMemo, useState } from "react";
 import { apelidoQueCasa, buscar, resolver } from "@/lib/catalogo";
 import { normalizarNome } from "@/lib/texto";
 import type { Catalogo, EntidadeDoCatalogo } from "@/lib/catalogo";
+import { ROTULO_TIPO_ENTIDADE } from "@/lib/tipos";
 import type { TipoEntidade } from "@/lib/tipos";
 
 interface Props {
@@ -191,7 +192,7 @@ export function SeletorEntidade({
                   {apelido && <em> ({apelido})</em>}
                 </span>
                 <span className="meta">
-                  {e.tipo.toLowerCase()}
+                  {ROTULO_TIPO_ENTIDADE[e.tipo]}
                   {e.sessoes > 0 && ` · ${e.sessoes} ${e.sessoes === 1 ? "sessão" : "sessões"}`}
                 </span>
               </li>

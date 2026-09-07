@@ -57,6 +57,27 @@ describe("004_fusao_entidade.cypher", () => {
   });
 });
 
+describe("007_historia_organizacao.cypher", () => {
+  const m007 = readFileSync("db/migrations/007_historia_organizacao.cypher", "utf8");
+
+  it("é no-op — nem valor de propriedade nem label se declaram aqui", () => {
+    // Como a 003 e a 005: o Aura Free não tem constraint de valor, e label novo
+    // passa a existir quando o primeiro nó o recebe, no confirmar.
+    expect(statements(m007)).toEqual([]);
+  });
+
+  it("documenta os dois contratos que mudaram, que é para o que ela existe", () => {
+    expect(m007).toMatch(/HISTORIA \| ROTINA/);
+    expect(m007).toMatch(/:Organizacao/);
+    expect(m007).toMatch(/TIPOS_SEMPRE_EU/);
+  });
+
+  it("diz que não reclassifica o que já está no grafo", () => {
+    // A empresa que hoje é :Pessoa continua :Pessoa até eu trocar em /entidades.
+    expect(m007).toMatch(/SEM MIGRAÇÃO DE DADO/);
+  });
+});
+
 describe("006_embedding.cypher", () => {
   const m006 = readFileSync("db/migrations/006_embedding.cypher", "utf8");
   const lista = statements(m006);

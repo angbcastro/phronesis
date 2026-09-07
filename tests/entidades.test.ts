@@ -61,6 +61,15 @@ describe("tipo da entidade", () => {
     expect(normalizarTipoEntidade("Objetivo")).toBe("Objetivo");
   });
 
+  it("conhece o label que a migration 007 acrescentou, com acento e sem", () => {
+    // O label é ASCII porque vai literal na consulta; o que o modelo devolve
+    // vem acentuado. `normalizarNome` tira o acento antes de comparar, e é o
+    // que faz "ORGANIZAÇÃO" achar `:Organizacao`.
+    expect(normalizarTipoEntidade("ORGANIZACAO")).toBe("Organizacao");
+    expect(normalizarTipoEntidade("organização")).toBe("Organizacao");
+    expect(tipoDosLabels(["Entidade", "Organizacao"])).toBe("Organizacao");
+  });
+
   it("recusa o que não é label do schema", () => {
     expect(normalizarTipoEntidade("EMPRESA")).toBeNull();
     expect(normalizarTipoEntidade(42)).toBeNull();

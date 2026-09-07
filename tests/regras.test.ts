@@ -41,7 +41,7 @@ describe("sem regra aprovada, nada muda (critério 4)", () => {
 
   it("a versão sai sem sufixo", () => {
     expect(versaoDoPrompt([])).toBe(PROMPT_VERSION);
-    expect(versaoDoPrompt([])).toBe("extracao-7");
+    expect(versaoDoPrompt([])).toBe("extracao-8");
   });
 });
 
@@ -62,7 +62,7 @@ describe("com regra aprovada", () => {
 
   it("a versão ganha o sufixo do hash das regras usadas", () => {
     const v = versaoDoPrompt([regra("qualquer coisa")]);
-    expect(v).toMatch(/^extracao-7\+[0-9a-f]{8}$/);
+    expect(v).toMatch(/^extracao-8\+[0-9a-f]{8}$/);
   });
 
   it("o hash sai do conteúdo, não da identidade do rascunho", () => {
@@ -90,6 +90,9 @@ describe("as seções do prompt, lidas do próprio prompt", () => {
     expect(secoes).toContain("NOME DE ENTIDADE É NOME");
     expect(secoes).toContain("NÃO COMENTE A TRANSCRIÇÃO");
     expect(secoes).toContain("OS CAMPOS");
+    // A seção da 007 tem acento no cabeçalho, e o `calibracao-1` precisa poder
+    // citá-la: é ela que uma regra sobre volume de história contradiria.
+    expect(secoes).toContain("A HISTÓRIA GUARDA O DETALHE");
     // Linha de conteúdo, ainda que comece com maiúscula, não é seção.
     expect(secoes.some((s) => s.includes("FATO        aconteceu"))).toBe(false);
   });

@@ -242,7 +242,7 @@ describe("trocar o tipo", () => {
 
     const cypher = todoCypher();
     expect(cypher).toContain("SET e:Projeto");
-    expect(cypher).toContain("REMOVE e:Pessoa, e:Objetivo");
+    expect(cypher).toContain("REMOVE e:Pessoa, e:Objetivo, e:Organizacao");
     expect(cypher).not.toMatch(/REMOVE[^\n]*e:Entidade/);
   });
 

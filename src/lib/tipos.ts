@@ -88,6 +88,16 @@ export interface Transcricao {
  * confrontado. ROTINA é o átomo único por sessão que colapsa a trivialidade do
  * dia — tipo próprio para poder ser filtrado para fora de uma busca por
  * aprendizado, e para dentro de "como eram meus dias em agosto".
+ *
+ * HISTORIA entrou na migration 007, e é o contrário do resto da lista: os
+ * outros seis pedem a afirmação **destilada**, e ela pede o episódio **com o
+ * detalhe que eu contei** — quem, onde, o que foi dito, como terminou. Sem tipo
+ * próprio o detalhe não tinha onde caber: a disciplina de volume do prompt
+ * ("prefira o átomo maior e mais organizado") o espremeria em uma frase, e a
+ * frase é justamente o que não devolve a história um ano depois.
+ *
+ * Ela fica **antes** de ROTINA na lista porque ROTINA é a sobra do dia, e sobra
+ * se lê por último — na tela e no prompt.
  */
 export const TIPOS_ATOMO = [
   "FATO",
@@ -96,18 +106,45 @@ export const TIPOS_ATOMO = [
   "APRENDIZADO",
   "CONQUISTA",
   "DECISAO",
+  "HISTORIA",
   "ROTINA",
 ] as const;
 
 export type TipoAtomo = (typeof TIPOS_ATOMO)[number];
 
 /**
- * Label da entidade no grafo. Os três carregam sempre também `:Entidade` — a
- * constraint de `nome_normalizado` é por lá, e vale para os três de uma vez.
+ * Label da entidade no grafo. Os quatro carregam sempre também `:Entidade` — a
+ * constraint de `nome_normalizado` é por lá, e vale para os quatro de uma vez.
+ *
+ * `Organizacao` entrou na migration 007: empresa, ONG, startup, escola, cliente.
+ * Até ela, tudo isso caía em `:Pessoa` (o padrão de quem o extrator não
+ * classifica) ou virava `:Projeto` — e as duas mentem. A Adapta não é uma
+ * pessoa, e o trabalho que corre dentro dela é que é o projeto.
+ *
+ * **Sem acento, de propósito.** Label vai literal na string de toda consulta
+ * (`atomos.ts`, `fusao.ts`) porque Neo4j não aceita label vindo de parâmetro;
+ * ASCII é o que mantém aquelas strings fáceis de ler e de casar. Como aparece
+ * na tela é `ROTULO_TIPO_ENTIDADE`, logo abaixo.
  */
-export const TIPOS_ENTIDADE = ["Pessoa", "Projeto", "Objetivo"] as const;
+export const TIPOS_ENTIDADE = ["Pessoa", "Projeto", "Objetivo", "Organizacao"] as const;
 
 export type TipoEntidade = (typeof TIPOS_ENTIDADE)[number];
+
+/**
+ * Como o tipo é escrito para gente ler — na tela e nos dois prompts que listam
+ * candidatos. `Organizacao` é o único em que rótulo e label divergem, e é por
+ * ele que este mapa existe: `"organizacao"` num select é português errado.
+ *
+ * Minúsculo porque é assim que os quatro já apareciam (`t.toLowerCase()` em
+ * cada `<option>`) — o mapa troca a regra pela tabela, sem mudar o que se lê
+ * nos três que já existiam.
+ */
+export const ROTULO_TIPO_ENTIDADE: Record<TipoEntidade, string> = {
+  Pessoa: "pessoa",
+  Projeto: "projeto",
+  Objetivo: "objetivo",
+  Organizacao: "organização",
+};
 
 // ──────────────────── Slice 4: identidade por contexto ────────────────────
 
@@ -259,16 +296,23 @@ export interface MencaoCrua {
 }
 
 /**
- * Os três tipos cujo sujeito é `eu` **por contrato do prompt da extração**:
- * "SENTIMENTO, APRENDIZADO e ROTINA → SEMPRE 'eu'". Sentimento é meu por
- * definição mesmo quando foi outra pessoa que o provocou; quem provocou vai em
- * `menciona`.
+ * Os quatro tipos cujo sujeito é `eu` **por contrato do prompt da extração**:
+ * "SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA → SEMPRE 'eu'". Sentimento é meu
+ * por definição mesmo quando foi outra pessoa que o provocou; quem provocou vai
+ * em `menciona`. História é minha porque eu a vivi — e quem a viveu comigo vai
+ * em `menciona`, que é o que faz a marca de `fizemos_juntos` cair na pessoa
+ * certa sem o sujeito do átomo mudar de dono.
  *
  * Mora aqui desde a 4.9 porque são dois lugares que não podem divergir: o parse
  * da extração, que recusa a chave do dossiê no sujeito desses tipos, e a
  * resolução, que recusa o julgamento que tira o sujeito de `eu`.
  */
-export const TIPOS_SEMPRE_EU: readonly TipoAtomo[] = ["SENTIMENTO", "APRENDIZADO", "ROTINA"];
+export const TIPOS_SEMPRE_EU: readonly TipoAtomo[] = [
+  "SENTIMENTO",
+  "APRENDIZADO",
+  "HISTORIA",
+  "ROTINA",
+];
 
 /** O que o modelo devolve, antes de qualquer casamento com o áudio. */
 export interface AtomoCru {

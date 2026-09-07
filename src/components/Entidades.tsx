@@ -25,7 +25,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ehPronome, normalizarNome } from "@/lib/texto";
-import { CAMPOS_PERFIL, TETO_PERFIL, TIPOS_ENTIDADE } from "@/lib/tipos";
+import { CAMPOS_PERFIL, ROTULO_TIPO_ENTIDADE, TETO_PERFIL, TIPOS_ENTIDADE } from "@/lib/tipos";
 import type { CampoPerfil, Perfil, TipoEntidade } from "@/lib/tipos";
 
 interface Entidade {
@@ -277,7 +277,7 @@ export function Entidades() {
         >
           {TIPOS_ENTIDADE.map((t) => (
             <option key={t} value={t}>
-              {t.toLowerCase()}
+              {ROTULO_TIPO_ENTIDADE[t]}
             </option>
           ))}
         </select>
@@ -389,7 +389,7 @@ export function Entidades() {
                     >
                       {TIPOS_ENTIDADE.map((t) => (
                         <option key={t} value={t}>
-                          {t.toLowerCase()}
+                          {ROTULO_TIPO_ENTIDADE[t]}
                         </option>
                       ))}
                     </select>

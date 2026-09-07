@@ -38,7 +38,7 @@ import { CATALOGO_VAZIO, montarCatalogo, resolver } from "@/lib/catalogo";
 import { mencoesDe, sobreDe } from "@/lib/referencias";
 import { localizarNoAudio } from "@/lib/transcricao";
 import { ehPronome, normalizarNome } from "@/lib/texto";
-import { CAMPOS_GESTO, TIPOS_ATOMO, TIPOS_ENTIDADE } from "@/lib/tipos";
+import { CAMPOS_GESTO, ROTULO_TIPO_ENTIDADE, TIPOS_ATOMO, TIPOS_ENTIDADE } from "@/lib/tipos";
 import type { Catalogo, EntidadeDoCatalogo } from "@/lib/catalogo";
 import type {
   AtomoProposto,
@@ -862,7 +862,7 @@ export function Revisao({ id }: { id: string }) {
                       <option value="todas">todas</option>
                       {TIPOS_ENTIDADE.map((t) => (
                         <option key={t} value={t}>
-                          {t.toLowerCase()}
+                          {ROTULO_TIPO_ENTIDADE[t]}
                         </option>
                       ))}
                     </select>
@@ -1039,7 +1039,7 @@ export function Revisao({ id }: { id: string }) {
                   >
                     {TIPOS_ENTIDADE.map((t) => (
                       <option key={t} value={t}>
-                        {t.toLowerCase()}
+                        {ROTULO_TIPO_ENTIDADE[t]}
                       </option>
                     ))}
                   </select>
@@ -1050,7 +1050,7 @@ export function Revisao({ id }: { id: string }) {
                 {pedindoNome
                   ? `quem é "${e.nome}"? · ${e.ocorrencias} menção(ões)`
                   : e.conhecida
-                    ? `${e.tipo.toLowerCase()} · conhecida (${e.sessoes} sessões)`
+                    ? `${ROTULO_TIPO_ENTIDADE[e.tipo]} · conhecida (${e.sessoes} sessões)`
                     : `nova, citada ${e.ocorrencias}x`}
               </span>
             </div>

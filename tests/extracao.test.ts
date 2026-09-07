@@ -81,6 +81,33 @@ describe("prompt", () => {
   it("tem versão, que vai gravada em todo átomo (regra 7)", () => {
     expect(PROMPT_VERSION).toMatch(/\S/);
   });
+
+  it("autoriza o detalhe na HISTORIA — sem isso a disciplina de volume a esmaga", () => {
+    // O resto do prompt manda destilar ("prefira sempre o átomo maior e mais
+    // organizado", "de 10 a 20"). A migration 007 abre uma exceção, e ela tem
+    // que estar escrita: sob a regra geral, uma noite inteira vira uma linha.
+    const p = montarPrompt("x");
+    expect(p).toContain("HISTORIA");
+    expect(p).toMatch(/A HISTÓRIA GUARDA O DETALHE/);
+    expect(p).toMatch(/o único em que o texto pode ser longo/);
+    expect(p).toMatch(/NÃO resuma/);
+  });
+
+  it("separa HISTORIA de ROTINA e de FATO, que é onde ela seria absorvida", () => {
+    const p = montarPrompt("x");
+    expect(p).toMatch(/Não é HISTORIA o dia comum[^\n]*ROTINA/);
+    expect(p).toMatch(/Não é HISTORIA o fato solto[^\n]*FATO/);
+  });
+
+  it("oferece os quatro tipos de entidade, e diz o que separa ORGANIZACAO de PROJETO", () => {
+    const p = montarPrompt("x");
+    expect(p).toContain("PESSOA, ORGANIZACAO, PROJETO ou OBJETIVO");
+    expect(p).toMatch(/não o trabalho que corre dentro dela, que é PROJETO/);
+  });
+
+  it("o sujeito da HISTORIA é eu, na mesma linha dos outros três", () => {
+    expect(montarPrompt("x")).toContain("SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA → SEMPRE");
+  });
 });
 
 describe("isolar o JSON", () => {
@@ -107,6 +134,11 @@ describe("tipo do átomo", () => {
     expect(normalizarTipo("DECISAO")).toBe("DECISAO");
     expect(normalizarTipo("decisão")).toBe("DECISAO");
     expect(normalizarTipo("ROTINA")).toBe("ROTINA");
+  });
+
+  it("conhece o tipo que a migration 007 acrescentou", () => {
+    expect(normalizarTipo("HISTORIA")).toBe("HISTORIA");
+    expect(normalizarTipo("história")).toBe("HISTORIA");
   });
 
   it("recusa o que não está no contrato do schema", () => {
@@ -403,7 +435,7 @@ describe("o bloco das candidatas (slice 4.9)", () => {
   });
 
   it("não abre exceção na regra do sujeito de SENTIMENTO", () => {
-    expect(blocoDasCandidatas(dossie)).toMatch(/SENTIMENTO, APRENDIZADO e ROTINA continuam/);
+    expect(blocoDasCandidatas(dossie)).toMatch(/SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA continuam/);
   });
 
   it("entra depois das regras e antes da janela, tudo antes do FORMATO", () => {
@@ -450,6 +482,23 @@ describe("a menção nas duas formas (slice 4.9)", () => {
       ]),
     );
     expect(atomos[0].sobre).toEqual({ citado: "Jean", chave: null });
+  });
+
+  it("uma HISTORIA tampouco: quem a viveu comigo é menção, não sujeito", () => {
+    // Mesma guarda, e aqui ela é mais tentadora ainda: a história é sobre a
+    // noite com o Jean, e o modelo tem o nó do Jean na mão. O sujeito é meu; o
+    // Jean fica em `menciona`, que é onde a marca de `fizemos_juntos` cai.
+    const { atomos } = parsearResposta(
+      resposta([
+        item({
+          tipo: "HISTORIA",
+          sobre: { citado: "Jean", chave: "giampaolo lepore" },
+          menciona: [{ citado: "Jean", chave: "giampaolo lepore" }],
+        }),
+      ]),
+    );
+    expect(atomos[0].sobre).toEqual({ citado: "Jean", chave: null });
+    expect(atomos[0].menciona[0].chave).toBe("giampaolo lepore");
   });
 
   it("num FATO a chave fica: lá o sujeito é o assunto mesmo", () => {

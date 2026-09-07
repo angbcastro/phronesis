@@ -446,7 +446,7 @@ describe("a mesma pergunta não vai duas vezes", () => {
  * corrompia dado em toda sessão gravada, e o conserto é o código recusar a
  * resposta que quebra o contrato do `extracao-7`, não deixar de perguntar.
  */
-describe("SENTIMENTO, APRENDIZADO e ROTINA são sempre de eu", () => {
+describe("SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA são sempre de eu", () => {
   const EU = no("eu");
 
   /** O vizinho vetorial vota noutra pessoa, e é o que põe a menção em julgamento. */
@@ -528,6 +528,10 @@ describe("SENTIMENTO, APRENDIZADO e ROTINA são sempre de eu", () => {
   it("travadoEmEu diz quando a guarda vale", () => {
     expect(travadoEmEu("SENTIMENTO", "sobre", "eu")).toBe(true);
     expect(travadoEmEu("ROTINA", "sobre", "Eu")).toBe(true);
+    // HISTORIA entrou na lista com a migration 007: eu vivi a história, e quem
+    // a viveu comigo está em `menciona`.
+    expect(travadoEmEu("HISTORIA", "sobre", "eu")).toBe(true);
+    expect(travadoEmEu("HISTORIA", "menciona", "eu")).toBe(false);
     expect(travadoEmEu("SENTIMENTO", "menciona", "eu")).toBe(false);
     expect(travadoEmEu("FATO", "sobre", "eu")).toBe(false);
     expect(travadoEmEu("SENTIMENTO", "sobre", "Rafa")).toBe(false);
@@ -785,8 +789,10 @@ describe("as duas camadas semânticas (slice 4.5)", () => {
 
   it("a versão do prompt subiu porque a ENTRADA do agente mudou", () => {
     // `resolucao-2` na 4.5 (o vetor entrou na união), `resolucao-3` na 4.9 (a
-    // chave do extrator entrou, e a lista passou a ser de todas as menções).
-    expect(PROMPT_VERSION_RESOLUCAO).toBe("resolucao-3");
+    // chave do extrator entrou, e a lista passou a ser de todas as menções),
+    // `resolucao-4` na 007 (o catálogo ganhou organizações, e HISTORIA entrou
+    // na regra de tipo).
+    expect(PROMPT_VERSION_RESOLUCAO).toBe("resolucao-4");
   });
 });
 
