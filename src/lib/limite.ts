@@ -12,10 +12,17 @@
  *    `google/gemini-3.5-transcribe` e, na mesma janela, derrubou também o
  *    `xai/grok-stt` — que `ARCHITECTURE.md` §4.2.1 listava como "sem rate
  *    limit". Não adianta trocar de modelo para escapar.
- * 2. **O AI SDK já tentou e já desistiu.** Ele repete sozinho (`maxRetries`),
- *    mas em segundos; o que chega aqui é o `RetryError` que embrulha o
- *    `GatewayRateLimitError` depois de três tentativas rápidas. Repetir mais
- *    depressa não ajuda — só faz o limite durar mais.
+ * 2. **Repetir depressa não ajuda — alimenta o limite.** O AI SDK repete
+ *    sozinho (`maxRetries`), mas em segundos, e o que chegava aqui era o
+ *    `RetryError` embrulhando o `GatewayRateLimitError` depois de três
+ *    tentativas rápidas. Empilhado com as três esperas daqui, isso dava **nove
+ *    chamadas 429 em ~2 min** — foi o que a sessão `mtqoeoqh3e3724514q1f`
+ *    gastou para descobrir que o limite estava ativo. Por isso as três chamadas
+ *    embrulhadas por este módulo (`stt.ts`, `extracao.ts`, `resolucao.ts`)
+ *    passam `maxRetries: 0`: contra 429 a única repetição que destrava é a
+ *    longa, que é a que está aqui. Quem **não** tem esta camada — `perfil.ts`,
+ *    `calibracao.ts`, `duplicatas.ts` — continua com o retry do SDK, que lá é o
+ *    único que existe e cobre o blip de rede.
  * 3. **A janela é de dezenas de segundos.** Uma espera de 75 s destravou o que
  *    três tentativas seguidas não destravaram. Daí `ESPERAS_MS`.
  *

@@ -12,9 +12,13 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.9.md`.
 (identidade por contexto), 4.5 (o grafo ganha vetor), 4.6 (o prompt aprende
 com a revisão), 4.7 (o painel dos agentes), 4.8 (a extração acompanha a fala),
 4.8.1 (as seis emendas) e 4.9 (o extrator conhece o grafo) construídas.**
-As duas últimas estão **verificadas só por teste**: nenhuma janela real foi
-extraída desde a 4.8, e o `PROXIMA-SESSAO.md` §2 é a lista do que falta gravar e
-olhar.
+A primeira janela real desde a 4.8 **rodou e falhou** (sessão
+`mtqoeoqh3e3724514q1f`): o raciocínio do modelo comeu o orçamento de saída
+inteiro e a extração não produziu JSON nenhum. O que isso ensinou está no §4.6 —
+`faltouOrcamento`, `textoDaResposta`, o escalonamento de teto e a tabela
+`OPCAO_DE_RACIOCINIO`, medida em 07/09 e já em uso. A
+janela seguinte é que diz se as duas fatias estão de pé; o `PROXIMA-SESSAO.md`
+§2 continua sendo a lista do que falta gravar e olhar.
 Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. A
 extração acontece **durante** a gravação, janela a janela, e quando eu paro
 sobra só a janela do fim; a proposta vai para `extracao.json` e a sessão para
@@ -264,7 +268,8 @@ src/app/api/      29 rotas em seis famílias — sessão, entidade, calibração
                   agentes, átomos e as 2 de auth (seção 10)
 src/middleware.ts porta única: sem cookie válido nada responde
 db/migrations/    definição canônica do schema
-scripts/          migrate.ts (aplica migrations), smoke.ts (confere externos)
+scripts/          migrate.ts (aplica migrations), smoke.ts (confere externos),
+                  raciocinio.ts (mede como pedir ao modelo para pensar menos)
 tests/            vitest sobre a lógica pura — nenhuma credencial, nenhuma rede
 ```
 
@@ -397,8 +402,14 @@ Três consequências que valem estar escritas:
   que era exatamente o pior momento para o rate limit da conta (§5.3). Agora ela
   é oito chamadas pequenas espalhadas pelos 15 minutos, e durante a gravação
   esperar o limite passar é de graça — não há prazo a estourar.
-- **A resposta da extração parou de poder truncar.** Nenhuma janela chega perto
-  de `maxOutputTokens: 8000`; era limite conhecido do §14 e saiu de lá.
+- **A resposta da extração continua podendo truncar, e truncou.** Esta linha
+  já disse o contrário — "nenhuma janela chega perto de `maxOutputTokens:
+  8000`" —, e a primeira janela real extraída depois da 4.8 desmentiu:
+  `finishReason=length` com 5210 tokens de entrada e os 8000 de saída gastos
+  **pensando**, sem um byte de JSON (sessão `mtqoeoqh3e3724514q1f`). A premissa
+  errada era tratar o teto como teto de JSON: ele cobre **raciocínio e texto
+  juntos**, e o volume do pensamento não encolhe com a entrada do jeito que o
+  JSON encolhe. Encolher a janela não protege nada; o que protege está no §4.6.
 - **O caminho de uma janela só continua existindo, e é o mesmo código.** Arquivo
   importado (um bloco), gravação de menos de dois minutos, e o fallback de
   quando alguma janela não fecha: todos passam por uma janela que se declara a
@@ -644,6 +655,42 @@ sem opção nenhuma, sem um `warning` sequer (§4.2.1). É por isso que
 o vocabulário some sem avisar, e um `STT_MODEL` trocado leva junto a metade A da
 slice 3 sem que nada na tela mude.
 
+`OPCAO_DE_RACIOCINIO` é a segunda tabela desse formato, pela mesma razão e com o
+mesmo padrão seguro: é por ela que se pede ao modelo de extração para pensar
+menos (§4.6), e o nome da opção também acompanha o provedor sem acompanhar o
+protocolo. Ela nasceu **vazia**, e só recebeu o que `pnpm probe:raciocinio`
+mediu — escrever um nome plausível ali daria a impressão de conserto e deixaria
+o raciocínio solto, que é exatamente o falso positivo que o vocabulário custou
+uma vez.
+
+**A medição, de 07/09, contra `zai/glm-5.3-flash`** (que o Gateway resolveu para
+`baseten`), mesmo prompt e mesmo teto de 8000 em todas:
+
+| opção | raciocínio | texto | |
+|---|---|---|---|
+| sem opção | 117 | 613 char | a linha de base |
+| `reasoningEffort: "minimal"` | **0** | 613 char | **é a que está em uso** |
+| `thinking: { type: "disabled" }` | **0** | 613 char | mediu idêntico; é o plano B |
+| `reasoning_effort: "minimal"` | 117 | 613 char | ignorada em silêncio |
+| `enable_thinking: false` | 162 | 613 char | ignorada em silêncio |
+
+As duas que funcionam zeram o raciocínio e devolvem **o mesmo texto**. As duas
+que não funcionam não avisam: o que as denuncia é o número igual — ou maior —
+ao da linha de base, e é exatamente por isso que o nome não podia ser escrito
+sem medir. `reasoningEffort` e não `thinking` porque "mínimo" é piso e
+"disabled" é chave geral, e a extração é tarefa de julgamento.
+
+Três nomes ficaram **sem medir** — `reasoningEffort: "none"`,
+`reasoning: { enabled: false }` e `maxReasoningTokens: 512` —, porque o rate
+limit da conta chegou no meio da sonda. O último é o que interessaria remedir:
+teto é melhor que interruptor. `PROBE_SO=maxReasoningTokens` roda só ele, sem
+gastar o limite com a lista inteira.
+
+A sonda pergunta sob duas chaves (`PROBE_PROVEDOR`) porque o Gateway resolveu
+`zai/glm-5.3-flash` para `resolvedProvider: baseten`: não dá para saber de fora
+se a opção viaja sob o provedor do id ou sob o que atendeu. Neste caso a do id
+bastou.
+
 ### 4.5 Concatenação
 
 Cada `chunk_NNN.json` traz offsets relativos ao próprio início. O offset absoluto
@@ -755,30 +802,37 @@ consome o orçamento inteiro a resposta chega sem JSON nenhum. Foi assim que a
 sessão `mtgo3kaf5` falhou, de forma intermitente: a mesma transcrição às vezes
 passava.
 
-Quatro defesas, nenhuma dependente do provedor:
+**São duas causas diferentes com consertos diferentes**, e o `finishReason` é o
+que as separa. Por duas fatias esta tabela existiu como prescrição escrita, e o
+código repetia a mesma chamada nos dois casos:
+
+| O que o diagnóstico mostra | O que aconteceu | Quem cuida |
+|---|---|---|
+| `finishReason=length`, `raciocinio` no teto | o raciocínio comeu o orçamento e a resposta foi cortada no meio dele | `faltouOrcamento()` → segunda tentativa com o dobro de teto |
+| `finishReason=stop`, saída sobrando, `pensamento` grande e `texto=0` | o modelo escreveu a resposta na parte de raciocínio, não na de texto | `textoDaResposta()` → lê o `reasoningText` |
+
+A distinção não é acadêmica. Com `temperature: 0`, repetir a mesma chamada
+depois de um `length` é **determinístico**: mesmo prompt, mesmo teto, mesmo
+estouro. A janela 0 da sessão `mtqoeoqh3e3724514q1f` gastou duas chamadas para
+falhar exatamente igual duas vezes. E no caso `stop` a segunda tentativa
+**mascarava** o problema acertando por sorte, e ele voltava na sessão seguinte.
+
+As defesas de hoje, do mais alto para o mais baixo:
 
 | | |
 |---|---|
-| `maxOutputTokens: 8000` | folga para o raciocínio caber sem espremer o JSON |
-| uma segunda tentativa | resposta sem JSON é refeita uma vez, com `[extracao]` no log; a segunda falha sobe |
+| `opcoesDeRaciocinio(modelo)` | o cap na **origem**: pede ao provedor para pensar menos. Tabela por provedor em `modelos.ts`, no mesmo desenho de `OPCAO_DE_VOCABULARIO`, e **preenchida pelo que `pnpm probe:raciocinio` mediu** — nome de opção que o provedor não conhece some em silêncio (§4.4) |
+| escalonamento do teto | cortado no pensamento, a segunda tentativa vai com `MAX_TOKENS_SAIDA * 2`. É o seguro para quando não se sabe pedir a este provedor |
+| `textoDaResposta(resposta)` | o JSON que foi parar no pensamento ainda é lido — **exceto** em `length`, onde o raciocínio está cortado no meio e `isolarJson` casaria um rascunho abandonado |
 | a resposta crua no erro | os primeiros 400 caracteres vão na mensagem, e "resposta vazia" é dito com essas palavras |
 | `diagnostico(resposta)` | `finishReason`, tokens de entrada/saída/raciocínio e o tamanho do texto e do pensamento, nas duas tentativas. Mora em `modelos.ts`: os três agentes têm o mesmo modo de falha |
 
-As duas últimas são as que mais importam, e as duas foram acrescentadas depois
-de uma falha real. Sem a resposta crua, "não é JSON válido" é indiagnosticável
-depois do fato — a mesma lição que o STT já tinha ensinado uma vez (5.1).
-
-**E sem o diagnóstico, "Vieram 0 caractere(s)" não distingue duas causas com
-consertos opostos** — a dúvida que a sessão `mthu6r1y5h` deixou aberta:
-
-| O que o diagnóstico mostra | O que aconteceu | Conserto |
-|---|---|---|
-| `finishReason=length`, `raciocinio` no teto | o raciocínio comeu o orçamento | subir `MAX_TOKENS_SAIDA`, ou trocar por `EXTRACAO_MODEL` |
-| `finishReason=stop`, saída sobrando, `pensamento` grande e `texto=0` | o modelo escreveu na parte de raciocínio, não na de texto | ler `reasoningText` quando o texto vier vazio — a segunda tentativa hoje só acerta por sorte |
-
-A segunda linha é a que dói: nela, a segunda tentativa **mascara** o problema em
-vez de resolvê-lo, e ele volta na sessão seguinte. Distinguir custa uma linha de
-log; adivinhar custa uma sessão por vez.
+**Subir `MAX_TOKENS_SAIDA` não está na lista, e é de propósito.** Ele já foi
+subido uma vez depois da `mtgo3kaf5`, e a janela seguinte encheu os 8000 do
+mesmo jeito: o modelo ocupa o que houver. As duas últimas defesas são as mais
+antigas e as que mais importam — sem a resposta crua, "não é JSON válido" é
+indiagnosticável depois do fato, a mesma lição que o STT já tinha ensinado uma
+vez (5.1).
 
 O prompt também ganhou uma proibição explícita de **comentar a transcrição**. O
 modelo devolveu um átomo dizendo que o texto era confuso e circular; falar
@@ -2183,6 +2237,19 @@ O `erro` sai de qualquer estado porque qualquer passo pode falhar — o que ele
 não pode é desfazer o único estado terminal. `em_revisao → extraindo` é o botão
 "reextrair" da lista de sessões, e a volta a partir de `erro` é retry manual.
 
+**Esse retry esteve trancado por um guard de rota.** `POST /:id/extrair` barrava
+em `temTranscricao`, que não inclui `erro`, e respondia `409 sessão em 'erro':
+não há transcrição para extrair` — numa sessão cuja `transcricao.json` estava
+intacta no R2, e dez linhas abaixo do próprio docstring que diz que a rota
+existe para quando "a sessão ficou em `extraindo` ou `erro`". Todo o resto já
+concordava: `PERMITIDAS.erro` inclui `extraindo`, e a escrita em `pipeline.ts`
+lista `erro` como origem válida. Hoje o guard é `podeReextrair`, que é
+`temTranscricao` mais `erro`. As duas perguntas ficaram separadas de propósito:
+`temTranscricao` é "a transcrição está pronta para eu mostrar", e é o que a tela
+de leitura e a lista continuam usando; `podeReextrair` é "vale disparar a
+extração". Sessão que caiu em `erro` antes de existir transcrição não vira 500 —
+`extrairSessao` procura o `transcricao.json` e devolve `erro` com log próprio.
+
 **Há duas representações desta máquina, e só uma roda.** `estados.ts` é a
 **declarada**: `PERMITIDAS`, `podeIrPara` e as predicadas, verificadas por
 `tests/estados.test.ts` e não importadas por nenhum caminho de produção. A que
@@ -3380,7 +3447,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 13. Verificação
 
-- `pnpm test` — **48 arquivos, 831 testes**, sem credencial e sem rede. A lista
+- `pnpm test` — **48 arquivos, 842 testes**, sem credencial e sem rede. A lista
   abaixo comenta os que valem uma explicação; a cobertura inteira se lê em
   `tests/`. Os que não têm bullet próprio cobrem a lógica pura da slice 1
   (chaves, manifest, estados, offsets, vocabulário, backoff, retry de rede,
@@ -3667,9 +3734,23 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   nasceram às 13:28:17 e a sessão seguinte só começou às 13:28:37: a extração
   dela encontrou as duas já lá e o segundo confirmar reaproveitou os nós em vez
   de criar novos.
-- **`zai/glm-5.3-flash` é modelo de raciocínio.** Ele chegou a gastar 1720 tokens
-  pensando para 122 de texto, daí `maxOutputTokens: 8000` e a segunda tentativa
-  automática. Trocar é `EXTRACAO_MODEL`, sem tocar em código.
+- **`zai/glm-5.3-flash` é modelo de raciocínio, e o efeito do cap na qualidade
+  ainda não foi julgado.** Ele chegou a gastar 1720 tokens pensando para 122 de
+  texto, e na janela 0 da sessão `mtqoeoqh3e3724514q1f` gastou os 8000 inteiros
+  sem escrever um byte de JSON. As defesas do §4.6 seguram a janela, e desde
+  07/09 `OPCAO_DE_RACIOCINIO` manda `reasoningEffort: "minimal"`, medido zerando
+  o raciocínio sem mudar o texto da sonda. **O que falta é a sessão real**: se
+  extrair com o raciocínio no piso piora a lista, quem diz sou eu, na revisão.
+  `maxReasoningTokens` — teto em vez de interruptor — ficou sem medir por rate
+  limit. Trocar o modelo
+  continua sendo `EXTRACAO_MODEL`, sem tocar em código — e vale notar que
+  `zai/glm-5.3-flash` nem aparece na lista de modelos conhecidos do
+  `@ai-sdk/gateway` instalado (4.0.62), que conhece `zai/glm-5.3`.
+- **O rate limit do free tier derruba o fallback quando ele mais importa.** Na
+  mesma sessão, com a janela perdida, o passe único levou 429 em todas as
+  tentativas e a sessão foi para `erro`. As nove chamadas que isso custava
+  viraram três (`maxRetries: 0` nas chamadas embrulhadas por `limite.ts`), mas
+  **o limite em si é questão de plano, não de código**.
 - **O alvo de 10 a 20 átomos por 15 min ainda é aposta.** O prompt está em
   `extracao-8` e as sessões julgadas até agora são curtas; a primeira sessão longa
   confirma ou derruba o número. Desde a 4.8 ele é pedido **em proporção**, janela

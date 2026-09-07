@@ -108,6 +108,10 @@ export async function transcrever(
           audio: new Uint8Array(audio),
           // O nome da opção é por provedor, não fixo — ver `opcoesDeVocabulario`.
           providerOptions: opcoesDeVocabulario(modelo, termos),
+          // A espera longa daqui é a única camada de retry: as três tentativas
+          // rápidas do SDK contra um 429 não destravam nada e ainda alimentam o
+          // limite que estão esperando (`limite.ts`).
+          maxRetries: 0,
         }),
       { ate },
     );

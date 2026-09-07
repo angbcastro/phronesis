@@ -8,6 +8,18 @@ Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
 sistema funciona hoje) e `Specs/slice-4.9.md` (o que a fatia atual tem que ser).
 Este arquivo só diz o que fazer a seguir.
 
+> **Atualizado em 07/09: a primeira janela real rodou, e falhou.** A sessão
+> `mtqoeoqh3e3724514q1f` foi a primeira extração por janela desde a 4.8. A
+> janela 0 voltou sem JSON nenhum — `finishReason=length`, os 8000 tokens de
+> saída gastos raciocinando, 5210 de entrada —, a segunda tentativa era
+> idêntica e falhou igual, e o passe único de fallback levou 429 do free tier.
+> A sessão foi para `erro`, e o `POST /:id/extrair` respondia 409 em cima disso.
+> **Os três consertos estão em código** (§4.6 e §5 do `ARCHITECTURE.md`): o
+> escalonamento de teto, a leitura do pensamento e o `podeReextrair`. O que
+> falta desta linha é **medir**: `pnpm probe:raciocinio` decide o conteúdo de
+> `OPCAO_DE_RACIOCINIO`, que nasceu vazia de propósito. A seção 2 continua de
+> pé — a validação por olho ainda não aconteceu.
+
 > **Atualizado em 06/09, depois da 4.9.** A `Specs/slice-4.9.md` foi executada
 > inteira em código — o RAG por bloco, o dossiê da janela, o `extracao-7`, o
 > `resolucao-3`, o alias da grafia no confirmar, o painel e o `ARCHITECTURE.md`

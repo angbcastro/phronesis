@@ -40,6 +40,27 @@ export const estaConcluida = (s: StatusSessao): boolean => s === "confirmada";
 export const temTranscricao = (s: StatusSessao): boolean =>
   s === "transcrito" || s === "extraindo" || s === "em_revisao" || s === "confirmada";
 
+/**
+ * Dá para (re)extrair: ou a transcrição está pronta, ou a extração falhou e a
+ * transcrição continua intacta no R2.
+ *
+ * Separado de `temTranscricao` porque as duas perguntas são diferentes. Aquela é
+ * "a transcrição está pronta para eu mostrar", e a tela de leitura não tem o que
+ * mostrar de uma sessão em `erro`; esta é "vale disparar a extração", e é
+ * exatamente do `erro` que o retry manual parte.
+ *
+ * Sem isto, `POST /:id/extrair` respondia `409 sessão em 'erro': não há
+ * transcrição para extrair` — dez linhas abaixo do próprio docstring que diz que
+ * a rota existe para quando "a sessão ficou em `extraindo` ou `erro`". O resto
+ * da pilha já concordava: `PERMITIDAS.erro` inclui `extraindo`, e `pipeline.ts`
+ * lista `erro` como origem válida da transição. Só o guard barrava.
+ *
+ * Sessão que caiu em `erro` antes de haver transcrição não vira 500:
+ * `extrairSessao` procura o `transcricao.json` e devolve `erro` com log próprio.
+ * A resposta passa a ser honesta em vez de afirmar ausência onde há arquivo.
+ */
+export const podeReextrair = (s: StatusSessao): boolean => temTranscricao(s) || s === "erro";
+
 /** Extraída e não confirmada: tem proposta esperando por mim. */
 export const estaPendenteDeRevisao = (s: StatusSessao): boolean => s === "em_revisao";
 

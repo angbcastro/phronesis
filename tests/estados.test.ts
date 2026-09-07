@@ -3,6 +3,7 @@ import {
   estaConcluida,
   estaPendenteDeRevisao,
   podeIrPara,
+  podeReextrair,
   temTranscricao,
   terminouDeProcessar,
 } from "@/lib/estados";
@@ -64,6 +65,22 @@ describe("o que cada estado significa para as telas", () => {
     }
     for (const s of ["gravando", "transcrevendo", "erro"] as const) {
       expect(temTranscricao(s)).toBe(false);
+    }
+  });
+
+  it("do erro dá para re-extrair — é de lá que o retry manual parte", () => {
+    // A rota de extrair barrava em `temTranscricao`, que não inclui `erro`, e
+    // respondia 409 dizendo não haver transcrição numa sessão cuja transcrição
+    // estava intacta no R2. A máquina de estados já permitia `erro → extraindo`.
+    expect(podeReextrair("erro")).toBe(true);
+    expect(podeIrPara("erro", "extraindo")).toBe(true);
+
+    for (const s of ["transcrito", "extraindo", "em_revisao", "confirmada"] as const) {
+      expect(podeReextrair(s)).toBe(true);
+    }
+    // Antes de haver transcrição não há o que extrair, e aí o 409 está certo.
+    for (const s of ["gravando", "finalizando", "transcrevendo"] as const) {
+      expect(podeReextrair(s)).toBe(false);
     }
   });
 

@@ -24,7 +24,12 @@ import { generateText } from "ai";
 import { chaveCorrecoes, chaveIndiceCalibracao, chaveTranscricao } from "./chaves";
 import { apurarCorrecoes, indiceVazio, juntarNoIndice } from "./correcoes";
 import { secoesDoPrompt } from "./extracao";
-import { garantirGateway, modeloCalibracao } from "./modelos";
+import {
+  garantirGateway,
+  modeloCalibracao,
+  opcoesDeRaciocinio,
+  textoDaResposta,
+} from "./modelos";
 import { carimbo, efetivo } from "./overrides";
 import { criarLocalizador } from "./offsets";
 import { ConflitoR2Error, getJson, putJson } from "./r2";
@@ -304,8 +309,12 @@ ${material}`;
       prompt,
       temperature: 0,
       maxOutputTokens: 4000,
+      // O cap na origem, quando se sabe pedir a este provedor (`modelos.ts`).
+      providerOptions: opcoesDeRaciocinio(modelo),
     });
-    bruto = r.text ?? "";
+    // Cai no pensamento quando o modelo escreveu a resposta lá — mesmo modelo
+    // de raciocínio da extração, mesmo modo de falha.
+    bruto = textoDaResposta(r);
   } catch (e) {
     throw new CalibracaoError(e instanceof Error ? e.message : String(e));
   }

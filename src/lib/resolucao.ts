@@ -33,7 +33,15 @@ import { proximidade } from "./duplicatas";
 import { acharPorChave, candidatosSemanticos } from "./entidades";
 import type { CandidatoSemantico, EntidadeDoGrafo } from "./entidades";
 import { comEsperaDeLimite } from "./limite";
-import { diagnostico, garantirGateway, modeloResolucao } from "./modelos";
+import {
+  diagnostico,
+  faltouOrcamento,
+  garantirGateway,
+  modeloResolucao,
+  opcoesDeRaciocinio,
+  textoDaResposta,
+  veioDoPensamento,
+} from "./modelos";
 import { carimbo, efetivo } from "./overrides";
 import type { RespostaDoModelo } from "./modelos";
 import { normalizarNome } from "./texto";
@@ -126,6 +134,9 @@ export const ALCANCE = { perfis: 5, vizinhos: 8 };
 
 /** Como a extração: modelo de raciocínio come orçamento antes de escrever JSON. */
 const MAX_TOKENS_SAIDA = 4000;
+
+/** Como em `extracao.ts`: o que a segunda tentativa ganha quando foi cortada. */
+const FATOR_DE_FOLGA = 2;
 
 /** Quanto da resposta crua entra no log quando o parse falha. */
 const AMOSTRA_ERRO = 400;
@@ -817,24 +828,53 @@ export async function resolverReferencias(
       // O rate limit do Gateway é da conta inteira (`limite.ts`), e desde esta
       // fatia este agente roda em toda janela. Sem a espera, um limite ativo
       // devolvia a janela inteira como dúvida — degradação certa, mas cara.
-      const r = await comEsperaDeLimite(
-        `resolucao ${modeloDaChamada}`,
-        () =>
-          generateText({
-            // String de propósito: id em string sai pelo Gateway (regra 8).
-            model: modeloDaChamada,
-            prompt,
-            temperature: 0,
-            maxOutputTokens: MAX_TOKENS_SAIDA,
-          }),
-        { ate },
-      );
+      const chamar = (teto: number) =>
+        comEsperaDeLimite(
+          `resolucao ${modeloDaChamada}`,
+          () =>
+            generateText({
+              // String de propósito: id em string sai pelo Gateway (regra 8).
+              model: modeloDaChamada,
+              prompt,
+              temperature: 0,
+              maxOutputTokens: teto,
+              // O cap na origem, quando se sabe pedir a este provedor
+              // (`modelos.ts`). Mesmo modelo da extração, mesmo modo de falha.
+              providerOptions: opcoesDeRaciocinio(modeloDaChamada),
+              // A espera longa daqui é a única camada de retry: as três
+              // tentativas rápidas do SDK contra um 429 não destravam nada e
+              // ainda alimentam o limite que estão esperando (`limite.ts`).
+              maxRetries: 0,
+            }),
+          { ate },
+        );
+
+      let r = await chamar(MAX_TOKENS_SAIDA);
+      // Cortado no meio do pensamento, repetir igual seria determinístico
+      // (`temperature: 0`). A segunda vai com o dobro de orçamento porque a
+      // alternativa é a janela inteira virar dúvida — a degradação cara que o
+      // comentário acima descreve, paga por uma resposta que nem chegou a sair.
+      if (faltouOrcamento(r)) {
+        console.warn(
+          `[resolucao] o raciocínio comeu o orçamento; repetindo com teto de ` +
+            `${MAX_TOKENS_SAIDA * FATOR_DE_FOLGA}.`,
+          diagnostico(r),
+        );
+        r = await chamar(MAX_TOKENS_SAIDA * FATOR_DE_FOLGA);
+      }
+
       resposta = r;
       // Antes do parse: o modelo que de fato atendeu é procedência, e vale
       // registrar mesmo quando a resposta dele não presta.
       modelo = r.response?.modelId ?? modelo;
 
-      const lido = parsearResposta(r.text ?? "");
+      if (veioDoPensamento(r)) {
+        console.warn(
+          `[resolucao] texto vazio, lendo o JSON do pensamento.`,
+          diagnostico(r),
+        );
+      }
+      const lido = parsearResposta(textoDaResposta(r));
       julgamentos = new Map(
         lido.referencias.flatMap((j) => (typeof j.n === "number" ? [[j.n, j] as const] : [])),
       );

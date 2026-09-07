@@ -31,7 +31,16 @@
 import { generateText } from "ai";
 import { agregarCandidatas, listarEntidades } from "./entidades";
 import { comEsperaDeLimite, ehLimiteDeTaxa } from "./limite";
-import { diagnostico, garantirGateway, modeloExtracao } from "./modelos";
+import {
+  diagnostico,
+  faltouOrcamento,
+  garantirGateway,
+  modeloExtracao,
+  opcoesDeRaciocinio,
+  textoDaResposta,
+  veioDoPensamento,
+} from "./modelos";
+import type { RespostaDoModelo } from "./modelos";
 import { criarLocalizador } from "./offsets";
 import { carimbo, efetivo } from "./overrides";
 import type { Dossie } from "./recuperacao";
@@ -103,11 +112,55 @@ export class ExtracaoError extends Error {
  * sessão de 4 mil caracteres ele gastou 1720 tokens raciocinando para 122 de
  * texto. Sem folga, o raciocínio come o orçamento e a resposta chega sem JSON
  * nenhum — foi assim que a sessão `mtgo3kaf5` falhou.
+ *
+ * **E subir este número não é o conserto.** Depois da `mtgo3kaf5` ele já foi
+ * subido uma vez, e a janela 0 da `mtqoeoqh3e3724514q1f` gastou os 8000
+ * inteiros pensando do mesmo jeito, com 5210 tokens de entrada. O modelo enche
+ * o que houver: o cap na origem é `opcoesDeRaciocinio()`, e o escalonamento
+ * abaixo é o seguro para quando não se sabe pedir a este provedor.
  */
 const MAX_TOKENS_SAIDA = 8000;
 
+/**
+ * Quanto a segunda tentativa ganha de orçamento quando a primeira foi cortada
+ * no meio do pensamento. Dobrar é o suficiente para o caso medido — 8000 de
+ * raciocínio contra um JSON que nunca passou de algumas centenas de tokens — e
+ * é uma chamada só, não uma escada.
+ */
+const FATOR_DE_FOLGA = 2;
+
+/**
+ * Com quanto orçamento a segunda tentativa vai.
+ *
+ * Separado da chamada para poder ser testado sem rede — nenhum teste deste
+ * projeto simula o `generateText`, e a decisão que importa aqui é pura: ela
+ * olha só o `finishReason` da primeira resposta.
+ */
+export function tetoDaSegundaTentativa(primeira: RespostaDoModelo): number {
+  return faltouOrcamento(primeira) ? MAX_TOKENS_SAIDA * FATOR_DE_FOLGA : MAX_TOKENS_SAIDA;
+}
+
 /** Quanto da resposta crua entra na mensagem de erro. */
 const AMOSTRA_ERRO = 400;
+
+/**
+ * A resposta do modelo virando lista de átomos, com o pensamento como plano B.
+ *
+ * Existe para os dois pontos de leitura (primeira e segunda tentativa) lerem do
+ * mesmo jeito: `textoDaResposta` cai no `reasoningText` quando o modelo escreveu
+ * a resposta na parte de raciocínio em vez da de texto (`modelos.ts`). O log
+ * diz quando isso aconteceu — proposta tirada do pensamento merece um olhar
+ * mais atento na revisão, e antes disto o caso passava calado.
+ */
+function ler(resposta: RespostaDoModelo, sessao_id: string, jaPropostos: number) {
+  if (veioDoPensamento(resposta)) {
+    console.warn(
+      `[extracao] sessão ${sessao_id}: texto vazio, lendo o JSON do pensamento.`,
+      diagnostico(resposta),
+    );
+  }
+  return parsearResposta(textoDaResposta(resposta), jaPropostos);
+}
 
 export const INSTRUCOES_BASE = `Você recebe a transcrição de um diário falado, em português, gravado no fim do dia. Sua tarefa é devolver uma versão ESTRUTURADA E ORGANIZADA do que foi dito — não um recorte da transcrição.
 
@@ -813,7 +866,7 @@ export async function extrairJanela(
   const contexto: ContextoDeJanela = { jaPropostos: anteriores, ...faixaDaJanela(janela), unica };
   const prompt = montarPrompt(janela.texto, aprovadas, meu.prompt, contexto, dossie);
 
-  async function chamar() {
+  async function chamar(teto: number) {
     try {
       // O rate limit do Gateway é da conta inteira (`limite.ts`). Durante a
       // gravação não há prazo e esperar é de graça; na janela do fim quem chama
@@ -828,7 +881,15 @@ export async function extrairJanela(
             model: modelo,
             prompt,
             temperature: 0,
-            maxOutputTokens: MAX_TOKENS_SAIDA,
+            maxOutputTokens: teto,
+            // O cap na origem, quando se sabe pedir a este provedor. Sem ele o
+            // escalonamento abaixo ainda salva a janela, mas pagando uma
+            // chamada a mais toda vez que o modelo resolver pensar demais.
+            providerOptions: opcoesDeRaciocinio(modelo),
+            // A espera longa daqui é a única camada de retry (`limite.ts`): as
+            // três tentativas rápidas que o SDK faz sozinho contra um 429 não
+            // destravam nada e ainda alimentam o limite que estão esperando.
+            maxRetries: 0,
           }),
         { ate },
       );
@@ -837,21 +898,27 @@ export async function extrairJanela(
     }
   }
 
-  let resposta = await chamar();
+  let resposta = await chamar(MAX_TOKENS_SAIDA);
   let lido;
   try {
-    lido = parsearResposta(resposta.text ?? "", jaPropostos.length);
+    lido = ler(resposta, janela.sessao_id, jaPropostos.length);
   } catch (primeira) {
-    // Modelo de raciocínio às vezes gasta a saída inteira pensando e devolve
-    // nada de texto. É intermitente, então uma segunda tentativa resolve o caso
-    // comum; a segunda falha sobe com a resposta crua e o diagnóstico junto.
+    // Duas causas com consertos diferentes, e a diferença está no `finishReason`
+    // (`modelos.ts`). Cortado no meio do pensamento, repetir igual é
+    // determinístico com `temperature: 0` — mesmo prompt, mesmo teto, mesmo
+    // estouro —, então a segunda tentativa vai com o dobro de orçamento. Nos
+    // outros casos ela é a de sempre, que cobre a resposta vazia intermitente.
+    const faltou = faltouOrcamento(resposta);
+    const teto = tetoDaSegundaTentativa(resposta);
+
     console.error(
-      `[extracao] sessão ${janela.sessao_id}: primeira tentativa sem JSON, repetindo.`,
+      `[extracao] sessão ${janela.sessao_id}: primeira tentativa sem JSON, repetindo` +
+        `${faltou ? ` com teto de ${teto} (o raciocínio comeu o orçamento)` : ""}.`,
       `${primeira instanceof Error ? primeira.message : primeira} — ${diagnostico(resposta)}`,
     );
-    resposta = await chamar();
+    resposta = await chamar(teto);
     try {
-      lido = parsearResposta(resposta.text ?? "", jaPropostos.length);
+      lido = ler(resposta, janela.sessao_id, jaPropostos.length);
     } catch (segunda) {
       // O diagnóstico da SEGUNDA resposta, que é a que de fato derrubou a
       // janela. Sobe junto com a mensagem porque quem loga o erro final é o

@@ -15,7 +15,12 @@
  * uma pergunta que quase sempre tem a mesma resposta.
  */
 import { generateText } from "ai";
-import { garantirGateway, modeloDuplicatas } from "./modelos";
+import {
+  garantirGateway,
+  modeloDuplicatas,
+  opcoesDeRaciocinio,
+  textoDaResposta,
+} from "./modelos";
 import { carimbo, efetivo } from "./overrides";
 import { chaveDoPar } from "./fusao";
 import { normalizar } from "./texto";
@@ -221,8 +226,12 @@ export async function julgar(
       model: modelo,
       maxOutputTokens: 4000,
       prompt: `${meu.prompt}\n\nPARES:\n\n${corpo}`,
+      // O cap na origem, quando se sabe pedir a este provedor (`modelos.ts`).
+      providerOptions: opcoesDeRaciocinio(modelo),
     });
-    texto = r.text ?? "";
+    // Cai no pensamento quando o modelo escreveu a resposta lá — mesmo modelo
+    // de raciocínio da extração, mesmo modo de falha.
+    texto = textoDaResposta(r);
   } catch (e) {
     throw new DuplicatasError(e instanceof Error ? e.message : String(e));
   }

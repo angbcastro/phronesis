@@ -7,7 +7,13 @@
  * levar uma resposta sem texto nenhum.
  */
 import { describe, expect, it } from "vitest";
-import { diagnostico } from "@/lib/modelos";
+import {
+  diagnostico,
+  faltouOrcamento,
+  opcoesDeRaciocinio,
+  textoDaResposta,
+  veioDoPensamento,
+} from "@/lib/modelos";
 
 describe("o diagnóstico da resposta vazia", () => {
   // "Vieram 0 caractere(s)" não distingue duas causas com consertos opostos.
@@ -44,5 +50,68 @@ describe("o diagnóstico da resposta vazia", () => {
     expect(diagnostico({})).toBe(
       "finishReason=? entrada=? saida=? raciocinio=? texto=0 char pensamento=0 char",
     );
+  });
+});
+
+describe("qual das duas causas foi", () => {
+  // A tabela do §4.6 nomeia as duas há duas fatias; durante esse tempo ela foi
+  // prescrição escrita e o código repetia a chamada igual nos dois casos.
+
+  it("cortado no meio do pensamento é falta de orçamento", () => {
+    expect(faltouOrcamento({ finishReason: "length", text: "" })).toBe(true);
+  });
+
+  it("terminar por conta própria não é falta de orçamento, mesmo sem texto", () => {
+    // Aqui repetir igual ainda faz sentido: a resposta vazia é intermitente.
+    expect(faltouOrcamento({ finishReason: "stop", text: "" })).toBe(false);
+    expect(faltouOrcamento({})).toBe(false);
+  });
+});
+
+describe("de onde sai o texto da resposta", () => {
+  it("o texto, quando existe", () => {
+    const r = { finishReason: "stop", text: '{"atomos":[]}', reasoningText: "hmm" };
+    expect(textoDaResposta(r)).toBe('{"atomos":[]}');
+    expect(veioDoPensamento(r)).toBe(false);
+  });
+
+  it("o pensamento, quando o modelo escreveu a resposta lá", () => {
+    // O modo de falha que a segunda tentativa mascarava acertando por sorte.
+    const r = { finishReason: "stop", text: "", reasoningText: '{"atomos":[]}' };
+    expect(textoDaResposta(r)).toBe('{"atomos":[]}');
+    expect(veioDoPensamento(r)).toBe(true);
+  });
+
+  it("NUNCA o pensamento cortado no meio", () => {
+    // Em `length` o raciocínio parou onde o orçamento acabou, e `isolarJson`
+    // pega do primeiro `{` ao último `}`: casaria um rascunho que o modelo
+    // estava abandonando, e a proposta sairia de uma ideia descartada.
+    const r = {
+      finishReason: "length",
+      text: "",
+      reasoningText: '{"atomos":[{"tipo":"FATO","texto":"talvez isso não',
+    };
+    expect(textoDaResposta(r)).toBe("");
+    expect(veioDoPensamento(r)).toBe(false);
+  });
+
+  it("texto só de espaço conta como vazio", () => {
+    const r = { finishReason: "stop", text: "  \n ", reasoningText: '{"atomos":[]}' };
+    expect(textoDaResposta(r)).toBe('{"atomos":[]}');
+  });
+});
+
+describe("pedir ao provedor para pensar menos", () => {
+  it("provedor fora da tabela não recebe opção nenhuma", () => {
+    // Mesmo padrão seguro do vocabulário: opção que o provedor não conhece some
+    // em silêncio, e silêncio combinado é melhor que silêncio por engano.
+    expect(opcoesDeRaciocinio("openai/gpt-5")).toBeUndefined();
+  });
+
+  it("o que a tabela tiver vem sob a chave do provedor", () => {
+    // A tabela está vazia até `pnpm probe:raciocinio` medir. Este teste vale
+    // para o dia em que ela não estiver: a forma é `{ provedor: { opção } }`.
+    const r = opcoesDeRaciocinio("zai/glm-5.3-flash");
+    if (r !== undefined) expect(Object.keys(r)).toEqual(["zai"]);
   });
 });

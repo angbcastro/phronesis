@@ -155,7 +155,9 @@ export function modeloDuplicatas(): string {
  *                                          o problema volta na sessão seguinte.
  *
  * `zai/glm-5.3-flash` já gastou 1720 tokens pensando para 122 de texto — é o
- * modo de falha que este sistema mais vê (`ARCHITECTURE.md` §4.6).
+ * modo de falha que este sistema mais vê (`ARCHITECTURE.md` §4.6). Os dois
+ * consertos viraram `faltouOrcamento()` e `textoDaResposta()`, logo abaixo:
+ * durante duas fatias esta tabela foi prescrição escrita e não código.
  *
  * Tipagem estrutural de propósito: o que interessa é o que o campo diz, não de
  * qual versão do SDK ele veio. Campo ausente vira `?` em vez de derrubar o log
@@ -185,6 +187,50 @@ export function diagnostico(r: RespostaDoModelo): string {
     `pensamento=${(r.reasoningText ?? "").length} char`,
   ].join(" ");
 }
+
+/**
+ * O pensamento comeu o orçamento e a resposta foi cortada no meio dele.
+ *
+ * `maxOutputTokens` limita **raciocínio e texto juntos** — foi essa a premissa
+ * que faltou quando a 4.8 declarou que "a resposta da extração parou de poder
+ * truncar" porque a janela ficou pequena. A janela 0 da sessão
+ * `mtqoeoqh3e3724514q1f` tinha 5210 tokens de entrada e mesmo assim gastou os
+ * 8000 de saída inteiros pensando, sem escrever um byte de JSON: o volume do
+ * pensamento não encolhe com a entrada do jeito que o JSON encolhe.
+ *
+ * Quem chama usa isto para **não repetir a mesma chamada**. Com `temperature: 0`
+ * a segunda tentativa idêntica é determinística — mesmo prompt, mesmo teto,
+ * mesmo estouro —, então repetir aqui só paga duas vezes pela mesma falha.
+ */
+export function faltouOrcamento(r: RespostaDoModelo): boolean {
+  return r.finishReason === "length";
+}
+
+/**
+ * O texto da resposta, e o pensamento quando o texto veio vazio.
+ *
+ * É o outro modo de falha da tabela acima: `finishReason=stop`, orçamento
+ * sobrando, `pensamento` grande e `texto=0` — o modelo escreveu a resposta na
+ * parte de raciocínio e não na de texto. Antes disto a segunda tentativa
+ * **mascarava** o caso, acertando por sorte, e ele voltava na sessão seguinte.
+ *
+ * **Só quando o pensamento terminou** (`!faltouOrcamento`). Cortado no meio ele
+ * não tem JSON fechado, e `isolarJson` — que pega do primeiro `{` até o último
+ * `}` — casaria um rascunho parcial do raciocínio como se fosse a resposta.
+ * Aí a proposta sairia de uma ideia que o modelo estava abandonando.
+ *
+ * Quem chama diz no log quando o texto veio daqui: proposta tirada do
+ * pensamento merece um olhar mais atento na revisão.
+ */
+export function textoDaResposta(r: RespostaDoModelo): string {
+  const texto = r.text ?? "";
+  if (texto.trim() !== "") return texto;
+  return faltouOrcamento(r) ? texto : (r.reasoningText ?? "");
+}
+
+/** Para o log de quem chama dizer que leu o pensamento, e não o texto. */
+export const veioDoPensamento = (r: RespostaDoModelo): boolean =>
+  (r.text ?? "").trim() === "" && textoDaResposta(r).trim() !== "";
 
 /**
  * Como cada provedor recebe o vocabulário.
@@ -225,6 +271,65 @@ export function opcoesDeVocabulario(
 /** Para o smoke e a tela dizerem se o vocabulário chega a este provedor. */
 export const provedorAceitaVocabulario = (modelo: string): boolean =>
   OPCAO_DE_VOCABULARIO[provedorDe(modelo)] !== undefined;
+
+/**
+ * Como cada provedor recebe o pedido de pensar menos.
+ *
+ * Mesmo desenho de `OPCAO_DE_VOCABULARIO`, e pela mesma razão: **o nome da
+ * opção não acompanha o provedor**, e opção que ele não conhece some em
+ * silêncio. Provedor fora da tabela não recebe opção nenhuma — silêncio é o
+ * padrão seguro, e uma extração que pensa demais é melhor que uma que quebra.
+ *
+ * É o cap na origem. Sem ele, `faltouOrcamento` e o escalonamento de teto em
+ * `extracao.ts` conseguem salvar a janela, mas pagando uma chamada a mais toda
+ * vez que o modelo resolver pensar muito.
+ *
+ * **Preenchida por medição, não por preferência** (`pnpm probe:raciocinio`,
+ * 2026-09-07, contra `zai/glm-5.3-flash`, que o Gateway resolveu para
+ * `baseten`). Mesmo prompt, mesmo teto de 8000, uma chamada por nome:
+ *
+ *   sem opção                        raciocinio=117  texto=613 char
+ *   reasoningEffort="minimal"        raciocinio=0    texto=613 char   ← esta
+ *   thinking={type:"disabled"}       raciocinio=0    texto=613 char
+ *   reasoning_effort="minimal"       raciocinio=117  texto=613 char   ignorada
+ *   enable_thinking=false            raciocinio=162  texto=613 char   ignorada
+ *
+ * As duas primeiras zeram o raciocínio e devolvem **o mesmo texto**; as duas
+ * últimas somem em silêncio — o número igual (ou maior) ao da linha de base é o
+ * que denuncia, e é por isso que o nome não podia ser escrito aqui sem medir.
+ * `reasoningEffort` e não `thinking`: "mínimo" é piso, "disabled" é chave
+ * geral, e para uma tarefa de julgamento o piso é a escolha conservadora. Se um
+ * dia parar de valer, `thinking: { type: "disabled" }` mediu idêntico.
+ *
+ * Três nomes (`reasoningEffort="none"`, `reasoning={enabled:false}`,
+ * `maxReasoningTokens=512`) ficaram **sem medir**: o rate limit da conta chegou
+ * no meio da sonda. O último é o que interessaria remedir — teto é melhor que
+ * interruptor —, e `PROBE_SO=maxReasoningTokens` roda só ele.
+ */
+const OPCAO_DE_RACIOCINIO: Record<string, Record<string, ValorJson>> = {
+  zai: { reasoningEffort: "minimal" },
+};
+
+/**
+ * O que cabe num `providerOptions`. Escrito aqui, e não importado de
+ * `@ai-sdk/provider`, porque pacote de provedor não entra neste projeto — a
+ * regra 8 vale para o tipo como vale para o código (`tests/gateway.test.ts`).
+ */
+type ValorJson = string | number | boolean | null | ValorJson[] | { [k: string]: ValorJson };
+
+/**
+ * O `providerOptions` que pede a este modelo para pensar menos, ou `undefined`
+ * quando não se sabe pedir a ele.
+ */
+export function opcoesDeRaciocinio(
+  modelo: string,
+): Record<string, Record<string, ValorJson>> | undefined {
+  const provedor = provedorDe(modelo);
+  const opcao = OPCAO_DE_RACIOCINIO[provedor];
+  if (!opcao) return undefined;
+
+  return { [provedor]: opcao };
+}
 
 /**
  * Modelo de embedding (slice 4.5). `EMBEDDING_MODEL` troca sem tocar em código,

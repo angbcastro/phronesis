@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
 import { extrairSessao } from "@/lib/pipeline";
 import { buscarSessao } from "@/lib/sessoes";
-import { temTranscricao } from "@/lib/estados";
+import { podeReextrair } from "@/lib/estados";
 import { erro, parametros } from "@/lib/rotas";
 
 export const runtime = "nodejs";
@@ -32,8 +32,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const sessao = await buscarSessao(id);
   if (!sessao) return erro("sessão não encontrada", 404);
 
-  if (!temTranscricao(sessao.status)) {
-    return erro(`sessão em '${sessao.status}': não há transcrição para extrair`, 409);
+  // `podeReextrair`, e não `temTranscricao`: é do `erro` que o retry descrito
+  // acima parte, e barrá-lo aqui deixava a rota contradizendo o próprio
+  // docstring com um 409 que ainda por cima dizia não haver transcrição.
+  if (!podeReextrair(sessao.status)) {
+    return erro(`sessão em '${sessao.status}': ainda não há transcrição para extrair`, 409);
   }
 
   const corpo = (await req.json().catch(() => ({}))) as { forcar?: boolean };

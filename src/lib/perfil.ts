@@ -21,7 +21,12 @@
  * tela abre.
  */
 import { generateText } from "ai";
-import { garantirGateway, modeloPerfil } from "./modelos";
+import {
+  garantirGateway,
+  modeloPerfil,
+  opcoesDeRaciocinio,
+  textoDaResposta,
+} from "./modelos";
 import { carimbo, efetivo } from "./overrides";
 import { query } from "./neo4j";
 import { normalizarNome } from "./texto";
@@ -198,8 +203,12 @@ ${trechos}`;
       prompt,
       temperature: 0,
       maxOutputTokens: 2000,
+      // O cap na origem, quando se sabe pedir a este provedor (`modelos.ts`).
+      providerOptions: opcoesDeRaciocinio(modelo),
     });
-    bruto = r.text ?? "";
+    // Cai no pensamento quando o modelo escreveu a resposta lá — mesmo modelo
+    // de raciocínio da extração, mesmo modo de falha.
+    bruto = textoDaResposta(r);
   } catch (e) {
     throw new PerfilError(e instanceof Error ? e.message : String(e));
   }

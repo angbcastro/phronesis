@@ -11,6 +11,7 @@ import {
   normalizarTipo,
   orcamentoDaJanela,
   parsearResposta,
+  tetoDaSegundaTentativa,
 } from "@/lib/extracao";
 import type { Atribuicoes } from "@/lib/resolucao";
 import type { AtomoCru, Palavra, Transcricao } from "@/lib/tipos";
@@ -579,5 +580,24 @@ describe("ancoragem por janela", () => {
       ancora: "nenhuma",
       inicio_s: null,
     });
+  });
+});
+
+describe("com quanto orçamento a segunda tentativa vai", () => {
+  /**
+   * A primeira tentativa da janela 0 da sessão `mtqoeoqh3e3724514q1f` gastou os
+   * 8000 tokens de saída inteiros pensando, com 5210 de entrada, e devolveu
+   * zero caractere. A segunda foi idêntica — mesmo prompt, mesmo teto, e
+   * `temperature: 0` — e falhou pelo mesmo motivo, do mesmo jeito.
+   */
+  it("dobra quando o raciocínio comeu o orçamento", () => {
+    expect(tetoDaSegundaTentativa({ finishReason: "length", text: "" })).toBe(16000);
+  });
+
+  it("repete o mesmo teto nos outros casos", () => {
+    // Resposta vazia com o modelo terminando por conta própria é intermitente:
+    // aí a segunda tentativa idêntica é exatamente o certo a fazer.
+    expect(tetoDaSegundaTentativa({ finishReason: "stop", text: "" })).toBe(8000);
+    expect(tetoDaSegundaTentativa({})).toBe(8000);
   });
 });
