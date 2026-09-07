@@ -5,8 +5,22 @@ construídas, commitadas e verificadas só por teste — a promessa das três ai
 previsão, não medição.** Apagar quando as validações da seção 2 estiverem feitas.
 
 Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
-sistema funciona hoje) e `Specs/slice-4.9.md` (o que a fatia atual tem que ser).
+sistema funciona hoje) e `Specs/slice-4.10.md` (o que a fatia atual tem que ser).
 Este arquivo só diz o que fazer a seguir.
+
+> **Atualizado em 07/09, de novo: a slice 4.10 está construída.** A sessão longa
+> foi rodada de ponta a ponta e mediu o que os 869 testes não alcançam: quatro
+> chamadas de modelo para entregar uma. Três consertos saíram daí, todos
+> commitados — o arquivo importado passou a ser **fatiado em blocos de 30 s** no
+> navegador (a janela e o RAG por bloco estavam inertes nesse caminho), a
+> resposta cortada passou a ser **salva até o último átomo completo** em vez de
+> ir inteira para o lixo, e `/sessões` ganhou um botão de **apagar sessão**,
+> porque uma sessão de 17 min fatiada são 35 objetos no R2. `Specs/slice-4.10.md`
+> tem o escopo; `ARCHITECTURE.md` §3.0, §4.5, §4.6, §5, §9, §10 e §14, o sistema.
+> **A migration 008 (`descartada_em`) ainda não foi aplicada** — ela é no-op
+> (0 statements) e espera aprovação, como o `CLAUDE.md` manda.
+> A seção 2.4 abaixo foi reescrita: ela deixou de ser "conferir que nada mudou"
+> e passou a ser **a verificação que decide a fatia**.
 
 > **Atualizado em 07/09: a primeira janela real rodou, e falhou.** A sessão
 > `mtqoeoqh3e3724514q1f` foi a primeira extração por janela desde a 4.8. A
@@ -126,12 +140,51 @@ que é **instrução de prompt**. Três coisas a olhar, e as três só olho vê:
 montado em código, em `blocoDaJanela` (`src/lib/extracao.ts`). Está no §14 como
 limite. Ajustar a instrução do `estende` hoje é deploy.
 
-### 2.4 Importar um arquivo e conferir que nada mudou
+### 2.4 Importar o áudio de 17 min de novo — é o que decide a 4.10
 
-Arquivo importado é um bloco só, então é uma janela que se declara a sessão
-inteira, e o prompt sai byte a byte igual ao de antes desta fatia. É o caminho
-mais fácil de quebrar sem perceber, porque nenhum log de janela aparece nele —
-a única linha esperada é a do passe único.
+**Existem duas sessões com o mesmo áudio**: `mtqoeoqh3e3724514q1f`, em
+`em_revisao` com a proposta de 9 átomos, e `mtqpzopm5123432v291d`, em `erro`.
+Guardar a primeira como o "antes" — **não apagar** — e importar o áudio de novo
+para o "depois". Mesmo áudio dos dois lados é a única medida de qualidade que
+este sistema aceita.
+
+No `logs/dev-<data>.log`:
+
+| O que aparece | O que quer dizer |
+|---|---|
+| `[janela] sessão <id> janela 0 (blocos 0-3)` | o caminho novo está vivo na importação — **é o critério da fatia** |
+| nove linhas `[janela]`, nenhuma `não fecharam` | o fallback deixou de ser exercitado |
+| `dossiê de K entidade(s)` | a 4.9 passou a rodar por bloco, e não uma vez por sessão |
+| `[extracao] … resposta cortada, N átomo(s) recuperado(s)` | o salvamento pegou |
+| `[limite] stt` em rajada | os 2 blocos simultâneos não bastaram — é o limite declarado no §14, e a saída é o bloco de 2 min |
+| `[fatiador] …` | **o fatiamento não aconteceu** e tudo caiu no caminho antigo; nada na tela diz isso |
+
+E o rótulo do botão tem de virar `subindo bloco 3 de 35…` enquanto sobe — se
+ficar em "subindo o áudio…", `fatiarArquivo` devolveu `null`.
+
+Três coisas que só olho vê:
+
+- **o volume subiu para a faixa?** Nove átomos para 17 min está no piso dos 10 a
+  20 por 15 min. Nove janelas pedindo de 1 a 3 devem dar mais — e se derem
+  **demais**, o `estende` é que não pegou;
+- **o átomo 0 se quebrou?** Hoje é uma `HISTORIA` só, com 18 trechos de 4 s a
+  500 s, misturando a viagem, a cachoeira, o poema, o morcego no para-brisa e o
+  vinho. É o modo de falhar que o §14 já previa para `HISTORIA`. Se continuar
+  inteiro com janela de 2 min, o conserto é regra em `/calibracao`, não código;
+- **um assunto retomado virou um átomo com dois trechos, ou dois átomos?** É o
+  `estende`, e ele **nunca foi exercitado de verdade**: nenhuma janela chegou a
+  fechar até hoje.
+
+### 2.4.1 O botão de apagar, e a migration 008
+
+Antes de gerar sessão de teste com 35 objetos cada, **aprovar e rodar a
+migration 008** (`pnpm migrate`) — ela é no-op, e o que ela faz é declarar
+`descartada_em` no schema, que é onde o `CLAUDE.md` manda a verdade morar.
+
+Depois, apagar uma sessão de teste e conferir: a linha some da lista na hora, o
+prefixo `sessoes/<id>/` fica vazio no console do R2, e o nó continua no Neo4j com
+`descartada_em` preenchido (`MATCH (s:Sessao {id:$id}) RETURN s`). Sessão em
+`transcrevendo` não pode nem oferecer o botão.
 
 ### 2.5 O rate limit, que mexeu nos dois sentidos
 

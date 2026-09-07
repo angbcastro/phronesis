@@ -2,7 +2,7 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.9.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.10.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
@@ -11,13 +11,20 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.9.md`.
 **Estado: slice 2 fechada e validada; slices 3 (higiene do grafo), 4
 (identidade por contexto), 4.5 (o grafo ganha vetor), 4.6 (o prompt aprende
 com a revisão), 4.7 (o painel dos agentes), 4.8 (a extração acompanha a fala),
-4.8.1 (as seis emendas) e 4.9 (o extrator conhece o grafo) construídas.**
-A primeira janela real desde a 4.8 **rodou e falhou** (sessão
-`mtqoeoqh3e3724514q1f`): o raciocínio do modelo comeu o orçamento de saída
-inteiro e a extração não produziu JSON nenhum. O que isso ensinou está no §4.6:
-`faltouOrcamento`, `textoDaResposta` e o escalonamento de teto — **e a decisão
-de não calar o raciocínio**, ainda que a medição do §4.4 mostre que dá. A janela
-seguinte é que diz se as duas fatias estão de pé; o `PROXIMA-SESSAO.md` §2
+4.8.1 (as seis emendas), 4.9 (o extrator conhece o grafo) e 4.10 (o arquivo
+importado entra pela mesma porta) construídas.**
+A primeira sessão longa real **rodou de ponta a ponta e custou quatro chamadas
+de modelo para entregar uma** (`mtqoeoqh3e3724514q1f`, 1044 s, 9 átomos em
+6 min 46 s). Três coisas saíram dessa medição, e as três são a 4.10: a janela não
+existia no caminho importado (o arquivo subia num bloco só, e com um bloco só a
+4.8 é inerte); o fallback repetia a chamada que acabara de falhar; e uma resposta
+cortada no meio da lista perdia os dez átomos que já estavam inteiros. Agora o
+arquivo importado é fatiado em blocos de 30 s como a gravação (§3.0), a resposta
+cortada é salva até o último átomo completo (§4.6), e `/sessões` ganhou um botão
+para apagar sessão de teste (§10) — porque uma sessão de 17 min fatiada são 35
+objetos no R2.
+**A verificação que decide a fatia é à mão**: importar o mesmo áudio de 17 min de
+novo e comparar com a proposta guardada, olhando o log. `PROXIMA-SESSAO.md` §2
 continua sendo a lista do que falta gravar e olhar.
 Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. A
 extração acontece **durante** a gravação, janela a janela, e quando eu paro
@@ -59,6 +66,22 @@ a segunda pega quem tem átomos e nenhum perfil — e nenhuma delas substitui a
 grafia: são **aditivas**, com teto e piso, e uma sessão sem ambiguidade continua
 não pagando nada. A camada dos vizinhos herda atribuição passada, e o que a torna
 aceitável é que a revisão mostra **quais** átomos elegeram cada sugestão.
+
+**E a importação deixou de ser um caminho à parte** (seções 3.0, 4.5 e 4.6). O
+arquivo subia inteiro em `i = 0` — decisão consciente enquanto não havia janela —
+e o preço apareceu quando havia: com um bloco só, a extração por janela e o RAG
+por bloco ficam **inertes** no caminho importado. Agora o navegador fatia o
+arquivo em blocos de 30 s, os mesmos da gravação, e sobe um `chunk_NNN.wav` por
+bloco; nada rio abaixo mudou, porque o bloco continua tendo 30 s. Navegador que
+não decodifica o formato cai no caminho antigo, inteiro — esta mudança não pode
+deixar a importação pior do que ela já era.
+
+**E uma resposta cortada parou de custar a janela toda** (seção 4.6). Estourar o
+teto no meio da lista jogava fora os átomos que já estavam completos:
+`fecharJsonTruncado` corta no último que fechou e fecha o array, e entre as duas
+tentativas fica a que trouxe mais átomos. A revisão avisa quando a proposta veio
+de resposta cortada — sem o aviso, uma lista curta parece decisão do modelo em
+vez de acidente de teto.
 
 **O caminho automático aguenta o Gateway dizer "devagar"** (seções 4.2.1 e 5.3).
 O free tier limita por conta, não por modelo — medido em 02/09, com o mesmo
@@ -190,9 +213,12 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   neo4j.ts        HTTP Query API (nunca driver Bolt)
   fusao.ts        fundir, renomear, recusar — a escrita de higiene no grafo
   duplicatas.ts   quem parece ser a mesma coisa: string + o modelo, só propõem
-  sessoes.ts      repositório de :Sessao (criar, buscar, atualizar com guarda)
-  r2.ts           S3 SigV4 via aws4fetch: get/put/head, presign, PUT condicional
-  chaves.ts       layout do R2 num lugar só + validação de id (barra path traversal)
+  sessoes.ts      repositório de :Sessao (criar, buscar, atualizar com guarda,
+                  descartar)
+  r2.ts           S3 SigV4 via aws4fetch: get/put/head/delete, presign, PUT
+                  condicional — e nenhum LIST, nunca
+  chaves.ts       layout do R2 num lugar só + validação de id (barra path
+                  traversal) + as chaves de uma sessão inteira, para apagar
   manifest.ts     verdade sobre quais blocos existem; read-modify-write por etag
   estados.ts      máquina de estados da sessão e as predicadas de leitura
   modelos.ts      porta única de modelo: todo LLM sai pelo Vercel AI Gateway,
@@ -247,6 +273,9 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
 src/client/       navegador
   gravador.ts     MediaRecorder recriado a cada 30 s sobre um stream fixo;
                   expõe `faixa` (o MediaStream) para a onda do botão ouvir
+  fatiador.ts     o arquivo importado em blocos de 30 s: decodifica, renderiza
+                  a 16 kHz e encoda WAV. `null` quando não dá — e aí o caminho
+                  antigo, do arquivo inteiro, continua valendo
   deposito.ts     IndexedDB: blocos pendentes + sessão em andamento
   fila.ts         upload serial com retry, observável pela UI
 
@@ -262,8 +291,8 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                   SeletorEntidade (a barra pesquisável de entidade, nos dois
                     lugares da revisão),
                   Leitura (a transcrição literal — porta de serviço),
-                  Sessoes (lista de sessões — e a cor que diz o que falta
-                    revisar), Entidades (higiene do grafo)
+                  Sessoes (lista de sessões, o apagar de dois toques — e a cor
+                    que diz o que falta revisar), Entidades (higiene do grafo)
 src/app/api/      29 rotas em seis famílias — sessão, entidade, calibração,
                   agentes, átomos e as 2 de auth (seção 10)
 src/middleware.ts porta única: sem cookie válido nada responde
@@ -310,8 +339,9 @@ parar ──▶ /sessao/:id            (Processando: não mostra a transcrição
 
 ### 3.0 O caminho curto: arquivo importado
 
-Nota de voz do WhatsApp, gravador do celular, áudio antigo no disco. **Um
-arquivo é uma sessão inteira, num bloco só (`i = 0`).**
+Nota de voz do WhatsApp, gravador do celular, áudio antigo no disco. **Desde a
+slice 4.10 o arquivo é fatiado em blocos de 30 s no navegador — os mesmos da
+gravação — e sobe um `chunk_NNN.wav` por bloco.**
 
 ```
 navegador                             Vercel                       R2 / Gateway
@@ -319,32 +349,76 @@ navegador                             Vercel                       R2 / Gateway
 <input type=file>
   formatoDeArquivo(nome, mime)        (audio.ts — recusa antes de qualquer rede)
   duração pelo <audio>                (NaN em container sem cabeçalho: passa)
+  fatiarArquivo(arquivo)              (fatiador.ts — decodifica a 16 kHz,
+                                       renderiza cada 30 s, encoda WAV;
+                                       null se o navegador não decodifica)
 POST /api/sessoes ──────────────────▶ CREATE (:Sessao{gravando}) ─▶ Neo4j
-POST /chunks/0/url  {ext} ──────────▶ presigned PUT, 5 min
-PUT ──────────────────────────────────────────────────────────────▶ chunk_000.opus
-POST /chunks/0/pronto {ext,duracao} ▶ HEAD, manifest += bloco com ext
-                                      waitUntil(transcrever) ─────▶ STT
+loop por bloco, 2 de cada vez:
+  POST /chunks/:i/url  {ext:"wav"} ─▶ presigned PUT, 5 min
+  PUT ────────────────────────────────────────────────────────────▶ chunk_NNN.wav
+  POST /chunks/:i/pronto {ext:"wav"} ▶ HEAD, manifest += bloco com ext
+                                      waitUntil: transcrever ─────▶ STT
+                                          e, na sequência,
+                                        candidatas + avancarJanelas
 sessionStorage duracao:<id>
 ▶ /sessao/:id   (daqui em diante é o mesmo caminho da gravação: `Processando`
                  chama /finalizar com a duração, faz o polling de 2 s e abre a
                  revisão sozinho)
 ```
 
-**Por que um bloco só.** `offsetDoBloco(0)` é zero, então os timestamps que o STT
-devolve para o arquivo já são absolutos e a concatenação da seção 4.5 continua
-correta sem nenhum caso especial. Fatiar exigiria decodificar e reencodar Opus no
-navegador, e de quebra reintroduziria as emendas de 30 s que a gravação ao vivo
-tem e o arquivo importado não.
+**Por que fatiar, se antes não fatiava.** Até a 4.9 o arquivo subia inteiro em
+`i = 0`, e era decisão declarada: `offsetDoBloco(0)` é zero, os timestamps do STT
+já saíam absolutos, e não havia emenda nenhuma na transcrição. O preço só
+apareceu quando a janela passou a existir. Com **um bloco só**, `janelasDe`
+devolve uma janela que *é* a sessão inteira e `blocoDaJanela` devolve string
+vazia: a slice 4.8 fica **inerte** no caminho importado — o que era para ser nove
+chamadas de 2 min vira uma chamada de 17 min —, e a 4.9 junto, porque
+`candidatas_NNN.json` é chaveado por bloco e o RAG rodava uma vez para dezessete
+minutos. Foi medido na sessão `mtqoeoqh3e3724514q1f` (§4.6).
+
+Fatiar só o texto da transcrição custaria menos — uma chamada de STT em vez de
+trinta e cinco — e foi **recusado**: manteria dois conceitos de bloco no sistema
+para sempre, áudio e lógico, e cada fatia futura teria de lembrar da diferença.
+
+**Trinta segundos, e não dois minutos**, porque com 30 s **nada rio abaixo
+muda**: `offsetDoBloco` continua `30 × i`, `janelasDe` continua contando blocos,
+`chaveChunkCandidatas`, `localizarNoAudio`, `concatenar`, `prefixoContiguo` e os
+dois players continuam como estão. Dois minutos dariam nove chamadas de STT em
+vez de trinta e cinco, ao custo de generalizar as duas primeiras.
+
+**WAV 16 kHz mono, PCM 16-bit.** `wav` já estava em `FORMATOS` (`audio.ts`), então
+`extensaoAceita` e `chaveChunkAudio` aceitam sem uma linha nova, e o cabeçalho de
+44 bytes se escreve à mão. WebCodecs mais uma biblioteca de muxing daria ~3 MB
+em vez de ~34 MB numa sessão de 17 min, ao custo de dependência nova e suporte
+irregular no Safari — e isto é um PWA de celular. O preço está no §14.
+
+**O `null` do fatiador é o que garante que nada piora.** `decodeAudioData` que
+falha, ou render que estoura no meio, devolve `null`, e a importação sobe o
+arquivo inteiro em `i = 0` com a extensão de origem — o caminho de sempre,
+inteiro. É o mesmo cuidado que `duracaoDoArquivo` já tem ao devolver `NaN`. A
+diferença **não aparece na tela**: só no log (§14).
+
+**Dois blocos por vez.** Trinta e cinco `/pronto` em sequência disparariam trinta
+e cinco chamadas de STT em cerca de um minuto, onde a gravação espalha as mesmas
+trinta e cinco por dezessete minutos reais — a rajada que a 4.8 existe para
+evitar, chegando pela porta dos fundos. `BLOCOS_SIMULTANEOS = 2` limita a frente,
+e `comEsperaDeLimite` (§5.3) absorve o resto. O manifest aguenta a concorrência
+(§6.1) e a ordem de chegada não importa: a janela só fecha sobre prefixo
+contíguo.
 
 **Sem IndexedDB.** A fila local (3.2) existe para não perder fala quando a aba
 fecha no meio da gravação. Um arquivo importado já está no disco de quem o
 escolheu: se o PUT falhar, `Importacao` tenta 3 vezes com o mesmo backoff e
 depois pede o arquivo de novo.
 
-**A duração vem do cliente.** `chunks.length * DURACAO_CHUNK_S` diria 30 s para um
-diário de 15 min, então `/pronto` e `/finalizar` aceitam `duracao_s` no corpo e
-ele vence a contagem. Duração desconhecida (`NaN`/`Infinity`, container sem
-cabeçalho) é omitida e o servidor cai na contagem de blocos.
+**A duração não vem mais por bloco.** `/pronto` grava `duracao_s` na sessão a
+cada chamada, e o campo existia porque "arquivo importado é um bloco só, de
+duração arbitrária". Fatiado, ele deixa de ser: mandar `30` em cada bloco
+deixaria a sessão de 17 min registrada como 30 s. O caminho fatiado **não manda o
+campo**, e vale `chunks.length * DURACAO_CHUNK_S` — a conta da gravação, correta
+para blocos de 30 s. Quem manda a duração real é o `/finalizar`, uma vez só, com
+o valor do `sessionStorage`. O campo continua existindo em `/pronto` e é usado
+pelo caminho de fallback, onde o bloco de fato tem duração arbitrária.
 
 ### 3.1 Por que o recorder é recriado
 
@@ -717,6 +791,14 @@ janela é `concatenar` sobre um subconjunto de blocos, o que devolve uma
 saber que ela é um pedaço. E `janelasDe` fatia o mesmo prefixo contíguo pela
 mesma razão de sempre: com um buraco no meio, a janela leria fala fora de ordem.
 
+**E desde a 4.10 a importação passa por aqui igual à gravação.** O arquivo
+importado tinha zero emenda — era um bloco só, e `offsetDoBloco(0)` é zero.
+Fatiado em 30 s, ele passa a ter as mesmas emendas da gravação: numa sessão de
+17 min são **trinta e cinco lugares** onde uma palavra pode ser cortada ao meio,
+onde antes não havia nenhum. É preço declarado (§14), e em troca a importação
+ganha a janela e o RAG por bloco. **Nenhuma linha desta seção precisou mudar
+para isso** — `30 × i` continua sendo a conta, porque o bloco continua tendo 30 s.
+
 ### 4.6 Extração de átomos, janela a janela
 
 **Dispara sozinha**, e desde a slice 4.8 já durante a gravação: a cada quatro
@@ -832,9 +914,51 @@ As defesas de hoje, da que conserta para a que só conta o que houve:
 | | |
 |---|---|
 | escalonamento do teto | cortado no pensamento, a segunda tentativa vai com `MAX_TOKENS_SAIDA * 2` em vez de repetir a mesma chamada. **É a defesa principal**, e custa uma chamada a mais nas janelas em que o modelo pensa muito |
+| `fecharJsonTruncado(bruto)` | resposta cortada **depois** de começar a lista: corta no último átomo que fechou inteiro e fecha o array. Abaixo |
 | `textoDaResposta(resposta)` | o JSON que foi parar no pensamento ainda é lido — **exceto** em `length`, onde o raciocínio está cortado no meio e `isolarJson` casaria um rascunho abandonado |
 | a resposta crua no erro | os primeiros 400 caracteres vão na mensagem, e "resposta vazia" é dito com essas palavras |
 | `diagnostico(resposta)` | `finishReason`, tokens de entrada/saída/raciocínio e o tamanho do texto e do pensamento, nas duas tentativas. Mora em `modelos.ts`: os três agentes têm o mesmo modo de falha |
+
+#### Truncou, e não perde mais tudo (slice 4.10)
+
+Estourar o teto **no meio da lista** era pior que estourá-lo no pensamento. A
+chamada 2 da janela 0 da `mtqoeoqh3e3724514q1f` devolveu 11351 caracteres: cerca
+de dez objetos de átomo completos e um pela metade. `isolarJson` faz
+`lastIndexOf("}")`, o `JSON.parse` estoura, e `parsearResposta` descartava os
+dez — mais duas chamadas de modelo, sob rate limit de free tier, para chegar ao
+mesmo lugar.
+
+`fecharJsonTruncado` varre o texto com uma máquina de estados mínima —
+dentro/fora de string, escape, profundidade de `{}` e `[]` — guardando o índice
+logo depois de **cada elemento completo do array de átomos**, corta no último e
+fecha o que ficou aberto. Sem nenhum elemento completo devolve `null`, e aí o
+erro é o de sempre: inventar `[]` transformaria um acidente de teto numa lista
+vazia legítima. O array é achado pela chave `"atomos"` e não pelo primeiro `[`,
+porque o envelope pode trazer `"entidades"` antes.
+
+**Separada de `isolarJson` de propósito.** Aquela responde "onde começa e termina
+o JSON nesta resposta", e para um texto cortado a resposta dela está certa — o
+problema é que não há fim. Misturar as duas perguntas faria `isolarJson` mentir
+sobre resposta íntegra. Ela só é chamada no `catch` do `JSON.parse`: resposta
+inteira nunca passa por ali.
+
+O que mudou de comportamento, e é o que importa:
+
+- a **segunda** tentativa que trunca deixou de lançar e matar a janela: usa o que
+  foi salvo;
+- a **primeira** que trunca ainda dispara a segunda — o que veio pode estar
+  faltando o fim da lista —, mas agora com rede: fica **a melhor das duas pelo
+  número de átomos** (`melhorLeitura`), e no empate a íntegra. Na medição, a
+  chamada com ~10 átomos foi descartada em favor de uma que trouxe menos;
+- log próprio: `[extracao] sessão <id>: resposta cortada, N átomo(s)
+  recuperado(s)`;
+- `truncada` sobe da leitura ao `EstadoJanela`, dele ao `montarExtracao` — uma
+  janela cortada basta — e da `Extracao` à revisão, que **avisa**. Eu julgo a
+  lista à mão, e sem o aviso uma lista curta parece decisão do modelo em vez de
+  acidente de teto.
+
+**O teto não mudou junto**, e é de propósito: mexer no teto e no salvamento na
+mesma fatia esconderia qual dos dois funcionou.
 
 **Subir `MAX_TOKENS_SAIDA` não está na lista, e é de propósito.** Ele já foi
 subido uma vez depois da `mtgo3kaf5`, e a janela seguinte encheu os 8000 do
@@ -2292,6 +2416,18 @@ sessões reescreve a mesma comparação à mão, em `jaRevisada`. Está aqui por
 exportada e testada, e porque duas cópias da mesma regra divergem no primeiro
 ajuste.
 
+**`terminouDeProcessar` ganhou um segundo consumidor na 4.10**, e é a guarda do
+`DELETE` de sessão (§10): apagar no meio do pipeline correria com um `waitUntil`
+vivo, que voltaria a gravar o que acabou de sumir. A pergunta é a mesma — "nada
+mais vai mudar sozinho aqui" — e por isso é a mesma predicada, na rota e no botão.
+
+**`descartada_em` não é um estado, e é de propósito** (migration 008). A máquina
+descreve o que a sessão está *fazendo*; descartar é gesto meu, por fora, sobre
+uma sessão que já parou. Como valor de `status` obrigaria toda transição e todo
+guard a conhecer um estado que não transiciona para lugar nenhum. Como
+propriedade à parte, ele é lido num lugar só: o `WHERE s.descartada_em IS NULL`
+de `todasSessoes`.
+
 **A máquina de recuperação foi apagada inteira.** Com o chip da home saíram
 `GET /api/sessoes/abertas` e `sessoesAbertas()`, e com eles as peças que só
 existiam para alimentá-los: `STATUS_ABERTOS`, `estaAberta`, `foiAbandonada` e
@@ -2641,12 +2777,17 @@ entidade (4.6) continua só lendo. Labels que o código escreve:
 
 ```
 (:Sessao { id, iniciada_em, duracao_s, status, audio_key,
-           transcricao_key, chunks_total })
+           transcricao_key, chunks_total, descartada_em })          (008)
 ```
 
 `:Sessao` é infraestrutura de gravação, não conteúdo: gravar o nó sem
 confirmação não conflita com a regra 5 (nada entra no grafo sem aprovação) —
 essa regra vale para átomo e entidade.
+
+`descartada_em` (migration 008) é ISO, e **ausente é o caso normal**: toda sessão
+de antes da 4.10 passa no `IS NULL` de `todasSessoes` sem migração de dado
+nenhuma. Ele é o único efeito do `DELETE` de sessão sobre o grafo — os átomos e o
+`:GEROU` ficam onde estavam (regra 6, §10).
 
 ### 8.1 Schema da slice 2, aplicado e em uso
 
@@ -3020,7 +3161,8 @@ Contrato completo depois da 006:
 ```
 sessoes/<id>/manifest.json      { sessao_id, chunks: [{i, bytes, subido_em, transcrito, ext?}], finalizado }
 sessoes/<id>/chunk_000.webm     áudio do bloco gravado no navegador
-sessoes/<id>/chunk_000.opus     áudio importado — a extensão é a do arquivo de origem
+sessoes/<id>/chunk_000.wav      áudio importado e fatiado — WAV 16 kHz mono (slice 4.10)
+sessoes/<id>/chunk_000.opus     áudio importado que o navegador não fatiou — a extensão é a de origem
 sessoes/<id>/chunk_000.json     transcrição do bloco, offsets relativos, modelo, granularidade
 sessoes/<id>/candidatas_000.json quem o grafo acha que o bloco cita: { candidatas: [{chave, camada, score}], semantico, refeito? }
 sessoes/<id>/transcricao.json   final, offsets absolutos
@@ -3065,6 +3207,19 @@ o que mantém legível todo manifest escrito antes da importação existir
 (`extensaoDoChunk`). É esse campo que diz ao `transcreverBloco` onde o áudio
 está — procurar sempre em `.webm` mataria toda sessão importada.
 
+**Apagar uma sessão enumera daqui, e não de um `LIST`** (slice 4.10). `r2.ts` não
+tem `LIST` — nunca teve, e é por isso que `calibracao/indice.json` existe —, então
+`chavesDaSessao(manifest)` monta as chaves a partir do manifest: três por bloco
+(áudio na extensão registrada, transcrição, candidatas) mais as seis fixas. Mora
+em `chaves.ts` pela mesma razão que todo o resto: um lugar só monta chave, e uma
+segunda cópia do layout numa rota envelheceria calada na primeira chave nova.
+
+**O manifest é o último a ser apagado**, e a ordem é do próprio `chavesDaSessao`:
+ele é quem sabe quais blocos existem, e apagá-lo primeiro deixaria trinta e cinco
+objetos inalcançáveis para sempre. `calibracao/indice.json` **não** entra na
+lista: as correções daquela sessão são material de calibração, não dado de
+sessão, e apagá-las seria desaprender (§14).
+
 ## 10. Rotas
 
 | Rota | Faz | Notas |
@@ -3072,9 +3227,10 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 | `POST /api/sessoes` | cria `:Sessao {status:'gravando'}` | devolve `id` |
 | `GET /api/sessoes` | a lista de sessões, da mais recente para a mais antiga | teto de 50; **esconde sessão sem bloco** que não esteja `gravando` — ver abaixo |
 | `POST /api/sessoes/:id/chunks/:i/url` | presigned PUT de 5 min | corpo `{ext?}`; 415 fora da lista; o áudio não passa por aqui |
-| `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT → janelas)` | corpo `{ext?, duracao_s?}` |
+| `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT → janelas)` | corpo `{ext?, duracao_s?}`; a importação fatiada **não** manda `duracao_s` (§3.0) |
 | `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha **e extrai** em `waitUntil` | `ja_finalizada` a partir de `em_revisao`; antes disso, é o retry da extração |
 | `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s; `completa` é sobre a transcrição, não sobre a sessão |
+| `DELETE /api/sessoes/:id` | apaga os objetos da sessão no R2 e marca `descartada_em` | **409 se ainda está processando**; o grafo fica intacto (regra 6) — ver abaixo |
 | `POST /api/sessoes/:id/extrair` | dispara extração **e resolução** de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` refaz as duas e sobrescreve |
 | `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5; `anterior` vem como cabeçalho, e a lista antiga só com `?anterior=1` |
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
@@ -3121,6 +3277,24 @@ ou não (§4.11).
 `GET /api/sessoes`, `GET /api/sessoes/:id`, `GET /api/sessoes/:id/extracao`,
 `GET /api/entidades`, `GET /api/calibracao` e `GET /api/calibracao/sugestao`.
 
+**O `DELETE` de sessão apaga o material, não o grafo** (slice 4.10). Existe porque
+calibrar gera sessão de teste, e uma sessão de 17 min fatiada são 35 objetos no
+R2: limpar à mão no console não é caminho. A rota carrega o manifest, percorre
+`chavesDaSessao` na ordem (§9) e só então grava `descartada_em` no `:Sessao`.
+
+A guarda é `terminouDeProcessar(status)` — 409 em qualquer outro. Apagar no meio
+do pipeline correria com um `waitUntil` vivo, que voltaria a gravar o que acabou
+de sumir, e sobraria um objeto órfão de uma sessão já fora da lista, sem `LIST`
+que o encontrasse. `Sessoes.tsx` aplica a mesma pergunta para não oferecer um
+botão que levaria 409. A contrapartida: sessão largada em `gravando` não tem
+botão nenhum (§14).
+
+**Sem `DELETE` no grafo**, e não por conservadorismo: a regra 6 proíbe `DELETE`
+em átomo, e um `DETACH DELETE` no `:Sessao` levaria junto o `GEROU` e orfanaria
+os átomos de uma sessão já confirmada. O nó fica, marcado; `todasSessoes` filtra
+por `descartada_em IS NULL`; e `audio_key` passa a apontar para objetos que não
+existem mais — consequência aceita e escrita na migration 008 (§14).
+
 **`GET /api/sessoes` esconde uma categoria de nó, e isso não é bug.** O filtro é
 `chunks_total > 0 || status === "gravando"`: uma sessão criada e largada antes de
 o primeiro bloco subir não é áudio nenhum e não aparece na lista. O `:Sessao`
@@ -3137,7 +3311,7 @@ número não vai bater com a tela.
 | `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e abre a revisão sozinho |
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, editar, escutar cada trecho, resolver a dúvida de quem é, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
-| `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração — e a cor que diz o que já foi revisado |
+| `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, escrever o perfil |
 | `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
 | `/agentes` | `Agentes` | o fluxo desenhado — os sete agentes, os dados entre eles e o único nó humano; clicar numa caixa abre o prompt e o modelo daquele agente |
@@ -3463,7 +3637,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 13. Verificação
 
-- `pnpm test` — **48 arquivos, 840 testes**, sem credencial e sem rede. A lista
+- `pnpm test` — **48 arquivos, 869 testes**, sem credencial e sem rede. A lista
   abaixo comenta os que valem uma explicação; a cobertura inteira se lê em
   `tests/`. Os que não têm bullet próprio cobrem a lógica pura da slice 1
   (chaves, manifest, estados, offsets, vocabulário, backoff, retry de rede,
@@ -3498,6 +3672,13 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   sufixos, o guarda-corpo do envelope e a integridade do desenho do fluxo.
 - `tests/importacao.test.ts` — `transcreverBloco` busca o áudio na extensão que o
   manifest registrou, e continua caindo em `.webm` quando o campo não existe.
+- **O `fatiador` não entra em `pnpm test`**, e não vai entrar: ele é
+  `AudioContext` e `decodeAudioData` puros, e simulá-los testaria o simulador. O
+  que a 4.10 tem de testável sem navegador é `fecharJsonTruncado` — inclusive o
+  caso que uma implementação ingênua erra, uma chave `}` dentro do texto do
+  átomo — e `chavesDaSessao`, incluindo o manifest por último. **O que o fatiador
+  faz se verifica na importação real**, pelo log: `[janela] sessão <id> janela 0
+  (blocos 0-3)` é o critério da fatia.
 - `tests/embedding.test.ts` — a string canônica da entidade e o hash dela: o que
   entra, o que é omitido, e o que faz uma entidade sair de dia. Sem rede: a
   qualidade da vizinhança em si eu avalio à mão, olhando a lista.
@@ -3595,6 +3776,41 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
+- **A importação passa a custar 35 chamadas de STT em vez de 1** (4.10),
+  concentradas em cerca de um minuto em vez de espalhadas por dezessete. É o
+  preço declarado de ter um caminho só; `BLOCOS_SIMULTANEOS = 2` mais a espera de
+  `comEsperaDeLimite` são a mitigação, e é a **medição** da primeira importação
+  real que diz se ela basta. Se não bastar, a saída registrada é o bloco de 2
+  min: 9 chamadas, ao custo de generalizar `offsetDoBloco` e `janelasDe`.
+- **Trinta e cinco costuras na transcrição importada, onde antes havia zero**
+  (4.10). Arquivo inteiro não corta palavra ao meio; blocos de 30 s cortam em 35
+  lugares. A gravação sempre pagou isso; a importação passa a pagar, e em troca
+  ganha a janela e o RAG por bloco.
+- **Os bytes subidos pela importação crescem ~10×** (4.10). WAV 16 kHz mono são
+  ~960 KB por bloco, ~34 MB numa sessão de 17 min, contra ~3 MB do opus
+  original. Sai caro no 4G. WebCodecs resolveria, ao custo de dependência nova e
+  suporte irregular no Safari (§3.0).
+- **Navegador que não decodifica o formato volta ao bloco único — e em silêncio**
+  (4.10). `fatiarArquivo` devolve `null`, a importação sobe o arquivo inteiro e a
+  janela fica inerte de novo. **Nada na tela distingue** uma importação fatiada de
+  uma que caiu no fallback: o log é o único lugar onde a diferença aparece
+  (`[fatiador]`, e depois a ausência das linhas `[janela]`).
+- **Sessão descartada deixa átomo apontando para o vazio** (4.10). O nó
+  `:Sessao` e os átomos continuam no grafo (regra 6), e `audio_key` e
+  `transcricao_key` passam a apontar para objetos que não existem mais — o player
+  da revisão e o da calibração dão 404 num átomo de sessão apagada. Consequência
+  aceita, não descuido.
+- **Sessão largada em `gravando` não tem botão de apagar** (4.10). A guarda é
+  `terminouDeProcessar`, e ela existe para não correr com um `waitUntil` vivo
+  (§10). Sessão sem bloco nenhum já não aparece na lista; a que subiu um bloco e
+  foi abandonada fica lá até alguém finalizá-la.
+- **As correções de uma sessão descartada continuam em `calibracao/indice.json`**
+  (4.10), e isso é deliberado: correção é material de calibração, não dado de
+  sessão, e apagá-la seria desaprender. O efeito colateral é que o áudio à mão da
+  tela de calibração deixa de tocar para essas linhas.
+- **Proposta salva de resposta cortada pode estar incompleta** (4.10), e não há
+  como saber o que faltava: o modelo foi interrompido, não perguntado. O aviso na
+  revisão é a única defesa, e quem julga a lista sou eu.
 - **`HISTORIA` puxa contra a disciplina de volume, e as duas moram no mesmo
   prompt** (007). Uma seção manda destilar e não passar de 10 a 20 átomos; a
   outra manda não resumir o episódio. O extrator decide sozinho qual das duas
