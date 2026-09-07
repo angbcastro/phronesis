@@ -10,7 +10,6 @@ import { describe, expect, it } from "vitest";
 import {
   diagnostico,
   faltouOrcamento,
-  opcoesDeRaciocinio,
   textoDaResposta,
   veioDoPensamento,
 } from "@/lib/modelos";
@@ -98,20 +97,5 @@ describe("de onde sai o texto da resposta", () => {
   it("texto só de espaço conta como vazio", () => {
     const r = { finishReason: "stop", text: "  \n ", reasoningText: '{"atomos":[]}' };
     expect(textoDaResposta(r)).toBe('{"atomos":[]}');
-  });
-});
-
-describe("pedir ao provedor para pensar menos", () => {
-  it("provedor fora da tabela não recebe opção nenhuma", () => {
-    // Mesmo padrão seguro do vocabulário: opção que o provedor não conhece some
-    // em silêncio, e silêncio combinado é melhor que silêncio por engano.
-    expect(opcoesDeRaciocinio("openai/gpt-5")).toBeUndefined();
-  });
-
-  it("o que a tabela tiver vem sob a chave do provedor", () => {
-    // A tabela está vazia até `pnpm probe:raciocinio` medir. Este teste vale
-    // para o dia em que ela não estiver: a forma é `{ provedor: { opção } }`.
-    const r = opcoesDeRaciocinio("zai/glm-5.3-flash");
-    if (r !== undefined) expect(Object.keys(r)).toEqual(["zai"]);
   });
 });

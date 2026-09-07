@@ -1,24 +1,30 @@
 /**
- * Descobre qual opção de provedor de fato corta o raciocínio do modelo de
- * extração.
+ * Descobre qual opção de provedor de fato corta o raciocínio de um modelo.
  *
  *   pnpm probe:raciocinio
  *   EXTRACAO_MODEL=zai/glm-5.3 pnpm probe:raciocinio
+ *   PROBE_SO=maxReasoningTokens pnpm probe:raciocinio
  *
- * Por que medir em vez de escrever o nome direto no código: **opção que o
- * provedor não conhece some em silêncio**. É a mesma lição que o vocabulário do
- * STT já ensinou uma vez — o `google/gemini-3.5-transcribe` engole cinco nomes
- * de opção diferentes e devolve saída idêntica, sem um `warning` sequer
- * (ARCHITECTURE.md §4.4). Chutar aqui daria a impressão de conserto e deixaria
- * o raciocínio solto do mesmo jeito.
+ * **O sistema não limita o pensamento, e isto aqui não é o instrumento de uma
+ * decisão pendente — é o instrumento de uma já tomada.** O raciocínio é o que a
+ * extração faz de útil: ler um diário falado e decidir o que vira átomo é
+ * exatamente a tarefa em que pensar antes de escrever paga. Contra o estouro de
+ * orçamento existe defesa própria, o escalonamento de teto de `extracao.ts`.
  *
- * O que a sonda procura, e que o log da sessão `mtqoeoqh3e3724514q1f` mostrou:
+ * A sonda fica porque a pergunta pode voltar — outro modelo em `EXTRACAO_MODEL`,
+ * outro provedor, outro comportamento — e porque a resposta que ela já deu para
+ * o `zai/glm-5.3-flash` está registrada em `ARCHITECTURE.md` §4.4: **dá** para
+ * calar este modelo, com duas opções diferentes, e escolhemos não calar.
  *
- *   finishReason=length entrada=5210 saida=8000 raciocinio=8000 texto=0 char
+ * Por que medir em vez de escrever o nome direto no código, se um dia for o
+ * caso: **opção que o provedor não conhece some em silêncio**. É a mesma lição
+ * que o vocabulário do STT já ensinou uma vez — o `google/gemini-3.5-transcribe`
+ * engole cinco nomes de opção diferentes e devolve saída idêntica, sem um
+ * `warning` sequer (§4.4).
  *
- * Oito mil tokens de orçamento, oito mil gastos pensando, zero de JSON. A opção
- * boa é a que faz `raciocinio` cair **e** `texto` aparecer. Opção que derruba a
- * chamada é resultado tão útil quanto: é um nome a não usar.
+ * A opção que serve é a que faz `raciocinio` cair **e** `texto` continuar
+ * aparecendo. Opção que derruba a chamada é resultado tão útil quanto: é um nome
+ * a não usar.
  *
  * Roda solto no node e **não importa de `src/`** — src/ usa import sem extensão,
  * que node puro não resolve. Por isso o formato do diagnóstico está repetido
@@ -184,8 +190,9 @@ async function main() {
   for (const t of lista) await medir(t);
 
   console.log(
-    "\n  A opção marcada vai para OPCAO_DE_RACIOCINIO em src/lib/modelos.ts, com a data.\n" +
-      "  Nenhuma marcada: o escalonamento de teto em extracao.ts fica sendo a única defesa.\n" +
+    "\n  Lembre que hoje o sistema NÃO limita o pensamento, de propósito: contra o\n" +
+      "  estouro de orçamento quem responde é o escalonamento de teto de extracao.ts.\n" +
+      "  Isto aqui mede se dá para limitar, não decide que se deve.\n" +
       "  Se o provedor que atendeu não for o do id, rode de novo com PROBE_PROVEDOR=<ele>.\n",
   );
 }

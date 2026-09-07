@@ -15,10 +15,11 @@ Este arquivo só diz o que fazer a seguir.
 > idêntica e falhou igual, e o passe único de fallback levou 429 do free tier.
 > A sessão foi para `erro`, e o `POST /:id/extrair` respondia 409 em cima disso.
 > **Os três consertos estão em código** (§4.6 e §5 do `ARCHITECTURE.md`): o
-> escalonamento de teto, a leitura do pensamento e o `podeReextrair`. O que
-> falta desta linha é **medir**: `pnpm probe:raciocinio` decide o conteúdo de
-> `OPCAO_DE_RACIOCINIO`, que nasceu vazia de propósito. A seção 2 continua de
-> pé — a validação por olho ainda não aconteceu.
+> escalonamento de teto, a leitura do pensamento e o `podeReextrair`. Limitar o
+> raciocínio foi medido (`pnpm probe:raciocinio`) e **recusado**: dá para calar
+> este modelo, e calar cobraria a conta na qualidade da lista — o §4.4 registra
+> as duas opções que funcionam, para o dia em que a pergunta voltar. A seção 2
+> continua de pé — a validação por olho ainda não aconteceu.
 
 > **Atualizado em 06/09, depois da 4.9.** A `Specs/slice-4.9.md` foi executada
 > inteira em código — o RAG por bloco, o dossiê da janela, o `extracao-7`, o

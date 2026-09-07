@@ -38,7 +38,6 @@ import {
   faltouOrcamento,
   garantirGateway,
   modeloResolucao,
-  opcoesDeRaciocinio,
   textoDaResposta,
   veioDoPensamento,
 } from "./modelos";
@@ -838,9 +837,6 @@ export async function resolverReferencias(
               prompt,
               temperature: 0,
               maxOutputTokens: teto,
-              // O cap na origem, quando se sabe pedir a este provedor
-              // (`modelos.ts`). Mesmo modelo da extração, mesmo modo de falha.
-              providerOptions: opcoesDeRaciocinio(modeloDaChamada),
               // A espera longa daqui é a única camada de retry: as três
               // tentativas rápidas do SDK contra um 429 não destravam nada e
               // ainda alimentam o limite que estão esperando (`limite.ts`).

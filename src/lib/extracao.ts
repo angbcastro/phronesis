@@ -36,7 +36,6 @@ import {
   faltouOrcamento,
   garantirGateway,
   modeloExtracao,
-  opcoesDeRaciocinio,
   textoDaResposta,
   veioDoPensamento,
 } from "./modelos";
@@ -116,8 +115,15 @@ export class ExtracaoError extends Error {
  * **E subir este número não é o conserto.** Depois da `mtgo3kaf5` ele já foi
  * subido uma vez, e a janela 0 da `mtqoeoqh3e3724514q1f` gastou os 8000
  * inteiros pensando do mesmo jeito, com 5210 tokens de entrada. O modelo enche
- * o que houver: o cap na origem é `opcoesDeRaciocinio()`, e o escalonamento
- * abaixo é o seguro para quando não se sabe pedir a este provedor.
+ * o que houver.
+ *
+ * O conserto também **não** é mandar o modelo pensar menos, embora se saiba
+ * como (`modelos.ts`, e a medição no §4.4): o raciocínio é o que esta tarefa
+ * tem de mais útil, e cortá-lo cobraria a conta na qualidade da lista — a única
+ * coisa aqui que não tem teste automático. O conserto é `faltouOrcamento()` com
+ * o escalonamento abaixo: cortado no pensamento, a segunda tentativa vai com o
+ * dobro de teto em vez de repetir a mesma chamada. Custa uma chamada a mais nas
+ * janelas em que ele pensa muito, e essa é a troca escolhida.
  */
 const MAX_TOKENS_SAIDA = 8000;
 
@@ -882,10 +888,6 @@ export async function extrairJanela(
             prompt,
             temperature: 0,
             maxOutputTokens: teto,
-            // O cap na origem, quando se sabe pedir a este provedor. Sem ele o
-            // escalonamento abaixo ainda salva a janela, mas pagando uma
-            // chamada a mais toda vez que o modelo resolver pensar demais.
-            providerOptions: opcoesDeRaciocinio(modelo),
             // A espera longa daqui é a única camada de retry (`limite.ts`): as
             // três tentativas rápidas que o SDK faz sozinho contra um 429 não
             // destravam nada e ainda alimentam o limite que estão esperando.

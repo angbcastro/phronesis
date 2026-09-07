@@ -14,11 +14,11 @@ com a revisão), 4.7 (o painel dos agentes), 4.8 (a extração acompanha a fala)
 4.8.1 (as seis emendas) e 4.9 (o extrator conhece o grafo) construídas.**
 A primeira janela real desde a 4.8 **rodou e falhou** (sessão
 `mtqoeoqh3e3724514q1f`): o raciocínio do modelo comeu o orçamento de saída
-inteiro e a extração não produziu JSON nenhum. O que isso ensinou está no §4.6 —
-`faltouOrcamento`, `textoDaResposta`, o escalonamento de teto e a tabela
-`OPCAO_DE_RACIOCINIO`, medida em 07/09 e já em uso. A
-janela seguinte é que diz se as duas fatias estão de pé; o `PROXIMA-SESSAO.md`
-§2 continua sendo a lista do que falta gravar e olhar.
+inteiro e a extração não produziu JSON nenhum. O que isso ensinou está no §4.6:
+`faltouOrcamento`, `textoDaResposta` e o escalonamento de teto — **e a decisão
+de não calar o raciocínio**, ainda que a medição do §4.4 mostre que dá. A janela
+seguinte é que diz se as duas fatias estão de pé; o `PROXIMA-SESSAO.md` §2
+continua sendo a lista do que falta gravar e olhar.
 Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. A
 extração acontece **durante** a gravação, janela a janela, e quando eu paro
 sobra só a janela do fim; a proposta vai para `extracao.json` e a sessão para
@@ -655,36 +655,46 @@ sem opção nenhuma, sem um `warning` sequer (§4.2.1). É por isso que
 o vocabulário some sem avisar, e um `STT_MODEL` trocado leva junto a metade A da
 slice 3 sem que nada na tela mude.
 
-`OPCAO_DE_RACIOCINIO` é a segunda tabela desse formato, pela mesma razão e com o
-mesmo padrão seguro: é por ela que se pede ao modelo de extração para pensar
-menos (§4.6), e o nome da opção também acompanha o provedor sem acompanhar o
-protocolo. Ela nasceu **vazia**, e só recebeu o que `pnpm probe:raciocinio`
-mediu — escrever um nome plausível ali daria a impressão de conserto e deixaria
-o raciocínio solto, que é exatamente o falso positivo que o vocabulário custou
-uma vez.
+#### Dá para calar o raciocínio deste modelo, e não calamos
+
+A mesma mecânica de opção-por-provedor vale para pedir a um modelo que **pense
+menos**, e a pergunta apareceu quando a janela 0 da sessão
+`mtqoeoqh3e3724514q1f` gastou os 8000 tokens de saída inteiros raciocinando sem
+escrever um byte de JSON (§4.6). `scripts/raciocinio.ts` foi escrito para
+responder se dava, e respondeu que dá.
+
+**A decisão é não usar.** O raciocínio não é o defeito — é o que a extração faz
+de útil. Ler um diário falado e decidir o que vira átomo, de quem é, e o que
+estende o que já foi dito é exatamente a tarefa em que pensar antes de escrever
+paga. Cortá-lo consertaria o sintoma no lugar em que ele dói menos e cobraria a
+conta na **qualidade da lista**, que é a única coisa deste sistema sem teste
+automático e que se julga à mão, sessão por sessão. O estouro tem defesa
+própria, e ela é o escalonamento de teto do §4.6.
+
+A medição fica registrada porque a pergunta pode voltar — outro
+`EXTRACAO_MODEL`, outro provedor, outro comportamento —, e porque saber que o
+canal existe é diferente de usá-lo.
 
 **A medição, de 07/09, contra `zai/glm-5.3-flash`** (que o Gateway resolveu para
 `baseten`), mesmo prompt e mesmo teto de 8000 em todas:
 
 | opção | raciocínio | texto | |
 |---|---|---|---|
-| sem opção | 117 | 613 char | a linha de base |
-| `reasoningEffort: "minimal"` | **0** | 613 char | **é a que está em uso** |
-| `thinking: { type: "disabled" }` | **0** | 613 char | mediu idêntico; é o plano B |
+| sem opção | 117 | 613 char | **é assim que roda** |
+| `reasoningEffort: "minimal"` | 0 | 613 char | funciona, e não usamos |
+| `thinking: { type: "disabled" }` | 0 | 613 char | funciona, e não usamos |
 | `reasoning_effort: "minimal"` | 117 | 613 char | ignorada em silêncio |
 | `enable_thinking: false` | 162 | 613 char | ignorada em silêncio |
 
-As duas que funcionam zeram o raciocínio e devolvem **o mesmo texto**. As duas
-que não funcionam não avisam: o que as denuncia é o número igual — ou maior —
-ao da linha de base, e é exatamente por isso que o nome não podia ser escrito
-sem medir. `reasoningEffort` e não `thinking` porque "mínimo" é piso e
-"disabled" é chave geral, e a extração é tarefa de julgamento.
+Duas funcionam de fato: zeram o raciocínio e devolvem o mesmo texto. As outras
+duas não avisam que não pegaram — o que as denuncia é o número igual, ou maior,
+ao da linha de base. É por isso que um nome desses nunca poderia ser escrito no
+código sem medir, e é a mesma armadilha do vocabulário do STT.
 
 Três nomes ficaram **sem medir** — `reasoningEffort: "none"`,
 `reasoning: { enabled: false }` e `maxReasoningTokens: 512` —, porque o rate
-limit da conta chegou no meio da sonda. O último é o que interessaria remedir:
-teto é melhor que interruptor. `PROBE_SO=maxReasoningTokens` roda só ele, sem
-gastar o limite com a lista inteira.
+limit da conta chegou no meio da sonda. `PROBE_SO=maxReasoningTokens` roda só
+um, sem gastar o limite com a lista inteira.
 
 A sonda pergunta sob duas chaves (`PROBE_PROVEDOR`) porque o Gateway resolveu
 `zai/glm-5.3-flash` para `resolvedProvider: baseten`: não dá para saber de fora
@@ -821,18 +831,24 @@ As defesas de hoje, do mais alto para o mais baixo:
 
 | | |
 |---|---|
-| `opcoesDeRaciocinio(modelo)` | o cap na **origem**: pede ao provedor para pensar menos. Tabela por provedor em `modelos.ts`, no mesmo desenho de `OPCAO_DE_VOCABULARIO`, e **preenchida pelo que `pnpm probe:raciocinio` mediu** — nome de opção que o provedor não conhece some em silêncio (§4.4) |
-| escalonamento do teto | cortado no pensamento, a segunda tentativa vai com `MAX_TOKENS_SAIDA * 2`. É o seguro para quando não se sabe pedir a este provedor |
+| escalonamento do teto | cortado no pensamento, a segunda tentativa vai com `MAX_TOKENS_SAIDA * 2` em vez de repetir a mesma chamada. **É a defesa principal**, e custa uma chamada a mais nas janelas em que o modelo pensa muito |
 | `textoDaResposta(resposta)` | o JSON que foi parar no pensamento ainda é lido — **exceto** em `length`, onde o raciocínio está cortado no meio e `isolarJson` casaria um rascunho abandonado |
 | a resposta crua no erro | os primeiros 400 caracteres vão na mensagem, e "resposta vazia" é dito com essas palavras |
 | `diagnostico(resposta)` | `finishReason`, tokens de entrada/saída/raciocínio e o tamanho do texto e do pensamento, nas duas tentativas. Mora em `modelos.ts`: os três agentes têm o mesmo modo de falha |
 
 **Subir `MAX_TOKENS_SAIDA` não está na lista, e é de propósito.** Ele já foi
 subido uma vez depois da `mtgo3kaf5`, e a janela seguinte encheu os 8000 do
-mesmo jeito: o modelo ocupa o que houver. As duas últimas defesas são as mais
-antigas e as que mais importam — sem a resposta crua, "não é JSON válido" é
-indiagnosticável depois do fato, a mesma lição que o STT já tinha ensinado uma
-vez (5.1).
+mesmo jeito: o modelo ocupa o que houver.
+
+**Pedir ao modelo para pensar menos também não está na lista, e também é de
+propósito** — ainda que se saiba exatamente como, e a medição esteja no §4.4. O
+raciocínio é o que esta tarefa tem de mais útil; cortá-lo trocaria um estouro
+raro, que já tem defesa, por uma perda de qualidade constante e sem teste que a
+pegue. A troca escolhida é a outra: uma chamada a mais quando estoura.
+
+As duas últimas defesas são as mais antigas e as que mais importam — sem a
+resposta crua, "não é JSON válido" é indiagnosticável depois do fato, a mesma
+lição que o STT já tinha ensinado uma vez (5.1).
 
 O prompt também ganhou uma proibição explícita de **comentar a transcrição**. O
 modelo devolveu um átomo dizendo que o texto era confuso e circular; falar
@@ -3734,15 +3750,14 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   nasceram às 13:28:17 e a sessão seguinte só começou às 13:28:37: a extração
   dela encontrou as duas já lá e o segundo confirmar reaproveitou os nós em vez
   de criar novos.
-- **`zai/glm-5.3-flash` é modelo de raciocínio, e o efeito do cap na qualidade
-  ainda não foi julgado.** Ele chegou a gastar 1720 tokens pensando para 122 de
-  texto, e na janela 0 da sessão `mtqoeoqh3e3724514q1f` gastou os 8000 inteiros
-  sem escrever um byte de JSON. As defesas do §4.6 seguram a janela, e desde
-  07/09 `OPCAO_DE_RACIOCINIO` manda `reasoningEffort: "minimal"`, medido zerando
-  o raciocínio sem mudar o texto da sonda. **O que falta é a sessão real**: se
-  extrair com o raciocínio no piso piora a lista, quem diz sou eu, na revisão.
-  `maxReasoningTokens` — teto em vez de interruptor — ficou sem medir por rate
-  limit. Trocar o modelo
+- **`zai/glm-5.3-flash` pensa muito, e deixamos.** Ele chegou a gastar 1720
+  tokens pensando para 122 de texto, e na janela 0 da sessão
+  `mtqoeoqh3e3724514q1f` gastou os 8000 inteiros sem escrever um byte de JSON.
+  As defesas do §4.6 seguram a janela pelo teto, não pela mordaça: calar o
+  raciocínio é possível e medido (§4.4), e foi recusado porque cobraria a conta
+  na qualidade da extração. **O limite conhecido que sobra é o custo**: janela
+  que estoura paga duas chamadas em vez de uma, e não há medida de quantas
+  estouram — a sessão real é que diz. Trocar o modelo
   continua sendo `EXTRACAO_MODEL`, sem tocar em código — e vale notar que
   `zai/glm-5.3-flash` nem aparece na lista de modelos conhecidos do
   `@ai-sdk/gateway` instalado (4.0.62), que conhece `zai/glm-5.3`.

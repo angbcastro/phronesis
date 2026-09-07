@@ -273,63 +273,30 @@ export const provedorAceitaVocabulario = (modelo: string): boolean =>
   OPCAO_DE_VOCABULARIO[provedorDe(modelo)] !== undefined;
 
 /**
- * Como cada provedor recebe o pedido de pensar menos.
+ * **Por que este sistema não pede ao modelo para pensar menos.**
  *
- * Mesmo desenho de `OPCAO_DE_VOCABULARIO`, e pela mesma razão: **o nome da
- * opção não acompanha o provedor**, e opção que ele não conhece some em
- * silêncio. Provedor fora da tabela não recebe opção nenhuma — silêncio é o
- * padrão seguro, e uma extração que pensa demais é melhor que uma que quebra.
+ * Existiu aqui uma `OPCAO_DE_RACIOCINIO`, no desenho de
+ * `OPCAO_DE_VOCABULARIO`, mandando `reasoningEffort: "minimal"` para o `zai`.
+ * A medição que a sustentava é real e está em `ARCHITECTURE.md` §4.4 — dá para
+ * calar o raciocínio deste modelo, e duas opções fazem isso de fato. **A
+ * decisão é não usá-las.**
  *
- * É o cap na origem. Sem ele, `faltouOrcamento` e o escalonamento de teto em
- * `extracao.ts` conseguem salvar a janela, mas pagando uma chamada a mais toda
- * vez que o modelo resolver pensar muito.
+ * O raciocínio não é o defeito: é o que a extração faz de útil. Ler um diário
+ * falado e decidir o que vira átomo, de quem é, e o que estende o que já foi
+ * dito é exatamente a tarefa em que pensar antes de escrever paga. Trocar isso
+ * por uma lista mais barata seria consertar o sintoma no lugar onde ele dói
+ * menos e cobrar a conta na qualidade — que é a única coisa deste sistema que
+ * não tem teste automático, e que eu julgo à mão, sessão por sessão.
  *
- * **Preenchida por medição, não por preferência** (`pnpm probe:raciocinio`,
- * 2026-09-07, contra `zai/glm-5.3-flash`, que o Gateway resolveu para
- * `baseten`). Mesmo prompt, mesmo teto de 8000, uma chamada por nome:
+ * O defeito era o **estouro**, e ele tem defesa própria: `faltouOrcamento()`
+ * distingue a causa, e a segunda tentativa de `extracao.ts` vai com o dobro de
+ * teto em vez de repetir a mesma chamada. Custa uma chamada a mais nas janelas
+ * em que o modelo resolve pensar muito, e essa é a troca deliberada.
  *
- *   sem opção                        raciocinio=117  texto=613 char
- *   reasoningEffort="minimal"        raciocinio=0    texto=613 char   ← esta
- *   thinking={type:"disabled"}       raciocinio=0    texto=613 char
- *   reasoning_effort="minimal"       raciocinio=117  texto=613 char   ignorada
- *   enable_thinking=false            raciocinio=162  texto=613 char   ignorada
- *
- * As duas primeiras zeram o raciocínio e devolvem **o mesmo texto**; as duas
- * últimas somem em silêncio — o número igual (ou maior) ao da linha de base é o
- * que denuncia, e é por isso que o nome não podia ser escrito aqui sem medir.
- * `reasoningEffort` e não `thinking`: "mínimo" é piso, "disabled" é chave
- * geral, e para uma tarefa de julgamento o piso é a escolha conservadora. Se um
- * dia parar de valer, `thinking: { type: "disabled" }` mediu idêntico.
- *
- * Três nomes (`reasoningEffort="none"`, `reasoning={enabled:false}`,
- * `maxReasoningTokens=512`) ficaram **sem medir**: o rate limit da conta chegou
- * no meio da sonda. O último é o que interessaria remedir — teto é melhor que
- * interruptor —, e `PROBE_SO=maxReasoningTokens` roda só ele.
+ * `scripts/raciocinio.ts` continua no repositório: ele é o instrumento que
+ * responde "dá para limitar este provedor?" se um dia a pergunta voltar — e a
+ * resposta medida para o `zai/glm-5.3-flash` já está registrada.
  */
-const OPCAO_DE_RACIOCINIO: Record<string, Record<string, ValorJson>> = {
-  zai: { reasoningEffort: "minimal" },
-};
-
-/**
- * O que cabe num `providerOptions`. Escrito aqui, e não importado de
- * `@ai-sdk/provider`, porque pacote de provedor não entra neste projeto — a
- * regra 8 vale para o tipo como vale para o código (`tests/gateway.test.ts`).
- */
-type ValorJson = string | number | boolean | null | ValorJson[] | { [k: string]: ValorJson };
-
-/**
- * O `providerOptions` que pede a este modelo para pensar menos, ou `undefined`
- * quando não se sabe pedir a ele.
- */
-export function opcoesDeRaciocinio(
-  modelo: string,
-): Record<string, Record<string, ValorJson>> | undefined {
-  const provedor = provedorDe(modelo);
-  const opcao = OPCAO_DE_RACIOCINIO[provedor];
-  if (!opcao) return undefined;
-
-  return { [provedor]: opcao };
-}
 
 /**
  * Modelo de embedding (slice 4.5). `EMBEDDING_MODEL` troca sem tocar em código,

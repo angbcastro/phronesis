@@ -27,7 +27,6 @@ import { secoesDoPrompt } from "./extracao";
 import {
   garantirGateway,
   modeloCalibracao,
-  opcoesDeRaciocinio,
   textoDaResposta,
 } from "./modelos";
 import { carimbo, efetivo } from "./overrides";
@@ -309,8 +308,6 @@ ${material}`;
       prompt,
       temperature: 0,
       maxOutputTokens: 4000,
-      // O cap na origem, quando se sabe pedir a este provedor (`modelos.ts`).
-      providerOptions: opcoesDeRaciocinio(modelo),
     });
     // Cai no pensamento quando o modelo escreveu a resposta lá — mesmo modelo
     // de raciocínio da extração, mesmo modo de falha.
