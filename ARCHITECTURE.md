@@ -2,7 +2,7 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.8.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.9.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
@@ -10,8 +10,11 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.8.md`.
 
 **Estado: slice 2 fechada e validada; slices 3 (higiene do grafo), 4
 (identidade por contexto), 4.5 (o grafo ganha vetor), 4.6 (o prompt aprende
-com a revisão), 4.7 (o painel dos agentes) e 4.8 (a extração acompanha a fala)
-construídas.**
+com a revisão), 4.7 (o painel dos agentes), 4.8 (a extração acompanha a fala),
+4.8.1 (as seis emendas) e 4.9 (o extrator conhece o grafo) construídas.**
+As duas últimas estão **verificadas só por teste**: nenhuma janela real foi
+extraída desde a 4.8, e o `PROXIMA-SESSAO.md` §2 é a lista do que falta gravar e
+olhar.
 Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. A
 extração acontece **durante** a gravação, janela a janela, e quando eu paro
 sobra só a janela do fim; a proposta vai para `extracao.json` e a sessão para
@@ -29,8 +32,8 @@ o vencedor na sessão seguinte em vez de renascer como nó novo.
 **O sistema descobre de quem eu estou falando pelo contexto, e não pela grafia
 do nome** (seções 4.8 e 8.3). "Raffa" e "Rapha" são o mesmo som: o STT escreve
 uma grafia só para os dois, e a grafia carrega **zero** sinal sobre quem é. Por
-isso são **dois agentes e não um** — o `extracao-6` extrai e devolve o nome cru,
-e o `resolucao-2` atribui cada menção a um nó, lendo os três campos de perfil da
+isso são **dois agentes e não um** — o `extracao-7` extrai e propõe o nó, e o
+`resolucao-3` valida cada menção, lendo os três campos de perfil da
 entidade. Dúvida **destaca, não trava**: a revisão marca o átomo, mostra o motivo
 e o confirmar continua liberado. Sessão em que nenhuma menção é ambígua não
 chama o agente 2 e não paga nada.
@@ -99,16 +102,36 @@ janela de 2 min fecha durante a própria gravação**: extrai, resolve, e soma o
 A janela vê o que as anteriores propuseram e **estende** um átomo em vez de
 duplicá-lo — inclusive o `ROTINA`, que é no máximo um por sessão. É esse
 mecanismo, e não uma passada de costura no fim, que segura o volume da lista.
-`extracao-6` é a mesma `INSTRUCOES_BASE` da 4.7, byte a byte, mais um bloco
-injetado; e numa sessão que cabe numa janela só — arquivo importado, gravação
+`extracao-7` é a mesma `INSTRUCOES_BASE` da 4.7, byte a byte, mais dois blocos
+injetados — o da janela e, desde a 4.9, o do dossiê; e numa sessão que cabe numa janela só — arquivo importado, gravação
 curta — o bloco some e o prompt sai idêntico ao de antes desta fatia.
+
+**E o extrator deixou de ignorar o grafo** (seções 4.6, 4.14 e 8.2). Era decisão
+declarada até a 4.8 — "o prompt da extração não sabe que entidades existem, e é
+de propósito" —, e a medição de 04/09 a derrubou: **um terço das 21 correções de
+5 sessões reais era conserto de grafia de nome próprio que o STT errou**
+("Jean"→"Giampaolo Lepore", "Dapta"→"Adapta"), e nenhuma das duas defesas
+existentes alcançava o caso. Agora, a cada bloco transcrito, uma busca de cinco
+camadas pergunta ao grafo quem aquele trecho parece citar, e a janela recebe o
+**dossiê** das até 30 candidatas antes de extrair. O extrator responde
+`{citado, chave}`: a grafia que a transcrição escreveu, e o nó que ele
+reconheceu — e escreve o **nome gravado** dentro do texto do átomo, que é onde o
+nome errado se fixava, inclusive dentro do vetor.
+
+Três consequências, e as três são decisões: o agente 2 passou a **validar toda
+menção** com candidato (o critério 5 da slice 4 morreu de propósito, e sessão
+sem ambiguidade passou a pagar); a grafia que eu falei **vira alias do nó** no
+confirmar, então "jean" resolve por casamento exato já na sessão seguinte; e a
+primeira linha do §8.2 — "nada aqui é automático" — deixou de valer para o nó de
+alias, que não é uma fusão porque nasce sem átomo e desfazê-lo é apagar duas
+coisas.
 
 O que ainda não existe: busca, tela Perguntar, `:Foco`, as 2-4 perguntas do
 ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
 deduplicação de **átomo** — dizer a mesma coisa em duas sessões ainda cria dois.
 A 4.6 está construída inteira — captura, tela, regras e o `calibracao-1`. O que
 falta é **uso**: nenhuma regra foi aprovada ainda, e enquanto não for, o
-`extracao-6` continua saindo byte a byte igual ao de antes dela.
+`extracao-7` continua saindo byte a byte igual ao de antes dela.
 Tudo slice 5, e tudo dependente de material acumulado: uma pergunta boa precisa
 saber de quem se está falando, que é o que a slice 4 entrega, e achar o que já foi
 dito sem varrer o grafo inteiro, que é o que a 4.5 entrega.
@@ -170,8 +193,10 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   janela.ts       a unidade de extração: fatiar o manifest, reivindicar a janela,
                   somar o que ela produziu ao acumulado. NÃO fala com modelo
   offsets.ts      trecho do modelo → segundo do áudio (modelo não dá timestamp)
+  recuperacao.ts  o RAG por bloco: quem o grafo acha que este trecho cita, em
+                  cinco camadas — e o dossiê que a janela mostra ao extrator
   resolucao.ts    agente 2: de quem eu estava falando — atribui menção a menção,
-                  com as quatro camadas de candidato, o teto e os pisos
+                  com as cinco camadas de candidato, o teto e os pisos
   perfil.ts       os três campos de perfil: ler, gravar, e o agente 3 que rascunha
   entidades.ts    catálogo do grafo + a visão agregada da revisão; e o vetor da
                   entidade: refresh por hash e as duas consultas de vizinhança
@@ -347,11 +372,12 @@ inteira, a resolução, os embeddings — esperava eu parar. Numa sessão de 15 
 era uma chamada de raciocínio com ~15 mil caracteres de entrada, e ela sozinha
 respondia por quase toda a espera entre parar de falar e revisar.
 
-Na mesma rota `/pronto`, encadeado no mesmo `waitUntil`, roda agora
-`avancarJanelas`: a cada `JANELA_BLOCOS` (4) blocos transcritos, uma janela de
-2 minutos é extraída e resolvida, e os átomos dela vão para `parcial.json`
-(§4.6). Quando eu paro, `/finalizar` fecha a janela do fim — no máximo 3 blocos
-— e monta a proposta a partir do acumulado.
+Na mesma rota `/pronto`, encadeados no mesmo `waitUntil`, rodam agora
+`recuperarCandidatas` — a busca que pergunta ao grafo quem aquele bloco cita
+(§4.14) — e `avancarJanelas`: a cada `JANELA_BLOCOS` (4) blocos transcritos, uma
+janela de 2 minutos é extraída e resolvida, e os átomos dela vão para
+`parcial.json` (§4.6). Quando eu paro, `/finalizar` fecha a janela do fim — no
+máximo 3 blocos — e monta a proposta a partir do acumulado.
 
 Três consequências que valem estar escritas:
 
@@ -413,8 +439,8 @@ painel de `/agentes` (§4.13):
 | Função | Agente | Padrão |
 |---|---|---|
 | `modeloStt()` | STT | `xai/grok-stt` |
-| `modeloExtracao()` | `extracao-6` | `zai/glm-5.3-flash` |
-| `modeloResolucao()` | `resolucao-2` | o da extração |
+| `modeloExtracao()` | `extracao-7` | `zai/glm-5.3-flash` |
+| `modeloResolucao()` | `resolucao-3` | o da extração |
 | `modeloPerfil()` | `perfil-1` | o da extração |
 | `modeloCalibracao()` | `calibracao-1` | o da extração |
 | `modeloDuplicatas()` | `duplicatas-1` | `zai/glm-5.3-flash` |
@@ -669,6 +695,12 @@ Ele carrega quatro coisas:
 | a lista numerada do que já foi proposto | é o que o `ref` do `estende` endereça |
 | a chave `estende` no JSON | a operação que impede a lista de virar trinta átomos |
 
+E desde a 4.9 há **um segundo bloco injetado**, no mesmo ponto e antes deste: o
+dossiê das candidatas (§4.14). A ordem é `INSTRUCOES_BASE → blocoDeRegras →
+blocoDasCandidatas → blocoDaJanela → FORMATO → texto` — regra primeiro, porque
+ela vale sobre tudo; o dossiê depois, porque é material; a janela por último,
+porque é sobre aquela chamada e mais nenhuma.
+
 **`blocoDaJanela` devolve string vazia quando a janela é a sessão inteira e o
 acumulado está vazio.** Não é detalhe: é o que faz o arquivo importado, a
 gravação de menos de dois minutos e o fallback de passe único continuarem
@@ -741,7 +773,7 @@ modelo devolveu um átomo dizendo que o texto era confuso e circular; falar
 desorganizado é o esperado num diário falado, e lista vazia é a resposta certa
 quando não há o que extrair.
 
-#### O que o prompt manda fazer (`extracao-6`)
+#### O que o prompt manda fazer (`extracao-7`)
 
 A primeira versão pedia "uma afirmação por item" e só descartava hesitação. Numa
 sessão real de 45 s isso rendeu 9 átomos — "acordei", "pedalei", "nadei", "fui
@@ -796,14 +828,25 @@ provedor deu — nem mais, nem menos.
 
 #### Resolução de entidade — o que este passo faz, e o que não faz
 
-O extrator devolve o **nome cru** que ouviu: "Rodozanco", "Rafa", "ela". Ele não
-sabe o que existe no grafo, e é de propósito — cinco versões de calibração
-produziram uma extração que presta, e enfiar o catálogo de entidades naquele
-prompt arriscaria o que está bom por um problema que não é dele.
+O extrator devolve, por menção, **o que a transcrição escreveu e o nó que ele
+reconheceu**: `{"citado":"Jean","chave":"giampaolo lepore"}`. A chave é `null`
+quando ele não reconhece nenhuma das candidatas do dossiê, e é sempre `null`
+quando não há dossiê — aí ele devolve o nome cru como sempre devolveu, e
+`parsearResposta` lê as duas formas.
 
-Quem confronta com o grafo é o passo seguinte (4.8), que atribui **cada menção**
-a um nó — não cada nome. A diferença é a slice 4 inteira: dois átomos da mesma
-sessão dizendo "Rafa" podem ser duas pessoas.
+**Até a 4.8 este parágrafo dizia o contrário**, e com todas as letras: o prompt
+da extração não sabia que entidades existem no grafo, e era de propósito. A
+inversão é a slice 4.9 e está no §4.14, com o argumento que a sustenta: o
+problema **é** do extrator, porque quem escreve o texto do átomo é ele, e é no
+texto que o nome errado se fixa — inclusive dentro do vetor, que sai só de
+`a.texto` (§4.10). O que **não** mudou é o resto: `INSTRUCOES_BASE` e `FORMATO`
+continuam byte a byte os da 4.7, e o dossiê entra por um bloco injetado.
+
+Quem confronta com o grafo continua sendo o passo seguinte (4.8), que atribui
+**cada menção** a um nó — não cada nome. A diferença é a slice 4 inteira: dois
+átomos da mesma sessão dizendo "Rafa" podem ser duas pessoas. Desde a 4.9 ele
+vê também a chave que o extrator apontou, como quinta camada de candidato, e
+valida **toda** menção que tenha candidato.
 
 `entidades.ts` ficou com as duas pontas disso:
 
@@ -1009,7 +1052,7 @@ acrescenta qualquer sujeito que eu tenha escrito à mão. Duas guardas no servid
 porque a regra não pode depender da UI: nome que caia na lista de pronomes é
 recusado com 400, e `tipo` é validado contra `TIPOS_ENTIDADE`.
 
-### 4.8 Identidade por contexto (agente 2, `resolucao-2`)
+### 4.8 Identidade por contexto (agente 2, `resolucao-3`)
 
 **"Raffa" e "Rapha" são o mesmo som.** O STT escreve uma grafia só para os dois,
 e ter os dois nomes no vocabulário não ajuda — só torna arbitrário qual sai. A
@@ -1022,10 +1065,10 @@ resolver, por construção. Só o contexto resolve, e o contexto são os três c
 de perfil da entidade (8.3).
 
 ```
-janela ──────▶ agente 1: extracao-6   devolve o nome cru: "Rafa"
+janela ──────▶ agente 1: extracao-7   devolve {citado:"Rafa", chave}
                       │
                       ▼
-                agente 2: resolucao-2  vê os átomos + as entidades com perfil
+                agente 2: resolucao-3  vê os átomos + as entidades com perfil
                       │                decide POR MENÇÃO: qual nó, ou nova
                       ▼                marca o que é informação de perfil
                 revisão ──▶ confirmar ──▶ grafo
@@ -1127,7 +1170,7 @@ dúvida mataria os 60 s da revisão. "Ignorar é sempre uma saída válida"
 
 #### A regra de tipo é arbitrada pelo código, e não só pedida ao extrator
 
-O `extracao-6` diz, sem exceção: **SENTIMENTO, APRENDIZADO e ROTINA são sempre
+O `extracao-7` diz, sem exceção: **SENTIMENTO, APRENDIZADO e ROTINA são sempre
 de `eu`** — sentimento é meu por definição mesmo quando foi outra pessoa que o
 provocou, e quem provocou vai em `menciona`. A resolução não respeitava isso, e
 não por descuido do agente: as camadas semânticas são calculadas **por átomo**
@@ -1212,7 +1255,7 @@ estética: os campos entram no prompt do agente 2, e sem ele o custo daquela
 chamada cresceria junto com o grafo.
 
 **Quem aponta o que é perfil é o agente 2**, que já está olhando átomo e entidade
-juntos — mais uma razão para o `extracao-6` não mudar. A marca vira
+juntos — e é ele que a 4.9 passou a chamar em toda janela. A marca vira
 `(:Atomo)-[:PERFILA { campo }]->(:Entidade)` no confirmar (8.3), e só ali
 (regra 5). A validação é dupla: o agente só pode marcar uma entidade que o
 **próprio átomo** cita, e o servidor só grava campo do schema e entidade
@@ -1239,7 +1282,7 @@ grafo não escreveu. O vetor é a primeira comparação daqui que não passa por
 letra.
 
 **O que isto não é.** Não é economia de token: o gasto dominante continua sendo
-o `extracao-6`, que manda a fala inteira ao modelo — hoje repartida em janelas
+o `extracao-7`, que manda a fala inteira ao modelo — hoje repartida em janelas
 (§4.6), o que não muda o total —, e embedding não corta um token dele. O que ele compra é a **seleção de candidato**, que na slice 5 vira a única
 forma possível de deduplicar átomo — cinco sessões por semana a 15 átomos dão
 ~3.900 átomos por ano, ou ~7,6 milhões de pares, que não é caro: é impossível.
@@ -1318,21 +1361,29 @@ foi herdado, é o que eu mesmo falei, e uma linha em todo átomo viraria ruído.
 campo é **opcional e assim fica**: proposta anterior à 4.8.1 não tem, e ausente é
 "não sei de onde veio", a mesma degradação de `certo` e `porque`
 (`referencias.ts`). Valor fora de `CAMADAS_DE_CANDIDATO` é lido como ausente, e
-não repassado. A slice 4.9 acrescenta `"extrator"` à lista.
+não repassado.
+
+A 4.9 acrescentou `"extrator"` à lista, e ela **entra** na linha que aparece
+sempre, pelo mesmo argumento e mais forte: ali o nome dentro do texto do átomo
+deixou de ser o que eu falei, e o `citado` da referência é o único lugar que
+guarda a grafia. É a condição de a camada existir, como o `porque` é a da 3b.
 
 #### Teto e piso são obrigatórios
 
-`TOP_K = 3` sobre a **união** das quatro camadas, e piso de score por camada.
-Sem os dois, todo átomo ganha candidato, `decidir()` cai sempre em `julgar`, o
-agente 2 é chamado em toda sessão e o critério 5 da slice 4 morre — aquele que
-diz que sessão sem ambiguidade não paga nada. **Uma camada semântica sem piso é
-uma camada que sempre acha alguém.**
+`TOP_K = 3` sobre a **união** das quatro camadas, e piso de score por camada —
+e desde a 4.9 são `TOP_K = 4` e cinco camadas (§4.14), porque a chave do extrator
+tinha de caber **junto** com as três e não no lugar de uma.
+Sem teto e sem piso, todo átomo ganha candidato e a lista de dúvida da revisão
+vira lista de nomes. **Uma camada semântica sem piso é uma camada que sempre
+acha alguém.**
 
-O que faz aquele critério sobreviver é a **deduplicação da união**: o caso comum
-de uma sessão sem ambiguidade é a grafia casar com um nó e os vizinhos votarem
-**no mesmo nó**. União de tamanho 1, decisão de graça, agente 2 não chamado. Uma
-sessão só passa a custar quando o vetor traz alguém que a string não tinha
-trazido — que é exatamente o buraco que ele existe para tapar.
+O outro argumento que sustentava os dois **caducou na 4.9**: até a 4.8 eles eram
+o que fazia `decidir()` não cair sempre em `julgar` e o critério 5 da slice 4
+sobreviver — sessão sem ambiguidade não pagava nada, porque o caso comum era a
+grafia casar com um nó e os vizinhos votarem **no mesmo nó**, união de tamanho 1,
+decisão de graça. A 4.9 pôs o agente 2 em toda menção com candidato de propósito
+(§4.14), e o critério morreu ali. O que **não** morreu é a deduplicação: ela
+continua sendo o que mantém a lista curta e honesta.
 
 Os pisos de 3a e 3b se calibram **separado**, e o mesmo número não significa a
 mesma coisa nas duas: 3a é assimétrica (texto de átomo contra string curta de
@@ -1353,11 +1404,14 @@ consultas de `entidades.ts` desfazem essa normalização antes de comparar. A ra
 é poder conferir o piso à mão — `cosineSimilarity` do pacote `ai` fala cosseno, e
 um número que só existe dentro do banco é um número que ninguém audita.
 
-#### `resolucao-2`
+#### `resolucao-2` (e, desde a 4.9, `resolucao-3`)
 
-`PROMPT_VERSION_RESOLUCAO` subiu para `resolucao-2`, e o texto do prompt quase
-não mudou. **A versão acompanha a entrada, não só a redação:** o conjunto de
-candidatos que o agente recebe é outro, e isso é saída diferente (regra 7). O
+`PROMPT_VERSION_RESOLUCAO` subiu para `resolucao-2` na 4.5, e o texto do prompt
+quase não mudou. **A versão acompanha a entrada, não só a redação:** o conjunto
+de candidatos que o agente recebe é outro, e isso é saída diferente (regra 7). Na
+4.9 ela subiu de novo, para `resolucao-3`, pelo mesmo critério e mais o texto: a
+chave do extrator entrou como quinta camada, a lista virou a de todas as menções
+com candidato, e duas frases entraram no prompt (§4.14). O
 prompt passou a dizer, ao lado de cada candidato, **por que ele está na lista** —
 e quando o motivo é "átomos passados parecidos", os trechos vão junto, porque
 evidência de uso é o sinal mais forte que existe quando o perfil está vazio.
@@ -1451,7 +1505,7 @@ Cada correção sai etiquetada com o agente que a produziu:
 
 | Tipo | Agente | Por quê |
 |---|---|---|
-| `rejeitado`, `texto`, `tipo`, `faltou` | `extracao` | é o `extracao-6` produzindo o que não presta |
+| `rejeitado`, `texto`, `tipo`, `faltou` | `extracao` | é o `extracao-7` produzindo o que não presta |
 | `entidade_recusada` | `extracao` | listou como entidade o que não é pessoa, projeto nem objetivo |
 | `entidade_tipo` | `extracao` | errou o palpite de tipo na lista `entidades` |
 | `sujeito`, `mencao_removida` | `resolucao` ou `extracao` | **por átomo**: `sobre.conhecida` decide |
@@ -1586,8 +1640,8 @@ arquivo anterior, 4620 caracteres nos dois. A slice inteira é um no-op até a
 minha primeira aprovação, e portanto incapaz de piorar nada enquanto eu não
 mandar. `tests/regras.test.ts` trava a junção exata das duas metades.
 
-`versaoDoPrompt` substitui o `PROMPT_VERSION` fixo: `extracao-6` sem regra,
-`extracao-6+a3f91c7d` com. **O hash sai das regras usadas na chamada, não do
+`versaoDoPrompt` substitui o `PROMPT_VERSION` fixo: `extracao-7` sem regra,
+`extracao-7+a3f91c7d` com. **O hash sai das regras usadas na chamada, não do
 arquivo** — se o R2 falhar, entram zero regras e a versão é a base. A
 procedência é verdadeira nos dois caminhos, que é o ponto: carimbar `+a3f91c7d`
 numa extração que rodou sem regra seria mentira gravada no grafo para sempre.
@@ -1686,8 +1740,8 @@ caixa abrindo o prompt e o modelo que a comandam.
 | Agente | Módulo | Quando | Modelo | Envelope que o parser exige |
 |---|---|---|---|---|
 | STT (sem prompt) | `stt.ts` | automático, por bloco | `STT_MODEL` | — |
-| `extracao-6` | `extracao.ts` | automático, por janela de 2 min | `EXTRACAO_MODEL` | `atomos`, `entidades` |
-| `resolucao-2` | `resolucao.ts` | condicional: por janela, só com menção ambígua | `RESOLUCAO_MODEL` | `referencias`, `perfil` |
+| `extracao-7` | `extracao.ts` | automático, por janela de 2 min | `EXTRACAO_MODEL` | `atomos`, `entidades` |
+| `resolucao-3` | `resolucao.ts` | automático: por janela, sobre toda menção com candidato | `RESOLUCAO_MODEL` | `referencias`, `perfil` |
 | `calibracao-1` | `calibracao.ts` | sob demanda, em `/calibracao` | `CALIBRACAO_MODEL` | `regras`, `cita` |
 | `perfil-1` | `perfil.ts` | sob demanda, em `/entidades` | `PERFIL_MODEL` | `texto` |
 | `duplicatas-1` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
@@ -1725,10 +1779,10 @@ hash resolve:
 
 | Carimbo | Quem produziu | Resolve em |
 |---|---|---|
-| `extracao-6` | a base do git, sem regra aprovada | o próprio git |
-| `extracao-6+a3f91c7d` | a base do git, com regra aprovada | `calibracao/regras-<hash>.json` |
-| `extracao-6+p1b2c3d4` | prompt editado no painel | `config/prompt-extracao-<hash>.json` |
-| `extracao-6+p1b2c3d4+a3f91c7d` | prompt editado **e** regra aprovada | os dois objetos, nesta ordem |
+| `extracao-7` | a base do git, sem regra aprovada | o próprio git |
+| `extracao-7+a3f91c7d` | a base do git, com regra aprovada | `calibracao/regras-<hash>.json` |
+| `extracao-7+p1b2c3d4` | prompt editado no painel | `config/prompt-extracao-<hash>.json` |
+| `extracao-7+p1b2c3d4+a3f91c7d` | prompt editado **e** regra aprovada | os dois objetos, nesta ordem |
 
 Sem o `p`, ler um carimbo antigo viraria adivinhação: um hash só não teria como
 resolver dois objetos diferentes. O hash sai do **conteúdo**, então salvar o
@@ -1826,6 +1880,235 @@ mais de um passo. Não mede nada — não há latência, custo nem contagem de c
 por agente, porque `CLAUDE.md` proíbe métrica automática de qualidade e porque
 custo e latência já têm lugar: o painel do próprio Gateway. E não deixa criar
 agente: os sete são os que o código tem, e um oitavo nasce escrevendo código.
+
+### 4.14 O extrator conhece o grafo (slice 4.9)
+
+**O erro mais frequente do sistema não era do extrator, e mesmo assim era ele
+quem o fixava.** Medido em 2026-09-04, nas 5 primeiras sessões confirmadas: de
+21 correções capturadas, **um terço era conserto de grafia de nome próprio que o
+STT errou** — "Beijing"→"Behring Founders", "Jean"→"Giampaolo Lepore",
+"Dapta"→"Adapta". O extrator não errou nada nessas; ele copiou fielmente o que a
+transcrição dizia. Só que o texto do átomo é escrito por ele, e é no texto que o
+nome errado se fixa — inclusive dentro do vetor, que sai só de `a.texto`
+(§4.10).
+
+Nenhuma das duas defesas existentes alcançava o caso. O vocabulário do STT
+(§4.4) ensina a grafia de nome que **já** está no grafo, e ainda assim "Adapta"
+saiu como "na data" na medição de 02/09. A camada de string do agente 2 mede
+Levenshtein e palavra em comum, e "giam" fica longe demais de "giampaolo lepore"
+nos dois — é apelido, não erro de uma letra.
+
+Por isso a 4.9 inverte a decisão que o §4.6 declarava desde a slice 4: o prompt
+da extração passa a saber que entidades existem. **Não o catálogo inteiro** — os
+até 30 nós que o trecho parece citar, escolhidos por busca. Com um grafo pequeno
+os dois são a mesma coisa; a diferença aparece quando ele cresce, e o desenho
+tem de estar pronto antes disso.
+
+```
+bloco transcrito ──▶ recuperarCandidatas   5 camadas, no R2: candidatas_NNN.json
+                             │
+     parcial.atomos ─────────┼──▶ dossieDaJanela   união, teto de 30
+                             ▼
+                     extracao-7  devolve {citado:"Jean", chave:"giampaolo lepore"}
+                             │             e escreve "Giampaolo Lepore" no texto
+                             ▼
+                     resolucao-3  valida TODA menção; a chave é a 5ª camada
+                             ▼
+                     revisão ──▶ confirmar ──▶ grafo + o alias "jean"
+```
+
+#### As cinco camadas, e a que faz o caso "giam" funcionar
+
+`recuperacao.ts` recebe o texto de um bloco e o catálogo, e devolve quem o grafo
+acha que aquele trecho cita:
+
+| Camada | Sinal | Pega |
+|---|---|---|
+| `exato` | n-grama de 1..3 tokens do bloco = uma `chave` do catálogo | grafia conhecida, alias inclusive |
+| `prefixo` | token de ≥4 letras que começa uma palavra de ≥6 de uma chave | **"giam" → "giampaolo lepore"** |
+| `parecido` | `proximidade()` de `duplicatas.ts` sobre os mesmos n-gramas | homófono: "behrin" → "behring founders" |
+| `perfil` | `candidatosPorPerfil` com o texto do bloco | entidade com perfil e sem átomo |
+| `vizinhos` | `candidatosPorVizinhos`, voto por `:SOBRE`/`:MENCIONA` | entidade com átomos e sem perfil |
+
+As três primeiras são **puras** (`candidatasPorGrafia`), testáveis sem rede —
+mesma divisão que `duplicatas.ts` já tinha. As duas últimas reusam
+`candidatosSemanticos` **sem alterá-lo**: ele já aceita texto arbitrário e já
+engole a própria falha devolvendo lista vazia (§4.10). Os pisos são os mesmos da
+resolução, de propósito — dois lugares para calibrar a mesma pergunta
+divergiriam —, e o que muda é o texto de um lado: um bloco de 30 s contra a
+frase de um átomo. Está no §14.
+
+Guardas contra falso positivo: n-grama de **um** token exige ≥4 letras e não ser
+pronome (`ehPronome`, `texto.ts`); a camada `prefixo` exige palavra-alvo de ≥6
+letras. Os dois números saíram de raciocínio e não de dado — §14.
+
+#### Onde vive, e por que o arquivo diz se a busca rodou inteira
+
+`sessoes/<id>/candidatas_NNN.json`, espelho exato de `chunk_NNN.json`: a
+existência do objeto é a trava (regra 4), e bloco já consultado não é
+reconsultado nem repago.
+
+O campo `semantico` é o que impede o cache de mentir. Com o Gateway sob rate
+limit, `candidatosSemanticos` devolve lista vazia — e sem o campo o arquivo
+sairia **degradado e cacheado como completo**, o que faria um limite de 75 s no
+meio da gravação apagar a camada de vetor da sessão inteira em silêncio. O
+catch-up do `/finalizar` refaz **uma** vez os blocos que saíram `false`, e
+`refeito` é o que impede a segunda. O preço declarado: o campo não separa "nada
+passou do piso" de "a chamada caiu" — separar exigiria mexer em
+`candidatosSemanticos`, e refazer um bloco custa uma chamada de embedding.
+
+#### O gatilho, e a precedência que ele herda
+
+```
+transcreverBloco(id, i) → recuperarCandidatas(id, i) → avancarJanelas(id)
+```
+
+Os três no mesmo `waitUntil` de `/pronto`, porque cada um precisa do anterior: a
+busca precisa do texto, a janela precisa das candidatas dos blocos dela. **O
+passo do meio nunca derruba os outros dois**: sem `candidatas_NNN.json` o dossiê
+fica menor, e dossiê vazio faz o extrator se comportar exatamente como na 4.8. É
+a regra de precedência da 4.5 — nada no caminho do vetor impede uma gravação —, e
+o sinal é a linha `[candidatas]` no log.
+
+`avancarJanelas` monta o dossiê antes de extrair, calculando o que faltar
+(catch-up idempotente, dentro do `ate` que ele já recebe) e lendo o catálogo
+**uma vez** por janela, que é o mesmo número de consultas de antes: ele agora
+viaja para dentro de `extrairJanela`, que antes o lia sozinha.
+
+#### O dossiê: a união dos blocos com o que a sessão já atribuiu
+
+`dossieDaJanela()` é puro. A janela `n` recebe duas fontes, e a segunda é de
+graça:
+
+1. as `candidatas_NNN.json` dos blocos **daquela** janela;
+2. as entidades **já atribuídas nas janelas anteriores**, lidas de
+   `parcial.atomos` por `sobreDe`/`mencoesDe` — camada `ja_nesta_sessao`, e ela
+   vai na frente de todas. É o sinal mais forte que existe dentro de uma sessão,
+   e é o análogo incremental do "procure o nome na transcrição INTEIRA" que o
+   prompt base já manda fazer.
+
+União por `chave`, ordenada `ja_nesta_sessao > exato > prefixo > parecido >
+vizinhos > perfil`, depois score, depois `sessoes`; teto de 30. Chave que não
+está no catálogo cai fora em silêncio — mesma regra que `comoCandidatos` aplica
+ao que o vetor devolve: candidato que não existe seria um nome impossível de
+escolher na revisão.
+
+#### `extracao-7`: um bloco injetado, e a base intacta
+
+`INSTRUCOES_BASE` e `FORMATO` **não mudaram um byte**. O bloco novo entra por
+`inserirAntesDoFormato`, como `blocoDeRegras` e `blocoDaJanela` já entravam, e
+declara a chave nova de dentro de si — precedente que o `estende` da 4.8 abriu.
+`blocoDasCandidatas([])` devolve `""`, e aí a chamada sai **byte a byte igual à
+da 4.8**: grafo vazio, primeira sessão da vida do sistema, Gateway fora. É o
+mesmo no-op que `blocoDeRegras([]) === ""` garante desde a 4.6.
+
+O que o bloco manda fazer: listar as candidatas com chave, nome gravado, tipo,
+aliases e `contexto`; devolver a **chave** quando a menção for uma delas e
+`null` quando não for, nunca uma chave fora da lista; escrever no `texto` do
+átomo o **nome gravado** e não o que a transcrição escreveu — com a amarra
+explícita de que **só o nome próprio se troca**, e que no resto continua valendo
+`COM AS MINHAS PALAVRAS`.
+
+`AtomoCru.sobre` passou de `string` para
+`MencaoCrua = { citado, chave: string | null }`, e `menciona` para
+`MencaoCrua[]`. **`parsearResposta` aceita as duas formas** — string vira
+`{ citado, chave: null }` —, que é o que mantém intacto o caminho sem dossiê e
+lê qualquer resposta no formato antigo. `AtomoProposto`, `Extracao` e `Parcial`
+não mudaram: a revisão e o confirmar não têm formato novo para aprender.
+`EstadoJanela` ganhou `candidatas?: string[]`, que é procedência (regra 7) e é o
+que responde "por que ele apontou aquele nó" três meses depois — o dossiê é uma
+foto do grafo no momento da janela, e o grafo de hoje não a reconstrói.
+
+**A guarda do `eu` ganhou o lado da extração.** A lista de conhecidos na frente
+do modelo é convite para pendurar um `SENTIMENTO` em outra pessoa; o prompt pede
+o contrário, e o parse recusa: nos três tipos que são sempre de `eu` (§4.8) a
+chave cai, e o `citado` fica como veio — quem arbitra sujeito errado do extrator
+continua sendo a revisão.
+
+`PROMPT_VERSION` subiu para `extracao-7` mesmo com a base igual, pelo critério
+de sempre: a **entrada** mudou. Precedente do `extracao-6` da própria 4.8.
+
+#### `resolucao-3`: valida toda menção
+
+- `candidatosDe` ganhou a chave do extrator como **quinta camada, `extrator`**,
+  na cabeça da união; `TOP_K` subiu de 3 para 4 para ela caber **junto** com as
+  três. Chave que não existe no catálogo é descartada em silêncio.
+- `decidir()` continua como está, mas o resultado dele virou o **prior**, não a
+  resposta: toda menção com candidato entra no prompt.
+- **A menção sem candidato nenhum não vai.** Ali não há atribuição a validar — a
+  união vazia é entidade nova, e a única resposta válida seria a que o prior já
+  dá. É o que mantém a promessa de uma sessão com o grafo vazio sair como saía
+  na 4.8, sem pagar uma chamada para descobrir que não havia o que perguntar.
+- O prompt diz, por menção, `Ele apontou a chave "giampaolo lepore"` — ou que
+  ele não apontou nenhuma —, seguido dos candidatos com o `porque` de cada um.
+
+| A resposta do agente | O que fica |
+|---|---|
+| concorda com o extrator | `certo: true`, com o motivo dele |
+| discorda | a do agente 2 vence, `certo: false`, e o motivo nomeia as duas chaves — o texto do átomo já saiu com o nome que o extrator escolheu, e essa é a única marca de que ele pode estar errado |
+| não respondeu por esta menção, ou falhou | o **prior**: o que a passada determinística decidia sozinha na 4.8, com o `certo` de lá |
+
+**O critério 5 da slice 4 morreu aqui, de propósito.** "Sessão sem ambiguidade
+não paga nada" era promessa da 4; desde que o extrator aponta o nó e escreve o
+nome dentro do texto, nenhuma atribuição dele entra sem segunda opinião, e o
+preço é uma chamada de resolução por janela em vez de "só quando houver dúvida".
+
+Duas frases entraram no texto de `INSTRUCOES` junto, e são as que a 4.8.1 recusou
+subir sozinha: **a regra de tipo** ("SENTIMENTO, APRENDIZADO e ROTINA são sempre
+de `eu`" — a guarda de código já existia, e a frase é o que impede o agente de
+gastar decisão numa pergunta cuja resposta o código já sabe) e **o escopo das
+chaves por menção** (só valem as listadas naquela menção — a distância entre o
+que o prompt mostra, até 30 do dossiê, e o que o código aceita, 4 candidatos,
+cresceu nesta fatia).
+
+E `comEsperaDeLimite` entrou na chamada. A 4.8 deixou isso fora de escopo; esta
+fatia é o que torna o conserto necessário — o agente passou a rodar em **toda**
+janela, oito vezes por sessão de 15 min, na mesma rajada em que o STT já disputa
+o limite da conta (§5.3).
+
+#### A grafia falada vira alias no confirmar
+
+`registrarGrafia(chaveDoNo, grafiaFalada)` cria o nó de alias exatamente como
+`renomear` já fazia: `:Entidade` com `status = 'fundida'` e `-[:FUNDIDA_EM]->` o
+nó. O confirmar a chama em `waitUntil`, **depois** de `gravarAtomos`, casando o
+`citado` de cada referência — relido de `extracao.json` pelo índice, nunca do
+corpo (§4.7) — com a chave final vinda da tela, e registrando quando as duas
+diferem.
+
+Quatro recusas, e as quatro são correção e não política: grafia vazia, pronome
+ou igual à chave do próprio nó; nó alvo inexistente ou ele mesmo já fundido;
+grafia que já existe como nó **ativo** (seria fundir duas entidades reais
+automaticamente); e grafia que já é alias de **outro** nó (roubaria a grafia de
+quem já a tem, ou a deixaria com dois destinos). Segunda chamada com a mesma
+grafia é no-op: a checagem prévia é a trava.
+
+Dois efeitos de graça: `fonteDaEntidade` inclui aliases, então o hash muda e a
+passada de vetores do próprio confirmar reembute a entidade; e
+`nomesParaVocabulario` exclui fundidos, então "Jean" **não** é ensinado ao STT.
+
+**Este alias não é uma fusão**, e é isso que permite ele ser automático — a
+distinção está no §8.2, cuja primeira linha ("nada aqui é automático") deixou de
+valer inteira com esta fatia.
+
+#### Na tela
+
+Nenhuma tela nova, e nenhum gesto novo. A camada `extrator` entra na lista das
+sugestões que a revisão mostra **sempre** — as mesmas de `perfil` e `vizinhos`
+(§4.7) —, e pelo mesmo argumento, mais forte: ali o nome dentro do texto do
+átomo deixou de ser o que eu falei, e o `citado` da referência é o que guarda a
+grafia. A discordância entre os dois agentes chega como dúvida comum, com o
+motivo nomeando as duas chaves.
+
+#### O que esta fatia não faz
+
+Não realimenta o vocabulário do STT — a candidata achada no bloco 3 poderia
+entrar como `keyterm` do bloco 4, e isso mexe em `vocabulario.ts`, no cache de
+5 min e no teto de 100 termos. Não julga a lista de candidatas com um agente
+próprio: o julgamento é do extrator, que já está com a lista e o texto na frente,
+e um sexto prompt para calibrar à mão para sempre não se paga. E não conserta o
+nome dito **depois** da janela — a janela 1 continua sem saber o nome que só
+aparece no minuto 10, e o conserto é o de sempre: o painel de entidades da
+revisão, num gesto.
 
 ## 5. Estados da sessão
 
@@ -1932,7 +2215,9 @@ com prefixo:
 | `[pipeline] sessão <id>: desistiu após 150s…` | `finalizarSessao` | o prazo estourou; lista os blocos que faltaram, e diz se a causa foi rate limit |
 | `[limite] <rótulo>: rate limit do Gateway — esperando Ns` | `comEsperaDeLimite` | o Gateway recusou por excesso e vai haver outra tentativa |
 | `[limite] <rótulo>: sem orçamento para esperar Ns` | `comEsperaDeLimite` | o limite ainda vale, mas esperar estouraria o prazo de quem chamou |
-| `[janela] sessão <id> janela <n> (blocos a-b): +N átomo(s)…` | `avancarJanelas` | uma janela fechou — é o `console.log` que mostra a extração acontecendo durante a gravação |
+| `[janela] sessão <id> janela <n> (blocos a-b): +N átomo(s)…` | `avancarJanelas` | uma janela fechou — é o `console.log` que mostra a extração acontecendo durante a gravação, e ele diz de quantas entidades era o dossiê |
+| `[candidatas] sessão <id> bloco <i>:` | `/pronto` e `candidatasDaJanela` | a busca daquele bloco falhou; o dossiê fica menor e a janela roda como na 4.8 |
+| `[grafias] sessão <id>: N grafia(s) viraram alias` | `/confirmar` | a grafia que eu falei virou alias do nó que eu confirmei (§4.14) |
 | `[janela] sessão <id> janela <n> falhou:` | `avancarJanelas` | a janela não fechou; ela fica `falhou` no `parcial.json` e é retentada na passada seguinte |
 | `[janela] sessão <id>: sem orçamento para a janela <n>` | `avancarJanelas` | o prazo do `finalizar` acabou antes de a janela do fim rodar |
 | `[janela] sessão <id>: janela(s) N não fecharam…` | `propostaDaSessao` | a proposta caiu no passe único sobre a sessão inteira — o fallback da 4.8 |
@@ -2057,15 +2342,21 @@ rodar logo depois dos 30 blocos de STT, que é quando o limite está mais perto 
 estourar; **a slice 4.8 desfez essa concentração** — são oito chamadas menores
 espalhadas pela gravação, e sete delas sem prazo nenhum para esperar.
 
+**A resolução entrou na lista na 4.9**, e ela é o terceiro ponto do caminho
+automático. Até a 4.8 o agente 2 falhava em vez de esperar; a degradação já era
+a certa (as menções voltam como dúvida e a revisão me deixa escolher, §4.8), mas
+o critério declarado aqui é "quem roda em `waitUntil` espera", e ele estava do
+lado errado da linha. O que tornou o conserto necessário foi a 4.9: o agente
+passou a rodar em **toda** janela, oito vezes por sessão de 15 min, na mesma
+rajada em que o STT já disputa o limite da conta. Ele recebe o `ate` de quem o
+chamou — o mesmo da extração daquela janela.
+
 Perfil, duplicatas e embedding **não** estão cobertos: saem de um clique meu, e
-ali a falha aparece na tela em vez de matar uma sessão em `waitUntil`. **A
-resolução também não está**, e essa é a que incomoda: ela roda dentro da
-extração, no caminho automático, desde a slice 4 — o que este documento dizia
-("chamada sob demanda") descrevia o `perfil-1`, não o `resolucao-2`. Um limite
-ativo faz o agente 2 falhar em vez de esperar, e a degradação já é a certa: as
-menções voltam como dúvida e a revisão me deixa escolher (§4.8). Passar
-`comEsperaDeLimite` para lá é conserto de uma linha, e não foi feito nesta fatia
-para não misturar duas mudanças no mesmo lugar.
+ali a falha aparece na tela em vez de matar uma sessão em `waitUntil`.
+
+A busca por candidatas (§4.14) não precisa de espera própria: ela sai por
+`candidatosSemanticos`, que engole a própria falha, e o `semantico: false` do
+arquivo é o que manda o `/finalizar` refazer o bloco uma vez.
 
 Quando a espera não basta, a linha de desistência diz isso com todas as letras —
 "a causa foi rate limit do AI Gateway… chamar /finalizar de novo daqui a alguns
@@ -2085,6 +2376,9 @@ com cada fatia, e hoje são estas:
 | lease `em_curso` com prazo (`LEASE_MS`, 120 s) | `janela.reivindicar` | dois `waitUntil` não extraem a mesma janela; worker morto libera a janela em vez de travá-la |
 | `If-Match` + laço de retry no `parcial.json` | `janela.atualizarParcial` | duas janelas concorrentes se somam em vez de se sobrescrever |
 | o `id` do átomo é carimbado **na escrita**, não na extração | `janela.aplicarJanela` | duas janelas nunca produzem o mesmo `<sessao_id>-<índice>` — que é o que faz o `MERGE` do confirmar ser idempotente |
+| `candidatas_NNN.json` existir | `recuperacao.recuperarCandidatas` | bloco já consultado não é reconsultado nem repago, por mais vezes que `/pronto` e `/finalizar` passem por ele |
+| `semantico: false` + `refeito` | catch-up do `/finalizar` | a camada de vetor que caiu é refeita **uma** vez, não a cada passada |
+| a checagem prévia da grafia | `fusao.registrarGrafia` | confirmar duas vezes não cria dois aliases |
 | `extracao.json` existir | `pipeline.extrairSessao` | não rechama o modelo nem sobrescreve proposta que eu já posso ter revisado |
 | `If-None-Match: *` no PUT da proposta | `pipeline.extrairSessao` | dois workers na mesma sessão geram uma proposta só: quem chega em segundo usa a do primeiro |
 | entrada no manifest por `i` | `manifest.registrarChunk` | reenviar o mesmo bloco não duplica nem reabre bloco transcrito |
@@ -2105,8 +2399,8 @@ com cada fatia, e hoje são estas:
 
 A trava de `extracao.json` vale para **os dois agentes**: proposta pronta não
 rechama nem a extração nem a resolução, e `forcar` refaz as duas. Calibrar o
-`resolucao-2` custa, sim, uma extração junto — o que a arquitetura de dois
-agentes barateia é o contrário: mexer no `resolucao-2` não mexe no `extracao-6`.
+`resolucao-3` custa, sim, uma extração junto — o que a arquitetura de dois
+agentes barateia é o contrário: mexer no `resolucao-3` não mexe no `extracao-7`.
 
 **A única saída da trava é `extrairSessao(id, { forcar: true })`**, exposta por
 `POST /api/sessoes/:id/extrair` com `{"forcar": true}`. Ela existe para calibrar
@@ -2335,9 +2629,30 @@ contrato que o §14 declara para ela não ser atômica.
 
 **E `fundir` recusa vencedora com `status = 'fundida'`.** Até a 4.8 só a
 perdedora era conferida, e fundir **para dentro** de um alias corrompe do mesmo
-jeito. A guarda importa mais a partir da slice 4.9, que passa a criar nó de alias
+jeito. A guarda importa mais desde a slice 4.9, que cria nó de alias
 automaticamente (`registrarGrafia`): ela fabrica em série exatamente os nós que
 uma cadeia perderia.
+
+#### O nó de alias é automático desde a 4.9 — e ele não é uma fusão
+
+A primeira linha desta seção era "nada aqui é automático", e ela deixou de valer
+inteira. `registrarGrafia` (§4.14) cria, no confirmar, o nó da grafia que eu
+falei apontando para o nó que eu confirmei: eu disse "Jean", confirmei
+"Giampaolo Lepore", e na sessão seguinte "jean" casa por grafia exata, de graça,
+sem depender da busca.
+
+**A distinção que permite isso: um alias novo não é uma fusão.** O nó nasce com
+zero átomo e nenhuma aresta a migrar, então desfazê-lo é apagar a aresta e o nó —
+ao contrário de uma fusão de verdade, que junta duas coisas que já têm história e
+não tem desfazer. Juntar duas entidades que **já existem** continua sendo um
+toque meu, e são as quatro recusas de `registrarGrafia` que garantem isso: grafia
+vazia, pronome ou igual à chave do nó; nó alvo inexistente ou ele mesmo já
+fundido; grafia que já é entidade **ativa**; grafia que já é alias de **outro**
+nó.
+
+O preço está no §14: toda grafia confirmada vira nó permanente, então o STT
+errando de três jeitos deixa três aliases pendurados no mesmo nó — e eles
+engordam a string canônica do vetor daquela entidade.
 
 Quem atravessa o alias:
 
@@ -2419,7 +2734,7 @@ hoje. Sem índice: ninguém busca por perfil.
 
 **Por que aresta, e não propriedade do átomo.** Duas razões, e a primeira é a que
 manda: a marca precisa dizer **de quem** é a informação. "fui no parque andar de
-slackline com o Raffa" é `sobre: "eu"` pelas regras de tipo do `extracao-6`, e a
+slackline com o Raffa" é `sobre: "eu"` pelas regras de tipo do `extracao-7`, e a
 informação de perfil é do Raffa. A segunda é que Neo4j não guarda array de mapa
 como propriedade — foi isso que forçou as listas paralelas da 003. Aresta com
 propriedade ele guarda bem, e fica consultável: "todo átomo que diz o que o Rapha
@@ -2560,6 +2875,7 @@ sessoes/<id>/manifest.json      { sessao_id, chunks: [{i, bytes, subido_em, tran
 sessoes/<id>/chunk_000.webm     áudio do bloco gravado no navegador
 sessoes/<id>/chunk_000.opus     áudio importado — a extensão é a do arquivo de origem
 sessoes/<id>/chunk_000.json     transcrição do bloco, offsets relativos, modelo, granularidade
+sessoes/<id>/candidatas_000.json quem o grafo acha que o bloco cita: { candidatas: [{chave, camada, score}], semantico, refeito? }
 sessoes/<id>/transcricao.json   final, offsets absolutos
 sessoes/<id>/parcial.json       a proposta enquanto cresce: { janelas: [{n, de, ate, estado, em, procedência}], atomos, entidades, descartados }
 sessoes/<id>/extracao.json      proposta: átomos ancorados, referências resolvidas (com o `porque` da camada 3b), marcas de perfil, entidades agregadas, procedência dos dois agentes
@@ -2571,6 +2887,14 @@ config/agentes.json             o que eu editei de cada agente: hash do prompt e
 config/prompt-<agente>-<hash>.json  um prompt editado — imutável para sempre; é o que o sufixo `+p<hash>` resolve
 _smoke/                         objetos temporários do `pnpm smoke`, apagados no fim
 ```
+
+`candidatas_NNN.json` **espelha `chunk_NNN.json`**, e a existência dele é a
+trava do RAG como a do bloco é a da transcrição (§6). Guarda chave, camada e
+score — e não o nó inteiro: o arquivo é cache de uma busca, e guardar nome, tipo
+e perfil junto faria dele uma foto do grafo que envelhece sozinha. Quem resolve
+chave → nó é o dossiê, com o catálogo da hora. `semantico: false` marca o bloco
+cuja camada de vetor não trouxe nada, e é o que o catch-up do `/finalizar` refaz
+uma vez (§4.14).
 
 `calibracao/` e `config/` ficam **fora** do prefixo `sessoes/` de propósito: nem
 o índice de correções nem a configuração dos agentes são de sessão nenhuma. E são
@@ -2992,7 +3316,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 13. Verificação
 
-- `pnpm test` — **47 arquivos, 723 testes**, sem credencial e sem rede. A lista
+- `pnpm test` — **48 arquivos, 820 testes**, sem credencial e sem rede. A lista
   abaixo comenta os que valem uma explicação; a cobertura inteira se lê em
   `tests/`. Os que não têm bullet próprio cobrem a lógica pura da slice 1
   (chaves, manifest, estados, offsets, vocabulário, backoff, retry de rede,
@@ -3012,7 +3336,13 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   ninguém pedir, a janela seguinte recebe o que a anterior propôs, janela pronta
   não é reextraída, janela que falha deixa rastro e **não** deixa a seguinte
   passar na frente, e o fallback — janela que não fecha cai no passe único e a
-  sessão não morre.
+  sessão não morre. Mais o dossiê da 4.9: a janela recebe o nó que o bloco cita,
+  as candidatas ficam gravadas e as chaves vistas ficam no parcial.
+- `tests/recuperacao.test.ts` — o RAG por bloco (4.14) sem rede nenhuma: que
+  "giam" alcança "Giampaolo Lepore" pela camada `prefixo`, que grafo vazio devolve
+  dossiê vazio (e aí a extração sai como na 4.8), que o arquivo do bloco é a
+  trava, e que a camada semântica caída fica **marcada** em vez de cacheada como
+  completa. A qualidade da lista eu avalio à mão, na revisão.
 - `tests/audio.test.ts` — resolução de formato, incluindo o `.opus` do WhatsApp
   que chega com `File.type` vazio, e os limites de tamanho e duração.
 - `tests/agentes.test.ts` — a **varredura** (todo `generateText`/`transcribe`/
@@ -3171,13 +3501,9 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   slice 4.8 mexeu nos dois sentidos: são ~8 chamadas de extração a mais na
   conta, mas espalhadas pelos 15 minutos e sem prazo para esperar, em vez de uma
   rajada no fim. Também não medido.
-- **Resolução, perfil, duplicatas e embedding não esperam o rate limit.** Só STT
-  e extração chamam `comEsperaDeLimite` (§5.3). Para perfil, duplicatas e
-  embedding é deliberado: saem de um clique meu e falham na minha frente. **Para
-  a resolução não é** — ela roda no caminho automático, dentro da extração de
-  cada janela, e um limite ativo a faz falhar em vez de esperar. A degradação é
-  a certa (as menções voltam como dúvida, nunca como atribuição errada), mas é
-  degradação. Conserto de uma linha, não feito ainda.
+- **Perfil, duplicatas e embedding não esperam o rate limit**, e é deliberado:
+  saem de um clique meu e falham na minha frente (§5.3). STT, extração e — desde
+  a 4.9 — resolução chamam `comEsperaDeLimite`.
 - **`config/vocabulario.txt`** ainda tem só os três nomes de exemplo. Desde a
   slice 3 ele não é mais a lista inteira — as entidades do grafo entram junto —
   mas continua sendo o único jeito de ensinar um nome **antes** de falá-lo pela
@@ -3267,7 +3593,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   pensando para 122 de texto, daí `maxOutputTokens: 8000` e a segunda tentativa
   automática. Trocar é `EXTRACAO_MODEL`, sem tocar em código.
 - **O alvo de 10 a 20 átomos por 15 min ainda é aposta.** O prompt está em
-  `extracao-6` e as sessões julgadas até agora são curtas; a primeira sessão longa
+  `extracao-7` e as sessões julgadas até agora são curtas; a primeira sessão longa
   confirma ou derruba o número. Desde a 4.8 ele é pedido **em proporção**, janela
   a janela (`orcamentoDaJanela`), o que troca uma aposta por outra: oito janelas
   pedindo de 1 a 3 dão de 8 a 24, e é o `estende` que tem de puxar o número para
@@ -3286,7 +3612,9 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   descarte) mas não a duplicação; quem vê é a revisão. **Ainda não foi medido
   contra uma sessão real de 15 min.**
 - **O agente 2 pode discordar de si mesmo entre janelas.** Ele vê os átomos já
-  propostos num bloco de contexto (§4.8), mas nada o amarra à decisão anterior:
+  propostos num bloco de contexto (§4.8), mas nada o amarra à decisão anterior —
+  o `ja_nesta_sessao` da 4.9 amarra o **extrator**, não ele, então o risco ficou
+  reduzido e não eliminado:
   o mesmo "Rafa" pode sair `NOVA` na janela 1 e cair no nó "Raffa" na janela 2,
   com o catálogo idêntico, fechando a sessão com duas candidatas para uma pessoa.
   Quem vê é a revisão, e o painel de entidades reaponta as duas num gesto. O
@@ -3333,30 +3661,79 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   opção testados chega ao modelo, e sem `warning` nenhum: a falha é silenciosa
   dos dois lados. Trocar de STT sem medir isso primeiro perde a metade A da
   slice 3 sem que nada apareça na tela.
+- **Toda grafia confirmada vira nó permanente** (4.9). O STT errando de três
+  jeitos deixa três aliases pendurados no mesmo nó, e eles engordam a string
+  canônica de `fonteDaEntidade` — que é o texto de onde sai o vetor daquela
+  entidade. Não há limpeza de alias em lugar nenhum; apagar um é ir ao console.
+- **O dossiê é uma foto do grafo no momento da janela** (4.9). Nome dito depois
+  dela não volta atrás: se eu digo "ela" no minuto 2 e o nome no minuto 10, a
+  janela 1 continua sem saber. Mesma limitação da extração e do agente 2, mesmo
+  conserto — o painel de entidades da revisão, num gesto. O que a `candidatas`
+  do `EstadoJanela` guarda é justamente essa foto, para eu poder ler depois por
+  que ele apontou aquele nó.
+- **A camada `prefixo` é heurística sem medição** (4.9). Os pisos de 4 letras no
+  token e 6 na palavra-alvo saíram de raciocínio, não de dado — "casa" ainda
+  alcança "Casanova", e o custo disso é um item a mais no dossiê. Quem os ajusta
+  sou eu, olhando a revisão, sessão real por sessão real.
+- **O RAG por bloco usa os mesmos pisos da resolução, sobre um texto de outra
+  natureza** (4.9). Lá é a frase de um átomo contra o vetor da entidade; aqui é
+  um bloco de 30 s de fala. O número igual nos dois é escolha de ter **um** lugar
+  para calibrar, não medição de que ele sirva aos dois — e um bloco longo tende a
+  pontuar mais baixo que uma frase.
+- **`semantico: false` não distingue "nada passou do piso" de "a chamada
+  caiu"** (4.9). O catch-up do `/finalizar` refaz o bloco uma vez nos dois casos,
+  e o preço do caso benigno é uma chamada de embedding por bloco silencioso.
+  Separar exigiria mexer em `candidatosSemanticos`, que hoje engole a própria
+  falha por decisão da 4.5.
+- **A resolução passou a custar em toda janela**, não só quando há dúvida (4.9).
+  São até oito chamadas de agente 2 por sessão de 15 min onde antes podia ser
+  zero. Não medido sob rate limit, como quase tudo nesta faixa.
+- **`TOP_K = 4` com `extrator` na cabeça espreme o vetor para fora da união**
+  (4.9): `extrator` + `exato` + dois parecidos ocupam as quatro vagas, e as
+  camadas semânticas ficam de fora daquela menção. Pode estar certo — o dossiê já
+  trouxe o semântico pelo lado do extrator, porque `perfil` e `vizinhos` rodam
+  sobre o texto do bloco —, mas é decisão escrita, e não consequência da ordem do
+  laço.
+- **Uma menção sem candidato nenhum não é validada** (4.9). Ela resolve como
+  entidade nova, de graça, sem passar pelo agente 2 — é o que mantém a promessa
+  de a sessão com o grafo vazio sair como saía na 4.8, e é a única brecha na
+  regra "nenhuma atribuição entra sem segunda opinião". A brecha é estreita por
+  construção: sem candidato não há atribuição, só um nome novo.
+- **Com o agente 2 fora do ar, a chave do extrator não segura a menção** (4.9). O
+  fallback é o prior, e o prior nunca escolhe o parecido: uma menção que só tem o
+  nó apontado pelo extrator volta como entidade nova com `certo: false`, com o nó
+  entre as alternativas. Quer dizer que o texto do átomo pode dizer "Giampaolo
+  Lepore" enquanto o sujeito proposto é "giam" — visível na revisão, e a um
+  toque de conserto, mas feio.
+- **O casamento de grafia no confirmar depende da posição da menção** (4.9). O
+  sujeito casa sempre; as menções, só quando a lista da tela tem o mesmo tamanho
+  da proposta. Acrescentar ou remover uma menção desliga o registro daquele
+  átomo, em vez de arriscar criar um alias mentindo — mesma trava que a revisão
+  já aplica às sugestões.
 - **Deduplicação de átomo não existe** (slice 5). A de **entidade** ficou pronta
   na slice 3, mas nada compara um átomo novo com os que já estão no grafo: dizer
   a mesma coisa em duas sessões cria dois átomos.
-- **Sessão sem ambiguidade nenhuma não marca perfil.** Quem aponta o que é
-  informação de perfil é o agente 2, e ele só é chamado quando alguma menção
-  precisa de julgamento (4.8) — é o critério 5 da spec, e é o que faz uma sessão
-  limpa não custar nada. A consequência é real e vale registrar: se eu falo do
-  Rapha numa sessão em que nenhum nome é ambíguo, "o Rapha sabe produzir evento"
-  **não** vira `:PERFILA`, e o perfil dele não se mantém sozinho. Enquanto o
-  grafo não tiver nomes parecidos, o agente 3 vive de perfil escrito à mão. A
-  saída, se incomodar, é chamar o agente também quando houver átomo com cara de
-  perfil — o que troca "sessão limpa é de graça" por "perfil acumula sozinho".
+- **A marca de perfil ficou mais frequente, não mais rara — e isso foi uma
+  pergunta respondida ao contrário** (4.9). Até a 4.8 quem aponta perfil é o
+  agente 2, e ele só era chamado quando alguma menção precisava de julgamento:
+  numa sessão sem nome ambíguo, "o Rapha sabe produzir evento" **não** virava
+  `:PERFILA`. A 4.9 pôs o agente 2 em toda janela com candidato, e na prática
+  isso resolve o buraco de graça. O que fica registrado é o preço na direção
+  oposta: a sessão limpa deixou de ser de graça, e é isso que o critério 5 da
+  slice 4 comprava.
 - **A resolução ainda não julgou um homófono de verdade.** O grafo já tem nomes
   próprios reais — as 5 sessões confirmadas de 04/09 puseram lá "Behring
   Founders", "Adapta" e "Giampaolo Lepore" —, mas nomes próprios não são a mesma
   coisa que nomes **em disputa**: enquanto nada no grafo soar como outra coisa,
-  o `resolucao-2` decide de graça pela união de tamanho 1 e o modelo não é
-  chamado. O caso concreto de que eu sei a resposta — a sessão com o Rapha e o
+  o `resolucao-3` não tem o que desempatar — ele é chamado (desde a 4.9 toda
+  menção com candidato vai), mas responde uma lista de um. O caso concreto de que eu sei a resposta — a sessão com o Rapha e o
   Raffa — depende dos dois estarem **cadastrados antes da primeira menção**. Que
   nomes estão lá hoje se vê em `/entidades`, não neste arquivo.
 - **O agente 2 só enxerga os candidatos da menção, não o grafo inteiro.** Quem
-  não casa por chave nem se parece por string nunca chega ao prompt: um apelido
-  sem nenhuma letra em comum com o nome do nó ("Bidu" para "Roberto") vira
-  entidade nova, e o conserto é fundir depois em `/entidades`. É deliberado —
+  não casa por chave nem se parece por string nunca chega ao prompt — desde a
+  4.9 o dossiê do extrator alcança mais um pedaço disso (prefixo e as duas
+  camadas semânticas sobre o bloco), mas um apelido sem nenhuma letra em comum
+  com o nome do nó ("Bidu" para "Roberto") continua virando entidade nova, e o conserto é fundir depois em `/entidades`. É deliberado —
   mandar o catálogo todo seria pagar por texto que não muda resposta nenhuma —,
   mas é um limite, não um detalhe. O que a barra pesquisável faz é baratear o
   conserto: o grafo inteiro está a duas letras de distância dentro do próprio
@@ -3385,15 +3762,16 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   eu rejeitar o átomo ou desmarcar a entidade, mas não dá para trocar o campo nem
   apontar outra entidade — é a única das três relações do átomo que continua sem
   controle na tela, agora que `menciona` ganhou o dele (4.7). Se o agente 2 errar o campo com
-  frequência, o que se ajusta é o `resolucao-2`.
+  frequência, o que se ajusta é o `resolucao-3`.
 - **O confirmar dispara uma passada de embedding** (4.8.1), em `waitUntil`, fora
   do caminho da resposta e engolindo a falha. É mais uma coisa acontecendo
   depois do clique que eu não vejo; o sinal é a linha `[entidades]` no log.
-- **A regra de tipo é arbitrada em dois lugares** (4.8.1): pedida ao extrator
-  no `extracao-6` e imposta pelo código na resolução, que recusa o julgamento
-  tirando um SENTIMENTO, APRENDIZADO ou ROTINA de `eu`. Enquanto a frase não
-  entrar no `resolucao-3` (slice 4.9), o agente 2 continua gastando decisão numa
-  pergunta cuja resposta o código já sabe.
+- **A regra de tipo é arbitrada em três lugares** (4.8.1 e 4.9): pedida ao
+  extrator no `extracao-7`, pedida ao agente 2 no `resolucao-3`, e imposta pelo
+  código nas duas pontas — o parse da extração derruba a chave do dossiê no
+  sujeito desses três tipos, e a resolução recusa o julgamento que tira um
+  SENTIMENTO, APRENDIZADO ou ROTINA de `eu`. Pedir nos dois prompts poupa
+  decisão; o que impede o dado errado continua sendo o código.
 - **O perfil realimenta a resolução, e isso é o risco declarado da slice.** O
   agente 2 lê o perfil para desambiguar; um perfil errado contamina toda
   atribuição futura, e átomo atribuído por engano vira evidência daquele mesmo
@@ -3438,21 +3816,21 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   fielmente o que a transcrição dizia —, mas elas saem como `extracao` (correção
   de texto) ou `grafo` (renome), porque nenhum sinal no material distingue "o
   modelo escreveu errado" de "o microfone ouviu errado". O risco concreto é o
-  `calibracao-1` ver quatro casos do mesmo padrão e propor, para o `extracao-6`,
+  `calibracao-1` ver quatro casos do mesmo padrão e propor, para o `extracao-7`,
   uma regra que conserta algo que nunca chegou até ele.
-  **A saída decidida não é etiqueta nem regra de prompt**: é um agente de
-  pré-resolução de entidades, rodando antes da resolução, que busca as entidades
-  de menor distância no embedding e usa um modelo barato para decidir, átomo a
-  átomo, qual nome citado deve ser substituído pelo do grafo. Fica para quando o
-  fluxo de resolução for refinado — não é trabalho da 4.6. Até lá, o que segura
-  é a amarra do `calibracao-1` e o descarte no rascunho. O paliativo que já
-  funciona sozinho é o vocabulário (§4.4): os três nomes agora estão no grafo, e
-  a próxima sessão já sai com eles nos keyterms.
+  **A saída foi construída na 4.9** (§4.14), e não é etiqueta nem regra de
+  prompt: é a busca por bloco entregando ao extrator os nós que o trecho parece
+  citar, para ele já apontar o nó e escrever o nome gravado no texto do átomo.
+  O que continua valendo deste item é a **medição** e o risco enquanto a 4.9 não
+  for verificada numa sessão real: correção de grafia que sobreviver à fatia
+  continua saindo etiquetada `extracao` ou `grafo`, e o `calibracao-1` continua
+  podendo propor regra para um erro que nunca chegou ao extrator. O que segura é
+  a amarra do `calibracao-1` e o descarte no rascunho.
 - **A etiqueta de agente de `sujeito` e `mencao_removida` usa `sobre.conhecida`
   do átomo**, e não a referência de cada menção. É o sinal que a spec fixou, e é
   grosseiro: um átomo sobre "eu" cuja menção era candidata nova sai etiquetado
   `resolucao`. Não custa nada hoje, porque esta fatia só consome as correções de
-  `extracao`; custará no dia em que o `resolucao-2` for calibrado a partir deste
+  `extracao`; custará no dia em que o `resolucao-3` for calibrado a partir deste
   recorte. `mencao_adicionada` ficou de fora dessa regra: acrescentar uma menção
   que o extrator não listou é falha de extração por definição — não existe
   referência original para a resolução ter errado.

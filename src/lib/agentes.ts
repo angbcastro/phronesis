@@ -104,7 +104,8 @@ export const AGENTES: readonly Agente[] = [
     id: "extracao",
     versao: VERSAO_EXTRACAO,
     rotulo: "extração",
-    papel: "lê uma janela de 2 min e propõe os átomos, com o nome cru de cada entidade",
+    papel:
+      "lê uma janela de 2 min, com o dossiê de quem o grafo acha que ela cita, e propõe os átomos já apontando o nó",
     quando: "automatico",
     gatilho: "a cada 4 blocos transcritos, durante a própria gravação",
     base: BASE_EXTRACAO,
@@ -119,8 +120,9 @@ export const AGENTES: readonly Agente[] = [
     versao: PROMPT_VERSION_RESOLUCAO,
     rotulo: "resolução",
     papel: "decide de quem eu estava falando, lendo o perfil de cada candidato",
-    quando: "condicional",
-    gatilho: "dentro da extração de cada janela, e só se alguma menção ficou ambígua",
+    quando: "automatico",
+    gatilho:
+      "dentro da extração de cada janela, sobre toda menção que tenha candidato — desde a 4.9 nenhuma atribuição do extrator entra sem segunda opinião",
     base: BASE_RESOLUCAO,
     padrao: modeloResolucao,
     variavel: "RESOLUCAO_MODEL",
@@ -248,6 +250,7 @@ export const NOS: readonly NoDoFluxo[] = [
   { id: "vocabulario", rotulo: "vocabulário", tipo: "dado", faixa: "ingestao", coluna: 1, linha: 2, nota: "os nomes do grafo somados a config/vocabulario.txt" },
   { id: "stt", rotulo: "STT", tipo: "agente", agente: "stt", faixa: "ingestao", coluna: 2, linha: 2 },
   { id: "transcricao", rotulo: "transcrição", tipo: "dado", faixa: "ingestao", coluna: 2, linha: 3, nota: "no R2; no grafo vai só a chave" },
+  { id: "candidatas", rotulo: "candidatas", tipo: "dado", faixa: "ingestao", coluna: 1, linha: 3, nota: "quem o grafo acha que cada bloco cita — buscado por RAG, guardado no R2" },
   { id: "extracao", rotulo: "extração", tipo: "agente", agente: "extracao", faixa: "ingestao", coluna: 2, linha: 4 },
   { id: "resolucao", rotulo: "resolução", tipo: "agente", agente: "resolucao", faixa: "ingestao", coluna: 2, linha: 5 },
   { id: "proposta", rotulo: "proposta", tipo: "dado", faixa: "ingestao", coluna: 2, linha: 6, nota: "parcial.json enquanto cresce, extracao.json no fim — nada disto está no grafo ainda" },
@@ -269,8 +272,10 @@ export const ARESTAS: readonly ArestaDoFluxo[] = [
   { de: "audio", para: "stt" },
   { de: "vocabulario", para: "stt" },
   { de: "stt", para: "transcricao" },
+  { de: "transcricao", para: "candidatas", rotulo: "por bloco" },
   { de: "transcricao", para: "extracao", rotulo: "por janela de 2 min" },
-  { de: "extracao", para: "resolucao", rotulo: "só com menção ambígua" },
+  { de: "candidatas", para: "extracao", rotulo: "o dossiê da janela" },
+  { de: "extracao", para: "resolucao", rotulo: "toda menção com candidato" },
   { de: "resolucao", para: "proposta" },
   { de: "proposta", para: "revisao" },
   { de: "revisao", para: "grafo", rotulo: "confirmar" },
@@ -284,6 +289,7 @@ export const ARESTAS: readonly ArestaDoFluxo[] = [
   { de: "perfil", para: "resolucao", rotulo: "é o que desambigua", volta: true },
   { de: "embedding", para: "resolucao", rotulo: "candidato por sentido", volta: true },
   { de: "duplicatas", para: "grafo", rotulo: "propõe; quem funde sou eu", volta: true },
+  { de: "grafo", para: "candidatas", rotulo: "quem já existe", volta: true },
 ];
 
 

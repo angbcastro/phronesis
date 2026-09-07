@@ -1,12 +1,21 @@
 # Checkpoint — 2026-09-05
 
-Documento de trabalho, não de arquitetura. **A slice 4.8 está construída,
-commitada e verificada só por teste — a promessa dela ainda é previsão, não
-medição.** Apagar quando as validações da seção 2 estiverem feitas.
+Documento de trabalho, não de arquitetura. **As slices 4.8, 4.8.1 e 4.9 estão
+construídas, commitadas e verificadas só por teste — a promessa das três ainda é
+previsão, não medição.** Apagar quando as validações da seção 2 estiverem feitas.
 
 Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
-sistema funciona hoje) e `Specs/slice-4.8.md` (o que a fatia atual tem que ser).
+sistema funciona hoje) e `Specs/slice-4.9.md` (o que a fatia atual tem que ser).
 Este arquivo só diz o que fazer a seguir.
+
+> **Atualizado em 06/09, depois da 4.9.** A `Specs/slice-4.9.md` foi executada
+> inteira em código — o RAG por bloco, o dossiê da janela, o `extracao-7`, o
+> `resolucao-3`, o alias da grafia no confirmar, o painel e o `ARCHITECTURE.md`
+> §4.14. **Verificada só por teste, como a 4.8**: nenhuma janela real foi
+> extraída ainda, e a seção 2 abaixo continua sendo o pré-requisito escrito da
+> própria 4.9 — agora com uma pergunta a mais para olhar na revisão (2.6).
+> A pendência da seção 3 **está resolvida**: `comEsperaDeLimite` entrou na
+> resolução, que era o conserto que a 4.9 tornou necessário.
 
 > **Atualizado em 06/09.** A `Specs/slice-4.8.1.md` foi escrita e executada
 > inteira, menos o passo 4 — que é justamente a **seção 2 deste arquivo**. Estão
@@ -43,8 +52,10 @@ Nada disto passou pelo Gateway. **Nenhuma janela real foi extraída ainda.**
 
 ## 2. As validações que faltam
 
-Nesta ordem. As três primeiras são a fatia; a quarta e a quinta são o que ela
-pode ter quebrado sem ninguém ver.
+Nesta ordem. As três primeiras são a 4.8; a quarta e a quinta são o que ela pode
+ter quebrado sem ninguém ver; a sexta é a 4.9, e ela só se olha depois que as
+três primeiras passarem — empilhar duas fatias não medidas faz qualquer
+estranheza ficar sem dono.
 
 ### 2.1 Gravar 3 minutos e ver a janela fechar antes de parar
 
@@ -118,19 +129,54 @@ Nenhuma das duas coisas foi medida, e uma sessão de 15 min nunca foi processada
 inteira sob limite, nem antes desta fatia. O que procurar no log:
 `[limite] extracao <modelo>: rate limit do Gateway — esperando Ns`.
 
+### 2.6 A 4.9: o nome certo dentro do texto do átomo
+
+**O caso de aceite é o áudio real em que o STT ouviu "Jean".** Importar de novo
+(ou gravar dizendo "giam") e olhar a proposta:
+
+- o átomo diz **"Giampaolo Lepore"** no texto, e não "Jean";
+- o sujeito aponta o nó que **já existe** — a linha de procedência da revisão diz
+  "o extrator reconheceu este nome no diário";
+- confirmando, `logs/` mostra `[grafias] sessão <id>: N grafia(s) viraram alias`,
+  e `/entidades` passa a listar "Jean" como grafia de Giampaolo Lepore;
+- na sessão seguinte, "jean" resolve por casamento exato — sem depender da busca.
+
+E o que procurar no log durante a gravação:
+
+```
+[janela] sessão <id> janela 0 (blocos 0-3): +N átomo(s), M estendido(s), dossiê de K entidade(s)
+[candidatas] sessão <id> bloco <i>:            ← só se a busca falhou
+```
+
+`dossiê de 0 entidade(s)` numa sessão que cita gente conhecida é o sinal de que a
+busca não está achando nada, e aí o extrator está rodando como na 4.8. Com o
+grafo pequeno de hoje, K deve ser perto do número de entidades do grafo.
+
+Três coisas que só olho vê, e que são o risco desta fatia:
+
+- **o texto do átomo trocou só o nome próprio?** A instrução manda trocar o nome
+  e mais nada. Se o resto da frase começar a soar como o modelo e não como eu, o
+  `COM AS MINHAS PALAVRAS` está cedendo — e o conserto é o prompt;
+- **apareceu nome de gente conhecida em átomo que não fala dela?** É o falso
+  positivo do dossiê: a lista na frente do modelo é convite para ele usar um nome
+  que combina com o assunto. O sinal é a discordância entre os dois agentes, que
+  a revisão marca;
+- **quantas menções o agente 2 está julgando?** Agora são todas as que têm
+  candidato — se a espera depois de parar de falar crescer, é aí.
+
 ---
 
-## 3. O conserto de uma linha que ficou pendente
+## 3. Feito: a espera de rate limit na resolução
 
-**`resolucao.ts` não chama `comEsperaDeLimite`.** Ele roda no caminho automático,
-dentro da extração de cada janela, num `waitUntil` — e um limite ativo o faz
-falhar em vez de esperar. A degradação já é a certa (menção volta com
-`certo: false`, a revisão destaca, eu escolho), então não é urgente; mas o
-critério declarado no §5.3 é "quem roda em `waitUntil` espera", e ele está do
-lado errado da linha.
+**`resolucao.ts` chama `comEsperaDeLimite` desde a 4.9.** Ele roda no caminho
+automático, dentro da extração de cada janela, e agora em **toda** menção com
+candidato — o que tornou o conserto necessário em vez de só correto. Ele recebe
+o `ate` de quem o chamou, o mesmo da extração daquela janela. A linha do §14 que
+dizia o contrário saiu.
 
-Não foi feito no commit da correção do documento para não misturar texto com
-código, nem no da fatia para não misturar duas mudanças no mesmo arquivo.
+O que continua sem medição é o limite em si: uma sessão de 15 min nunca foi
+processada inteira sob rate limit, e agora ela tem ~8 chamadas de resolução a
+mais na conta. É a seção 2.5.
 
 ---
 
