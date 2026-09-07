@@ -26,10 +26,16 @@
  * do confirmar reencontrava o nó morto (a constraint impede o segundo) e o
  * átomo ia parar num nó que nenhuma listagem mostra.
  *
- * Nada aqui é automático: quem funde sou eu, na tela. Fundir duas pessoas
+ * **Fundir não é automático: quem funde sou eu, na tela.** Fundir duas pessoas
  * diferentes é irreversível num sistema que não desfaz, e o custo do erro é
  * assimétrico — duas entidades a mais é grafo um pouco sujo, uma fusão errada é
  * grafo mentindo.
+ *
+ * A exceção nasceu na 4.9 e é uma só: `registrarGrafia`, que cria o **nó de
+ * alias** da grafia que eu falei quando eu confirmo o átomo. Ela cabe porque não
+ * é uma fusão — o nó nasce com zero átomo e nenhuma aresta a migrar, e desfazê-lo
+ * é apagar a aresta e o nó. O que continua nunca sendo automático é juntar duas
+ * entidades que **já existem**.
  */
 import { query } from "./neo4j";
 import { novoId } from "./sessoes";
@@ -381,3 +387,106 @@ export async function paresDistintos(): Promise<Set<string>> {
 
 /** Chave estável de um par, independente da ordem em que ele veio. */
 export const chaveDoPar = (a: string, b: string): string => [a, b].sort().join("|");
+
+/** O que aconteceu com uma grafia falada. `criada: false` nunca é erro. */
+export interface ResultadoGrafia {
+  criada: boolean;
+  /** Por que não criou, quando não criou. Vazio quando criou. */
+  motivo: string;
+}
+
+/**
+ * Registra a grafia que eu falei como **alias** do nó que eu confirmei
+ * (slice 4.9).
+ *
+ * O nó de alias nasce exatamente como o de `renomear`: `:Entidade` com
+ * `status = 'fundida'` e uma aresta `:FUNDIDA_EM` para o vencedor. O efeito é o
+ * de sempre — a grafia morta resolve para o vencedor em vez de renascer como nó
+ * novo —, e o ganho é o da fatia: eu disse "giam", confirmei "Giampaolo
+ * Lepore", e na sessão seguinte "giam" casa por grafia exata, de graça, sem
+ * depender do RAG.
+ *
+ * **Este alias não é uma fusão.** O nó nasce com zero átomo e nenhuma aresta a
+ * migrar, então desfazê-lo é apagar a aresta e o nó — ao contrário de uma fusão
+ * de verdade, que não tem desfazer. É por isso que ele pode ser automático e ela
+ * não, e é essa a linha que a 4.9 move em `ARCHITECTURE.md` §8.2.
+ *
+ * As recusas são **correção, não política** — nenhuma delas protege o grafo de
+ * mim, todas protegem de um dado que não fecha:
+ *
+ *   1. grafia vazia, pronome, ou igual à chave do próprio nó — nada a registrar;
+ *   2. o nó alvo não existe, ou ele mesmo já é uma grafia fundida — o alias
+ *      apontaria para um nó que nenhuma listagem mostra;
+ *   3. a grafia já existe como nó **ativo** — seria fundir duas entidades reais
+ *      automaticamente, e fusão nunca é automática;
+ *   4. a grafia já é alias de **outro** nó — criar a aresta ali roubaria a
+ *      grafia de quem já a tem, ou a deixaria com dois destinos.
+ *
+ * Segunda chamada com a mesma grafia é no-op: a checagem prévia é a trava
+ * (regra 4).
+ */
+export async function registrarGrafia(
+  chaveDoNo: string,
+  grafiaFalada: string,
+): Promise<ResultadoGrafia> {
+  const chave = normalizarNome(chaveDoNo);
+  const falada = grafiaFalada.trim();
+  const grafia = normalizarNome(falada);
+
+  if (chave === "") throw new FusaoError("registrar grafia exige a entidade");
+  if (grafia === "") return { criada: false, motivo: "a grafia está vazia" };
+  if (grafia === chave) return { criada: false, motivo: "é a própria grafia do nó" };
+  if (ehPronome(grafia)) return { criada: false, motivo: `"${falada}" é um pronome, não um nome` };
+
+  const linhas = await query<{
+    alvo: string | null;
+    alvoFundido: boolean;
+    ja: string | null;
+    jaFundida: boolean;
+    destino: string | null;
+  }>(
+    `OPTIONAL MATCH (v:Entidade { nome_normalizado: $chave })
+     OPTIONAL MATCH (g:Entidade { nome_normalizado: $grafia })
+     OPTIONAL MATCH (g)-[:FUNDIDA_EM]->(d:Entidade)
+     RETURN v.id AS alvo, coalesce(v.status, 'ativa') = 'fundida' AS alvoFundido,
+            g.id AS ja, coalesce(g.status, 'ativa') = 'fundida' AS jaFundida,
+            d.nome_normalizado AS destino`,
+    { chave, grafia },
+  );
+  const l = linhas[0];
+
+  if (!l?.alvo) return { criada: false, motivo: `"${chaveDoNo}" não está no grafo` };
+  if (l.alvoFundido) {
+    return { criada: false, motivo: `"${chaveDoNo}" já é uma grafia fundida em outra entidade` };
+  }
+  if (l.ja) {
+    if (!l.jaFundida) {
+      return { criada: false, motivo: `"${falada}" já é uma entidade própria no grafo` };
+    }
+    return l.destino === chave
+      ? { criada: false, motivo: "já era grafia deste nó" }
+      : { criada: false, motivo: `"${falada}" já é grafia de "${l.destino}"` };
+  }
+
+  // O nome de exibição é a grafia **como eu a falei**, e não a chave: é ela que
+  // a lista de `/entidades` mostra como histórico do nome. Mesmo cuidado do
+  // `renomear`, que lê `e.nome` antes do SET em vez de usar o argumento.
+  await query(
+    `MATCH (v:Entidade { nome_normalizado: $chave })
+     CREATE (alias:Entidade {
+       id: $idAlias, nome: $falada, nome_normalizado: $grafia,
+       criado_em: $agora, status: $fundida
+     })
+     MERGE (alias)-[:FUNDIDA_EM]->(v)`,
+    {
+      chave,
+      grafia,
+      falada,
+      idAlias: novoId(),
+      agora: new Date().toISOString(),
+      fundida: STATUS_ENTIDADE_FUNDIDA,
+    },
+  );
+
+  return { criada: true, motivo: "" };
+}

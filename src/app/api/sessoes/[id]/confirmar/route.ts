@@ -11,8 +11,10 @@ import {
   passadaDeVetores,
 } from "@/lib/entidades";
 import { normalizarTipo } from "@/lib/extracao";
+import { registrarGrafia } from "@/lib/fusao";
 import { normalizarCampo } from "@/lib/perfil";
 import { getJson } from "@/lib/r2";
+import { mencoesDe, sobreDe } from "@/lib/referencias";
 import { atualizarSessao, buscarSessao } from "@/lib/sessoes";
 import { erro, parametros } from "@/lib/rotas";
 import type { AtomoParaGravar, EntidadeParaGravar } from "@/lib/atomos";
@@ -124,6 +126,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
   }
 
+  /**
+   * A grafia que eu falei, e o nó em que ela caiu (slice 4.9).
+   *
+   * O `citado` é relido de `extracao.json` pelo índice e **nunca** aceito do
+   * corpo — é procedência, e vale aqui a mesma regra de `id`, offsets e
+   * `prompt_version` (§4.7). A chave final é a da tela, porque é ela que eu
+   * decidi.
+   */
+  const grafias: { chave: string; citado: string }[] = [];
+
   const atomos: AtomoParaGravar[] = [];
   /**
    * O mesmo que foi gravado, com os nomes **finais** de volta — é contra isto
@@ -166,13 +178,23 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       ).values(),
     ];
 
+    const cruas = (Array.isArray(bruto.menciona) ? bruto.menciona : []).map((m) =>
+      normalizarNome(String(m)),
+    );
+
     const menciona = [
-      ...new Set(
-        (Array.isArray(bruto.menciona) ? bruto.menciona : [])
-          .map((m) => normalizarNome(String(m)))
-          .filter((m) => m !== "" && m !== sobre && aprovadas.has(m)),
-      ),
+      ...new Set(cruas.filter((m) => m !== "" && m !== sobre && aprovadas.has(m))),
     ];
+
+    // O sujeito casa sempre; as menções, só quando a lista da tela tem o mesmo
+    // tamanho da proposta. Acrescentar ou remover uma menção desloca as
+    // posições, e casar grafia com o nó errado criaria um alias mentindo — é a
+    // mesma trava que a revisão já aplica às sugestões (§14).
+    const originais = mencoesDe(original);
+    grafias.push({ chave: sobre, citado: sobreDe(original).citado });
+    if (cruas.length === originais.length) {
+      cruas.forEach((chave, i) => grafias.push({ chave, citado: originais[i].citado }));
+    }
 
     atomos.push({
       // Procedência: sempre do servidor, nunca do corpo.
@@ -224,6 +246,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // apuração de correções e pela mesma razão: fora do caminho da resposta, e
   // engolindo a falha — o diário já está gravado, e o que se perde é uma
   // vizinhança melhor na próxima sessão, não conteúdo.
+  // A grafia que eu falei vira alias do nó que eu confirmei (slice 4.9). Em
+  // `waitUntil` e **depois** de gravar, pela mesma precedência do embedding:
+  // nada no caminho do alias pode impedir uma gravação. Dois efeitos de graça:
+  // `fonteDaEntidade` inclui aliases, então o hash muda e a passada de vetores
+  // logo abaixo reembute a entidade sozinha; e `nomesParaVocabulario` exclui
+  // fundidos, então "Jean" não é ensinado ao STT.
+  waitUntil(registrarGrafias(id, grafias));
+
   waitUntil(passadaDeVetores(`confirmar ${id}`));
 
   waitUntil(
@@ -248,4 +278,36 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     perfila: atomos.reduce((n, a) => n + a.perfila.length, 0),
     rejeitados: proposta.valor.atomos.length - atomos.length,
   });
+}
+
+/**
+ * Cada grafia falada que diferiu do nome final, uma vez só.
+ *
+ * Best-effort por construção: falhar aqui só perde o casamento de graça da
+ * próxima sessão, e o sinal é a linha `[grafias]` no log. Quem recusa o que não
+ * deve entrar é `registrarGrafia` — pronome, grafia que já é entidade própria,
+ * grafia que já é alias de outro nó.
+ */
+async function registrarGrafias(
+  id: string,
+  grafias: readonly { chave: string; citado: string }[],
+): Promise<void> {
+  const vistas = new Set<string>();
+  let criadas = 0;
+
+  for (const { chave, citado } of grafias) {
+    const par = `${chave}|${normalizarNome(citado)}`;
+    if (chave === "" || citado.trim() === "" || vistas.has(par)) continue;
+    vistas.add(par);
+
+    try {
+      if ((await registrarGrafia(chave, citado)).criada) criadas++;
+    } catch (e) {
+      console.error(`[grafias] sessão ${id}: não consegui registrar "${citado}":`, e);
+    }
+  }
+
+  if (criadas > 0) {
+    console.log(`[grafias] sessão ${id}: ${criadas} grafia(s) viraram alias`);
+  }
 }

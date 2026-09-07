@@ -22,10 +22,15 @@ vi.mock("@/lib/entidades", async (original) => ({
   ...(await original<typeof import("@/lib/entidades")>()),
   passadaDeVetores: vi.fn(async () => {}),
 }));
+// A escrita do alias da grafia falada (4.9) — é o Neo4j do outro lado dela.
+vi.mock("@/lib/fusao", () => ({
+  registrarGrafia: vi.fn(async () => ({ criada: true, motivo: "" })),
+}));
 
 import { POST } from "@/app/api/sessoes/[id]/confirmar/route";
 import { gravarAtomos, gravarEntidades } from "@/lib/atomos";
 import { passadaDeVetores } from "@/lib/entidades";
+import { registrarGrafia } from "@/lib/fusao";
 import { getJson } from "@/lib/r2";
 import { buscarSessao } from "@/lib/sessoes";
 import type { AtomoParaGravar, EntidadeParaGravar } from "@/lib/atomos";
@@ -86,6 +91,7 @@ beforeEach(() => {
   vi.mocked(gravarAtomos).mockReset().mockResolvedValue(undefined);
   vi.mocked(gravarEntidades).mockReset().mockResolvedValue(undefined);
   vi.mocked(passadaDeVetores).mockClear();
+  vi.mocked(registrarGrafia).mockClear();
 });
 
 /**
@@ -312,5 +318,105 @@ describe("guardas de estado", () => {
 
     const r = await chamar({ aprovados: [], entidades: [] });
     expect(r.status).toBe(409);
+  });
+});
+
+/**
+ * A grafia falada vira alias do nó que eu confirmei (slice 4.9).
+ *
+ * É o que fecha o ciclo da fatia: eu disse "Jean", o RAG achou o Giampaolo, o
+ * extrator escreveu o nome certo no átomo, eu confirmei — e na sessão seguinte
+ * "jean" casa por grafia exata, de graça, sem depender do RAG.
+ */
+describe("a grafia falada vira alias", () => {
+  /** Uma proposta no formato da 4.9: `citado` é a grafia que o STT escreveu. */
+  const comCitado = {
+    ...proposta,
+    atomos: [
+      {
+        ...atomoProposto(0, "x"),
+        sobre: { citado: "Jean", entidade: "Giampaolo Lepore", conhecida: true, certo: true },
+        menciona: [{ citado: "Dapta", entidade: "Adapta", conhecida: true, certo: true }],
+      },
+    ],
+  };
+
+  const confirmarComCitado = () => {
+    vi.mocked(getJson).mockResolvedValue({ valor: comCitado, etag: null } as never);
+    return chamar({
+      aprovados: [
+        {
+          indice: 0,
+          texto: "Falei com o Giampaolo Lepore sobre a Adapta",
+          tipo: "FATO",
+          sobre: "Giampaolo Lepore",
+          menciona: ["Adapta"],
+        },
+      ],
+      entidades: [
+        { nome: "Giampaolo Lepore", tipo: "Pessoa" },
+        { nome: "Adapta", tipo: "Projeto" },
+      ],
+    });
+  };
+
+  it("o que eu falei e o que eu confirmei entram como par", async () => {
+    expect((await confirmarComCitado()).status).toBe(200);
+    expect(vi.mocked(registrarGrafia).mock.calls).toEqual([
+      ["giampaolo lepore", "Jean"],
+      ["adapta", "Dapta"],
+    ]);
+  });
+
+  it("o `citado` é relido da proposta, nunca aceito do corpo (§4.7)", async () => {
+    vi.mocked(getJson).mockResolvedValue({ valor: comCitado, etag: null } as never);
+    await chamar({
+      aprovados: [
+        {
+          indice: 0,
+          texto: "t",
+          tipo: "FATO",
+          sobre: "Giampaolo Lepore",
+          menciona: ["Adapta"],
+          // Um corpo montado à mão tentando plantar outra grafia.
+          citado: "qualquer coisa",
+        },
+      ],
+      entidades: [
+        { nome: "Giampaolo Lepore", tipo: "Pessoa" },
+        { nome: "Adapta", tipo: "Projeto" },
+      ],
+    });
+    expect(vi.mocked(registrarGrafia).mock.calls[0]).toEqual(["giampaolo lepore", "Jean"]);
+  });
+
+  it("menção acrescentada na tela desalinha as posições, e aí só o sujeito casa", async () => {
+    // A referência casa com a posição por índice; acrescentar uma menção desloca
+    // tudo, e casar grafia com o nó errado criaria um alias mentindo.
+    vi.mocked(getJson).mockResolvedValue({ valor: comCitado, etag: null } as never);
+    await chamar({
+      aprovados: [
+        {
+          indice: 0,
+          texto: "t",
+          tipo: "FATO",
+          sobre: "Giampaolo Lepore",
+          menciona: ["Adapta", "Pedro"],
+        },
+      ],
+      entidades: [
+        { nome: "Giampaolo Lepore", tipo: "Pessoa" },
+        { nome: "Adapta", tipo: "Projeto" },
+        { nome: "Pedro", tipo: "Pessoa" },
+      ],
+    });
+    expect(vi.mocked(registrarGrafia).mock.calls).toEqual([["giampaolo lepore", "Jean"]]);
+  });
+
+  it("falhar aqui não derruba o confirmar: o diário já está gravado", async () => {
+    vi.mocked(registrarGrafia).mockRejectedValue(new Error("Neo4j fora"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect((await confirmarComCitado()).status).toBe(200);
   });
 });

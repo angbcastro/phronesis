@@ -16,6 +16,7 @@ import {
   fundir,
   FusaoError,
   marcarDistintas,
+  registrarGrafia,
   renomear,
   STATUS_ENTIDADE_FUNDIDA,
   trocarTipo,
@@ -299,5 +300,99 @@ describe("o nome que o alias guarda", () => {
     // O nome velho não pode mais viajar como parâmetro.
     const params = consulta.mock.calls.at(-1)?.[1] as Record<string, unknown>;
     expect(params.nomeVelho).toBeUndefined();
+  });
+});
+
+/**
+ * A grafia falada vira alias no confirmar (slice 4.9).
+ *
+ * É a única escrita automática deste módulo, e ela cabe porque **não é uma
+ * fusão**: o nó nasce com zero átomo e nenhuma aresta a migrar, então desfazê-lo
+ * é apagar a aresta e o nó. O que continua nunca sendo automático é juntar duas
+ * entidades que já existem — e são as recusas abaixo que garantem isso.
+ */
+describe("registrar a grafia falada", () => {
+  /** O nó alvo existe e está ativo; a grafia ainda não é nó nenhum. */
+  const grafoLimpo = () =>
+    consulta.mockImplementation(async (statement: string) =>
+      statement.includes("alvoFundido")
+        ? ([{ alvo: "id-v", alvoFundido: false, ja: null, jaFundida: false, destino: null }] as never)
+        : ([] as never),
+    );
+
+  const comGrafia = (linha: Record<string, unknown>) =>
+    consulta.mockImplementation(async (statement: string) =>
+      statement.includes("alvoFundido")
+        ? ([{ alvo: "id-v", alvoFundido: false, ...linha }] as never)
+        : ([] as never),
+    );
+
+  it("cria o nó de alias com status fundida, apontando para o nó confirmado", async () => {
+    grafoLimpo();
+    expect(await registrarGrafia("giampaolo lepore", "Jean")).toEqual({ criada: true, motivo: "" });
+
+    const cypher = todoCypher();
+    expect(cypher).toContain("CREATE (alias:Entidade");
+    expect(cypher).toContain("MERGE (alias)-[:FUNDIDA_EM]->(v)");
+    // O nome de exibição é a grafia como eu a falei — é ela que a lista mostra
+    // como histórico do nome.
+    expect(consulta.mock.calls.at(-1)?.[1]).toMatchObject({
+      falada: "Jean",
+      grafia: "jean",
+      fundida: STATUS_ENTIDADE_FUNDIDA,
+    });
+  });
+
+  it("pronome não vira alias, e nem chega a consultar o grafo", async () => {
+    grafoLimpo();
+    expect((await registrarGrafia("marina", "ela")).criada).toBe(false);
+    expect(consulta).not.toHaveBeenCalled();
+  });
+
+  it("a própria grafia do nó é no-op", async () => {
+    grafoLimpo();
+    expect((await registrarGrafia("giampaolo lepore", "Giampaolo Lepore")).criada).toBe(false);
+    expect(consulta).not.toHaveBeenCalled();
+  });
+
+  it("grafia que já é entidade própria é recusada — fusão nunca é automática", async () => {
+    comGrafia({ ja: "id-g", jaFundida: false, destino: null });
+    const r = await registrarGrafia("giampaolo lepore", "Isinha");
+
+    expect(r.criada).toBe(false);
+    expect(r.motivo).toContain("já é uma entidade própria");
+    expect(todoCypher()).not.toContain("CREATE (alias:Entidade");
+  });
+
+  it("grafia que já é alias de OUTRO nó não muda de dono", async () => {
+    comGrafia({ ja: "id-g", jaFundida: true, destino: "outra pessoa" });
+    const r = await registrarGrafia("giampaolo lepore", "Jean");
+
+    expect(r.criada).toBe(false);
+    expect(r.motivo).toContain('já é grafia de "outra pessoa"');
+  });
+
+  it("segunda chamada com a mesma grafia é no-op — a checagem prévia é a trava", async () => {
+    comGrafia({ ja: "id-g", jaFundida: true, destino: "giampaolo lepore" });
+    const r = await registrarGrafia("giampaolo lepore", "Jean");
+
+    expect(r).toEqual({ criada: false, motivo: "já era grafia deste nó" });
+    expect(todoCypher()).not.toContain("CREATE (alias:Entidade");
+  });
+
+  it("nó alvo que já é alias não recebe grafia: ela apontaria para um nó morto", async () => {
+    consulta.mockImplementation(async (statement: string) =>
+      statement.includes("alvoFundido")
+        ? ([{ alvo: "id-v", alvoFundido: true, ja: null, jaFundida: false, destino: null }] as never)
+        : ([] as never),
+    );
+    expect((await registrarGrafia("rapha", "Jean")).criada).toBe(false);
+  });
+
+  it("nó alvo que não existe é recusa, não exceção: isto roda em waitUntil", async () => {
+    consulta.mockResolvedValue([
+      { alvo: null, alvoFundido: false, ja: null, jaFundida: false, destino: null },
+    ] as never);
+    expect((await registrarGrafia("fantasma", "Jean")).criada).toBe(false);
   });
 });
