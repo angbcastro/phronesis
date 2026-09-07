@@ -123,3 +123,31 @@ describe("006_embedding.cypher", () => {
     expect(m006).toMatch(/embedding_fonte/);
   });
 });
+
+describe("008_sessao_descartada.cypher", () => {
+  const m008 = readFileSync("db/migrations/008_sessao_descartada.cypher", "utf8");
+
+  it("é no-op — propriedade não se declara, e o Aura Free não tem constraint de existência", () => {
+    expect(statements(m008)).toEqual([]);
+  });
+
+  it("declara `descartada_em` em :Sessao, que é para o que ela existe", () => {
+    expect(m008).toMatch(/descartada_em/);
+    expect(m008).toMatch(/:Sessao/);
+  });
+
+  it("diz que ausente é o caso normal — nada a migrar nas sessões de hoje", () => {
+    expect(m008).toMatch(/SEM MIGRAÇÃO DE DADO/);
+  });
+
+  // A regra 6 do CLAUDE.md, escrita onde quem lê o schema a encontra: um
+  // `DETACH DELETE` no :Sessao orfanaria os átomos de uma sessão confirmada.
+  it("registra que o apagar não toca no grafo", () => {
+    expect(m008).toMatch(/SEM `DELETE` NO GRAFO/);
+    expect(m008).toMatch(/regra 6/);
+  });
+
+  it("não migra dado", () => {
+    expect(statements(m008).join(" ")).not.toMatch(/SET|MERGE|MATCH/);
+  });
+});

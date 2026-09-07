@@ -116,6 +116,28 @@ export async function existe(key: string): Promise<{ bytes: number } | null> {
   return { bytes: Number(resp.headers.get("content-length") ?? 0) };
 }
 
+/**
+ * Apaga um objeto. 404 é sucesso — o que se queria é que ele não exista.
+ *
+ * `leitura: true` num DELETE não é descuido: o que essa opção autoriza é
+ * repetir a requisição depois de ela já ter saído, e DELETE é idempotente. O
+ * `put` não pode fazer isso porque o PUT daqui é condicional, e o segundo
+ * levaria 412.
+ *
+ * Só existe desde a slice 4.10, e para um chamador só: o botão de apagar
+ * sessão. `r2.ts` continua sem `LIST` — quem enumera as chaves de uma sessão é
+ * o manifest, por `chavesDaSessao`.
+ */
+export async function remover(key: string): Promise<void> {
+  const resp = await comRetry(
+    `R2 DELETE ${key}`,
+    () => cliente().fetch(urlObjeto(key), { method: "DELETE" }),
+    { leitura: true },
+  );
+  if (resp.status === 404 || resp.status === 204 || resp.ok) return;
+  throw new Error(`R2 DELETE ${key} falhou: ${resp.status}`);
+}
+
 export class ConflitoR2Error extends Error {
   constructor(key: string) {
     super(`R2 PUT ${key} rejeitado por condicional (412)`);

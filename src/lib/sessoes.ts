@@ -80,15 +80,40 @@ export async function atualizarSessao(
  * Alimenta a lista de sessões, que é de onde se força uma re-extração. Limite
  * baixo de propósito: é uma lista para achar uma sessão, não um histórico
  * navegável — histórico é trabalho da busca, slice 3.
+ *
+ * Sessão descartada some daqui, e é só daqui: o nó continua no grafo, com os
+ * átomos que ele gerou pendurados (regra 6).
  */
 export async function todasSessoes(limite = 50): Promise<Sessao[]> {
   const r = await query<{ sessao: Sessao }>(
     `MATCH (s:Sessao)
+     WHERE s.descartada_em IS NULL
      RETURN s { .* } AS sessao
      ORDER BY s.iniciada_em DESC
      LIMIT $limite`,
     { limite },
   );
   return r.map((l) => l.sessao);
+}
+
+/**
+ * A sessão sai da lista, e os objetos dela saem do R2 (quem apaga é a rota).
+ *
+ * **Sem `DELETE` no grafo**, e não por conservadorismo: a regra 6 proíbe apagar
+ * átomo, e um `DETACH DELETE` no `:Sessao` levaria junto o `GEROU` e orfanaria
+ * os átomos de uma sessão já confirmada. O nó fica, marcado.
+ *
+ * A consequência aceita: `audio_key` e `transcricao_key` de uma sessão
+ * descartada passam a apontar para objetos que não existem mais. A procedência
+ * do átomo continua verdadeira sobre o que ele foi; o que sumiu foi o material.
+ */
+export async function descartarSessao(id: string): Promise<Sessao | null> {
+  const r = await queryUm<{ sessao: Sessao }>(
+    `MATCH (s:Sessao { id: $id })
+     SET s.descartada_em = $em
+     RETURN s { .* } AS sessao`,
+    { id, em: new Date().toISOString() },
+  );
+  return r?.sessao ?? null;
 }
 

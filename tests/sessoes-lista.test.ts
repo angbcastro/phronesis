@@ -12,6 +12,7 @@ import {
   destino,
   duracao,
   jaRevisada,
+  podeApagar,
   podeLerTranscricao,
   podeReextrair,
   quando,
@@ -140,6 +141,27 @@ describe("qual sessão já foi revisada", () => {
       "erro",
     ]) {
       expect(jaRevisada(sessao(s)), s).toBe(false);
+    }
+  });
+});
+
+/**
+ * O botão de apagar (slice 4.10). Ele existe porque calibrar gera sessão de
+ * teste, e uma sessão de 17 min fatiada são 35 objetos no R2: limpar à mão no
+ * console não é caminho.
+ */
+describe("quem pode ser apagada", () => {
+  it("sessão que já terminou de processar pode — inclusive a confirmada", () => {
+    for (const s of ["em_revisao", "confirmada", "erro"]) {
+      expect(podeApagar(sessao(s)), s).toBe(true);
+    }
+  });
+
+  // A mesma guarda que a rota aplica com 409: um `waitUntil` vivo voltaria a
+  // gravar o que acabou de sumir, e sobraria objeto órfão sem `LIST` que o ache.
+  it("sessão no meio do pipeline não — o botão nem aparece", () => {
+    for (const s of ["gravando", "finalizando", "transcrevendo", "transcrito", "extraindo"]) {
+      expect(podeApagar(sessao(s)), s).toBe(false);
     }
   });
 });

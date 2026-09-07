@@ -20,7 +20,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { temTranscricao } from "@/lib/estados";
+import { temTranscricao, terminouDeProcessar } from "@/lib/estados";
 import type { StatusSessao } from "@/lib/tipos";
 
 interface Sessao {
@@ -91,10 +91,20 @@ export const podeReextrair = (s: Sessao): boolean =>
  */
 export const jaRevisada = (s: Sessao): boolean => s.status === "confirmada";
 
+/**
+ * Dá para apagar: nada mais vai mudar sozinho nesta sessão.
+ *
+ * A mesma guarda que a rota aplica, e pelo mesmo motivo — apagar no meio do
+ * pipeline correria com um `waitUntil` vivo, que voltaria a gravar o que acabou
+ * de sumir. Aqui ela só evita oferecer um botão que levaria 409.
+ */
+export const podeApagar = (s: Sessao): boolean => terminouDeProcessar(s.status as StatusSessao);
+
 export function Sessoes() {
   const [sessoes, setSessoes] = useState<Sessao[] | null>(null);
   const [falha, setFalha] = useState<string | null>(null);
   const [armado, setArmado] = useState<string | null>(null);
+  const [armadoApagar, setArmadoApagar] = useState<string | null>(null);
   const [rodando, setRodando] = useState<string | null>(null);
   const [feito, setFeito] = useState<Set<string>>(new Set());
 
@@ -139,6 +149,34 @@ export function Sessoes() {
     void carregar();
   }
 
+  /**
+   * Dois toques, como o reextrair, e pelo mesmo motivo escrito lá: um toque
+   * acidental numa lista custaria trabalho. Aqui custaria a sessão — o áudio, a
+   * transcrição e a proposta somem do R2 e não voltam.
+   *
+   * A linha sai da lista no sucesso em vez de recarregar: `todasSessoes` já
+   * filtra a descartada, mas recarregar seria uma ida ao grafo para descobrir o
+   * que esta tela acabou de mandar acontecer.
+   */
+  async function apagar(id: string) {
+    if (armadoApagar !== id) {
+      setArmadoApagar(id);
+      return;
+    }
+    setArmadoApagar(null);
+    setRodando(id);
+    setFalha(null);
+
+    const r = await fetch(`/api/sessoes/${id}`, { method: "DELETE" }).catch(() => null);
+
+    setRodando(null);
+    if (!r || !r.ok) {
+      setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
+      return;
+    }
+    setSessoes((atual) => (atual ?? []).filter((s) => s.id !== id));
+  }
+
   return (
     <main className="sessoes">
       <header>
@@ -146,7 +184,7 @@ export function Sessoes() {
         <p className="aguardando">
           {sessoes ? `${sessoes.length} sessão(ões)` : "…"} · verde é o que eu já revisei —
           reextrair chama o modelo de novo e sobrescreve a proposta atual; transcrição abre o
-          texto literal
+          texto literal; apagar tira o áudio e a proposta do R2 e some com a linha
         </p>
       </header>
 
@@ -190,6 +228,18 @@ export function Sessoes() {
                 >
                   —
                 </span>
+              )}
+
+              {podeApagar(s) && (
+                <button
+                  className={armadoApagar === s.id ? "reextrair armado" : "reextrair"}
+                  disabled={rodando === s.id}
+                  onClick={() => void apagar(s.id)}
+                  onBlur={() => armadoApagar === s.id && setArmadoApagar(null)}
+                  title="apaga o áudio, a transcrição e a proposta no R2; o que já está no grafo fica"
+                >
+                  {rodando === s.id ? "…" : armadoApagar === s.id ? "apagar?" : "apagar"}
+                </button>
               )}
             </div>
           </li>

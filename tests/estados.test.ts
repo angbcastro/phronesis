@@ -90,6 +90,21 @@ describe("o que cada estado significa para as telas", () => {
     expect(estaPendenteDeRevisao("confirmada")).toBe(false);
   });
 
+  /**
+   * A mesma pergunta serve à guarda do `DELETE /api/sessoes/:id` (slice 4.10):
+   * apagar no meio do pipeline correria com um `waitUntil` vivo, que voltaria a
+   * gravar o que acabou de sumir — e sobraria um objeto órfão de uma sessão que
+   * já saiu da lista, sem `LIST` no R2 para reencontrá-lo.
+   */
+  it("o apagar só é oferecido quando nada mais vai gravar sozinho", () => {
+    for (const s of ["gravando", "finalizando", "transcrevendo", "transcrito", "extraindo"] as const) {
+      expect(terminouDeProcessar(s)).toBe(false);
+    }
+    for (const s of ["em_revisao", "confirmada", "erro"] as const) {
+      expect(terminouDeProcessar(s)).toBe(true);
+    }
+  });
+
   it("a leitura só para o polling quando nada mais muda sozinho", () => {
     // Parar em `transcrito` faria a tela nunca ver a extração terminar, e o
     // link para a revisão nunca apareceria.

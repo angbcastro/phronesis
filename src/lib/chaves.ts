@@ -17,6 +17,7 @@
  *   config/prompt-<agente>-<hash>.json
  */
 import { EXT_GRAVACAO, extensaoAceita } from "./audio";
+import type { Manifest } from "./tipos";
 
 export const prefixoSessao = (id: string) => `sessoes/${id}`;
 export const chaveManifest = (id: string) => `${prefixoSessao(id)}/manifest.json`;
@@ -141,3 +142,47 @@ export function idValido(id: string): boolean {
  */
 export const chaveChunkCandidatas = (id: string, i: number) =>
   `${prefixoSessao(id)}/candidatas_${indiceChunk(i)}.json`;
+
+/**
+ * Tudo o que uma sessão tem no R2 — para apagar (slice 4.10).
+ *
+ * Mora aqui porque **um lugar só monta chave**: enumerar objetos de sessão numa
+ * rota seria a segunda cópia do layout, e ela envelheceria calada na primeira
+ * chave nova.
+ *
+ * Sai do manifest, e não de um `LIST`, porque `r2.ts` não tem `LIST` — é o
+ * manifest que sabe quantos blocos existem e com que extensão cada um foi
+ * subido. **Por isso ele vem por último na lista**, e apagar na ordem devolvida
+ * é o que importa: apagá-lo primeiro perderia a lista de blocos e deixaria
+ * trinta e cinco objetos inalcançáveis, sem `LIST` para reencontrá-los.
+ *
+ * A extensão sai de `c.ext ?? EXT_GRAVACAO`, que é o que `extensaoDoChunk` faz
+ * — chamá-la aqui fecharia um ciclo, porque `manifest.ts` importa este módulo.
+ *
+ * As fixas entram mesmo quando não existem: apagar objeto que não está lá é
+ * 404, e `remover` trata 404 como sucesso. Perguntar antes custaria um HEAD por
+ * chave para economizar um DELETE por chave.
+ *
+ * O que **não** entra, de propósito: `calibracao/indice.json`. As correções
+ * desta sessão são material de calibração, não dado de sessão, e apagá-las
+ * seria desaprender.
+ */
+export function chavesDaSessao(m: Manifest): string[] {
+  const id = m.sessao_id;
+
+  const porBloco = m.chunks.flatMap((c) => [
+    chaveChunkAudio(id, c.i, c.ext ?? EXT_GRAVACAO),
+    chaveChunkTranscricao(id, c.i),
+    chaveChunkCandidatas(id, c.i),
+  ]);
+
+  return [
+    ...porBloco,
+    chaveTranscricao(id),
+    chaveParcial(id),
+    chaveExtracao(id),
+    chaveExtracaoAnterior(id),
+    chaveCorrecoes(id),
+    chaveManifest(id), // por último, sempre — ver o docstring
+  ];
+}
