@@ -1231,11 +1231,11 @@ Duas fronteiras, e as duas são de propósito:
   átomo está errado, e isso só se conserta se eu vir.
 
 A frase equivalente dentro de `INSTRUCOES` — repetir a regra de tipo para o
-agente não gastar a decisão à toa — fica para o `resolucao-3` (slice 4.9): mudar
-o texto sobe a versão do prompt (regra 7), e por uma frase não vale queimar o
-número que a fatia seguinte já reservou. Enquanto isso a regra é arbitrada em
-dois lugares — pedida no prompt da extração, imposta no código da resolução —, e
-isso está no §14.
+agente não gastar a decisão à toa — **entrou no `resolucao-3`** (slice 4.9), que
+era a fatia que já ia subir a versão do prompt de qualquer jeito. A regra passou
+a ser dita nos dois prompts e imposta nas duas pontas do código; a migration 007
+acrescentou `HISTORIA` aos três tipos, nos quatro lugares de uma vez, porque
+`TIPOS_SEMPRE_EU` é a lista única que todos leem (§14).
 
 #### Resposta ruim degrada para dúvida, nunca para atribuição errada
 
@@ -1441,15 +1441,17 @@ consultas de `entidades.ts` desfazem essa normalização antes de comparar. A ra
 é poder conferir o piso à mão — `cosineSimilarity` do pacote `ai` fala cosseno, e
 um número que só existe dentro do banco é um número que ninguém audita.
 
-#### `resolucao-2` (e, desde a 4.9, `resolucao-3`)
+#### A versão do prompt do agente 2, de `resolucao-2` a `resolucao-4`
 
 `PROMPT_VERSION_RESOLUCAO` subiu para `resolucao-2` na 4.5, e o texto do prompt
 quase não mudou. **A versão acompanha a entrada, não só a redação:** o conjunto
 de candidatos que o agente recebe é outro, e isso é saída diferente (regra 7). Na
 4.9 ela subiu de novo, para `resolucao-3`, pelo mesmo critério e mais o texto: a
 chave do extrator entrou como quinta camada, a lista virou a de todas as menções
-com candidato, e duas frases entraram no prompt (§4.14). O
-prompt passou a dizer, ao lado de cada candidato, **por que ele está na lista** —
+com candidato, e duas frases entraram no prompt (§4.14). E para `resolucao-4` com
+a migration 007, pelos dois motivos outra vez — o catálogo passou a ter
+organizações, e a regra de tipo passou a travar `HISTORIA` em `eu` junto com os
+outros três. O prompt passou a dizer, ao lado de cada candidato, **por que ele está na lista** —
 e quando o motivo é "átomos passados parecidos", os trechos vão junto, porque
 evidência de uso é o sinal mais forte que existe quando o perfil está vazio.
 
@@ -2031,6 +2033,12 @@ ao que o vetor devolve: candidato que não existe seria um nome impossível de
 escolher na revisão.
 
 #### `extracao-7`: um bloco injetado, e a base intacta
+
+> Os dois números desta seção são os que **a 4.9 produziu**, e não os que estão
+> em vigor: a migration 007 subiu os dois logo depois, para `extracao-8` e
+> `resolucao-4` (§4.6 e §8.1). O que a 4.9 fez com o prompt continua descrito
+> aqui; o que cada versão diz de si está em `PROMPT_VERSION` e
+> `PROMPT_VERSION_RESOLUCAO`.
 
 `INSTRUCOES_BASE` e `FORMATO` **não mudaram um byte**. O bloco novo entra por
 `inserirAntesDoFormato`, como `blocoDeRegras` e `blocoDaJanela` já entravam, e
@@ -3372,7 +3380,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 13. Verificação
 
-- `pnpm test` — **48 arquivos, 820 testes**, sem credencial e sem rede. A lista
+- `pnpm test` — **48 arquivos, 831 testes**, sem credencial e sem rede. A lista
   abaixo comenta os que valem uma explicação; a cobertura inteira se lê em
   `tests/`. Os que não têm bullet próprio cobrem a lógica pura da slice 1
   (chaves, manifest, estados, offsets, vocabulário, backoff, retry de rede,

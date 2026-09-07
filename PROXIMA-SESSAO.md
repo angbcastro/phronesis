@@ -11,7 +11,9 @@ Este arquivo só diz o que fazer a seguir.
 > **Atualizado em 06/09, depois da 4.9.** A `Specs/slice-4.9.md` foi executada
 > inteira em código — o RAG por bloco, o dossiê da janela, o `extracao-7`, o
 > `resolucao-3`, o alias da grafia no confirmar, o painel e o `ARCHITECTURE.md`
-> §4.14. **Verificada só por teste, como a 4.8**: nenhuma janela real foi
+> §4.14. **A migration 007 veio em cima** (`HISTORIA` e `:Organizacao`), e os
+> dois prompts já estão em `extracao-8` e `resolucao-4`: a sessão de validação
+> vai exercitar as duas fatias de uma vez. **Verificada só por teste, como a 4.8**: nenhuma janela real foi
 > extraída ainda, e a seção 2 abaixo continua sendo o pré-requisito escrito da
 > própria 4.9 — agora com uma pergunta a mais para olhar na revisão (2.6).
 > A pendência da seção 3 **está resolvida**: `comEsperaDeLimite` entrou na
