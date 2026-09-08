@@ -108,7 +108,7 @@ describe("todo agente está no painel", () => {
     }
   });
 
-  it("os sete ids do domínio têm exatamente um agente cada", () => {
+  it("os oito ids do domínio têm exatamente um agente cada", () => {
     expect(AGENTES.map((a) => a.id).sort()).toEqual([...AGENTE_IDS].sort());
     expect(new Set(AGENTES.map((a) => a.modulo)).size).toBe(AGENTES.length);
     for (const id of AGENTE_IDS) expect(agentePorId(id)).toBeDefined();
@@ -276,6 +276,61 @@ describe("com override", () => {
     );
     expect(e.hash).toBeNull();
     expect(getJson).not.toHaveBeenCalled();
+  });
+
+  /**
+   * O limiar é o terceiro campo do override (slice 4.11), com a mesma regra dos
+   * dois: ausente = a base do git. Ele existe porque é número para eu mexer
+   * olhando a revisão, sessão real por sessão real — e trocá-lo não pode ser
+   * deploy.
+   */
+  it("o limiar editado vence o do git", async () => {
+    const e = await resolver(
+      "resolucao",
+      { prompt: "x", modelo: "zai/glm-5.3-flash", limiar: 0.7 },
+      cfg({ resolucao: { prompt_hash: null, modelo: null, limiar: 0.9, atualizado_em: "" } }),
+    );
+    expect(e.limiar).toBe(0.9);
+  });
+
+  it("limiar ausente no índice devolve o do git", async () => {
+    const e = await resolver(
+      "resolucao",
+      { prompt: "x", modelo: "zai/glm-5.3-flash", limiar: 0.7 },
+      cfg({ resolucao: { prompt_hash: null, modelo: "openai/gpt-5", atualizado_em: "" } }),
+    );
+    expect(e.limiar).toBe(0.7);
+  });
+
+  /**
+   * O arquivo é meu, mas um typo nele não pode desligar a segunda passada em
+   * silêncio: número fora de [0,1] conta como se não estivesse lá.
+   */
+  it("limiar sem sentido no arquivo é ignorado como se não existisse", async () => {
+    for (const ruim of [7, -1, "0.9", null]) {
+      const e = await resolver(
+        "resolucao",
+        { prompt: "x", modelo: "zai/glm-5.3-flash", limiar: 0.7 },
+        cfg({
+          resolucao: {
+            prompt_hash: null,
+            modelo: null,
+            limiar: ruim as never,
+            atualizado_em: "",
+          },
+        }),
+      );
+      expect(e.limiar).toBe(0.7);
+    }
+  });
+
+  it("quem não tem limiar não ganha um: o campo some do retorno", async () => {
+    const e = await resolver(
+      "extracao",
+      { prompt: BASE, modelo: "zai/glm-5.3-flash" },
+      cfg({ extracao: { prompt_hash: null, modelo: null, limiar: 0.9, atualizado_em: "" } }),
+    );
+    expect(e.limiar).toBeUndefined();
   });
 });
 

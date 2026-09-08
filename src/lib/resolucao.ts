@@ -29,6 +29,7 @@
  * atribuições; quem grava é o confirmar, depois da revisão (regra 5).
  */
 import { generateText } from "ai";
+import { desempatar, NOVA as NOVA_DESEMPATE } from "./desempate";
 import { proximidade } from "./duplicatas";
 import { acharPorChave, apresentarEntidade, candidatosSemanticos } from "./entidades";
 import type { CandidatoSemantico, EntidadeDoGrafo } from "./entidades";
@@ -137,6 +138,39 @@ export const PISO_VIZINHOS = 0.45;
  * significar alguma coisa.
  */
 export const ALCANCE = { perfis: 5, vizinhos: 8 };
+
+/**
+ * Abaixo disto, a menção vai à segunda passada (`desempate.ts`, slice 4.11).
+ *
+ * **Um limiar, e não dois.** Dois — um para "preciso de mais informação", outro
+ * para "nem com tudo eu resolvo" — seriam duas réguas para calibrar à mão, para
+ * sempre. Com um só, o que a segunda passada devolver vale como final, e dúvida
+ * na tela só quando ela **marcar** dúvida.
+ *
+ * **A confiança é auto-relatada**, e este número é o único jeito de usá-la: o
+ * modelo diz o quanto confia, ninguém verifica. Um modelo que devolva 0,9 para
+ * tudo torna o limiar decorativo, e o sinal disso é a linha `[desempate]` sumir
+ * do log (§14). Não há calibração automática — quem olha sou eu.
+ *
+ * Editável em `/agentes`, como o prompt e o modelo: é número para eu mexer
+ * olhando a revisão, sessão real por sessão real, e trocá-lo não pode ser
+ * deploy. 0,7 é o ponto de partida escolhido, não medido — o primeiro número a
+ * calibrar quando a fatia for a uma sessão real.
+ */
+export const LIMIAR_CONFIANCA = 0.7;
+
+/**
+ * A confiança de um julgamento, quando ela dá para ler.
+ *
+ * **Ausente conta como abaixo do limiar**, e não como certeza: o agente que não
+ * respondeu o campo não me autorizou a gravar calado — ele só não respondeu. É
+ * a mesma escolha de `duvida` ausente no desempate, e a mesma que faz o
+ * fallback ser sempre o caso conservador.
+ */
+export function confiancaDe(j: { confianca?: unknown } | undefined): number {
+  const v = j?.confianca;
+  return typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+}
 
 /** Como a extração: modelo de raciocínio come orçamento antes de escrever JSON. */
 const MAX_TOKENS_SAIDA = 4000;
@@ -251,9 +285,30 @@ export function candidatosDe(
     ? acharPorChave(normalizarNome(chaveDoExtrator), catalogo)
     : undefined;
 
-  const parecidos = catalogo.filter(
-    (e) => e.id !== exato?.id && proximidade(citado, e.nome) !== null,
-  );
+  /**
+   * Os parecidos, do mais parecido para o menos — e **o canônico vence o
+   * empate** (slice 4.11).
+   *
+   * A ordem importa porque `unir()` corta em `TOP_K`: dois nós igualmente
+   * próximos disputam a mesma vaga, e quem fica de fora não chega nem a ser
+   * oferecido ao agente. Até aqui isso era decidido pela ordem em que o catálogo
+   * voltava do banco — consequência do laço, e não decisão. Agora é decisão, e
+   * está escrita: **em código, antes de qualquer chamada de modelo**, que é o
+   * que a flag `canonico` promete no desempate determinístico (§8.3.1).
+   */
+  const parecidos = catalogo
+    .flatMap((e) => {
+      if (e.id === exato?.id) return [];
+      const p = proximidade(citado, e.nome);
+      return p === null ? [] : [{ e, valor: p.valor }];
+    })
+    .sort(
+      (a, b) =>
+        b.valor - a.valor ||
+        Number(b.e.canonico) - Number(a.e.canonico) ||
+        b.e.sessoes - a.e.sessoes,
+    )
+    .map(({ e }) => e);
 
   return {
     doExtrator: apontado ? [apontado] : [],
@@ -415,22 +470,27 @@ const referenciaNova = (citado: string): ReferenciaResolvida => ({
   porque: [],
 });
 
-export const INSTRUCOES = `Você recebe os átomos extraídos de um diário falado pessoal, em português, e a lista de pessoas, organizações, projetos e objetivos que já existem no diário — cada um com o perfil que o dono escreveu.
+export const INSTRUCOES = `Você recebe os átomos extraídos de um diário falado pessoal, em português, e a lista de pessoas, organizações, projetos e objetivos que já existem no diário — cada um com o resumo que o dono escreveu.
 
-Sua tarefa é decidir, para cada MENÇÃO, a qual dessas entidades ela se refere — ou se é alguém/algo novo.
+Sua tarefa é decidir, para cada MENÇÃO, a qual dessas entidades ela se refere — ou se é alguém/algo novo — e dizer o quanto você confia em cada decisão.
 
 POR QUE ISSO É DIFÍCIL
-Nomes que soam igual ("Raffa" e "Rapha") chegam da transcrição com UMA grafia só, escolhida pelo transcritor. A grafia NÃO diz quem é. O que diz é o contexto: o que a pessoa faz, o que ela sabe, o que já foi feito junto com ela. O campo "fizemos juntos" costuma ser o sinal mais forte, porque atividade compartilhada é o que aparece na transcrição.
+Nomes que soam igual ("Raffa" e "Rapha") chegam da transcrição com UMA grafia só, escolhida pelo transcritor. A grafia NÃO diz quem é. O que diz é o contexto — e é isso que o resumo de cada entidade guarda: quem ela é para o dono, e o que a distingue de outra parecida.
 
 COMO DECIDIR
-- Compare o que o átomo diz com o perfil de cada candidato.
+- Compare o que o átomo diz com o resumo de cada candidato.
 - Só valem as chaves listadas NAQUELA menção. Chave que aparece em outra menção, ou no texto do átomo, não é resposta válida para esta.
 - SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA são sempre de "eu" — o sujeito desses átomos não muda de dono, por mais que o contexto fale de outra pessoa. Não gaste decisão nisso. Numa HISTORIA, quem a viveu comigo está em "menciona", e é lá que a marca de perfil cai.
 - Uma menção pode vir com o que O EXTRATOR APONTOU: ele leu o mesmo trecho, com a lista de entidades conhecidas na mão, e escolheu uma. É a opinião de outro leitor do mesmo texto, e não um veredito — concorde quando o contexto sustentar, e diga outra chave quando não sustentar.
 - Cada candidato vem com o MOTIVO de estar na lista: grafia igual, nome parecido, perfil parecido, ou átomos passados parecidos que já são dele. Motivo é pista, não veredito — um candidato que entrou por nome parecido continua podendo ser o certo, e um que entrou por átomo parecido continua podendo ser o errado.
-- Quando o motivo cita átomos passados, eles são o que você tem de mais próximo de evidência de uso: eu já disse aquilo daquela pessoa. Vale mais que semelhança de nome, e menos que o perfil contradizer.
-- Se o átomo casa claramente com o perfil de um deles, escolha esse, com "certo": true.
-- Se nada no átomo distingue os candidatos ("falei com o Rafa hoje"), escolha o mais provável e marque "certo": false. A dúvida vai ser mostrada para o dono decidir; ela é útil, não é fracasso.
+- Quando o motivo cita átomos passados, eles são o que você tem de mais próximo de evidência de uso: eu já disse aquilo daquela pessoa. Vale mais que semelhança de nome, e menos que o resumo contradizer.
+- Um candidato marcado como "ficha oficial" é a ficha que o dono considera a certa daquela pessoa. Empate desempata a favor dele.
+- Escolha sempre o mais provável, e diga o quanto você confia nessa escolha em "confianca", de 0 a 1:
+    1     o átomo casa com a ficha de um deles e de nenhum outro;
+    0,5   nada no átomo distingue os candidatos ("falei com o Rafa hoje");
+    0     você escolheu no escuro.
+  Confiança baixa não é fracasso: ela manda a menção para uma segunda leitura, com a ficha completa de cada candidato na mão. Chutar um número alto para parecer decidido é o único jeito de estragar isso.
+- Candidato com "(sem resumo escrito)" é uma ficha que o dono ainda não escreveu. Não invente o que ela diria: confie pouco.
 - Se nenhum candidato serve — o contexto contradiz todos —, responda "${NOVA}". Duas entidades a mais é grafo um pouco sujo; atribuir ao errado é grafo mentindo.
 - Nunca invente uma entidade que não está na lista. Ou uma das chaves oferecidas, ou "${NOVA}".
 
@@ -446,10 +506,10 @@ A entidade apontada tem que ser uma das que o próprio átomo cita.
 
 FORMATO
 Responda somente com JSON, sem texto antes ou depois:
-{"referencias":[{"n":1,"entidade":"<chave da lista ou ${NOVA}>","certo":true,"motivo":"<uma frase curta>"}],
+{"referencias":[{"n":1,"entidade":"<chave da lista ou ${NOVA}>","confianca":0.9,"motivo":"<uma frase curta>"}],
  "perfil":[{"atomo":0,"entidade":"<chave da lista>","campo":"fizemos_juntos"}]}
 
-"motivo" é uma frase curta, em português, dizendo o que no átomo te fez escolher. Ela é mostrada ao dono quando você marca "certo": false.`;
+"motivo" é uma frase curta, em português, dizendo o que no átomo te fez escolher. Ela é lida na segunda leitura, e mostrada ao dono quando a dúvida chega à tela.`;
 
 /**
  * Como cada entidade aparece no prompt: chave, nome, tipo, quantas sessões, a
@@ -605,7 +665,8 @@ ${listaPendentes}`;
 interface JulgamentoCru {
   n?: unknown;
   entidade?: unknown;
-  certo?: unknown;
+  /** `certo: true|false` até a 4.10; `confianca` de 0 a 1 a partir da 4.11. */
+  confianca?: unknown;
   motivo?: unknown;
 }
 
@@ -705,6 +766,7 @@ export async function resolverReferencias(
   {
     jaPropostos = [],
     ate,
+    sessao_id = "",
   }: {
     jaPropostos?: readonly AtomoAnterior[];
     /**
@@ -717,6 +779,13 @@ export async function resolverReferencias(
      * de graça porque eu ainda estou falando (§5.3).
      */
     ate?: number;
+    /**
+     * Só para o log da segunda passada (slice 4.11): a linha `[desempate]` diz
+     * de qual sessão ela é, como as linhas `[janela]` e `[grafias]` dizem. Não
+     * muda decisão nenhuma, e por isso tem padrão — quem monta uma resolução à
+     * mão num teste não precisa dela.
+     */
+    sessao_id?: string;
   } = {},
 ): Promise<Atribuicoes> {
   const mencoes = listarMencoes(atomos);
@@ -819,17 +888,24 @@ export async function resolverReferencias(
   /** O hash do prompt editado no painel, ou `null` — vira o carimbo lá embaixo. */
   let hashPrompt: string | null = null;
   let prompt = "";
+  /** O limiar em vigor: a base do git, ou o que eu editei no painel (4.11). */
+  let limiar = LIMIAR_CONFIANCA;
 
   if (pendentes.length > 0) {
     garantirGateway();
     // Só aqui, e não no topo: sessão sem menção ambígua não chama este agente e
     // não paga nada — nem a chamada de modelo, nem a leitura do override.
-    const meu = await efetivo("resolucao", { prompt: INSTRUCOES, modelo: modeloResolucao() });
+    const meu = await efetivo("resolucao", {
+      prompt: INSTRUCOES,
+      modelo: modeloResolucao(),
+      limiar: LIMIAR_CONFIANCA,
+    });
     // `const` próprio: o `modelo` lá de cima é `string | null` e ainda vai ser
     // reescrito com o id que de fato atendeu; a chamada precisa do id de agora.
     const modeloDaChamada = meu.modelo;
     modelo = meu.modelo;
     hashPrompt = meu.hash;
+    limiar = meu.limiar ?? LIMIAR_CONFIANCA;
     prompt = montarPrompt(atomos, pendentes, [...envolvidas.values()], meu.prompt, jaPropostos);
 
     // Guardada fora do `try` porque é no `catch` que ela interessa: este agente
@@ -914,11 +990,26 @@ export async function resolverReferencias(
     }
   }
 
+  /**
+   * As menções que ficaram abaixo do limiar, com o que a primeira passada disse
+   * e com o `responder` daquela pendente — é ele que a segunda passada vai
+   * chamar de novo, para não duplicar as guardas (o `eu` travado, a discordância
+   * entre os agentes, a colisão de `NOVA`).
+   */
+  const abaixoDoLimiar: {
+    pendente: Pendente;
+    responder: (r: Omit<ReferenciaResolvida, "citado">) => void;
+    escolhida: string;
+    motivo: string;
+    confianca: number;
+  }[] = [];
+
   for (const { n, mencao, candidatos, prior, iguais } of pendentes) {
     const nomes = candidatos.map((c) => c.entidade.nome);
     const j = julgamentos.get(n);
     const escolhida = typeof j?.entidade === "string" ? j.entidade.trim() : "";
     const motivo = typeof j?.motivo === "string" ? j.motivo.trim() : "";
+    const confianca = confiancaDe(j);
 
     /**
      * A guarda do `"eu"` (A2).
@@ -967,6 +1058,27 @@ export async function resolverReferencias(
       for (const m of iguais ?? [mencao]) resolvidas.set(m, { citado: m.citado, ...decidida });
     };
 
+    /**
+     * **Abaixo do limiar, a menção vai à segunda passada** (slice 4.11) — e a
+     * decisão de baixo continua acontecendo, como resposta provisória. Se o
+     * desempate falhar ou não responder, é ela que fica, marcada como dúvida:
+     * que é exatamente o que o limiar já tinha dito sobre esta menção.
+     *
+     * A menção sem candidato nenhum não chega até aqui (o `prior` `nova` a
+     * resolveu lá em cima), e a que o agente não julgou também não vai: sem
+     * candidato não há ficha a comparar, e mandá-la seria pagar uma chamada
+     * para o agente dizer o que o código já sabe.
+     */
+    if (candidatos.length > 0 && confianca < limiar) {
+      abaixoDoLimiar.push({
+        pendente: pendentes.find((p) => p.n === n)!,
+        responder,
+        escolhida,
+        motivo,
+        confianca,
+      });
+    }
+
     const alvo =
       escolhida === "" || escolhida.toUpperCase() === NOVA
         ? undefined
@@ -989,7 +1101,7 @@ export async function resolverReferencias(
       responder({
         entidade: nome,
         conhecida: false,
-        certo: colidiu ? false : j?.certo !== false,
+        certo: colidiu ? false : confianca >= limiar,
         // Sem o próprio nome escolhido: oferecer como alternativa aquilo que
         // já está escolhido é linha morta na frase de dúvida.
         alternativas: [
@@ -1027,7 +1139,7 @@ export async function resolverReferencias(
       responder({
         entidade: alvo.entidade.nome,
         conhecida: true,
-        certo: discordam ? false : j?.certo !== false,
+        certo: discordam ? false : confianca >= limiar,
         alternativas: nomes.filter((nome) => nome !== alvo.entidade.nome),
         motivo: discordam
           ? `o extrator apontou "${mencao.chave}" e o agente 2 diz que é ` +
@@ -1113,6 +1225,102 @@ export async function resolverReferencias(
       porque: comEvidencia?.porque ?? [],
       // O fallback do exato veio da grafia; o outro não veio de camada nenhuma.
       camada: exato?.camada,
+    });
+  }
+
+  /**
+   * **A segunda passada** (slice 4.11).
+   *
+   * Uma chamada por menção abaixo do limiar, cada uma com o átomo, o motivo da
+   * primeira passada e o **perfil inteiro** dos candidatos daquela menção — o
+   * perfil não saiu do sistema, saiu do caminho comum, e este é o lugar onde ele
+   * sempre valeu a pena.
+   *
+   * Em paralelo, e não em série: isto roda na janela do fim também, que é a
+   * única espera que eu sinto depois de parar de falar. Quem serializa contra o
+   * rate limit é `comEsperaDeLimite`, dentro de cada chamada.
+   *
+   * **O log é a instrumentação da fatia**, e o silêncio é informação: nenhuma
+   * linha `[desempate]` quer dizer que a primeira passada bastou em todas. Se
+   * ela sumir com os resumos ainda vazios, ou o limiar está baixo demais ou a
+   * confiança está vindo inflada — é o primeiro número a calibrar (§14).
+   */
+  if (abaixoDoLimiar.length > 0) {
+    console.log(
+      `[desempate] sessão ${sessao_id}: ${abaixoDoLimiar.length} menção(ões) abaixo do limiar`,
+    );
+
+    const segundas = await Promise.all(
+      abaixoDoLimiar.map((p) =>
+        desempatar(
+          {
+            atomo: atomos[p.pendente.mencao.atomo]?.texto ?? "",
+            tipo: atomos[p.pendente.mencao.atomo]?.tipo ?? "",
+            citado: p.pendente.mencao.citado,
+            papel: p.pendente.mencao.papel,
+            escolhida: p.escolhida,
+            motivo: p.motivo,
+            confianca: p.confianca,
+            candidatos: p.pendente.candidatos.map((c) => c.entidade),
+          },
+          { ate },
+        ),
+      ),
+    );
+
+    segundas.forEach((r, i) => {
+      // Falhou, ou respondeu vazio: fica o que a primeira passada decidiu, já
+      // marcado como dúvida. `desempatar` já escreveu o motivo no log.
+      if (!r || r.entidade === "") return;
+
+      const { pendente, responder } = abaixoDoLimiar[i];
+      const nomes = pendente.candidatos.map((c) => c.entidade.nome);
+      const alvo =
+        r.entidade.toUpperCase() === NOVA_DESEMPATE
+          ? undefined
+          : pendente.candidatos.find((c) =>
+              c.entidade.chaves.includes(normalizarNome(r.entidade)),
+            );
+
+      // Chave que não é candidato desta menção é resposta descartada, como na
+      // primeira passada: fica o que já estava, e o motivo diz o que veio.
+      if (!alvo && r.entidade.toUpperCase() !== NOVA_DESEMPATE) return;
+
+      if (!alvo) {
+        const nome = pendente.mencao.citado.trim();
+        const colidiu = acharPorChave(normalizarNome(nome), catalogo);
+        responder({
+          entidade: nome,
+          conhecida: false,
+          certo: !r.duvida && !colidiu,
+          alternativas: [
+            ...new Set(
+              [...nomes, ...(colidiu ? [colidiu.nome] : [])].filter(
+                (x) => normalizarNome(x) !== normalizarNome(nome),
+              ),
+            ),
+          ],
+          motivo: colidiu
+            ? `a segunda leitura disse que não é nenhuma das conhecidas, mas "${nome}" já é ` +
+              `uma entidade no grafo ("${colidiu.nome}") e o átomo vai cair nela — ` +
+              `renomeie uma das duas`
+            : r.motivo || "a segunda leitura não viu nenhuma das conhecidas neste átomo",
+          porque: [],
+        });
+        return;
+      }
+
+      responder({
+        entidade: alvo.entidade.nome,
+        conhecida: true,
+        // **O que ela devolve é final.** Não há segundo limiar: dúvida na tela
+        // só quando ela marcar dúvida.
+        certo: !r.duvida,
+        alternativas: nomes.filter((nome) => nome !== alvo.entidade.nome),
+        motivo: r.motivo,
+        porque: alvo.porque,
+        camada: alvo.camada,
+      });
     });
   }
 

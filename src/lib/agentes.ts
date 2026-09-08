@@ -17,13 +17,15 @@
  * importa este arquivo, e não deve.
  */
 import { BASE as BASE_EXTRACAO, PROMPT_VERSION as VERSAO_EXTRACAO } from "./extracao";
-import { INSTRUCOES as BASE_RESOLUCAO, PROMPT_VERSION_RESOLUCAO } from "./resolucao";
+import { INSTRUCOES as BASE_RESOLUCAO, LIMIAR_CONFIANCA, PROMPT_VERSION_RESOLUCAO } from "./resolucao";
+import { INSTRUCOES as BASE_DESEMPATE, PROMPT_VERSION_DESEMPATE } from "./desempate";
 import { INSTRUCOES as BASE_PERFIL, PROMPT_VERSION_PERFIL } from "./perfil";
 import { INSTRUCOES as BASE_CALIBRACAO, PROMPT_VERSION_CALIBRACAO } from "./calibracao";
 import { INSTRUCOES as BASE_DUPLICATAS, PROMPT_VERSION_DUPLICATAS } from "./duplicatas";
 import {
   DIMENSAO_EMBEDDING,
   modeloCalibracao,
+  modeloDesempate,
   modeloDuplicatas,
   modeloEmbedding,
   modeloExtracao,
@@ -79,10 +81,18 @@ export interface Agente {
    * tem prompt.
    */
   envelope: string[];
+  /**
+   * O limiar da base do git, para os agentes que têm um (slice 4.11).
+   *
+   * Hoje é só a resolução: abaixo dele a menção vai à segunda passada. Ausente
+   * em todos os outros, e é essa ausência que faz a tela não desenhar um campo
+   * morto.
+   */
+  limiarPadrao?: number;
 }
 
 /**
- * Os sete. A ordem é a do fluxo, e é a que a tela usa quando lista em vez de
+ * Os oito. A ordem é a do fluxo, e é a que a tela usa quando lista em vez de
  * desenhar.
  */
 export const AGENTES: readonly Agente[] = [
@@ -129,6 +139,23 @@ export const AGENTES: readonly Agente[] = [
     modulo: "src/lib/resolucao.ts",
     modeloEditavel: true,
     envelope: ["referencias", "perfil"],
+    limiarPadrao: LIMIAR_CONFIANCA,
+  },
+  {
+    id: "desempate",
+    versao: PROMPT_VERSION_DESEMPATE,
+    rotulo: "desempate",
+    papel:
+      "a segunda leitura de UMA menção, com a ficha completa dos candidatos daquela menção",
+    quando: "condicional",
+    gatilho:
+      "quando a resolução devolve confiança abaixo do limiar — enquanto os resumos estiverem vazios, isso é quase toda menção",
+    base: BASE_DESEMPATE,
+    padrao: modeloDesempate,
+    variavel: "DESEMPATE_MODEL",
+    modulo: "src/lib/desempate.ts",
+    modeloEditavel: true,
+    envelope: ["entidade", "duvida", "motivo"],
   },
   {
     id: "calibracao",
@@ -253,6 +280,7 @@ export const NOS: readonly NoDoFluxo[] = [
   { id: "candidatas", rotulo: "candidatas", tipo: "dado", faixa: "ingestao", coluna: 1, linha: 3, nota: "quem o grafo acha que cada bloco cita — buscado por RAG, guardado no R2" },
   { id: "extracao", rotulo: "extração", tipo: "agente", agente: "extracao", faixa: "ingestao", coluna: 2, linha: 4 },
   { id: "resolucao", rotulo: "resolução", tipo: "agente", agente: "resolucao", faixa: "ingestao", coluna: 2, linha: 5 },
+  { id: "desempate", rotulo: "desempate", tipo: "agente", agente: "desempate", faixa: "ingestao", coluna: 1, linha: 6 },
   { id: "proposta", rotulo: "proposta", tipo: "dado", faixa: "ingestao", coluna: 2, linha: 6, nota: "parcial.json enquanto cresce, extracao.json no fim — nada disto está no grafo ainda" },
 
   { id: "revisao", rotulo: "revisão", tipo: "eu", faixa: "eu", coluna: 2, linha: 7, nota: "eu. nada entra no grafo antes daqui" },
@@ -276,6 +304,8 @@ export const ARESTAS: readonly ArestaDoFluxo[] = [
   { de: "transcricao", para: "extracao", rotulo: "por janela de 2 min" },
   { de: "candidatas", para: "extracao", rotulo: "o dossiê da janela" },
   { de: "extracao", para: "resolucao", rotulo: "toda menção com candidato" },
+  { de: "resolucao", para: "desempate", rotulo: "abaixo do limiar" },
+  { de: "desempate", para: "proposta" },
   { de: "resolucao", para: "proposta" },
   { de: "proposta", para: "revisao" },
   { de: "revisao", para: "grafo", rotulo: "confirmar" },
@@ -286,7 +316,7 @@ export const ARESTAS: readonly ArestaDoFluxo[] = [
   { de: "correcoes", para: "calibracao" },
   { de: "calibracao", para: "regras" },
   { de: "regras", para: "extracao", rotulo: "entram no prompt", volta: true },
-  { de: "perfil", para: "resolucao", rotulo: "é o que desambigua", volta: true },
+  { de: "perfil", para: "desempate", rotulo: "a ficha completa", volta: true },
   { de: "embedding", para: "resolucao", rotulo: "candidato por sentido", volta: true },
   { de: "duplicatas", para: "grafo", rotulo: "propõe; quem funde sou eu", volta: true },
   { de: "grafo", para: "candidatas", rotulo: "quem já existe", volta: true },
@@ -317,21 +347,30 @@ export interface AgenteNaTela {
   versao: string | null;
   promptEditado: boolean;
   modeloEditado: boolean;
+  /** O limiar da base do git. `null` em quem não tem limiar — quase todos. */
+  limiarPadrao: number | null;
+  /** O que vale de fato. Igual ao padrão quando não editei. */
+  limiar: number | null;
+  limiarEditado: boolean;
   /** Só para o STT: o provedor escolhido tem canal de vocabulário? */
   aceitaVocabulario?: boolean;
 }
 
 /**
- * Os sete resolvidos contra a configuração, numa leitura só do índice.
+ * Os oito resolvidos contra a configuração, numa leitura só do índice.
  *
- * Um `resolver` por agente e um `configAgentes()` para todos: sete GETs para
- * responder a mesma pergunta seria pagar sete vezes por um objeto só.
+ * Um `resolver` por agente e um `configAgentes()` para todos: oito GETs para
+ * responder a mesma pergunta seria pagar oito vezes por um objeto só.
  */
 export async function retrato(cfg: ConfigAgentes): Promise<AgenteNaTela[]> {
   return Promise.all(
     AGENTES.map(async (a) => {
       const padrao = a.padrao();
-      const e = await resolver(a.id, { prompt: a.base ?? undefined, modelo: padrao }, cfg);
+      const e = await resolver(
+        a.id,
+        { prompt: a.base ?? undefined, modelo: padrao, limiar: a.limiarPadrao },
+        cfg,
+      );
 
       return {
         id: a.id,
@@ -352,6 +391,9 @@ export async function retrato(cfg: ConfigAgentes): Promise<AgenteNaTela[]> {
         versao: a.versao === null ? null : carimbo(a.versao, e.hash),
         promptEditado: e.hash !== null,
         modeloEditado: e.modelo !== padrao,
+        limiarPadrao: a.limiarPadrao ?? null,
+        limiar: e.limiar ?? null,
+        limiarEditado: e.limiar !== undefined && e.limiar !== a.limiarPadrao,
         ...(a.id === "stt" ? { aceitaVocabulario: provedorAceitaVocabulario(e.modelo) } : {}),
       };
     }),

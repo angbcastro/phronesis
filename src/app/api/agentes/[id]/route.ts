@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { agentePorId, envelopeFaltando, retrato } from "@/lib/agentes";
 import { ModeloError, validarIdDeModelo } from "@/lib/modelos";
-import { configAgentes, gravarOverride } from "@/lib/overrides";
+import { configAgentes, ehLimiar, gravarOverride } from "@/lib/overrides";
 import { erro, erroDeInfra } from "@/lib/rotas";
 import { ehAgenteId } from "@/lib/tipos";
 
@@ -20,6 +20,8 @@ export const runtime = "nodejs";
  *   { prompt: null }    revoga, e volta à base do git
  *   { modelo: "a/b" }   passa a valer este modelo
  *   { modelo: null }    revoga, e volta à variável de ambiente
+ *   { limiar: 0.8 }     passa a valer este limiar (só quem tem um)
+ *   { limiar: null }    revoga, e volta ao número do git
  *   campo ausente       não mexe naquele campo
  *
  * **Mandar o texto igual ao da base revoga.** Não é atalho: um override cujo
@@ -40,12 +42,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const corpo = (await req.json().catch(() => null)) as {
     prompt?: unknown;
     modelo?: unknown;
+    limiar?: unknown;
   } | null;
   if (!corpo || typeof corpo !== "object") {
-    return erro("corpo inválido: espera { prompt?, modelo? }", 400);
+    return erro("corpo inválido: espera { prompt?, modelo?, limiar? }", 400);
   }
 
-  const mudanca: { prompt?: string | null; modelo?: string | null } = {};
+  const mudanca: { prompt?: string | null; modelo?: string | null; limiar?: number | null } = {};
 
   // ── o prompt ───────────────────────────────────────────────────────────────
   if (corpo.prompt !== undefined) {
@@ -104,8 +107,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
-  if (mudanca.prompt === undefined && mudanca.modelo === undefined) {
-    return erro("nada a mudar: mande prompt, modelo, ou os dois", 400);
+  // ── o limiar (slice 4.11) ──────────────────────────────────────────────────
+  if (corpo.limiar !== undefined) {
+    if (corpo.limiar === null) {
+      mudanca.limiar = null;
+    } else if (a.limiarPadrao === undefined) {
+      return erro(`o ${a.rotulo} não tem limiar — ele não decide por confiança`, 400);
+    } else if (!ehLimiar(corpo.limiar)) {
+      return erro("limiar tem de ser um número entre 0 e 1, ou null para voltar ao original", 400);
+    } else {
+      // Número igual ao do git não é edição, pela mesma razão do prompt e do
+      // modelo: guardá-lo faria a tela dizer "editado" sobre a base.
+      mudanca.limiar = corpo.limiar === a.limiarPadrao ? null : corpo.limiar;
+    }
+  }
+
+  if (
+    mudanca.prompt === undefined &&
+    mudanca.modelo === undefined &&
+    mudanca.limiar === undefined
+  ) {
+    return erro("nada a mudar: mande prompt, modelo, limiar, ou o que quiser deles", 400);
   }
 
   try {

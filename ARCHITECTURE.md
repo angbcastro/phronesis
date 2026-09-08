@@ -113,7 +113,7 @@ primeiro toque. Verificado por medição, não por confiança: 21 correções re
 5 sessões, e um terço delas mostrou que o maior erro do pipeline não é o
 extrator, é o STT ouvindo nome próprio errado (§14).
 
-**E os sete agentes ganharam rosto** (seção 4.13). `/agentes` desenha o fluxo
+**E os agentes ganharam rosto** (seção 4.13). `/agentes` desenha o fluxo
 inteiro — STT, extração, resolução, calibração, perfil, duplicatas, embedding, e
 o único nó humano no meio deles —, e clicar numa caixa abre o prompt e o modelo
 daquele agente, editáveis, valendo na próxima execução e **sem deploy**. O
@@ -191,7 +191,7 @@ dito sem varrer o grafo inteiro, que é o que a 4.5 entrega.
 │ fila de upload          │   │ waitUntil (STT)     │   │ Neo4j Aura (HTTP)    │
 │ React (9 telas)         │   │                     │   │  :Sessao + conteúdo  │
 └──────────┬──────────────┘   └──────────┬──────────┘   │ Vercel AI Gateway    │
-           │                             │              │  → os sete agentes   │
+           │                             │              │  → os oito agentes   │
            │  PUT presigned (áudio)      │              └──────────────────────┘
            └─────────────────────────────┴──────────────▶ R2
 ```
@@ -243,10 +243,14 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   recuperacao.ts  o RAG por bloco: quem o grafo acha que este trecho cita, em
                   cinco camadas — e o dossiê que a janela mostra ao extrator
   resolucao.ts    agente 2: de quem eu estava falando — atribui menção a menção,
-                  com as cinco camadas de candidato, o teto e os pisos
+                  com as cinco camadas de candidato, o teto, os pisos e o limiar
+                  de confiança
+  desempate.ts    a segunda passada: UMA menção abaixo do limiar, com a ficha
+                  completa dos candidatos dela. Só lê e devolve
   perfil.ts       os três campos de perfil: ler, gravar, e o agente 3 que rascunha
-  entidades.ts    catálogo do grafo + a visão agregada da revisão; e o vetor da
-                  entidade: refresh por hash e as duas consultas de vizinhança
+  entidades.ts    catálogo do grafo, a apresentação que os dois agentes leem, a
+                  visão agregada da revisão; e o vetor da entidade: refresh por
+                  hash e as duas consultas de vizinhança
   correcoes.ts    o diff entre o que a proposta dizia e o que eu aprovei:
                   apuração, chaves e a fusão no índice — puro, sem rede
   calibracao.ts   onde as correções vivem (correcoes.json por sessão e o índice
@@ -258,7 +262,7 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   overrides.ts    o prompt e o modelo que eu editei na tela: leitura tolerante,
                   snapshot imutável por hash, e o carimbo. Não sabe quais
                   agentes existem — recebe o id e a base de quem chama
-  agentes.ts      o registro dos sete e o desenho do fluxo. Fica ACIMA dos
+  agentes.ts      o registro dos oito e o desenho do fluxo. Fica ACIMA dos
                   agentes: importa os cinco prompts, e nenhum deles o importa
   referencias.ts  lê os dois formatos de proposta (antes e depois da 4)  (client)
   catalogo.ts     busca de entidade no navegador: trecho, acento, alias (client)
@@ -534,8 +538,8 @@ não se espalha pelo código.
 algum dos quatro pontos da tabela for furado. É o que sustenta a promessa de
 "uma chave, um lugar para ver custo" a cada agente novo que entra.
 
-**Hoje passam por aqui sete consumidores**, cada um com sua função em
-`modelos.ts` e sua variável de ambiente (§12), e todos os sete com caixa no
+**Hoje passam por aqui oito consumidores**, cada um com sua função em
+`modelos.ts` e sua variável de ambiente (§12), e todos os oito com caixa no
 painel de `/agentes` (§4.13):
 
 | Função | Agente | Padrão |
@@ -1572,6 +1576,89 @@ embutir**, e não só no ramo com pendentes: embutir o texto do átomo já é tr
 de modelo. Catálogo vazio continua não exigindo chave nenhuma — por ali nada sai
 pelo Gateway.
 
+### 4.8.1 A confiança, e a segunda passada (`desempate-1`, slice 4.11)
+
+Até a 4.10 o agente 2 respondia `certo: true | false`, e `false` era a única
+coisa que a tela sabia pintar. **Não existia "resolvi com folga" nem "resolvi
+raspando", e não existia caminho nenhum para ele pedir mais informação**: ou ele
+decidia com o que recebeu, ou marcava dúvida e me empurrava a decisão.
+
+Agora ele devolve `confianca`, de 0 a 1, com o que o número significa dito em
+palavras dentro do prompt — 1 é "o átomo casa com a ficha de um deles e de
+nenhum outro", 0,5 é "nada no átomo distingue os candidatos". Abaixo do
+`LIMIAR_CONFIANCA` (0,7, editável em `/agentes`), a menção vai à **segunda
+passada**.
+
+```
+agente 2 (resolucao-5)  →  confiança ≥ limiar  →  vale, certo: true
+                        →  confiança <  limiar  →  desempate-1
+                                                   ├─ duvida: false → certo: true
+                                                   └─ duvida: true  → a revisão marca
+```
+
+**Agente próprio, com prompt próprio.** A 4.8 recusou uma passada de costura
+alegando um prompt a mais para calibrar à mão para sempre, e o argumento é bom.
+Ele não se aplica aqui porque o papel é outro: este agente já **sabe** que a
+primeira leitura não resolveu, ele olha **uma** menção, e ele tem o perfil
+inteiro na mão. Instruir isso dentro do prompt geral seria escrever um agente
+dentro do outro.
+
+O que ele recebe, e que a primeira passada não tinha:
+
+| Entra | Por quê |
+|---|---|
+| o átomo e a grafia citada | é sobre eles que a decisão se faz |
+| o que a primeira leitura respondeu, com a confiança e o motivo | ela viu menos, mas viu algo; não é veredito |
+| a ficha **completa** dos candidatos **daquela** menção | resumo, grafias, marca de ficha oficial e os **três campos de perfil, sem teto** |
+
+É a última linha que tornou o `TETO_PERFIL` desnecessário. O perfil não saiu do
+sistema na 4.11 — ele saiu do **caminho comum**, e este é o lugar onde ele sempre
+valeu a pena: poucos candidatos, de uma menção só.
+
+**Não é tool use, e é escolha.** "Ele consulta uma entidade, lê, decide se quer
+outra" seria mais fiel a "ele decide". Foi recusado pelo relógio: isto roda
+dentro da extração de cada janela, e a 4.8 existe para cortar espera — um laço de
+rodadas imprevisíveis é exatamente o que ela tirou.
+
+**Um limiar, e não dois.** Dois — um para "preciso de mais informação", outro
+para "nem com tudo eu resolvo" — seriam duas réguas para calibrar à mão, para
+sempre. Com um só, **o que a segunda passada devolver vale como final**, e dúvida
+na tela só quando ela marcar `duvida: true` — e aí a revisão pinta o "acho que é
+X — confirma?" que já existe, sem uma linha nova de UI.
+
+Degradação, no mesmo contrato do agente 2: falha, resposta vazia ou chave fora
+dos candidatos daquela menção deixam o que a primeira passada decidiu, **já
+marcado como dúvida** — que é exatamente o que o limiar tinha dito sobre ela.
+`duvida` ausente conta como dúvida: o agente que esqueceu o campo não me
+autorizou a gravar calado.
+
+As guardas de quem veio antes continuam valendo porque a segunda passada reusa o
+mesmo `responder` da pendente: o `eu` travado nos quatro tipos, a colisão de
+`NOVA` com um nó existente, e a resposta que vale para as menções iguais do mesmo
+átomo. Sem isso, ela seria o buraco por onde um `SENTIMENTO` sai de `eu`.
+
+**Uma chamada por menção, em paralelo**, com `comEsperaDeLimite` e o mesmo `ate`
+da janela. Série seria mais educada com o rate limit e mais cara no relógio da
+janela do fim, que é a única espera que eu sinto depois de parar de falar.
+
+**O log é a instrumentação da fatia, e o silêncio é informação:**
+
+```
+[desempate] sessão <id>: N menção(ões) abaixo do limiar
+```
+
+Nenhuma linha quer dizer que a primeira passada bastou em todas. Enquanto os
+resumos estiverem vazios isso é o **contrário** do esperado — e é o primeiro
+sinal de que o limiar está baixo demais, ou de que a confiança está vindo
+inflada (§14).
+
+**O desempate determinístico do canônico acontece antes de qualquer chamada.**
+Em `candidatosDe`, os parecidos vêm ordenados por proximidade e, no empate, o
+`canonico` vence. Importa porque `unir()` corta em `TOP_K`: dois nós igualmente
+próximos disputam a mesma vaga, e quem fica de fora não chega a ser oferecido ao
+agente. Até a 4.11 isso era decidido pela ordem em que o catálogo voltava do
+banco — consequência do laço, e não decisão.
+
 ### 4.9 O perfil, e o agente 3 (`perfil-1`)
 
 Os três campos (`contexto`, `pode_ajudar_com`, `fizemos_juntos`) são texto livre,
@@ -2073,26 +2160,40 @@ aprovando regra ou não: olhar já conta.
 
 ### 4.13 O painel dos agentes (slice 4.7)
 
-Sete pontos deste sistema falam com o Gateway. Até esta fatia, saber o que cada
+Oito pontos deste sistema falam com o Gateway. Até esta fatia, saber o que cada
 um fazia exigia abrir cinco arquivos de `src/lib/`, e mudar qualquer coisa exigia
 um deploy. `/agentes` é onde eles passam a ter rosto: o fluxo desenhado, e cada
-caixa abrindo o prompt e o modelo que a comandam.
+caixa abrindo o prompt e o modelo que a comandam — e, na resolução, o **limiar**
+(4.11).
 
 | Agente | Módulo | Quando | Modelo | Envelope que o parser exige |
 |---|---|---|---|---|
 | STT (sem prompt) | `stt.ts` | automático, por bloco | `STT_MODEL` | — |
 | `extracao-9` | `extracao.ts` | automático, por janela de 2 min | `EXTRACAO_MODEL` | `atomos`, `entidades` |
 | `resolucao-5` | `resolucao.ts` | automático: por janela, sobre toda menção com candidato | `RESOLUCAO_MODEL` | `referencias`, `perfil` |
+| `desempate-1` | `desempate.ts` | condicional: uma menção por vez, abaixo do limiar de confiança | `DESEMPATE_MODEL` | `entidade`, `duvida`, `motivo` |
 | `calibracao-1` | `calibracao.ts` | sob demanda, em `/calibracao` | `CALIBRACAO_MODEL` | `regras`, `cita` |
 | `perfil-1` | `perfil.ts` | sob demanda, em `/entidades` | `PERFIL_MODEL` | `texto` |
 | `duplicatas-1` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
 | embedding (sem prompt) | `embedding.ts` | automático, depois de gravar | `EMBEDDING_MODEL` | — |
 
+**O limiar é o terceiro campo editável** (4.11), e só a resolução tem um.
+`OverrideDeAgente` ganhou `limiar?: number | null` ao lado de `prompt_hash` e
+`modelo`, com a mesma regra: ausente = a base do git, `null` no corpo revoga e
+volta a ela, número igual ao do git não é edição. Número fora de `[0,1]` no
+arquivo é ignorado como se não estivesse lá — o arquivo é meu, mas um typo não
+pode desligar a segunda passada em silêncio.
+
+Ele mora aqui, e não numa constante de código, pela mesma razão que o prompt:
+**é número para eu mexer olhando a revisão**, sessão real por sessão real, e
+trocá-lo não pode ser deploy. `LIMIAR_CONFIANCA = 0,7` é o ponto de partida
+escolhido, não medido.
+
 #### O mecanismo é o da 4.6, generalizado
 
 Nada novo foi inventado: as regras aprovadas já viviam no R2 e já valiam sem
 deploy, com snapshot imutável por hash e sufixo no `prompt_version`. `overrides.ts`
-é `regras.ts` aberto para os sete, e o cabeçalho de lá continua sendo a
+é `regras.ts` aberto para todos, e o cabeçalho de lá continua sendo a
 explicação de por que R2 (serverless não tem disco gravável nem compartilhado),
 por que snapshot imutável (o carimbo tem de resolver para um texto), e **por que
 sem cache** (cache por instância faria "salvei, vale na próxima" ser falso de um
@@ -2201,7 +2302,7 @@ A realimentação é a exceção, e por isso tem traço próprio: curva pontilha
 terracota, saindo pela lateral e subindo **por fora** da grade — é o que o
 `padding` horizontal do palco reserva. São as três voltas que fecham o sistema
 (a regra que volta ao extrator, o perfil e o vetor que voltam ao resolvedor) mais
-a proposta de fusão, e elas são justamente o que uma lista de sete linhas não
+a proposta de fusão, e elas são justamente o que uma lista de oito linhas não
 conta.
 
 #### A varredura, que é o teste que mais vale
@@ -2220,7 +2321,7 @@ snapshots por hash guardam os textos, mas não há linha do tempo nem "desfazer"
 mais de um passo. Não mede nada — não há latência, custo nem contagem de chamada
 por agente, porque `CLAUDE.md` proíbe métrica automática de qualidade e porque
 custo e latência já têm lugar: o painel do próprio Gateway. E não deixa criar
-agente: os sete são os que o código tem, e um oitavo nasce escrevendo código.
+agente: os oito são os que o código tem, e um nono nasce escrevendo código.
 
 ### 4.14 O extrator conhece o grafo (slice 4.9)
 
@@ -3487,7 +3588,7 @@ sessão, e apagá-las seria desaprender (§14).
 | `POST /api/entidades/perfil/rascunho` | `{chave, campo}` — o agente 3 propõe | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/atomos/embutir` | dá vetor aos átomos que ainda não têm, em lote | retrofill e retry; 200 por chamada, `continua: true` enquanto sobrar; não toca no texto nem reextrai |
 | `POST /api/entidades/embutir` | põe em dia o vetor das entidades, comparando `embedding_fonte` | não editar nada devolve `embutidas: 0` |
-| `GET /api/agentes` | os sete com o que está em vigor, mais o desenho do fluxo | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
+| `GET /api/agentes` | os oito com o que está em vigor, mais o desenho do fluxo | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
 | `POST /api/agentes/:id` | `{prompt?, modelo?}` — o que passa a valer | o **único** lugar que escreve configuração de agente; `null` revoga o campo e volta à base; recusa prompt que quebre o envelope e id de modelo fora do formato |
 | `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
@@ -3551,7 +3652,7 @@ número não vai bater com a tela.
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, marcar a ficha oficial — e a **ficha** de cada uma: resumo, grafias e os três campos de perfil |
 | `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
-| `/agentes` | `Agentes` | o fluxo desenhado — os sete agentes, os dados entre eles e o único nó humano; clicar numa caixa abre o prompt e o modelo daquele agente |
+| `/agentes` | `Agentes` | o fluxo desenhado — os oito agentes, os dados entre eles e o único nó humano; clicar numa caixa abre o prompt, o modelo e (na resolução) o limiar daquele agente |
 | `/entrar` | página de login | pede o e-mail permitido |
 
 **Clicar na sessão leva sempre para onde ainda há o que fazer.** Proposta
@@ -3830,6 +3931,7 @@ STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
 RESOLUCAO_MODEL           opcional; padrão igual ao da extração
+DESEMPATE_MODEL           opcional; padrão igual ao da resolução
 PERFIL_MODEL              opcional; padrão igual ao da extração
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
 EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões

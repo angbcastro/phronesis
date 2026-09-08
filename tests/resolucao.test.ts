@@ -20,7 +20,16 @@ vi.mock("@/lib/entidades", async (original) => ({
   candidatosSemanticos: vi.fn(async (textos: readonly string[]) => textos.map(() => [])),
 }));
 
+// A segunda passada é agente próprio, com prompt próprio, e tem teste próprio
+// (`tests/desempate.test.ts`). Aqui o que se testa é **quando** ela é chamada e
+// o que a resposta dela faz com a menção — não o prompt dela.
+vi.mock("@/lib/desempate", async (original) => ({
+  ...(await original<typeof import("@/lib/desempate")>()),
+  desempatar: vi.fn(async () => null),
+}));
+
 import { generateText } from "ai";
+import { desempatar } from "@/lib/desempate";
 import { candidatosSemanticos } from "@/lib/entidades";
 import {
   ALCANCE,
@@ -44,6 +53,7 @@ import type { AtomoCru, MencaoCrua, ReferenciaResolvida } from "@/lib/tipos";
 
 const chamar = vi.mocked(generateText);
 const semantica = vi.mocked(candidatosSemanticos);
+const segunda = vi.mocked(desempatar);
 
 /** Um candidato como as camadas 3a/3b o devolvem. */
 const porPerfil = (chave: string, similaridade = 0.5): CandidatoSemantico => ({
@@ -141,6 +151,10 @@ beforeEach(() => {
   // ou nada acima do piso.
   semantica.mockReset();
   semantica.mockImplementation(async (textos) => textos.map(() => []));
+  // Por padrão a segunda passada não muda nada: o que ela devolve tem teste
+  // próprio, logo abaixo.
+  segunda.mockReset();
+  segunda.mockResolvedValue(null);
 });
 
 describe("quem pode ser esta menção", () => {
@@ -248,8 +262,8 @@ describe("o agente atribui menção por menção", () => {
     // por sessão: uma candidata por nome não teria como expressar isto.
     responder({
       referencias: [
-        { n: 1, entidade: "raffa", certo: true, motivo: "slackline é o que fizeram juntos" },
-        { n: 2, entidade: "rapha", certo: true, motivo: "o evento é do sócio" },
+        { n: 1, entidade: "raffa", confianca: 1, motivo: "slackline é o que fizeram juntos" },
+        { n: 2, entidade: "rapha", confianca: 1, motivo: "o evento é do sócio" },
       ],
       perfil: [],
     });
@@ -273,7 +287,7 @@ describe("o agente atribui menção por menção", () => {
     // com sugestão, e sem travar o confirmar.
     responder({
       referencias: [
-        { n: 1, entidade: "raffa", certo: false, motivo: "nada no átomo separa os dois" },
+        { n: 1, entidade: "raffa", confianca: 0.2, motivo: "nada no átomo separa os dois" },
       ],
       perfil: [],
     });
@@ -290,7 +304,7 @@ describe("o agente atribui menção por menção", () => {
 
   it('"NOVA" cria entidade com a grafia que o extrator ouviu', async () => {
     responder({
-      referencias: [{ n: 1, entidade: "NOVA", certo: true, motivo: "não é nenhum dos dois" }],
+      referencias: [{ n: 1, entidade: "NOVA", confianca: 1, motivo: "não é nenhum dos dois" }],
       perfil: [],
     });
     const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
@@ -315,7 +329,7 @@ describe("resposta ruim degrada para dúvida, nunca para atribuição errada", (
   it("a menção que ele pulou continua dizendo que ele não respondeu por ela (C1)", async () => {
     // Duas pendentes, uma julgada: aqui o silêncio é mesmo daquela menção, e a
     // frase antiga é a verdadeira.
-    responder({ referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
+    responder({ referencias: [{ n: 1, entidade: "raffa", confianca: 1, motivo: "" }], perfil: [] });
     const r = await resolverReferencias(
       [atomo("Rafa"), atomo("Rafa", { texto: "Fiz uma call com o Rafa" })],
       [RAFFA, RAPHA],
@@ -329,7 +343,7 @@ describe("resposta ruim degrada para dúvida, nunca para atribuição errada", (
     // Sem a tolerância ao `[`, isto pegava do primeiro `{` ao último `}`,
     // devolvia um objeto sem `referencias` e virava silêncio pago.
     chamar.mockResolvedValue({
-      text: JSON.stringify([{ n: 1, entidade: "raffa", certo: true, motivo: "slackline" }]),
+      text: JSON.stringify([{ n: 1, entidade: "raffa", confianca: 1, motivo: "slackline" }]),
       response: { modelId: "zai/glm-5.3-flash" },
     } as never);
 
@@ -338,7 +352,7 @@ describe("resposta ruim degrada para dúvida, nunca para atribuição errada", (
   });
 
   it("chave fora dos candidatos tem motivo próprio, e nomeia a chave (C1)", async () => {
-    responder({ referencias: [{ n: 1, entidade: "pedro", certo: true, motivo: "" }], perfil: [] });
+    responder({ referencias: [{ n: 1, entidade: "pedro", confianca: 1, motivo: "" }], perfil: [] });
     const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
 
     expect(r.sobre[0].certo).toBe(false);
@@ -351,7 +365,7 @@ describe("resposta ruim degrada para dúvida, nunca para atribuição errada", (
     // o átomo vai cair no que já existe, e o agente tinha dito o contrário.
     // Sem esta marca, o sistema fazia o oposto do que o agente disse em
     // silêncio, com `certo: true`.
-    responder({ referencias: [{ n: 1, entidade: "NOVA", certo: true, motivo: "" }], perfil: [] });
+    responder({ referencias: [{ n: 1, entidade: "NOVA", confianca: 1, motivo: "" }], perfil: [] });
     const r = await resolverReferencias([atomo("Rapha")], [RAFFA, RAPHA]);
 
     expect(r.sobre[0].certo).toBe(false);
@@ -372,7 +386,7 @@ describe("resposta ruim degrada para dúvida, nunca para atribuição errada", (
   });
 
   it("entidade inventada, fora dos candidatos, não é aceita", async () => {
-    responder({ referencias: [{ n: 1, entidade: "pedro", certo: true, motivo: "" }], perfil: [] });
+    responder({ referencias: [{ n: 1, entidade: "pedro", confianca: 1, motivo: "" }], perfil: [] });
     const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
     expect(r.sobre[0].entidade).toBe("Rafa"); // caiu para entidade nova
     expect(r.sobre[0].certo).toBe(false);
@@ -407,7 +421,7 @@ describe("resposta ruim degrada para dúvida, nunca para atribuição errada", (
  */
 describe("a mesma pergunta não vai duas vezes", () => {
   it("duas menções iguais no mesmo átomo viram uma pergunta só (D2)", async () => {
-    responder({ referencias: [{ n: 2, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
+    responder({ referencias: [{ n: 2, entidade: "raffa", confianca: 1, motivo: "" }], perfil: [] });
     const r = await resolverReferencias(
       [atomo("eu", { menciona: [cita("Rafa"), cita("rafa")] })],
       [no("eu"), RAFFA, RAPHA],
@@ -468,7 +482,7 @@ describe("SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA são sempre de eu", () => {
   it("o sujeito continua eu mesmo quando o agente responde outra pessoa", async () => {
     comVizinhoRaffa();
     responder({
-      referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "o slackline é dele" }],
+      referencias: [{ n: 1, entidade: "raffa", confianca: 1, motivo: "o slackline é dele" }],
       perfil: [],
     });
 
@@ -485,7 +499,7 @@ describe("SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA são sempre de eu", () => {
     // Um agente querendo tirar um APRENDIZADO de `eu` costuma ser sinal de que
     // o tipo do átomo está errado — e isso eu só conserto se vir.
     comVizinhoRaffa();
-    responder({ referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
+    responder({ referencias: [{ n: 1, entidade: "raffa", confianca: 1, motivo: "" }], perfil: [] });
 
     const r = await resolverReferencias(
       [atomo("eu", { tipo: "APRENDIZADO", texto: "Aprendi a montar a fita sozinho" })],
@@ -500,8 +514,8 @@ describe("SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA são sempre de eu", () => {
     comVizinhoRaffa();
     responder({
       referencias: [
-        { n: 1, entidade: "raffa", certo: true, motivo: "" },
-        { n: 2, entidade: "raffa", certo: true, motivo: "" },
+        { n: 1, entidade: "raffa", confianca: 1, motivo: "" },
+        { n: 2, entidade: "raffa", confianca: 1, motivo: "" },
       ],
       perfil: [],
     });
@@ -520,7 +534,7 @@ describe("SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA são sempre de eu", () => {
     // e DECISAO o sujeito é o assunto, e `eu` ali é só o padrão de quando não há
     // outro.
     comVizinhoRaffa();
-    responder({ referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
+    responder({ referencias: [{ n: 1, entidade: "raffa", confianca: 1, motivo: "" }], perfil: [] });
 
     const r = await resolverReferencias([atomo("eu", { tipo: "FATO" })], [EU, RAFFA]);
     expect(r.sobre[0]).toMatchObject({ entidade: "Raffa", certo: true });
@@ -529,7 +543,7 @@ describe("SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA são sempre de eu", () => {
   it("o extrator que já pôs outra pessoa no SENTIMENTO não é reescrito aqui", async () => {
     // A guarda impede **tirar** o sujeito de `eu`. Se o extrator violou o
     // próprio contrato, quem arbitra é a revisão, não este código.
-    responder({ referencias: [{ n: 1, entidade: "raffa", certo: true, motivo: "" }], perfil: [] });
+    responder({ referencias: [{ n: 1, entidade: "raffa", confianca: 1, motivo: "" }], perfil: [] });
     const r = await resolverReferencias(
       [atomo("Rafa", { tipo: "SENTIMENTO" })],
       [EU, RAFFA, RAPHA],
@@ -773,7 +787,7 @@ describe("as duas camadas semânticas (slice 4.5)", () => {
       textos.map(() => [porVizinhos("raffa", { ids: ["s1-0"] })]),
     );
     responder({
-      referencias: [{ n: 1, entidade: "raffa", certo: false, motivo: "slackline" }],
+      referencias: [{ n: 1, entidade: "raffa", confianca: 0.2, motivo: "slackline" }],
       perfil: [],
     });
 
@@ -895,7 +909,7 @@ describe("o que o extrator apontou", () => {
 
   it("o agente concordando, a menção sai certa e apontando o nó", async () => {
     responder({
-      referencias: [{ n: 2, entidade: "giampaolo lepore", certo: true, motivo: "é o sócio" }],
+      referencias: [{ n: 2, entidade: "giampaolo lepore", confianca: 1, motivo: "é o sócio" }],
       perfil: [],
     });
     const r = await resolverReferencias(
@@ -918,7 +932,7 @@ describe("o que o extrator apontou", () => {
     // O grafo tem uma "Jean" de verdade: a grafia casa com ela, e o extrator
     // apontou o Giampaolo. É o par que faz os dois discordarem.
     responder({
-      referencias: [{ n: 2, entidade: "jean", certo: true, motivo: "o contexto é o dela" }],
+      referencias: [{ n: 2, entidade: "jean", confianca: 1, motivo: "o contexto é o dela" }],
       perfil: [],
     });
     const r = await resolverReferencias(
@@ -937,7 +951,7 @@ describe("o que o extrator apontou", () => {
     // linha do §5.3.
     chamar.mockRejectedValueOnce(Object.assign(new Error("rate limit"), { statusCode: 429 }));
     chamar.mockResolvedValueOnce({
-      text: JSON.stringify({ referencias: [{ n: 1, entidade: "isinha", certo: true }], perfil: [] }),
+      text: JSON.stringify({ referencias: [{ n: 1, entidade: "isinha", confianca: 1 }], perfil: [] }),
       response: { modelId: "zai/glm-5.3-flash" },
     } as never);
 
@@ -947,5 +961,210 @@ describe("o que o extrator apontou", () => {
     // menção, como sempre segurou.
     expect(r.sobre[0].entidade).toBe("Isinha");
     expect(chamar).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * A confiança, o limiar e a segunda passada (slice 4.11).
+ *
+ * O agente 2 deixou de responder `certo: true|false` e passou a devolver um
+ * número. Abaixo do limiar a menção vai à segunda leitura, com o perfil inteiro
+ * dos candidatos daquela menção — que é o que o agente 2 lia antes desta fatia,
+ * e que saiu do caminho comum para caber aqui.
+ */
+describe("a confiança e o limiar", () => {
+  it("confiança acima do limiar resolve na primeira passada, sem segunda leitura", async () => {
+    responder({
+      referencias: [{ n: 1, entidade: "raffa", confianca: 0.95, motivo: "o slackline" }],
+      perfil: [],
+    });
+    const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
+
+    expect(segunda).not.toHaveBeenCalled();
+    expect(r.sobre[0]).toMatchObject({ entidade: "Raffa", certo: true });
+  });
+
+  it("confiança abaixo do limiar manda a menção à segunda leitura", async () => {
+    responder({
+      referencias: [{ n: 1, entidade: "raffa", confianca: 0.4, motivo: "nada separa os dois" }],
+      perfil: [],
+    });
+    await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
+
+    expect(segunda).toHaveBeenCalledTimes(1);
+    expect(segunda.mock.calls[0][0]).toMatchObject({
+      citado: "Rafa",
+      escolhida: "raffa",
+      motivo: "nada separa os dois",
+      confianca: 0.4,
+    });
+    // Os candidatos daquela menção, e só eles — é o que faz o perfil inteiro
+    // caber sem teto.
+    expect(segunda.mock.calls[0][0].candidatos.map((c) => c.nome).sort()).toEqual([
+      "Raffa",
+      "Rapha",
+    ]);
+  });
+
+  /**
+   * Ausente não é certeza: o agente que não respondeu o campo não me autorizou
+   * a gravar calado. É a mesma escolha de `duvida` ausente no desempate.
+   */
+  it("confiança ausente conta como abaixo do limiar", async () => {
+    responder({ referencias: [{ n: 1, entidade: "raffa", motivo: "" }], perfil: [] });
+    await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
+    expect(segunda).toHaveBeenCalledTimes(1);
+  });
+
+  it("o prazo de rate limit de quem chamou vai junto para a segunda leitura", async () => {
+    responder({ referencias: [{ n: 1, entidade: "raffa", confianca: 0.3, motivo: "" }], perfil: [] });
+    await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA], { ate: 4242 });
+    expect(segunda.mock.calls[0][1]).toMatchObject({ ate: 4242 });
+  });
+
+  it("o log diz quantas menções caíram — e cala quando nenhuma cai", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    responder({ referencias: [{ n: 1, entidade: "raffa", confianca: 0.99, motivo: "" }], perfil: [] });
+    await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA], { sessao_id: "s1" });
+    expect(log).not.toHaveBeenCalled();
+
+    responder({ referencias: [{ n: 1, entidade: "raffa", confianca: 0.2, motivo: "" }], perfil: [] });
+    await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA], { sessao_id: "s1" });
+    expect(log).toHaveBeenCalledWith("[desempate] sessão s1: 1 menção(ões) abaixo do limiar");
+
+    log.mockRestore();
+  });
+});
+
+describe("o que a segunda passada devolve é final", () => {
+  const baixa = () =>
+    responder({
+      referencias: [{ n: 1, entidade: "raffa", confianca: 0.3, motivo: "não sei" }],
+      perfil: [],
+    });
+
+  it("sem dúvida, a menção sai certa — com a chave e o motivo dela", async () => {
+    baixa();
+    segunda.mockResolvedValue({
+      entidade: "rapha",
+      duvida: false,
+      motivo: "a produção do evento é dele",
+      modelo: "zai/glm-5.3-flash",
+      prompt_version: "desempate-1",
+    });
+    const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
+
+    expect(r.sobre[0]).toMatchObject({
+      entidade: "Rapha",
+      conhecida: true,
+      certo: true,
+      motivo: "a produção do evento é dele",
+    });
+  });
+
+  /**
+   * Não há segundo limiar: dúvida na tela só quando ela **marcar** dúvida. É a
+   * decisão que fez a fatia ter uma régua para calibrar, e não duas.
+   */
+  it("com dúvida, a revisão marca — e é a única marca que sobra", async () => {
+    baixa();
+    segunda.mockResolvedValue({
+      entidade: "raffa",
+      duvida: true,
+      motivo: "nem com a ficha inteira dá para separar",
+      modelo: "zai/glm-5.3-flash",
+      prompt_version: "desempate-1",
+    });
+    const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
+
+    expect(r.sobre[0]).toMatchObject({ entidade: "Raffa", certo: false });
+    expect(r.sobre[0].motivo).toContain("nem com a ficha inteira");
+  });
+
+  it("NOVA na segunda passada nasce como entidade nova", async () => {
+    baixa();
+    segunda.mockResolvedValue({
+      entidade: "NOVA",
+      duvida: false,
+      motivo: "as duas fichas contradizem o átomo",
+      modelo: "zai/glm-5.3-flash",
+      prompt_version: "desempate-1",
+    });
+    const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
+
+    expect(r.sobre[0]).toMatchObject({ entidade: "Rafa", conhecida: false, certo: true });
+  });
+
+  it("falha da segunda passada deixa o que a primeira decidiu, em dúvida", async () => {
+    baixa();
+    segunda.mockResolvedValue(null);
+    const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
+
+    expect(r.sobre[0]).toMatchObject({ entidade: "Raffa", certo: false, motivo: "não sei" });
+  });
+
+  it("chave fora dos candidatos é descartada, como na primeira passada", async () => {
+    baixa();
+    segunda.mockResolvedValue({
+      entidade: "pedro",
+      duvida: false,
+      motivo: "",
+      modelo: "zai/glm-5.3-flash",
+      prompt_version: "desempate-1",
+    });
+    const r = await resolverReferencias([atomo("Rafa")], [RAFFA, RAPHA]);
+
+    expect(r.sobre[0]).toMatchObject({ entidade: "Raffa", certo: false });
+  });
+
+  /**
+   * A guarda do `eu` continua valendo depois da segunda passada: ela reusa o
+   * mesmo `responder` da pendente, e não uma escrita própria. Sem isso, a
+   * segunda leitura seria o buraco por onde um SENTIMENTO sai de `eu`.
+   */
+  it("a guarda do eu vale também para a segunda passada", async () => {
+    // O caso A2, que é como o buraco apareceu: as camadas semânticas são
+    // calculadas por átomo e entregues a todas as menções dele sem filtro pelo
+    // citado, então "eu" chega ao agente com o Raffa do lado.
+    semantica.mockImplementation(async (textos) => textos.map(() => [porVizinhos("raffa")]));
+    responder({ referencias: [{ n: 1, entidade: "eu", confianca: 0.3, motivo: "" }], perfil: [] });
+    segunda.mockResolvedValue({
+      entidade: "raffa",
+      duvida: false,
+      motivo: "a ficha dele casa",
+      modelo: "zai/glm-5.3-flash",
+      prompt_version: "desempate-1",
+    });
+    const r = await resolverReferencias(
+      [atomo("eu", { tipo: "SENTIMENTO" })],
+      [no("eu"), RAFFA],
+    );
+
+    expect(r.sobre[0]).toMatchObject({ entidade: "eu", certo: false });
+    expect(r.sobre[0].motivo).toContain('é sempre de "eu"');
+  });
+});
+
+describe("o desempate determinístico do canônico", () => {
+  /**
+   * Acontece **em código, antes de qualquer chamada de modelo**, e é o que a
+   * flag promete. Importa porque `unir()` corta em TOP_K: dois nós igualmente
+   * próximos disputam a mesma vaga, e quem fica de fora não chega a ser
+   * oferecido ao agente. Até a 4.11 isso era decidido pela ordem em que o
+   * catálogo voltava do banco — consequência do laço, e não decisão.
+   */
+  it("entre dois igualmente parecidos, o canônico vem primeiro", () => {
+    const comum = no("Rafla");
+    const oficial = no("Rafna", { canonico: true });
+    const c = candidatosDe("Rafa", [comum, oficial]);
+    expect(c.parecidos.map((e) => e.nome)).toEqual(["Rafna", "Rafla"]);
+  });
+
+  it("mas não vence quem é mais parecido: proximidade primeiro", () => {
+    const perto = no("Rafa Silva");
+    const oficial = no("Rodozanco", { canonico: true });
+    const c = candidatosDe("Rafa Silvo", [perto, oficial]);
+    expect(c.parecidos[0]?.nome).toBe("Rafa Silva");
   });
 });

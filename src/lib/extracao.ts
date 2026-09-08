@@ -1151,16 +1151,20 @@ export async function extrairJanela(
   const modeloReal = resposta.response?.modelId ?? modelo;
 
   // Lê o grafo; não escreve nada nele (regra 5). O catálogo é o mesmo objeto que
-  // a tela de manutenção mostra — inclusive os três campos de perfil, que são o
-  // que o agente 2 usa para desambiguar. Quem montou o dossiê já o leu (4.9), e
-  // reler seria pagar duas vezes pela mesma pergunta.
+  // a tela de manutenção mostra — inclusive o `resumo`, que é o que o agente 2
+  // usa para desambiguar desde a 4.11, e os três campos de perfil, que a segunda
+  // passada lê quando a confiança fica abaixo do limiar. Quem montou o dossiê já
+  // o leu (4.9), e reler seria pagar duas vezes pela mesma pergunta.
   const catalogo = catalogoLido ?? (await listarEntidades());
   const atribuicoes = await resolverReferencias(atomos, catalogo, {
     jaPropostos: anteriores,
     // O mesmo prazo da chamada de extração: desde a 4.9 o agente 2 também
     // espera o rate limit passar, e essa espera divide o orçamento de quem
-    // chama — na janela do fim, o `waitUntil` do `/finalizar` (§5.3).
+    // chama — na janela do fim, o `waitUntil` do `/finalizar` (§5.3). Desde a
+    // 4.11 a segunda passada divide o mesmo prazo.
     ate,
+    // Só para a linha `[desempate]` do log dizer de qual sessão ela é.
+    sessao_id: janela.sessao_id,
   });
 
   return {

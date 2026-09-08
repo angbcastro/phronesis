@@ -153,7 +153,9 @@ export function Agentes() {
   const porId = new Map(dados.agentes.map((a) => [a.id, a]));
   const editando = aberto ? porId.get(aberto) : undefined;
 
-  const comOverride = dados.agentes.filter((a) => a.promptEditado || a.modeloEditado).length;
+  const comOverride = dados.agentes.filter(
+    (a) => a.promptEditado || a.modeloEditado || a.limiarEditado,
+  ).length;
 
   return (
     <main className="agentes">
@@ -325,13 +327,15 @@ function Fluxo({
             key={n.id}
             ref={guardar(n.id)}
             type="button"
-            className={`no agente${a.promptEditado || a.modeloEditado ? " editado" : ""}`}
+            className={`no agente${a.promptEditado || a.modeloEditado || a.limiarEditado ? " editado" : ""}`}
             style={estilo}
             onClick={() => aoAbrir(a.id)}
           >
             <span className="rotulo">
               {a.rotulo}
-              {(a.promptEditado || a.modeloEditado) && <i className="marca" aria-label="editado" />}
+              {(a.promptEditado || a.modeloEditado || a.limiarEditado) && (
+                <i className="marca" aria-label="editado" />
+              )}
             </span>
             <span className="modelo">{a.modelo}</span>
             <span className={`quando ${a.quando}`}>{QUANDO[a.quando]}</span>
@@ -351,10 +355,15 @@ function Editor({
 }: {
   a: AgenteNaTela;
   aoFechar: () => void;
-  aoSalvar: (corpo: { prompt?: string | null; modelo?: string | null }) => Promise<void>;
+  aoSalvar: (corpo: {
+    prompt?: string | null;
+    modelo?: string | null;
+    limiar?: number | null;
+  }) => Promise<void>;
 }) {
   const [prompt, setPrompt] = useState(a.prompt ?? "");
   const [modelo, setModelo] = useState(a.modelo);
+  const [limiar, setLimiar] = useState(a.limiar === null ? "" : String(a.limiar));
   const [editandoPrompt, setEditandoPrompt] = useState(false);
   const [gravando, setGravando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -365,6 +374,7 @@ function Editor({
   useEffect(() => {
     setPrompt(a.prompt ?? "");
     setModelo(a.modelo);
+    setLimiar(a.limiar === null ? "" : String(a.limiar));
     setEditandoPrompt(false);
     setErro(null);
   }, [a]);
@@ -380,9 +390,23 @@ function Editor({
 
   const promptMudou = a.prompt !== null && prompt.trim() !== (a.prompt ?? "").trim();
   const modeloMudou = modelo.trim() !== a.modelo;
-  const podeSalvar = (promptMudou || modeloMudou) && !gravando;
+  // Vazio, ou fora de [0,1], não é mudança: o campo em branco é "não mexi", e o
+  // servidor recusa o resto de qualquer jeito.
+  const limiarNovo = Number(limiar);
+  const limiarMudou =
+    a.limiar !== null &&
+    limiar.trim() !== "" &&
+    Number.isFinite(limiarNovo) &&
+    limiarNovo >= 0 &&
+    limiarNovo <= 1 &&
+    limiarNovo !== a.limiar;
+  const podeSalvar = (promptMudou || modeloMudou || limiarMudou) && !gravando;
 
-  async function salvar(corpo: { prompt?: string | null; modelo?: string | null }) {
+  async function salvar(corpo: {
+    prompt?: string | null;
+    modelo?: string | null;
+    limiar?: number | null;
+  }) {
     setGravando(true);
     setErro(null);
     try {
@@ -439,6 +463,28 @@ function Editor({
             </p>
           )}
 
+          {a.limiar !== null && (
+            <>
+              <label htmlFor={`limiar-${a.id}`}>limiar de confiança</label>
+              <input
+                id={`limiar-${a.id}`}
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={limiar}
+                inputMode="decimal"
+                onChange={(e) => setLimiar(e.target.value)}
+                placeholder={String(a.limiarPadrao ?? "")}
+              />
+              <p className="dica">
+                abaixo disto a menção vai para a segunda leitura, com a ficha completa dos
+                candidatos. Padrão <code>{a.limiarPadrao}</code>, do git
+                {a.limiarEditado && " · você trocou por aqui"}
+              </p>
+            </>
+          )}
+
           {a.aceitaVocabulario === false && (
             <p className="alerta">
               Este provedor não tem canal de vocabulário: a lista de nomes próprios do grafo some
@@ -488,17 +534,24 @@ function Editor({
               salvar({
                 ...(promptMudou ? { prompt } : {}),
                 ...(modeloMudou ? { modelo: modelo.trim() } : {}),
+                ...(limiarMudou ? { limiar: limiarNovo } : {}),
               })
             }
           >
             {gravando ? "gravando…" : "salvar"}
           </button>
-          {(a.promptEditado || a.modeloEditado) && (
+          {(a.promptEditado || a.modeloEditado || a.limiarEditado) && (
             <button
               type="button"
               className="fraco"
               disabled={gravando}
-              onClick={() => salvar({ prompt: a.prompt === null ? undefined : null, modelo: null })}
+              onClick={() =>
+              salvar({
+                prompt: a.prompt === null ? undefined : null,
+                modelo: null,
+                ...(a.limiar === null ? {} : { limiar: null }),
+              })
+            }
             >
               voltar ao original
             </button>

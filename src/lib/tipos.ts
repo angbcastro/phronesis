@@ -665,6 +665,7 @@ export const AGENTE_IDS = [
   "stt",
   "extracao",
   "resolucao",
+  "desempate",
   "perfil",
   "calibracao",
   "duplicatas",
@@ -693,6 +694,16 @@ export type QuandoRoda = "automatico" | "condicional" | "sob_demanda";
 export interface OverrideDeAgente {
   prompt_hash?: string | null;
   modelo?: string | null;
+  /**
+   * O limiar de confiança da resolução (slice 4.11), de 0 a 1. Só o agente
+   * `resolucao` o usa; nos outros ele fica ausente.
+   *
+   * Terceiro campo ao lado dos dois, com a mesma regra: ausente = a base do git.
+   * Ele mora aqui, e não numa constante de código, porque é um número para eu
+   * mexer olhando a revisão, sessão real por sessão real — como os pisos das
+   * camadas semânticas, e como toda avaliação de qualidade deste sistema.
+   */
+  limiar?: number | null;
   atualizado_em: string;
 }
 

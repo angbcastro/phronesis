@@ -1,6 +1,6 @@
 /**
- * O prompt e o modelo que eu editei na tela — o pedaço da configuração dos
- * agentes que não mora no git.
+ * O prompt, o modelo e o limiar que eu editei na tela — o pedaço da configuração
+ * dos agentes que não mora no git.
  *
  * **Decalcado de `regras.ts`, e pelas mesmas razões**, que estão escritas lá por
  * extenso: R2 porque serverless não tem disco gravável nem compartilhado;
@@ -15,8 +15,8 @@
  * nenhum — e é isso que torna a slice inteira um no-op até o meu primeiro toque.
  *
  * **Este módulo não sabe quais agentes existem.** Ele recebe o id e a base como
- * argumento, e é de propósito: o registro (`agentes.ts`) importa os cinco
- * módulos de agente, e cada agente importa este. Se ele importasse o registro,
+ * argumento, e é de propósito: o registro (`agentes.ts`) importa os módulos de
+ * agente, e cada agente importa este. Se ele importasse o registro,
  * o ciclo fecharia — e ciclo de módulo com `const` no topo vira `undefined` em
  * tempo de execução, que é a pior forma de descobrir o problema.
  */
@@ -69,11 +69,20 @@ export async function versaoDePrompt(
   }
 }
 
+/** Número de verdade, entre 0 e 1. O resto conta como ausente. */
+export const ehLimiar = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
+
 export interface Efetivo {
   /** O prompt em vigor. Igual à base quando não há override. */
   prompt: string;
   /** O modelo em vigor, já validado por quem passou o padrão. */
   modelo: string;
+  /**
+   * O limiar em vigor (slice 4.11), quando quem chamou passou uma base para ele.
+   * `undefined` em todo agente que não tem limiar — só a resolução tem.
+   */
+  limiar?: number;
   /**
    * O hash do prompt em vigor, ou `null` quando é a base.
    *
@@ -93,24 +102,36 @@ export interface Efetivo {
  */
 export async function efetivo(
   id: AgenteId,
-  base: { prompt?: string; modelo: string },
+  base: { prompt?: string; modelo: string; limiar?: number },
 ): Promise<Efetivo> {
   const cfg = await configAgentes();
   return resolver(id, base, cfg);
 }
 
-/** O mesmo, sobre um índice já lido — é o que a tela usa para os sete de uma vez. */
+/** O mesmo, sobre um índice já lido — é o que a tela usa para os oito de uma vez. */
 export async function resolver(
   id: AgenteId,
-  base: { prompt?: string; modelo: string },
+  base: { prompt?: string; modelo: string; limiar?: number },
   cfg: ConfigAgentes,
 ): Promise<Efetivo> {
   const over = cfg.overrides[id];
   const prompt = base.prompt ?? "";
   const modelo = typeof over?.modelo === "string" && over.modelo.trim() !== "" ? over.modelo : base.modelo;
 
+  // O limiar só existe para quem passou uma base dele — hoje, só a resolução.
+  // Número fora de [0,1] no arquivo é ignorado como se não estivesse lá: o
+  // arquivo é meu, mas ele não pode desligar a segunda passada por um typo.
+  const limiar =
+    base.limiar === undefined
+      ? undefined
+      : ehLimiar(over?.limiar)
+        ? over.limiar
+        : base.limiar;
+
+  const comum = { prompt, modelo, ...(limiar === undefined ? {} : { limiar }) };
+
   const hash = typeof over?.prompt_hash === "string" ? over.prompt_hash : null;
-  if (hash === null || base.prompt === undefined) return { prompt, modelo, hash: null };
+  if (hash === null || base.prompt === undefined) return { ...comum, hash: null };
 
   const versao = await versaoDePrompt(id, hash);
   // Ponteiro sem objeto: o índice aponta para um prompt que não está lá. Cair na
@@ -118,11 +139,12 @@ export async function resolver(
   // com uma versão que não foi a usada.
   if (!versao || typeof versao.texto !== "string" || versao.texto.trim() === "") {
     console.error(`[overrides] ${id}: o hash ${hash} não resolve texto nenhum, usando a base`);
-    return { prompt, modelo, hash: null };
+    return { ...comum, hash: null };
   }
 
-  return { prompt: versao.texto, modelo, hash };
+  return { ...comum, prompt: versao.texto, hash };
 }
+
 
 /**
  * A versão que vai carimbada (regra 7): `resolucao-2` sem override,
@@ -155,7 +177,7 @@ export { hashDeTexto };
  */
 export async function gravarOverride(
   id: AgenteId,
-  mudanca: { prompt?: string | null; modelo?: string | null },
+  mudanca: { prompt?: string | null; modelo?: string | null; limiar?: number | null },
   agora: string = new Date().toISOString(),
 ): Promise<OverrideDeAgente> {
   const { valor: cfg, etag } = await configComEtag();
@@ -172,12 +194,16 @@ export async function gravarOverride(
   if (mudanca.modelo === null) modelo = null;
   else if (typeof mudanca.modelo === "string") modelo = mudanca.modelo;
 
-  const novo: OverrideDeAgente = { prompt_hash, modelo, atualizado_em: agora };
+  let limiar = atual?.limiar ?? null;
+  if (mudanca.limiar === null) limiar = null;
+  else if (typeof mudanca.limiar === "number") limiar = mudanca.limiar;
+
+  const novo: OverrideDeAgente = { prompt_hash, modelo, limiar, atualizado_em: agora };
 
   const overrides = { ...cfg.overrides };
-  // Override que não muda nada sai do índice inteiro: um objeto com dois `null`
+  // Override que não muda nada sai do índice inteiro: um objeto só com `null`
   // faria a tela dizer "editado" sobre um agente que está na base.
-  if (prompt_hash === null && modelo === null) delete overrides[id];
+  if (prompt_hash === null && modelo === null && limiar === null) delete overrides[id];
   else overrides[id] = novo;
 
   await putJson(

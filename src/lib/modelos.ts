@@ -105,6 +105,19 @@ export function modeloResolucao(): string {
 }
 
 /**
+ * Modelo da **segunda passada** — o desempate (slice 4.11).
+ *
+ * Padrão igual ao da resolução, e não ao da extração: os dois lêem o mesmo tipo
+ * de material e decidem a mesma coisa, e o desempate é literalmente a segunda
+ * leitura da menção que o outro não resolveu. `DESEMPATE_MODEL` separa sem tocar
+ * em código — e é aqui que eu poria um modelo mais caro, se um dia a segunda
+ * passada merecer um.
+ */
+export function modeloDesempate(): string {
+  return validarIdDeModelo(process.env.DESEMPATE_MODEL || modeloResolucao());
+}
+
+/**
  * Modelo que rascunha o texto de um campo de perfil (slice 4, agente 3).
  * Mesma regra do de resolução: padrão é o da extração.
  */
