@@ -69,12 +69,25 @@ export async function carregarManifest(sessao_id: string): Promise<Manifest> {
   return o?.valor ?? manifestVazio(sessao_id);
 }
 
-const TENTATIVAS_MANIFEST = 6;
+const TENTATIVAS_MANIFEST = 10;
+const BASE_MS_MANIFEST = 40;
+const TETO_MS_MANIFEST = 2_000;
 
 /**
  * Aplica `mutador` ao manifest e grava condicionalmente. Em conflito
  * (outro `/pronto` gravou antes), relê e reaplica — o mutador precisa ser
  * puro e idempotente.
+ *
+ * **Dez tentativas, não seis** (medido na importação, slice 4.10): um
+ * bloco cujo STT tropeça no rate limit do Gateway fica preso em
+ * `comEsperaDeLimite` por até 60 s (`limite.ts`) antes de `marcarTranscrito`
+ * gravar aqui. Quando vários blocos tropeçam juntos — comum na importação,
+ * que sobe blocos bem mais depressa que a gravação ao vivo —, as esperas
+ * terminam perto umas das outras e o `marcarTranscrito` de todos colide com
+ * o `registrarChunk` de blocos novos chegando. Seis tentativas com teto de
+ * ~1,3 s por espera não sobrevivem a essa rajada; o manifest fica sem gravar
+ * e a rota `/pronto` sobe o erro cru. O teto de 2 s por tentativa evita que
+ * dez tentativas virem uma espera visível de dezenas de segundos.
  */
 export async function atualizarManifest(
   sessao_id: string,
@@ -94,7 +107,8 @@ export async function atualizarManifest(
       return novo;
     } catch (e) {
       if (!(e instanceof ConflitoR2Error)) throw e;
-      await new Promise((r) => setTimeout(r, 40 * 2 ** tentativa + Math.random() * 40));
+      const espera = Math.min(BASE_MS_MANIFEST * 2 ** tentativa, TETO_MS_MANIFEST);
+      await new Promise((r) => setTimeout(r, espera + Math.random() * 40));
     }
   }
   throw new Error(`Não consegui gravar o manifest de ${sessao_id} após ${TENTATIVAS_MANIFEST} tentativas`);

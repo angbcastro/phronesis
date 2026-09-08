@@ -7,7 +7,7 @@ import { existe } from "@/lib/r2";
 import { avancarJanelas, transcreverBloco } from "@/lib/pipeline";
 import { recuperarCandidatas } from "@/lib/recuperacao";
 import { atualizarSessao } from "@/lib/sessoes";
-import { erro, parametros } from "@/lib/rotas";
+import { erro, erroDeInfra, parametros } from "@/lib/rotas";
 import { DURACAO_CHUNK_S } from "@/lib/tipos";
 
 export const runtime = "nodejs";
@@ -36,28 +36,37 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; i:
   const ext = corpo.ext ?? EXT_GRAVACAO;
   if (!extensaoAceita(ext)) return erro(`formato de áudio não aceito: ${ext}`, 415);
 
-  const objeto = await existe(chaveChunkAudio(id, i, ext));
-  if (!objeto) return erro("bloco não encontrado no R2", 409);
+  let manifest;
+  try {
+    const objeto = await existe(chaveChunkAudio(id, i, ext));
+    if (!objeto) return erro("bloco não encontrado no R2", 409);
 
-  const manifest = await atualizarManifest(id, (m) =>
-    registrarChunk(m, {
-      i,
-      bytes: objeto.bytes,
-      subido_em: new Date().toISOString(),
-      // Só grava o campo quando não é o padrão: manifest de gravação
-      // continua byte a byte igual ao que a slice 1 escrevia.
-      ...(ext === EXT_GRAVACAO ? {} : { ext }),
-    }),
-  );
+    manifest = await atualizarManifest(id, (m) =>
+      registrarChunk(m, {
+        i,
+        bytes: objeto.bytes,
+        subido_em: new Date().toISOString(),
+        // Só grava o campo quando não é o padrão: manifest de gravação
+        // continua byte a byte igual ao que a slice 1 escrevia.
+        ...(ext === EXT_GRAVACAO ? {} : { ext }),
+      }),
+    );
 
-  // Arquivo importado é um bloco só, de duração arbitrária — a conta por
-  // contagem de blocos diria 30 s para um diário de 15 min.
-  const duracao_s =
-    typeof corpo.duracao_s === "number" && corpo.duracao_s > 0
-      ? Math.round(corpo.duracao_s)
-      : manifest.chunks.length * DURACAO_CHUNK_S;
+    // Arquivo importado é um bloco só, de duração arbitrária — a conta por
+    // contagem de blocos diria 30 s para um diário de 15 min.
+    const duracao_s =
+      typeof corpo.duracao_s === "number" && corpo.duracao_s > 0
+        ? Math.round(corpo.duracao_s)
+        : manifest.chunks.length * DURACAO_CHUNK_S;
 
-  await atualizarSessao(id, { chunks_total: manifest.chunks.length, duracao_s }, ["gravando"]);
+    await atualizarSessao(id, { chunks_total: manifest.chunks.length, duracao_s }, ["gravando"]);
+  } catch (e) {
+    // Sem isto, um R2/Neo4j fora do ar ou um manifest que esgotou as
+    // tentativas de conflito (`manifest.ts`) sobe cru e o Next responde 500
+    // sem causa nenhuma — o cliente só sabe dizer "respondeu 500". Mesmo
+    // tratamento de `sessoes/route.ts` e companhia (`rotas.ts`).
+    return erroDeInfra(`sessoes/${id}/chunks/${i}/pronto`, e);
+  }
 
   // Transcrever o bloco, perguntar ao grafo quem ele cita, e só então fechar as
   // janelas que ele permitiu fechar. As três coisas no mesmo `waitUntil` e não

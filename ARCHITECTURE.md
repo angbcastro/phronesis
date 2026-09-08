@@ -2682,7 +2682,29 @@ transcreveu mas ainda não extraiu, a segunda chamada **é** o retry da extraç�
 Vários `/pronto` podem chegar ao mesmo tempo. `atualizarManifest` faz
 read-modify-write condicional: lê o objeto com o etag, aplica um mutador **puro e
 idempotente**, grava com `If-Match` (ou `If-None-Match: *` na primeira vez). Em
-412/409 (`ConflitoR2Error`) relê e reaplica, com backoff, até 6 tentativas.
+412/409 (`ConflitoR2Error`) relê e reaplica, com backoff, até 10 tentativas
+(subiu de 6 na importação, slice 4.10 — ver abaixo), teto de 2 s por espera.
+
+**A importação multiplica quem escreve o manifest ao mesmo tempo.** Um bloco cujo
+STT tropeça no rate limit do Gateway fica preso em `comEsperaDeLimite` por até
+60 s (`limite.ts`) antes de `marcarTranscrito` gravar. Na gravação ao vivo isso
+não se acumula — os blocos chegam a cada 30 s de fala real. Na importação,
+`BLOCOS_SIMULTANEOS` sobe dois blocos por vez sem pausa nenhuma; se o rate limit
+pegar vários blocos seguidos, as esperas deles terminam perto umas das outras, e
+o `marcarTranscrito` de todos colide com o `registrarChunk` dos blocos novos que
+continuam chegando. Com 6 tentativas e teto de ~1,3 s essa rajada esgotava o
+laço e a exceção subia crua da rota `pronto` — 500 sem causa nenhuma na tela,
+só `${url} respondeu 500` no cliente (`Importacao.tsx`). Dez tentativas com teto
+de 2 s absorvem a rajada sem transformar isso numa espera visível de dezenas de
+segundos.
+
+**A rota `pronto` também passou a responder 502 legível, não 500 cru.** Faltava
+o mesmo tratamento que `sessoes/route.ts` e companhia já tinham (§5.2):
+`existe`, `atualizarManifest` e `atualizarSessao` agora estão dentro de um
+`try/catch` que devolve `erroDeInfra` — o que sobrar do laço acima, ou qualquer
+outro tropeço de R2/Neo4j síncrono, aparece com a causa no log e uma frase na
+tela em vez de um 500 mudo. O `waitUntil` de STT/janelas continua fora do
+`try`: falhar ali não pode derrubar a resposta que já foi decidida.
 
 Duas exigências de transporte do R2 sustentam isso, ambas dentro de `put()` em
 `r2.ts`, ambas descobertas quebrando na primeira gravação real (2026-08-24):
