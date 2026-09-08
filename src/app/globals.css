@@ -328,6 +328,47 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .atomo .corpo > p { margin: 0.2rem 0 0; line-height: 1.45; }
 .atomo .meta { font-size: 0.82rem; color: var(--texto-fraco); }
 
+/* O texto do átomo edita no próprio lugar — clicar nele vira campo, sem abrir
+   painel embaixo. */
+.texto-atomo {
+  cursor: text;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+.texto-atomo:hover,
+.texto-atomo:focus-visible { background: color-mix(in srgb, var(--acento) 8%, transparent); outline: none; }
+/* Mesma caixa do parágrafo — margem, fonte e entrelinha idênticas — para o
+   campo não encolher quando o texto vira editável. `resize: none` porque a
+   altura já segue o conteúdo sozinha (via `ref`/`onChange` no componente);
+   `overflow: hidden` evita a barra de rolagem piscar antes do ajuste. */
+.texto-atomo.editando {
+  display: block;
+  width: 100%;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  line-height: 1.45;
+  resize: none;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* O ícone de fontes, ao lado do nome da entidade na linha "sobre/menciona" —
+   só aparece quando a resolução daquela entidade tem evidência de retrieval. */
+.entidade-ref .fonte {
+  background: none;
+  border: none;
+  padding: 0 0.2rem;
+  font-size: 0.72rem;
+  color: var(--texto-fraco);
+  vertical-align: 1px;
+  line-height: 1;
+}
+.entidade-ref .fonte:hover { color: var(--acento); }
+
 .trechos { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
 .ouvir {
   background: none;
@@ -647,28 +688,50 @@ button { font: inherit; color: inherit; cursor: pointer; }
    de ser só do sujeito, e um bloco por referência não caberia nos 60 s. */
 .duvida span { display: block; }
 
-/* ---- slice 4.5: por que o vetor sugeriu quem sugeriu ----
-   A camada dos vizinhos herda atribuição passada. O que a torna aceitável não
-   é ela acertar mais — é o átomo que a elegeu estar aqui, para eu discordar. */
-.porque {
-  margin: 0.3rem 0 0;
-  padding-left: 1rem;
+/* ---- modal de fontes: a procedência do GraphRAG, sob pedido ----
+   Saiu da vista padrão do átomo — só aparece quando eu clico no ícone ao lado
+   da entidade que a evidência resolveu. Diálogo centralizado, não gaveta
+   lateral: o conteúdo é curto (a frase da camada + as citações). */
+.modal-fontes {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  width: min(26rem, calc(100vw - 2rem));
+  max-height: min(70vh, 32rem);
+  overflow-y: auto;
+  background: var(--fundo-alto);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.modal-fontes header { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
+.modal-fontes h2 { font-size: 1rem; font-weight: 600; margin: 0; }
+.modal-fontes .fechar {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--texto-fraco);
+  padding: 0.1rem 0.3rem;
+}
+.modal-fontes .fechar:hover { color: var(--texto); }
+.modal-fontes .motivo { margin: 0; font-size: 0.85rem; color: var(--texto-fraco); }
+.modal-fontes .citacoes {
   list-style: none;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  opacity: 0.75;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-style: italic;
+  line-height: 1.4;
 }
-.porque li { position: relative; }
-.porque li::before {
-  content: "↳";
-  position: absolute;
-  left: -1rem;
-  opacity: 0.6;
-}
-.porque span { font-style: italic; }
-/* O trecho do átomo que votou, embaixo da linha que diz de que camada veio a
-   sugestão (4.8.1). */
-.porque .trecho { display: block; }
 
 /* O que este átomo vai acrescentar ao perfil de alguém, se eu confirmar. */
 .meta.perfila { display: block; margin-top: 0.25rem; opacity: 0.9; }

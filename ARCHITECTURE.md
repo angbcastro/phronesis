@@ -26,6 +26,11 @@ objetos no R2.
 **A verificação que decide a fatia é à mão**: importar o mesmo áudio de 17 min de
 novo e comparar com a proposta guardada, olhando o log. `PROXIMA-SESSAO.md` §2
 continua sendo a lista do que falta gravar e olhar.
+**A tela de revisão foi enxugada depois disso, fora de fatia** (§4.7): o texto do
+átomo edita no próprio lugar, a linha de dúvida virou `acho que é X — confirma?`
+e a procedência do GraphRAG saiu da vista padrão para um modal atrás do `ⓘ` ao
+lado da entidade. Nenhum dado deixou de ser produzido ou gravado — o que mudou é
+o que a tela mostra sem eu pedir.
 Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. A
 extração acontece **durante** a gravação, janela a janela, e quando eu paro
 sobra só a janela do fim; a proposta vai para `extracao.json` e a sessão para
@@ -1146,8 +1151,9 @@ sessão que fale muito de duas pessoas de nome parecido.
 
 A tela mais difícil de acertar, pela própria visão (§6): tem de mostrar muita
 coisa e ser resolvível em menos de um minuto. O desenho segue disso — **abre com
-tudo aprovado**. Desmarcar é um toque, editar são dois (tocar no texto abre o
-editor de texto, tipo e sujeito).
+tudo aprovado**. Desmarcar é um toque, corrigir o texto também: tocar no
+parágrafo do átomo o transforma em campo, no próprio lugar. Tipo, sujeito e
+menções continuam atrás do botão **editar**.
 
 O player é o que torna a revisão confiável: escuto antes de aprovar. Cada âncora
 do átomo vira um botão `▶ mm:ss`; átomo sem âncora nenhuma mostra "sem áudio" em
@@ -1171,9 +1177,20 @@ desabilitado** enquanto sobrar pronome. Desmarcar deixa a entidade só no texto 
 átomo ficaria sem `:SOBRE`, o que o contrato do schema não admite.
 
 O editor de um átomo abre por um botão **editar** — que num átomo em dúvida
-(4.8) se chama **escolher**. Antes ele abria clicando no texto, sem pista nenhuma
-— e o CSS ainda dava `cursor: text` ali, sinalizando o contrário. Menção igual ao
-sujeito não é exibida nem enviada.
+(4.8) se chama **escolher**. Menção igual ao sujeito não é exibida nem enviada.
+
+**O texto do átomo edita no lugar, e por isso saiu do editor.** Ele é o campo que
+eu mais mexo — o extrator escreve com as minhas palavras, mas erra pontuação e
+uma palavra aqui e ali —, e era o único conteúdo do átomo que exigia abrir um
+painel embaixo para tocar. Agora o `<p>` vira `<textarea>` no clique (ou no
+Enter, porque ele é `role="button"` com `tabIndex`), com a mesma margem, fonte e
+entrelinha do parágrafo, altura seguindo o conteúdo (`scrollHeight` no `ref` e a
+cada tecla, `resize: none`), e fecha no `blur`. O `cursor: text` do CSS voltou a
+dizer a verdade: até a 4.6 ele mentia, sinalizando um clique que não existia
+mais. O editor de baixo ficou com o que **não** é texto corrido: tipo, sujeito,
+menções e trechos — e a nota "aqui muda só este átomo" saiu junto, porque o
+alcance de cada lugar está três parágrafos abaixo, e ela roubava linha da tela
+mais apertada do sistema.
 
 **A entidade se corrige em dois lugares, e a diferença entre eles é o alcance.**
 Dentro do átomo, no bloco "entidades" do editor, eu troco o sujeito e as menções
@@ -1220,8 +1237,8 @@ Antes elas eram texto morto no item: menção errada só se consertava rejeitand
 para o erro. A lista viaja inteira nas edições do átomo, e não como delta: sem
 isso não dá para distinguir "não mexi" de "apaguei todas".
 
-**Átomo com atribuição incerta aparece marcado**, com a sugestão já preenchida, o
-motivo do agente e as alternativas ao lado. O confirmar **não** trava: ver 4.8.
+**Átomo com atribuição incerta aparece marcado**, com a sugestão já preenchida no
+seletor. O confirmar **não** trava: ver 4.8.
 
 **A dúvida é de cada referência, e não só do sujeito.** O agente 2 decide por
 menção (4.8) e devolve `certo`, `motivo`, `alternativas` e `porque` em cada uma;
@@ -1234,10 +1251,48 @@ bloco de dúvida e a barra de cada menção olham a lista de referências incert
 mesmo motivo que `montarCorpoDoConfirmar`: é lógica que quebra em silêncio, e
 `tests/revisao.test.ts` a fixa sem render.
 
-O formato é **um** parágrafo por átomo, com uma linha por referência incerta
-("de quem é? escolhi X" para o sujeito, "menção 2: escolhi Y"), e não um bloco
-por referência. É a mitigação declarada do custo: esta é a tela mais apertada do
-sistema, e o "menos de 60 s" segue sem medição (§14).
+O formato é **um** parágrafo por átomo, com uma linha por referência incerta, e
+não um bloco por referência. É a mitigação declarada do custo: esta é a tela mais
+apertada do sistema, e o "menos de 60 s" segue sem medição (§14).
+
+**A linha da dúvida virou uma pergunta, e só isso.** Ela dizia "de quem é?
+escolhi X para 'Y' — motivo do agente · também podia ser Z, W": a decisão vinha
+enterrada no meio da justificativa, e a justificativa é longa justamente nos
+casos difíceis. Hoje ela diz `acho que é **X** — confirma?` (e `menção 2: acho
+que é X — confirma?` para as menções, por `ondeEstaA`). O que saiu — `citado`,
+`motivo` e `alternativas` — **não** deixou de existir no dado nem no payload: as
+alternativas já estavam no topo da lista do seletor, que é onde elas servem para
+alguma coisa, e o motivo é procedência, que passou a morar no modal de fontes,
+abaixo. A tela pergunta; quem quiser o porquê, pede.
+
+#### As fontes moram atrás de um ícone, e não na vista padrão
+
+A procedência do GraphRAG — a frase da camada (`FRASE_DA_CAMADA`) e os trechos de
+átomos passados que votaram — era uma lista `.porque` **sempre visível** embaixo
+de cada átomo desde a 4.8.1. Numa proposta de nove átomos, com o dossiê da 4.9
+resolvendo quase toda menção, isso é a maior parte do que a tela mostra, e nada
+disso é decisão: é explicação de uma decisão que quase sempre está certa.
+
+Ela saiu da vista padrão e virou **modal**. Cada nome na linha "sobre X · menciona
+Y" ganha um `ⓘ` ao lado — `EntidadeRef` —, e só ganha quando aquela referência
+tem evidência (`herdadasDoAtomo`, isto é, `porque` ou `camada`); as demais ficam
+só o nome, sem ícone e sem espaço gasto. Clicar abre um diálogo centralizado com
+o nome da entidade, a frase da camada e as citações. Diálogo e não gaveta lateral
+porque o conteúdo é curto e é sobre **um** ponto da tela; `Escape` e o véu fecham,
+como na gaveta de agentes (4.13).
+
+**A trava de índice das menções vale para o ícone também**, e é por isso que
+`mencoesEntradas` carrega o `ordem` original: filtrar a menção igual ao sujeito
+desloca a posição na tela, e `herdadas` casa por índice pré-filtro. Ícone na
+entidade errada é a mesma classe de erro que sugestão na linha errada — só que
+mais silenciosa, porque o modal parece ter respondido.
+
+**A condição da camada 3b continua satisfeita, e agora com uma condição a mais.**
+O §4.10 declara que aquela camada só é aceitável porque o átomo que a elegeu está
+na tela, corrigível. Ele está — a um toque, e marcado com um ícone que só aparece
+quando há o que ver. O que a fatia troca é "sempre à vista" por "sempre
+alcançável", e a troca é deliberada: uma tela que mostra tudo o tempo todo é uma
+tela que não se resolve em 60 s, e o custo declarado é meu se eu deixar de clicar.
 
 **A armadilha do índice, e ela é silenciosa.** As menções na tela são uma lista
 por posição, e a referência casa com a posição **por índice**. Assim que eu
@@ -1572,17 +1627,19 @@ no mesmo gesto.
 
 **A 3b devolve o porquê.** Ela consulta os vizinhos do átomo novo e conta votos
 por entidade, devolvendo junto os **ids, as datas e os trechos** dos átomos que
-elegeram cada candidato. A revisão mostra isso ao lado da dúvida: *"parece com o
-que você disse em 12/ago: «…»"*. Isso não é enfeite. Esta camada herda atribuição
-passada — um erro de atribuição pode sugerir o próximo —, e a única coisa que a
-torna aceitável é ser **um voto entre `k`, com o átomo na tela**: visível e
+elegeram cada candidato. A revisão mostra isso no modal de fontes: *"você disse
+em 12/ago: «…»"*. Isso não é enfeite. Esta camada herda atribuição passada — um
+erro de atribuição pode sugerir o próximo —, e a única coisa que a torna
+aceitável é ser **um voto entre `k`, com o átomo à mão**: alcançável e
 corrigível. Sem o `porque`, esta camada não entraria.
 
 **E ele aparece com o agente certo, não só quando ele hesitou** (4.8.1). Até ali
 a linha só saía junto do bloco de dúvida, ou seja, a herança era invisível
 exatamente no caminho comum (`certo: true`), que é onde ela mais acontece — a
-condição declarada da camada valia para a minoria dos casos. Agora a procedência
-sai sempre que houver: uma linha discreta, não o bloco de dúvida.
+condição declarada da camada valia para a minoria dos casos. A procedência passou
+a existir sempre que houver evidência, independente de o agente ter hesitado; o
+que mudou desde então é **onde** ela aparece — de uma lista fixa embaixo do átomo
+para o `ⓘ` ao lado da entidade, a um toque (§4.7).
 
 `ReferenciaResolvida` ganhou `camada?: Camada` no mesmo gesto, porque o `porque`
 sozinho chega sem dizer se decidiu alguma coisa: é o campo que separa "a grafia
@@ -1594,10 +1651,11 @@ campo é **opcional e assim fica**: proposta anterior à 4.8.1 não tem, e ausen
 (`referencias.ts`). Valor fora de `CAMADAS_DE_CANDIDATO` é lido como ausente, e
 não repassado.
 
-A 4.9 acrescentou `"extrator"` à lista, e ela **entra** na linha que aparece
-sempre, pelo mesmo argumento e mais forte: ali o nome dentro do texto do átomo
-deixou de ser o que eu falei, e o `citado` da referência é o único lugar que
-guarda a grafia. É a condição de a camada existir, como o `porque` é a da 3b.
+A 4.9 acrescentou `"extrator"` à lista, e ela **entra** na procedência, pelo mesmo
+argumento e mais forte: ali o nome dentro do texto do átomo deixou de ser o que
+eu falei, e o `citado` da referência é o único lugar que guarda a grafia. É a
+condição de a camada existir, como o `porque` é a da 3b — e é o caso em que abrir
+o modal de fontes (§4.7) mais se paga, porque é o único que mexeu no que eu disse.
 
 #### Teto e piso são obrigatórios
 
@@ -2331,12 +2389,16 @@ valer inteira com esta fatia.
 
 #### Na tela
 
-Nenhuma tela nova, e nenhum gesto novo. A camada `extrator` entra na lista das
-sugestões que a revisão mostra **sempre** — as mesmas de `perfil` e `vizinhos`
-(§4.7) —, e pelo mesmo argumento, mais forte: ali o nome dentro do texto do
-átomo deixou de ser o que eu falei, e o `citado` da referência é o que guarda a
-grafia. A discordância entre os dois agentes chega como dúvida comum, com o
-motivo nomeando as duas chaves.
+Nenhuma tela nova, e nenhum gesto novo. A camada `extrator` entra na procedência
+que a revisão dá de toda referência com evidência — as mesmas de `perfil` e
+`vizinhos` (§4.7) —, e pelo mesmo argumento, mais forte: ali o nome dentro do
+texto do átomo deixou de ser o que eu falei, e o `citado` da referência é o que
+guarda a grafia. A discordância entre os dois agentes chega como dúvida comum.
+
+> Desde que as fontes viraram modal (§4.7), essa procedência é **alcançável**, e
+> não mais exibida por padrão — e o `motivo` que o agente 2 escreve deixou de
+> aparecer na tela em qualquer caminho. Ele continua no `extracao.json`, e é
+> lá que se olha quando a atribuição surpreende. Está no §14.
 
 #### O que esta fatia não faz
 
@@ -3331,7 +3393,7 @@ número não vai bater com a tela.
 |---|---|---|
 | `/` | `Gravacao` + `BotaoGravar` + `Gestao` | o círculo "Como foi seu dia?" e uma engrenagem discreta no canto — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo" |
 | `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e abre a revisão sozinho |
-| `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, editar, escutar cada trecho, resolver a dúvida de quem é, confirmar |
+| `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, escrever o perfil |
@@ -3869,7 +3931,16 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **A camada 3b herda atribuição passada.** Ela sugere por semelhança com átomos
   que já são de alguém, então um erro de atribuição pode sugerir o próximo.
   Mitigado pelo `porque` na tela — um voto entre `k`, com o átomo à mão —, não
-  eliminado.
+  eliminado. **E a mitigação passou a custar um toque**: desde que as fontes
+  viraram modal (§4.7), a evidência está a um `ⓘ` de distância em vez de à vista.
+  O ícone só aparece onde há o que ver, que é o que impede a evidência de sumir
+  de vez — mas herança que eu não abro é herança que eu não confiro.
+- **O `motivo` do agente 2 não aparece em tela nenhuma.** A linha de dúvida virou
+  `acho que é X — confirma?` (§4.7) e o modal de fontes mostra a camada e as
+  citações, não o motivo. O campo continua sendo escrito pelo agente, gravado em
+  `extracao.json` e lido por `referencias.ts`; o que não existe é caminho de UI
+  até ele. Quando uma atribuição surpreender, é no JSON que se olha — e é por
+  isso que este item está escrito aqui, e não descoberto de novo daqui a um mês.
 - **Entidade nova, sem perfil e sem átomo, é invisível às duas camadas
   semânticas.** Só a string a acha. É estado transitório por construção — criar um
   nome pede escrever o perfil junto —, mas nada no código obriga.
@@ -3926,10 +3997,13 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   migration nova, e nada hoje lê essa distinção.
 - **O "menos de 60 s" da revisão continua sem medição.** A tela já foi usada em
   sessões reais e o caminho inteiro fecha, mas ninguém cronometrou uma revisão de
-  sessão de 15 min. E ela ficou **mais densa** na 4.8.1: a dúvida passou a ser de
-  cada referência e a procedência da sugestão passou a aparecer sempre, não só na
-  dúvida. Se incomodar, o botão é o formato do parágrafo — não voltar a esconder
-  a informação, que é a condição declarada da camada 3b (§4.10).
+  sessão de 15 min. Ela ficou **mais densa** na 4.8.1 — a dúvida passou a ser de
+  cada referência e a procedência passou a aparecer sempre —, e a densidade foi
+  desfeita depois: a linha de dúvida encolheu para uma pergunta e as fontes
+  foram para trás de um ícone (§4.7). **As duas mudanças foram feitas a olho, sem
+  cronômetro dos dois lados**, e é exatamente por isso que a medição continua
+  valendo a pena: hoje não dá para dizer se a tela ficou mais rápida ou só mais
+  curta.
 - **A sugestão de menção some assim que eu mexo na lista.** A referência casa com
   a posição por índice; acrescentar ou remover uma menção desloca tudo, e a trava
   desliga as sugestões daquele átomo em vez de arriscar mostrá-las na linha

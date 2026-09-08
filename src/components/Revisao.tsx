@@ -389,6 +389,37 @@ export function montarCorpoDoConfirmar(entrada: {
   return { aprovados: corpoAtomos, entidades: [...paraGravar.values()] };
 }
 
+/**
+ * Um nome de entidade na linha de resumo do átomo, com o ícone de fontes ao
+ * lado quando `fonte` existir — só entidades com evidência de retrieval
+ * (`herdadasDoAtomo`) ganham o ícone; as demais ficam só o nome.
+ */
+function EntidadeRef({
+  nome,
+  fonte,
+  aoAbrir,
+}: {
+  nome: string;
+  fonte?: ReferenciaNoAtomo;
+  aoAbrir: (f: ReferenciaNoAtomo) => void;
+}) {
+  return (
+    <span className="entidade-ref">
+      {nome}
+      {fonte && (
+        <button
+          type="button"
+          className="fonte"
+          aria-label={`ver fontes de ${nome}`}
+          onClick={() => aoAbrir(fonte)}
+        >
+          ⓘ
+        </button>
+      )}
+    </span>
+  );
+}
+
 export function Revisao({ id }: { id: string }) {
   const router = useRouter();
   const [proposta, setProposta] = useState<Proposta | null>(null);
@@ -400,6 +431,8 @@ export function Revisao({ id }: { id: string }) {
   const [renomes, setRenomes] = useState<Record<string, Renome>>({});
   const [edicoes, setEdicoes] = useState<Record<number, Edicao>>({});
   const [abertos, setAbertos] = useState<Set<number>>(new Set());
+  const [editandoTexto, setEditandoTexto] = useState<Set<number>>(new Set());
+  const [fontesAbertas, setFontesAbertas] = useState<ReferenciaNoAtomo | null>(null);
   const [filtros, setFiltros] = useState<Record<number, TipoEntidade | "todas">>({});
   const [gravando, setGravando] = useState(false);
   /** A lista da proposta anterior, buscada só quando eu peço para ver. */
@@ -436,6 +469,16 @@ export function Revisao({ id }: { id: string }) {
       vivo = false;
     };
   }, []);
+
+  /** Fecha o modal de fontes no Escape, do mesmo jeito que a gaveta de agentes. */
+  useEffect(() => {
+    if (!fontesAbertas) return;
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFontesAbertas(null);
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [fontesAbertas]);
 
   /** Índice de busca do grafo — inclusive por alias, para o seletor. */
   const catalogo = useMemo(
@@ -709,10 +752,14 @@ export function Revisao({ id }: { id: string }) {
           const mencoesDaProposta = mexeuNasMencoes(a) ? [] : mencoesDe(a, conhecidas);
           const incerto = incertas.length > 0;
           // Do valor editado, não da proposta: tirar uma menção tem de sumir
-          // com ela da linha de resumo na hora, sem eu fechar o editor.
-          const mencoes = v.menciona
-            .map(nomeFinal)
-            .filter((m) => m !== "" && normalizarNome(m) !== normalizarNome(sobre));
+          // com ela da linha de resumo na hora, sem eu fechar o editor. O
+          // `ordem` (índice original, pré-filtro) sobrevive para casar com
+          // `herdadas`, que usa a mesma trava de posição.
+          const mencoesEntradas = v.menciona
+            .map((m, k) => ({ nome: nomeFinal(m), ordem: k }))
+            .filter((e) => e.nome !== "" && normalizarNome(e.nome) !== normalizarNome(sobre));
+          const fonteDe = (papel: "sobre" | "menciona", ordem: number) =>
+            herdadas.find((i) => i.papel === papel && i.ordem === ordem);
           // `?? []` protege contra proposta gravada por um prompt anterior, de
           // quando o átomo tinha uma âncora só.
           const ancorados = (a.trechos ?? []).filter((t) => t.inicio_s !== null);
@@ -739,15 +786,75 @@ export function Revisao({ id }: { id: string }) {
                 />
                 <div className="corpo">
                   <span className="tipo">{v.tipo}</span>
-                  <p>{v.texto}</p>
+                  {editandoTexto.has(a.indice) ? (
+                    <textarea
+                      className="texto-atomo editando"
+                      value={v.texto}
+                      autoFocus
+                      aria-label="texto do átomo"
+                      // Sem `rows` fixo: a altura segue o conteúdo, do mesmo
+                      // jeito que o parágrafo cresce sozinho. `ref` acerta a
+                      // altura assim que o campo aparece; `onChange` reajusta
+                      // a cada tecla, senão o campo ficaria menor que o texto
+                      // que ele mesmo mostra.
+                      ref={(el) => {
+                        if (!el) return;
+                        el.style.height = "auto";
+                        el.style.height = `${el.scrollHeight}px`;
+                      }}
+                      onChange={(e) => {
+                        editarAtomo(a.indice, { texto: e.target.value });
+                        e.target.style.height = "auto";
+                        e.target.style.height = `${e.target.scrollHeight}px`;
+                      }}
+                      onBlur={() =>
+                        setEditandoTexto((s) => {
+                          const n = new Set(s);
+                          n.delete(a.indice);
+                          return n;
+                        })
+                      }
+                    />
+                  ) : (
+                    <p
+                      className="texto-atomo"
+                      tabIndex={0}
+                      role="button"
+                      aria-label="editar texto do átomo"
+                      onClick={() => setEditandoTexto((s) => new Set(s).add(a.indice))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setEditandoTexto((s) => new Set(s).add(a.indice));
+                        }
+                      }}
+                    >
+                      {v.texto}
+                    </p>
+                  )}
                   <p className="meta">
-                    sobre {sobre}
-                    {mencoes.length > 0 && ` · menciona ${mencoes.join(", ")}`}
+                    sobre <EntidadeRef nome={sobre} fonte={fonteDe("sobre", -1)} aoAbrir={setFontesAbertas} />
+                    {mencoesEntradas.length > 0 && (
+                      <>
+                        {" · menciona "}
+                        {mencoesEntradas.map((e, i) => (
+                          <span key={e.ordem}>
+                            {i > 0 && ", "}
+                            <EntidadeRef
+                              nome={e.nome}
+                              fonte={fonteDe("menciona", e.ordem)}
+                              aoAbrir={setFontesAbertas}
+                            />
+                          </span>
+                        ))}
+                      </>
+                    )}
                   </p>
 
                   {incerto && (
                     // Destaca, não trava. A sugestão já está preenchida no
-                    // seletor; o motivo é o que me deixa decidir em um segundo.
+                    // seletor — só a decisão, sem explicar o motivo (o
+                    // porquê mora no modal de fontes, quando houver).
                     //
                     // **Um** parágrafo por átomo, com uma linha por referência
                     // incerta — e não um bloco por referência. Esta é a tela
@@ -758,45 +865,12 @@ export function Revisao({ id }: { id: string }) {
                         const escolhida = nomeFinal(i.ref.entidade);
                         return (
                           <span key={`${i.papel}${i.ordem}`}>
-                            {i.papel === "sobre" ? "de quem é?" : `${ondeEstaA(i)}:`} escolhi{" "}
-                            <strong>{escolhida}</strong>
-                            {i.ref.citado !== "" &&
-                              i.ref.citado !== escolhida &&
-                              ` para "${i.ref.citado}"`}
-                            {i.ref.motivo !== "" && ` — ${i.ref.motivo}`}
-                            {i.ref.alternativas.length > 0 &&
-                              ` · também podia ser ${i.ref.alternativas.join(", ")}`}
+                            {i.papel === "sobre" ? "acho que é" : `${ondeEstaA(i)}: acho que é`}{" "}
+                            <strong>{escolhida}</strong> — confirma?
                           </span>
                         );
                       })}
                     </p>
-                  )}
-
-                  {herdadas.length > 0 && (
-                    // A procedência da sugestão, **sempre que houver**, e não só
-                    // na dúvida (4.8.1). A camada dos vizinhos sugere por
-                    // semelhança com átomos que já são de alguém — herda
-                    // atribuição passada —, e a única coisa que torna isso
-                    // aceitável é estar na tela, com o átomo à mão. No caminho
-                    // comum (`certo: true`) a herança era invisível, que é
-                    // justamente onde ela mais acontece.
-                    <ul className="porque">
-                      {herdadas.map((i) => (
-                        <li key={`de-onde-${i.papel}${i.ordem}`}>
-                          {i.papel === "menciona" && `${ondeEstaA(i)} · `}
-                          <strong>{nomeFinal(i.ref.entidade)}</strong>
-                          {i.ref.camada && `: ${FRASE_DA_CAMADA[i.ref.camada]}`}
-                          {i.ref.porque.map((e) => (
-                            <span key={e.atomo_id} className="trecho">
-                              {diaMes(e.valido_em) !== ""
-                                ? `você disse em ${diaMes(e.valido_em)}: `
-                                : "você disse: "}
-                              “{e.texto}”
-                            </span>
-                          ))}
-                        </li>
-                      ))}
-                    </ul>
                   )}
 
                   {marcas.length > 0 && (
@@ -839,12 +913,6 @@ export function Revisao({ id }: { id: string }) {
 
               {aberto && (
                 <div className="editor">
-                  <textarea
-                    value={v.texto}
-                    rows={3}
-                    aria-label="texto do átomo"
-                    onChange={(e) => editarAtomo(a.indice, { texto: e.target.value })}
-                  />
                   <div className="campos">
                     <select
                       value={v.tipo}
@@ -940,11 +1008,6 @@ export function Revisao({ id }: { id: string }) {
                       </div>
                     </div>
                   </div>
-
-                  <p className="aguardando">
-                    aqui muda só este átomo — para trocar um nome em todos de uma vez, edite a
-                    entidade lá embaixo
-                  </p>
                 </div>
               )}
             </li>
@@ -1092,6 +1155,46 @@ export function Revisao({ id }: { id: string }) {
 
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={audio} preload="none" />
+
+      {fontesAbertas && (
+        // As citações do GraphRAG saíram da vista padrão do átomo (item 2 do
+        // pedido) e moraram aqui: só aparecem quando eu peço, pelo ícone ao
+        // lado da entidade que a evidência resolveu.
+        <>
+          <div className="veu aberto" onClick={() => setFontesAbertas(null)} />
+          <div
+            className="modal-fontes"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`fontes de ${nomeFinal(fontesAbertas.ref.entidade)}`}
+          >
+            <header>
+              <h2>{nomeFinal(fontesAbertas.ref.entidade)}</h2>
+              <button
+                type="button"
+                className="fechar"
+                onClick={() => setFontesAbertas(null)}
+                aria-label="fechar"
+              >
+                ×
+              </button>
+            </header>
+            {fontesAbertas.ref.camada && (
+              <p className="motivo">{FRASE_DA_CAMADA[fontesAbertas.ref.camada]}</p>
+            )}
+            <ul className="citacoes">
+              {fontesAbertas.ref.porque.map((e) => (
+                <li key={e.atomo_id}>
+                  {diaMes(e.valido_em) !== ""
+                    ? `você disse em ${diaMes(e.valido_em)}: `
+                    : "você disse: "}
+                  “{e.texto}”
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
     </main>
   );
 }
