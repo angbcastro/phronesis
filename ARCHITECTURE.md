@@ -2,7 +2,7 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.11.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.12.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
@@ -12,20 +12,33 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.11.md`.
 (identidade por contexto), 4.5 (o grafo ganha vetor), 4.6 (o prompt aprende
 com a revisão), 4.7 (o painel dos agentes), 4.8 (a extração acompanha a fala),
 4.8.1 (as seis emendas), 4.9 (o extrator conhece o grafo), 4.10 (o arquivo
-importado entra pela mesma porta) e 4.11 (a entidade se apresenta, e o agente 2
-mede a própria dúvida) construídas.**
+importado entra pela mesma porta), 4.11 (a entidade se apresenta, e o agente 2
+mede a própria dúvida) e 4.12 (a ficha se escreve sozinha) construídas.**
 
-**A 4.11 está em código e verde nos testes, e NÃO foi medida numa sessão real.**
-A migration 009 foi aprovada e aplicada (duas grafias viraram `aliases`, dois nós
-apagados). O que ela entregou: `resumo`, `aliases` como propriedade e `canonico`
-no schema (§8.3.1); uma apresentação só da entidade, lida pelos dois agentes
-(§4.8); `extracao-9` e `resolucao-5`; o `TETO_PERFIL` morto; e o `desempate-1`, a
-segunda passada que roda quando a confiança fica abaixo do limiar (§4.8.1).
-**O que ainda não existe é a 4.12** — o enriquecimento em lote que preenche os
-resumos. Até ela rodar, os resumos nascem vazios e **quase toda menção vai à
-segunda passada**: são ~2 chamadas de modelo por janela em vez de 1, espalhadas
-pelos 15 minutos. É o preço declarado de separar as fatias, e ele acaba sozinho
-(§14).
+**A 4.11 e a 4.12 estão em código e verdes nos testes, e NENHUMA das duas foi
+medida numa sessão real.** A migration 009 foi aprovada e aplicada (duas grafias
+viraram `aliases`, dois nós apagados); **a 010 está escrita como proposta e não
+foi rodada** — ela é no-op (0 statements) e espera aprovação, como o `CLAUDE.md`
+manda.
+
+A 4.11 entregou: `resumo`, `aliases` como propriedade e `canonico` no schema
+(§8.3.1); uma apresentação só da entidade, lida pelos dois agentes (§4.8);
+`extracao-9` e `resolucao-5`; o `TETO_PERFIL` morto; e o `desempate-1`, a segunda
+passada que roda quando a confiança fica abaixo do limiar (§4.8.1). Ela deixou o
+`resumo` **vazio de propósito**, e com ele vazio quase toda menção caía na
+segunda passada.
+
+A 4.12 é o que preenche esse campo: o **agente 4** (`enriquecimento-1`) lê todos
+os átomos ligados a uma entidade por `:SOBRE` ou `:MENCIONA` e escreve os quatro
+campos da ficha de uma vez — e **grava sozinho**, numa fila assíncrona que anda
+sem janela aberta (§4.9). É a reabertura declarada do regime do perfil: a defesa
+deixou de ser um toque por campo e passou a ser a seleção, a leitura depois, e o
+desfazer de uma geração (migration 010, §8.3.2). **A regra 5 continua intocada** —
+ela fala de átomo, e nenhum átomo entra por esse caminho.
+
+**A medida que fecha a 4.12 é uma sessão real depois do lote**: `[desempate]`
+calado na maioria das menções quer dizer que o resumo está identificando; se ele
+continuar disparando em tudo, o conserto é o prompt do agente 4 (§14).
 
 A primeira sessão longa real **rodou de ponta a ponta e custou quatro chamadas
 de modelo para entregar uma** (`mtqoeoqh3e3724514q1f`, 1044 s, 9 átomos em
@@ -212,7 +225,7 @@ dito sem varrer o grafo inteiro, que é o que a 4.5 entrega.
 │ fila de upload          │   │ waitUntil (STT)     │   │ Neo4j Aura (HTTP)    │
 │ React (9 telas)         │   │                     │   │  :Sessao + conteúdo  │
 └──────────┬──────────────┘   └──────────┬──────────┘   │ Vercel AI Gateway    │
-           │                             │              │  → os oito agentes   │
+           │                             │              │  → os nove agentes   │
            │  PUT presigned (áudio)      │              └──────────────────────┘
            └─────────────────────────────┴──────────────▶ R2
 ```
@@ -269,6 +282,9 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   desempate.ts    a segunda passada: UMA menção abaixo do limiar, com a ficha
                   completa dos candidatos dela. Só lê e devolve
   perfil.ts       os três campos de perfil: ler, gravar, e o agente 3 que rascunha
+  enriquecimento.ts o agente 4 e a fila: lê TODOS os átomos de uma entidade,
+                  escreve a ficha inteira e GRAVA — mais a reivindicação, o
+                  encadeamento e o desfazer de uma geração
   entidades.ts    catálogo do grafo, a apresentação que os dois agentes leem, a
                   visão agregada da revisão; e o vetor da entidade: refresh por
                   hash e as duas consultas de vizinhança
@@ -283,8 +299,8 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   overrides.ts    o prompt e o modelo que eu editei na tela: leitura tolerante,
                   snapshot imutável por hash, e o carimbo. Não sabe quais
                   agentes existem — recebe o id e a base de quem chama
-  agentes.ts      o registro dos oito e o desenho do fluxo. Fica ACIMA dos
-                  agentes: importa os cinco prompts, e nenhum deles o importa
+  agentes.ts      o registro dos nove e o desenho do fluxo. Fica ACIMA dos
+                  agentes: importa os prompts deles, e nenhum deles o importa
   referencias.ts  lê os dois formatos de proposta (antes e depois da 4)  (client)
   catalogo.ts     busca de entidade no navegador: trecho, acento, alias (client)
   tipografia.ts   qual tela é ritual e qual é gestão — a regra da fonte  (client)
@@ -323,7 +339,7 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Leitura (a transcrição literal — porta de serviço),
                   Sessoes (lista de sessões, o apagar de dois toques — e a cor
                     que diz o que falta revisar), Entidades (higiene do grafo)
-src/app/api/      29 rotas em seis famílias — sessão, entidade, calibração,
+src/app/api/      31 rotas em seis famílias — sessão, entidade, calibração,
                   agentes, átomos e as 2 de auth (seção 10)
 src/middleware.ts porta única: sem cookie válido nada responde
 db/migrations/    definição canônica do schema
@@ -559,8 +575,8 @@ não se espalha pelo código.
 algum dos quatro pontos da tabela for furado. É o que sustenta a promessa de
 "uma chave, um lugar para ver custo" a cada agente novo que entra.
 
-**Hoje passam por aqui oito consumidores**, cada um com sua função em
-`modelos.ts` e sua variável de ambiente (§12), e todos os oito com caixa no
+**Hoje passam por aqui nove consumidores**, cada um com sua função em
+`modelos.ts` e sua variável de ambiente (§12), e todos os nove com caixa no
 painel de `/agentes` (§4.13):
 
 | Função | Agente | Padrão |
@@ -568,7 +584,9 @@ painel de `/agentes` (§4.13):
 | `modeloStt()` | STT | `xai/grok-stt` |
 | `modeloExtracao()` | `extracao-9` | `zai/glm-5.3-flash` |
 | `modeloResolucao()` | `resolucao-5` | o da extração |
+| `modeloDesempate()` | `desempate-1` | o da resolução |
 | `modeloPerfil()` | `perfil-1` | o da extração |
+| `modeloEnriquecimento()` | `enriquecimento-1` | o da extração |
 | `modeloCalibracao()` | `calibracao-1` | o da extração |
 | `modeloDuplicatas()` | `duplicatas-1` | `zai/glm-5.3-flash` |
 | `modeloEmbedding()` | embedding | `openai/text-embedding-3-small` |
@@ -576,7 +594,7 @@ painel de `/agentes` (§4.13):
 A deduplicação de **entidade** chegou na slice 3 e é o `duplicatas-1`. O que
 continua não existindo é a deduplicação de **átomo** (slice 5): dizer a mesma
 coisa em duas sessões ainda cria dois. A porta por onde ela vai passar é esta, e
-`tests/agentes.test.ts` é a guarda que impede um agente oitavo de nascer por
+`tests/agentes.test.ts` é a guarda que impede um agente novo de nascer por
 fora dela.
 
 ### 4.2.1 Por que o STT é o `xai/grok-stt`, e não um melhor de texto
@@ -1682,39 +1700,172 @@ próximos disputam a mesma vaga, e quem fica de fora não chega a ser oferecido 
 agente. Até a 4.11 isso era decidido pela ordem em que o catálogo voltava do
 banco — consequência do laço, e não decisão.
 
-### 4.9 O perfil, e o agente 3 (`perfil-1`)
+### 4.9 A ficha, o agente 3 e o agente 4 (`perfil-1`, `enriquecimento-1`)
 
-Os três campos (`contexto`, `pode_ajudar_com`, `fizemos_juntos`) são texto livre,
-editáveis à mão em `/entidades`, **sem teto desde a 4.11**. O `TETO_PERFIL = 300`
-não era estética — os campos entravam no prompt do agente 2 em toda chamada, e
-sem ele o custo crescia junto com o grafo. Esse consumo acabou (§4.8): quem lê os
-três campos agora é a segunda passada (§4.8.1), e só para os candidatos de **uma**
+A ficha de uma entidade tem quatro campos de texto: o `resumo` (o retrato de
+identidade, teto de 500) e os três da 005 — `contexto`, `pode_ajudar_com`,
+`fizemos_juntos` —, **sem teto desde a 4.11**. O `TETO_PERFIL = 300` não era
+estética: os três campos entravam no prompt do agente 2 em toda chamada, e sem
+ele o custo crescia junto com o grafo. Esse consumo acabou (§4.8): quem lê os
+três agora é a segunda passada (§4.8.1), e só para os candidatos de **uma**
 menção em dúvida. Quem cobra tamanho é o `TETO_RESUMO`, do campo que entra em
 todo prompt.
 
-O agente 3 continua `perfil-1`, byte a byte: o "no máximo 300 caracteres" do
-texto dele ficou, agora como número literal. Ele nunca foi o corte — é instrução
-de concisão para quem escreve a ficha, e é texto calibrado. O que saiu foi a
-constante, o corte no servidor e o `slice()` do rascunho.
+**Dois agentes escrevem nesses campos, e eles têm regimes opostos.** A 4.12
+abriu o segundo, e esta seção existe para deixar claro qual é qual.
+
+| | agente 3 — `perfil-1` | agente 4 — `enriquecimento-1` |
+|---|---|---|
+| escopo | **um** campo | os **quatro** de uma vez |
+| o que lê | os átomos marcados por `:PERFILA` naquele campo, teto de 20 | **todos** os átomos ativos ligados por `:SOBRE` ou `:MENCIONA`, sem teto |
+| o que faz com o resultado | **devolve**; o proposto aparece ao lado do atual e eu decido | **grava**, sem eu ver antes |
+| gatilho | botão "rascunhar", por campo | checkbox + botão "enriquecer", por entidade |
+| onde roda | dentro da resposta da rota | fila assíncrona, sem janela aberta |
+| desfazer | não precisa — nada foi escrito | uma geração, a um toque |
+
+#### O agente 3 continua como estava
+
+Ele lê os átomos que o agente 2 marcou como informação daquele campo e devolve o
+texto novo — e **não grava nada**. O proposto aparece **ao lado** do atual, nunca
+por cima; eu aceito, edito ou ignoro. Continua `perfil-1` byte a byte: o "no
+máximo 300 caracteres" do texto dele ficou como número literal, porque nunca foi
+o corte — é instrução de concisão, e é texto calibrado.
 
 **Quem aponta o que é perfil é o agente 2**, que já está olhando átomo e entidade
-juntos — e é ele que a 4.9 passou a chamar em toda janela. A marca vira
-`(:Atomo)-[:PERFILA { campo }]->(:Entidade)` no confirmar (8.3), e só ali
+juntos, e é ele que a 4.9 passou a chamar em toda janela. A marca vira
+`(:Atomo)-[:PERFILA { campo }]->(:Entidade)` no confirmar (§8.3), e só ali
 (regra 5). A validação é dupla: o agente só pode marcar uma entidade que o
 **próprio átomo** cita, e o servidor só grava campo do schema e entidade
 aprovada.
 
-O agente 3 é **sob demanda**, num botão por campo, no mesmo padrão do "procurar
-duplicatas": juntar os átomos marcados é de graça, propor o texto não é. Ele lê
-os átomos ligados por `:PERFILA` àquele campo e devolve o texto novo — e **não
-grava nada**. O proposto aparece **ao lado** do atual, nunca por cima; eu aceito,
-edito ou ignoro.
+**A 4.12 não tocou no `:PERFILA`, nem em quem o marca, nem no agente 3.** O que
+acontece com ele — conviver, encolher ou sair — se decide depois de o lote rodar
+e eu ver se ainda uso o botão.
 
-**O risco está declarado, e é ele que desenha o fluxo:** o perfil é exatamente o
-que o agente 2 lê para desambiguar. Perfil rascunhado errado contamina toda
-atribuição futura, e o erro se realimenta — átomo atribuído ao Rapha por engano
-vira evidência do perfil do Rapha. Por isso nada entra sem o meu toque, e por
-isso o texto atual nunca é sobrescrito sem eu ver os dois lado a lado.
+#### O agente 4 escreve sozinho, e isso reabre uma decisão desta seção
+
+**Até a 4.12, esta seção dizia que nada entrava no perfil sem o meu toque campo a
+campo.** O risco que sustentava a regra continua verdadeiro, e por isso está
+escrito de novo aqui: o perfil é exatamente o que os agentes leem para
+desambiguar; ficha errada contamina toda atribuição futura, e o erro se
+realimenta — átomo atribuído ao Rapha por engano vira evidência do perfil do
+Rapha.
+
+**O que mudou não foi o risco, foi a conta.** A regra cobrava um toque por campo
+por entidade, e o resultado medido foi cinco entidades no grafo **sem nenhum dos
+quatro campos escritos**, desde 02/09 — com a camada 3a (candidatos por perfil)
+nascendo inerte por falta de texto para comparar, e, depois da 4.11, com
+**quase toda menção caindo na segunda passada** porque o `resumo` estava vazio. A
+defesa perfeita não estava protegendo nada: não havia ficha para proteger.
+
+A defesa passou a ser outra, e ela é de três partes:
+
+| | |
+|---|---|
+| **eu escolho quem entra** | checkbox por linha e "selecionar todas" — a seleção mais o botão são o meu toque |
+| **eu leio a ficha depois** | `/entidades` é a mesma tela onde o resultado aparece, campo por campo, editável |
+| **o desfazer está a um toque** | os quatro campos voltam de uma vez, e o toque acidental se conserta com outro toque |
+
+**A regra 5 do `CLAUDE.md` continua valendo inteira, e não foi emendada.** Ela
+fala de **átomo** e da tela de revisão: nenhum átomo entra no grafo por este
+caminho. O que mudou de regime foi a ficha da entidade, e é esta seção que
+registra a mudança. Emendar a regra 5 para acomodar um caso que ela não cobria
+foi recusado — alargar a regra mais forte do projeto é caro, e desnecessário.
+
+#### O que o agente 4 lê, e por que não é `:PERFILA`
+
+Todos os átomos ativos ligados por `:SOBRE` ou `:MENCIONA`, do mais novo para o
+mais velho, com tipo e data. Sem filtro e sem teto.
+
+`:PERFILA` é o filtro que o agente 2 aplica em tempo de extração, com o critério
+dele — "de fato acrescenta algo duradouro" —, e o próprio prompt diz que lista
+vazia é resposta legítima. O efeito é que a maior parte do que o diário sabe de
+uma pessoa nunca chegava ao perfil dela: a menção de passagem, a história em que
+ela aparece, o trabalho que apareceu num `FATO` sem virar marca. O lote não
+precisa desse filtro — ele decide o que importa **com todos os átomos na
+frente**, que é uma decisão melhor informada que a de quem viu um átomo por vez.
+
+**Relê tudo a cada rodada, e não acumula.** Incremental (o resumo atual mais os
+átomos novos) teria custo constante por rodada — é o desenho do agente 3 —, mas
+um erro escrito numa rodada se perpetuaria nas seguintes: a ficha carregaria para
+sempre o que uma rodada ruim escreveu. Relendo tudo, **reordenar prioridade é só
+rodar de novo**.
+
+**Uma chamada por entidade, e não uma por campo:** os quatro campos saem da mesma
+leitura, e quatro chamadas leriam os mesmos átomos quatro vezes.
+
+**Entidade sem átomo nenhum não vai ao modelo.** Ela sai `pronta` com os campos
+inalterados e `enriquecimento_atomos: 0`. Pagar uma chamada para não ter o que
+dizer é desperdício, e sobrescrever a ficha com o vazio seria perda.
+
+O prompt diz três coisas que decidem a qualidade do resultado: o `resumo` é
+**retrato de identidade** — a primeira frase é sempre o que distingue esta
+entidade de outra parecida —; os três campos mantêm palavra por palavra a
+descrição que o agente 3 já usava, para os dois não divergirem; e **só se afirma
+o que os átomos sustentam**, que é a regra que mais importa aqui, porque ninguém
+revisa antes de gravar.
+
+#### A fila: como ela anda sem janela aberta
+
+O mecanismo não é novo — é **estado idempotente mais `waitUntil`**, o mesmo da
+transcrição por blocos desde a slice 2. A diferença é onde o estado mora: no nó
+(`enriquecimento_estado`, migration 010), e não no navegador.
+
+```
+POST /api/entidades/enriquecer { chaves }
+  grava na_fila em todas  →  responde na hora  →  waitUntil(primeiro elo)
+
+cada elo ({ elo: true }):
+  reivindica UMA (na_fila → rodando, escrita condicional)
+  responde na hora, e em waitUntil: roda o agente, grava a ficha,
+  marca pronta ou falhou, põe os vetores em dia
+  →  chama a si mesmo para a próxima
+fila vazia  →  o encadeamento para
+```
+
+**O elo seguinte é requisição nova, e não um laço dentro da mesma função.** Duas
+razões: cada entidade começa com o orçamento de execução inteiro (`maxDuration =
+300`), e quem chamou pode morrer assim que a resposta sai, em vez de ficar vivo
+segurando o resto da corrente. O elo se autentica com o **meu próprio cookie**,
+repassado da requisição que o originou — a fila não abre porta nenhuma que já não
+estivesse aberta (§7).
+
+**Rate limit sem prazo.** `comEsperaDeLimite` é chamado **sem `ate`**: não há
+ninguém esperando do outro lado da tela, então a fila pode dormir o quanto o
+Gateway pedir. É a diferença entre este agente e os que rodam dentro da extração
+de uma janela, onde a espera come o orçamento de fechar a sessão.
+
+**Retomada:** entidade em `rodando` com carimbo mais velho que `LEASE_MS` (300 s,
+o mesmo teto de execução) volta a ser reivindicável — e isso mora **na própria
+consulta de reivindicação**, e não numa varredura à parte: um lugar só decide
+quem é a próxima.
+
+**Idempotência (regra 4):** a chave é a entidade. Rodar duas vezes a mesma
+entidade produz a mesma ficha a partir dos mesmos átomos, e o `_anterior` da
+segunda rodada é o resultado da primeira — que é o comportamento certo, e o custo
+declarado de guardar uma geração só.
+
+#### O desfazer, e por que ele é uma troca
+
+`resumo_anterior`, `contexto_anterior`, `pode_ajudar_com_anterior` e
+`fizemos_juntos_anterior` (migration 010) guardam **uma** geração. O botão de
+desfazer volta os quatro de uma vez.
+
+**Ele troca em vez de restaurar**: o que estava na ficha vira o `_anterior`.
+Assim o invariante — "o `_anterior` é sempre a geração imediatamente anterior" —
+continua verdadeiro depois dele, e o pior caso de um toque acidental é outro
+toque. É por isso que o desfazer é de **um** toque, e não de dois como o apagar
+de sessão: ele restaura, não destrói.
+
+**Toda escrita de campo de ficha guarda o `_anterior`, e não só o lote.**
+`gravarCampo` (`perfil.ts`) e `gravarResumo` (`fusao.ts`) fazem o mesmo, pelo
+mesmo invariante: sem isso, uma edição minha depois do lote deixaria o
+`_anterior` apontando duas gerações atrás, e um toque no desfazer apagaria o
+texto que eu tinha acabado de escrever.
+
+Histórico com data e origem foi recusado: custaria nós ou propriedades novas e
+uma tela para ler isso, para cobrir um caso que ainda não aconteceu. Uma geração
+cobre o caso real — rodei, olhei, não gostei, voltei.
 
 ### 4.10 O vetor, e as duas camadas semânticas (slice 4.5)
 
@@ -2344,7 +2495,9 @@ snapshots por hash guardam os textos, mas não há linha do tempo nem "desfazer"
 mais de um passo. Não mede nada — não há latência, custo nem contagem de chamada
 por agente, porque `CLAUDE.md` proíbe métrica automática de qualidade e porque
 custo e latência já têm lugar: o painel do próprio Gateway. E não deixa criar
-agente: os oito são os que o código tem, e um nono nasce escrevendo código.
+agente: os nove são os que o código tem, e um décimo nasce escrevendo código —
+o `enriquecimento-1` da 4.12 nasceu assim, e a caixa dele apareceu no painel
+porque `tests/agentes.test.ts` cobra isso.
 
 ### 4.14 O extrator conhece o grafo (slice 4.9)
 
@@ -3015,6 +3168,11 @@ nova na mesma sessão — está no §14 como limite.
   para objeto inexistente faria o `<audio>` falhar calado.
 - **O confirmar não aceita procedência do cliente** (4.7): offsets, âncoras,
   `prompt_version` e `modelo` são relidos do R2.
+- **A fila de enriquecimento chama a si mesma com o meu cookie** (4.12): cada elo
+  repassa o `cookie` da requisição que o originou, e o middleware o valida como
+  qualquer outra. Nenhuma porta nova, nenhum token de serviço, nenhuma exceção no
+  `matcher`. O custo é que cookie expirado no meio de uma fila longa para o
+  encadeamento — declarado no §14, e o conserto é apertar o botão de novo.
 
 ## 8. Neo4j
 
@@ -3419,6 +3577,62 @@ contexto, pode_ajudar_com, fizemos_juntos — SEM TETO a partir da 009
 (:Atomo)-[:PERFILA { campo }]->(:Entidade)                               (005)
 ```
 
+### 8.3.2 O desfazer e a fila (migration 010)
+
+```
+(:Entidade { …, resumo_anterior, contexto_anterior,
+                pode_ajudar_com_anterior, fizemos_juntos_anterior,
+                enriquecimento_estado, enriquecimento_motivo,
+                enriquecimento_em, enriquecimento_atomos })
+
+*_anterior             ausente = '' (não há geração guardada)
+enriquecimento_estado  'na_fila' | 'rodando' | 'pronta' | 'falhou';
+                       ausente = nunca enriquecida
+enriquecimento_motivo  o erro, quando falhou
+enriquecimento_em      ISO 8601 — quando o estado mudou
+enriquecimento_atomos  quantos átomos entraram na última rodada; ausente = 0
+```
+
+A 010, como a 005 e a 007, **não tem statement nenhum**: propriedade de valor
+livre não se declara no Aura Free. Ela existe porque `db/migrations/` é a
+definição canônica do schema e o contrato mudou. **Sem migração de dado** —
+nenhuma ficha existente é tocada, e entidade sem `enriquecimento_estado`
+simplesmente nunca foi enriquecida, que é o estado de todas elas no dia em que a
+migration foi escrita.
+
+**Todos ausentes contam como vazio na leitura**, pela mesma razão do `status` na
+004 e do perfil na 005: a defesa vale para o nó que um deploy antigo criar
+amanhã, não só para os que existem hoje. Estado que o código não conhece é lido
+como "nunca enriquecida", e não como erro.
+
+**Os quatro `_anterior` são o desfazer** (§4.9), e são a razão de esta fatia ter
+migration própria em vez de caber na 009: eles existem porque alguma coisa passou
+a escrever a ficha sem eu ver antes.
+
+**O estado da fila mora no nó, e não no R2**, ao contrário do acumulado de uma
+sessão (§9). Lá a razão é a regra 5 — nada entra no grafo antes da revisão. Aqui
+a entidade **já está** no grafo, e o que a fila guarda é sobre ela, não é
+proposta de conteúdo nenhum. É esse estado que faz "fechar a aba não interrompe
+nada" ser verdade: o elo seguinte lê o banco, não o navegador.
+
+**Sem índice**, como o perfil e o resumo: a fila é varrida sobre o catálogo que
+`listarEntidades()` já carrega inteiro, e o Aura Free tem cota de índice. É mais
+um lugar que pediria índice no dia em que o catálogo não couber na memória de uma
+função (§14).
+
+Contrato completo de `:Entidade` depois da 010:
+
+```
+(:Entidade { id, nome, nome_normalizado, criado_em, status,
+             contexto, pode_ajudar_com, fizemos_juntos,
+             embedding, embedding_modelo, embedding_fonte,
+             resumo, aliases, canonico,                            (009)
+             resumo_anterior, contexto_anterior,
+             pode_ajudar_com_anterior, fizemos_juntos_anterior,    (010)
+             enriquecimento_estado, enriquecimento_motivo,
+             enriquecimento_em, enriquecimento_atomos })           (010)
+```
+
 ### 8.4 O vetor no grafo (migration 006)
 
 ```
@@ -3609,9 +3823,11 @@ sessão, e apagá-las seria desaprender (§14).
 | `POST /api/entidades/aliases` | `{chave, grafia, acao}` — acrescenta ou tira uma grafia | um item por chamada: a lista na tela é a união de duas fontes, e mandá-la de volta gravaria uma na outra. Acrescentar reusa `registrarGrafia`, com as quatro recusas |
 | `POST /api/entidades/canonico` | `{chave, canonico}` — marca a ficha oficial | reversível, sem consequência retroativa; não trava nada |
 | `POST /api/entidades/perfil/rascunho` | `{chave, campo}` — o agente 3 propõe | **não escreve nada**; é `POST` porque gasta chamada de modelo |
+| `POST /api/entidades/enriquecer` | `{chave}` uma agora; `{chaves}` põe na fila e responde na hora; `{elo:true}` um elo | a **única** rota que escreve conteúdo sem eu aprovar campo a campo (§4.9) — nenhum átomo entra por ela, e a regra 5 continua inteira. O elo se autentica com o meu cookie, repassado |
+| `POST /api/entidades/desfazer` | `{chave}` — os quatro campos da ficha voltam uma geração | é uma **troca**, não uma restauração: outro toque traz de volta. 400 quando não há geração guardada |
 | `POST /api/atomos/embutir` | dá vetor aos átomos que ainda não têm, em lote | retrofill e retry; 200 por chamada, `continua: true` enquanto sobrar; não toca no texto nem reextrai |
 | `POST /api/entidades/embutir` | põe em dia o vetor das entidades, comparando `embedding_fonte` | não editar nada devolve `embutidas: 0` |
-| `GET /api/agentes` | os oito com o que está em vigor, mais o desenho do fluxo | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
+| `GET /api/agentes` | os nove com o que está em vigor, mais o desenho do fluxo | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
 | `POST /api/agentes/:id` | `{prompt?, modelo?}` — o que passa a valer | o **único** lugar que escreve configuração de agente; `null` revoga o campo e volta à base; recusa prompt que quebre o envelope e id de modelo fora do formato |
 | `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
@@ -3626,13 +3842,19 @@ detalhe de deploy: o teto de execução é o que decide se um `waitUntil` termin
 
 | `maxDuration` | Rotas |
 |---|---|
-| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair` — as três que chamam modelo dentro de `waitUntil` |
+| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/entidades/enriquecer` — as que chamam modelo dentro de `waitUntil` |
 | 60 s | `/confirmar`, `/atomos/embutir`, `/entidades/embutir`, `/entidades/duplicatas`, `/entidades/fundir`, `/entidades/perfil/rascunho`, `/calibracao/rascunho` |
 | padrão | todo o resto |
 
 O 60 s do `/confirmar` é o que mais importa: a apuração de correções roda no
 `waitUntil` dele, **depois** da resposta, e é dentro desse teto que ela termina
 ou não (§4.11).
+
+O 300 s do `/entidades/enriquecer` não é o tempo de uma ficha — uma chamada de
+modelo e duas consultas cabem folgado em 60. Ele é o que permite a **espera de
+rate limit sem prazo** que a fila usa (§4.9): uma espera de 75 s estouraria um
+teto de 60 e mataria o elo no meio do sono. `LEASE_MS` é o mesmo número, e é por
+isso: passado ele, a função que reivindicou está morta com certeza.
 
 `dynamic = "force-dynamic"` em seis rotas, todas de leitura de estado:
 `GET /api/sessoes`, `GET /api/sessoes/:id`, `GET /api/sessoes/:id/extracao`,
@@ -3673,9 +3895,9 @@ número não vai bater com a tela.
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
-| `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, marcar a ficha oficial — e a **ficha** de cada uma: resumo, grafias e os três campos de perfil |
+| `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, marcar a ficha oficial — e a **ficha** de cada uma: resumo, grafias e os três campos de perfil. Desde a 4.12: checkbox por linha, "selecionar todas", o botão que enfileira o lote, o estado da fila em cada linha e o desfazer |
 | `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
-| `/agentes` | `Agentes` | o fluxo desenhado — os oito agentes, os dados entre eles e o único nó humano; clicar numa caixa abre o prompt, o modelo e (na resolução) o limiar daquele agente |
+| `/agentes` | `Agentes` | o fluxo desenhado — os nove agentes, os dados entre eles e o único nó humano; clicar numa caixa abre o prompt, o modelo e (na resolução) o limiar daquele agente |
 | `/entrar` | página de login | pede o e-mail permitido |
 
 **Clicar na sessão leva sempre para onde ainda há o que fazer.** Proposta
@@ -3949,13 +4171,14 @@ execução não há requisição a terceiros.
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, deduplicação, embedding, calibração
+AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, deduplicação, embedding, calibração
 STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
 RESOLUCAO_MODEL           opcional; padrão igual ao da extração
 DESEMPATE_MODEL           opcional; padrão igual ao da resolução
 PERFIL_MODEL              opcional; padrão igual ao da extração
+ENRIQUECIMENTO_MODEL      opcional; padrão igual ao da extração
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
 EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões
 AUTH_SECRET, ALLOWED_EMAIL
@@ -4099,6 +4322,16 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   três campos de perfil, sem teto, dos candidatos daquela menção), e o que ela faz
   quando o modelo não coopera: `duvida` ausente conta como dúvida, e falha devolve
   `null` em vez de estourar. A qualidade da decisão eu avalio à mão.
+- `tests/enriquecimento.test.ts` — o que impede uma resposta ruim de virar ficha,
+  que é o que a 4.12 tem de mais caro: o parser recusa os quatro campos vazios e
+  corta o `resumo` em 500; a entidade sem átomo não chega ao modelo; a gravação
+  guarda os quatro `_anterior` **antes** de escrever, em cláusulas `SET`
+  separadas; e o desfazer é uma troca que lê os dois lados antes de escrever
+  qualquer um. Do lado da fila: a reivindicação é condicional, `rodando` velho
+  volta a ser reivindicável (a retomada mora na mesma consulta), e uma entidade
+  que falha vira `falhou` com o motivo sem derrubar as seguintes.
+  **A qualidade do texto nenhum teste alcança** — se o resumo distingue ou só
+  descreve, quem diz sou eu, lendo duas fichas parecidas lado a lado.
 - `tests/fusao.test.ts` — que grafia deixou de ser nó (009): `registrarGrafia` e
   `renomear` escrevem em `aliases`, ninguém cria `:Entidade`, e as recusas que o
   índice único fazia de graça passaram a ser leitura explícita.
@@ -4153,12 +4386,52 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
-- **Entre a 4.11 e a 4.12, quase toda menção passa pela segunda passada.** Os
-  resumos nascem vazios, resumo vazio faz a confiança vir baixa, e confiança
-  baixa dispara o desempate. São ~2 chamadas de modelo por janela em vez de 1,
-  espalhadas pelos 15 minutos. É o preço declarado de separar as fatias, e ele
-  **acaba sozinho** conforme os resumos forem escritos — pela minha mão em
-  `/entidades`, ou pelo lote da 4.12.
+- **O perfil passa a ser escrito sem revisão prévia** (4.12). É a reabertura
+  consciente do que o §4.9 declarava: ficha errada contamina toda atribuição
+  futura, e o erro se realimenta. A defesa deixou de ser "nada entra sem o meu
+  toque campo a campo" e passou a ser: eu escolho quem entra na fila, eu leio a
+  ficha depois, e o desfazer está a um toque. **A regra 5 do `CLAUDE.md` continua
+  valendo inteira** — ela fala de átomo, e nenhum átomo entra no grafo por este
+  caminho. O defeito mais caro que este sistema pode ter é uma afirmação na ficha
+  que nenhum átomo sustenta, porque ela passa a decidir atribuição; quem procura
+  por isso sou eu, lendo a ficha depois de o lote rodar.
+- **Uma geração de desfazer** (4.12). Rodar o lote duas vezes seguidas na mesma
+  entidade perde o texto original: o `_anterior` da segunda rodada é o resultado
+  da primeira. É o preço declarado de não guardar histórico.
+- **Entidade muito falada pode não caber na janela do modelo**, e nesse dia ela
+  falha e não escreve nada (4.12). Sem tratamento, por escolha: dividir em partes
+  e fundir as parciais é trabalho adiantado para um problema que este grafo não
+  tem. O sinal é `falhou` com o motivo na linha dela.
+- **O custo do lote cresce com o quadrado do uso** (4.12): mais átomos por
+  entidade, e mais entidades. Selecionar todas num grafo grande é uma conta que
+  ninguém mede antes de disparar — a tela diz quantas foram marcadas, não quanto
+  vai custar.
+- **A reivindicação da fila é mais fraca que a trava do manifest** (4.12). Lá o
+  `If-Match` do R2 é garantido pelo serviço; aqui é um `MATCH ... SET`, e Neo4j
+  avalia o `WHERE` **antes** de tomar o lock da escrita — duas invocações
+  simultâneas do elo podem, na janela de milissegundos entre as duas, reivindicar
+  a mesma entidade. A fila é sequencial por construção, então isso só acontece se
+  eu apertar o botão duas vezes; e o custo de perder a corrida é uma chamada de
+  modelo repetida com a mesma ficha ao fim, que é o que a idempotência da fatia
+  já declara.
+- **Um elo que morre entre gravar a ficha e marcar `pronta`** deixa a entidade em
+  `rodando` até a retomada. A ficha já está escrita, e a próxima rodada a
+  reescreve a partir dos mesmos átomos: não há perda, só trabalho repetido.
+- **Se o encadeamento cair, a fila para calada.** O `waitUntil` do elo pode
+  morrer, e o cookie repassado pode expirar no meio de uma fila longa. O que
+  sobra é a linha `[fila]` no log e as entidades paradas em `na fila` na tela; o
+  conserto é apertar o botão de novo, e a retomada pega o que ficou em `rodando`.
+  **Nenhum aviso mora fora de `/entidades`** — notificação de PWA seria o
+  primeiro uso de push neste sistema, e foi recusada por agora.
+- **A fila é varrida sobre o catálogo inteiro em memória**, mesmo limite que a
+  4.11 já declara para o casamento exato, e pelo mesmo motivo: sem índice, por
+  cota do Aura Free.
+- **A segunda passada só encolhe quando os resumos identificarem.** Entre a 4.11
+  e a 4.12 quase toda menção passava por ela, porque resumo vazio derruba a
+  confiança; a 4.12 escreve os resumos, mas **quem diz se eles bastam é o log**.
+  `[desempate]` calado na maioria das menções é o número que fecha a fatia; se
+  ele continuar disparando em tudo com as fichas escritas, o resumo não está
+  identificando, e o conserto é o prompt do agente 4.
 - **A confiança é auto-relatada** (4.11). O modelo diz o quanto confia; ninguém
   verifica. Um modelo que devolva 0,9 para tudo torna o limiar decorativo, e o
   sinal disso é a linha `[desempate]` **sumir** do log enquanto os resumos ainda

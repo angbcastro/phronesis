@@ -16,7 +16,8 @@
  * leem por padrão:
  *
  *   resumo    o retrato de identidade, teto de 500. É o que entra no dossiê do
- *             extrator e no catálogo do agente 2. Nasce vazio
+ *             extrator e no catálogo do agente 2. Nasce vazio — e desde a 4.12
+ *             é o lote quem costuma preenchê-lo
  *   grafias   `aliases`, editável à mão — é o único jeito de ensinar uma grafia
  *             **antes** de o STT errar pela primeira vez, que é quando ele mais
  *             erra
@@ -34,6 +35,17 @@
  * Procurar duplicatas e rascunhar um perfil são botões, não coisas que
  * acontecem ao abrir: a camada que compara nomes é de graça, mas a que julga e a
  * que escreve são chamadas de modelo.
+ *
+ * **Desde a 4.12 esta tela dispara o lote, e ele grava sem eu aprovar campo a
+ * campo** — checkbox por linha, "selecionar todas", e o botão que enfileira. É a
+ * única coisa daqui que escreve conteúdo sem o meu toque em cada campo, e é
+ * decisão declarada (`ARCHITECTURE.md` §4.9): o atrito de aprovar campo por
+ * campo é o que deixou as fichas vazias. O contrapeso é que **eu leio a ficha
+ * aqui mesmo, depois**, e que o desfazer está a um toque.
+ *
+ * O estado da fila mora **na linha de cada entidade**, e em nenhum outro lugar:
+ * a fatia recusou notificação fora do app. Enquanto houver fila, a tela relê
+ * sozinha; fechar a aba não interrompe nada, só para de mostrar.
  */
 import { useCallback, useEffect, useState } from "react";
 import { ehPronome, normalizarNome } from "@/lib/texto";

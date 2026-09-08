@@ -8,6 +8,30 @@ Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
 sistema funciona hoje) e `Specs/slice-4.11.md` (o que a fatia atual tem que ser).
 Este arquivo só diz o que fazer a seguir.
 
+> **Atualizado em 08/09, no fim: a 4.12 está construída, e também não foi
+> medida.** Os seis passos da `Specs/slice-4.12.md` estão em código, um commit
+> cada, 973 testes verdes. O que ela entregou:
+>
+> - **a migration 010, PROPOSTA e não rodada** — quatro campos `_anterior` (o
+>   desfazer) e quatro do estado da fila. Sem statement nenhum, como a 005 e a
+>   007: aplicá-la é no-op, e o passo seguinte é aprová-la;
+> - **o agente 4** (`enriquecimento-1`, `src/lib/enriquecimento.ts`): lê TODOS os
+>   átomos ligados por `:SOBRE` ou `:MENCIONA`, sem teto e sem `:PERFILA`, e
+>   escreve os quatro campos da ficha numa chamada só;
+> - **a gravação sem revisão prévia**, com o desfazer de uma geração existindo
+>   antes da primeira sobrescrita. `gravarCampo` e `gravarResumo` passaram a
+>   guardar `_anterior` junto, pelo mesmo invariante;
+> - **a fila**: `na_fila` no nó, elo que reivindica uma, roda e chama a si mesmo;
+>   fechar a aba não interrompe. `maxDuration = 300` e espera de rate limit sem
+>   prazo;
+> - **`/entidades`**: checkbox por linha, selecionar todas, botão com a contagem,
+>   selo de estado por linha, e desfazer na ficha.
+>
+> **O que falta é a única coisa que este sistema aceita como medida.** A seção 8
+> é a lista, e ela **inclui a seção 7**: a mesma sessão real mede as duas fatias,
+> porque é o lote da 4.12 que faz a segunda passada da 4.11 encolher. O número
+> que fecha as duas: `[desempate]` **calado** na maioria das menções.
+
 > **Atualizado em 08/09, mais tarde: a 4.11 está construída, e não foi medida.**
 > A migration 009 foi **aprovada e aplicada** — duas grafias ("o senai" e
 > "Lícia") viraram item de `aliases` de SENAI e Alícia, e os dois nós foram
@@ -362,16 +386,25 @@ cada uma — e as duas specs saíram dela:
 | A | **`Specs/slice-4.11.md`** | a entidade ganha `resumo`, `aliases` como propriedade e `canonico`; é isso o que os dois agentes leem por padrão; o agente 2 devolve **confiança** e, abaixo do limiar, um agente novo (`desempate`) faz a segunda passada com o perfil inteiro |
 | B | **`Specs/slice-4.12.md`** | enriquecimento em lote: checkbox em `/entidades`, o agente 4 lê **todos** os átomos `SOBRE` + `MENCIONA` e **escreve sozinho** resumo e os três campos, com desfazer de um toque; fila assíncrona, sem janela aberta |
 
-**Ordem: A primeiro, medida numa sessão real, e B logo em seguida.** A cria o
-`resumo` vazio e B o preenche; no intervalo, quase toda menção cai na segunda
-passada — que é comportamento esperado e está escrito como tal na 4.11.
+**As duas estão construídas** (08/09), e nenhuma foi medida. A ordem planejada
+era A, medida, e B em seguida; as duas foram escritas na mesma sessão, e o que
+ficou pendente é a medida — uma só, que exercita as duas ao mesmo tempo, porque
+é o lote da B que faz a segunda passada da A encolher.
 
-**O próximo passo concreto é aprovar a migration 009**
-(`db/migrations/009_resumo_aliases_canonico.cypher`), que já está escrita como
-proposta. Ela **tem statements** e é a primeira deste projeto que **apaga nós**:
-converte em item de `aliases` os nós de grafia (os que têm só o label
-`:Entidade`) e os apaga, preservando antes de apagar. Fusão de duas entidades
-reais continua sendo `FUNDIDA_EM`.
+**O próximo passo concreto é aprovar a migration 010**
+(`db/migrations/010_enriquecimento.cypher`), que já está escrita como proposta.
+Ela **não tem statement nenhum** — aplicá-la é no-op, e ela existe porque
+`db/migrations/` é a definição canônica do schema. Depois dela: enriquecer uma
+entidade à mão, ler a ficha, e só então soltar o lote sobre o grafo inteiro.
+
+*(Riscado: o próximo passo era aprovar a migration 009 — feito, ver o bloco do
+topo.)*
+
+**O que foi aprovado e aplicado:** a migration 009
+(`db/migrations/009_resumo_aliases_canonico.cypher`). Ela **tem statements** e é
+a primeira deste projeto que **apaga nós**: converteu em item de `aliases` os nós
+de grafia (os que têm só o label `:Entidade`) e os apagou, preservando antes de
+apagar. Fusão de duas entidades reais continua sendo `FUNDIDA_EM`.
 
 Duas coisas que a entrevista decidiu e que contrariam documento escrito — as
 duas deliberadas, as duas com o preço anotado nas specs:
@@ -492,3 +525,53 @@ RETURN e.aliases, e.resumo, e.canonico
 
 **Depois:** a 4.12 (`Specs/slice-4.12.md`) preenche os resumos em lote, e é ela
 que faz a segunda passada voltar a ser exceção.
+
+---
+
+## 8. O que testar na 4.12 — à mão, e depois do lote
+
+Nada disto tem teste automático. **A ordem importa**: o passo 1 é o que permite
+olhar antes de soltar o lote sobre o grafo inteiro.
+
+**1. Aprovar a migration 010.** `db/migrations/010_enriquecimento.cypher` é
+no-op (0 statements) e existe para o schema não mentir. `pnpm migrate` a aplica
+junto com as outras.
+
+**2. Uma entidade à mão, primeiro.** Em `/entidades`, abrir a ficha de uma
+entidade que já tenha vários átomos e apertar **enriquecer esta**. Ler os quatro
+campos antes de qualquer lote.
+
+- [ ] **o lote inventou alguma coisa?** É o risco que o §4.9 declarava e que
+      esta fatia aceita: ninguém revisa antes de gravar. Uma afirmação na ficha
+      que nenhum átomo sustenta é o defeito mais caro que este sistema pode ter,
+      porque ela passa a decidir atribuição
+- [ ] **o desfazer volta o que era?** Apertar, conferir, apertar de novo — ele é
+      uma troca, então o segundo toque traz de volta
+
+**3. O lote sobre o grafo inteiro.** Selecionar todas, disparar, **fechar a
+aba**, voltar depois.
+
+| O que aparece | O que quer dizer |
+|---|---|
+| todas em `ficha de N átomo(s)` | a fila andou inteira sem janela aberta — é o critério da fatia |
+| alguma parada em `enriquecendo` | o encadeamento morreu e a retomada não pegou; o motivo está no log, e apertar o botão de novo a repesca |
+| alguma parada em `na fila` | o encadeamento caiu antes de chegar nela — mesmo conserto |
+| `falhou` com o motivo na linha | é o caminho previsto, e a entidade seguinte não foi afetada |
+
+**4. A medida que fecha a fatia.** Gravar uma sessão real e olhar o log da
+resolução:
+
+- [ ] `[desempate]` **calado** na maioria das menções — é o número que diz se o
+      resumo está identificando. Se ele continuar disparando em tudo, o resumo
+      não está fazendo o trabalho, e o conserto é o prompt do agente 4, em
+      `/agentes`
+- [ ] **o resumo distingue, ou só descreve?** Ler o resumo de duas pessoas
+      parecidas lado a lado: se os dois textos servissem para qualquer uma das
+      duas, o prompt falhou no que ele tem de fazer
+- [ ] **o que eu tinha escrito à mão fazia falta?** Se sim, o desfazer está a um
+      toque — e é a resposta de que o "sobrescreve" precisa de um contrapeso
+      maior que uma geração
+
+**Depois:** decidir o que acontece com o **agente 3** (`perfil-1`). A 4.12
+deixou isso explicitamente em aberto: conviver, encolher ou sair se decide
+**depois** de o lote rodar e eu ver se ainda uso o botão de rascunhar.

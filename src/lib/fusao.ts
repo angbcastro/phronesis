@@ -460,10 +460,12 @@ export async function removerGrafia(
 /**
  * O retrato de identidade, e a marca de ficha oficial (migration 009).
  *
- * Os dois são escrita minha e de mais ninguém, como os três campos de perfil: o
- * `resumo` é o que os **dois** agentes leem por padrão desde a 4.11, e perfil
- * escrito errado contamina toda atribuição futura (§4.9). A 4.12 é que vai
- * propor texto para ele — e mesmo lá a escrita continua sendo um toque meu.
+ * **`canonico` é escrita minha e de mais ninguém.** O `resumo` deixou de ser, na
+ * 4.12: o agente 4 escreve os quatro campos da ficha sozinho, e o que substituiu
+ * a aprovação campo a campo é a seleção mais o botão, com o desfazer de uma
+ * geração atrás (§4.9). Esta função continua sendo o caminho da minha mão, e é
+ * por isso que ela também guarda `resumo_anterior`: as duas escritas têm de
+ * manter o mesmo invariante, senão o desfazer volta a geração errada.
  *
  * O corte em `TETO_RESUMO` acontece aqui, no servidor, pela mesma razão que o
  * corte do perfil acontecia: regra que só vale na tela não é regra.
