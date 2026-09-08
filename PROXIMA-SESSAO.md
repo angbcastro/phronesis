@@ -27,8 +27,8 @@ Este arquivo só diz o que fazer a seguir.
 > - **`/entidades`**: checkbox por linha, selecionar todas, botão com a contagem,
 >   selo de estado por linha, e desfazer na ficha.
 >
-> **O que falta é a única coisa que este sistema aceita como medida.** A seção 8
-> é a lista, e ela **inclui a seção 7**: a mesma sessão real mede as duas fatias,
+> **O que falta é a única coisa que este sistema aceita como medida.** A seção 7
+> é a lista, e ela mede **as duas fatias na mesma sessão** — a 4.11 e a 4.12 —,
 > porque é o lote da 4.12 que faz a segunda passada da 4.11 encolher. O número
 > que fecha as duas: `[desempate]` **calado** na maioria das menções.
 
@@ -46,7 +46,8 @@ Este arquivo só diz o que fazer a seguir.
 > confiança fica abaixo do limiar de 0,7, editável em `/agentes`.
 >
 > **O que falta é a única coisa que este sistema aceita como medida: uma sessão
-> real. A seção 7 é a lista do que testar** — nada dela tem teste automático.
+> real. A seção 7 é a lista do que testar** — nada dela tem teste automático, e
+> desde a 4.12 ela é uma lista só, para as duas fatias.
 > Depois vem a 4.12 (`Specs/slice-4.12.md`), que preenche os resumos — e até ela
 > rodar, quase toda menção vai passar pela segunda passada, o que é
 > **comportamento esperado**.
@@ -482,96 +483,119 @@ escrito, e as duas estão com o preço anotado na spec.
 
 ---
 
-## 7. O que testar na 4.11 — à mão, numa sessão real
+## 7. O que testar à mão — 4.11 e 4.12, juntas
 
 Nada disto tem teste automático. É a única medida que este sistema aceita.
 
-**Antes de gravar, em `/entidades`:**
+**As duas fatias se medem na mesma sessão**, e por isso a lista é uma só: a 4.11
+criou o `resumo` vazio, a 4.12 o preenche, e o efeito da 4.11 só aparece **depois**
+de o lote rodar. **A ordem importa** — cada passo existe para o seguinte poder ser
+lido.
 
-- [ ] escrever o **resumo** de 2 ou 3 entidades (ficha → resumo). Sem isso a
-      sessão mede só o caminho degradado: resumo vazio derruba a confiança e
-      **toda** menção cai na segunda passada
-- [ ] marcar uma como **canônica** — a palavra tem de aparecer no prompt
-- [ ] acrescentar à mão uma **grafia** que o STT ainda vai errar. É o que a fatia
-      abriu, e não existia de jeito nenhum antes
+---
 
-**No log, durante a gravação:**
+### 1. Aprovar a migration 010
 
-| Linha | O que quer dizer |
+`db/migrations/010_enriquecimento.cypher`, e depois `pnpm migrate`.
+
+- **por quê:** é no-op (0 statements) e existe para o schema não mentir. Sem
+  aprová-la, `db/migrations/` deixa de ser a definição canônica.
+- **critério:** `pnpm migrate` diz `010_enriquecimento.cypher — 0 statement(s)` e
+  segue.
+
+### 2. Enriquecer **uma** entidade, à mão
+
+`/entidades` → ficha de uma entidade com vários átomos → **enriquecer esta**.
+
+- **por quê:** é o único momento em que dá para olhar a saída do agente 4 antes
+  de ela ter sido escrita em todo o grafo. Depois do lote, conferir 30 fichas é
+  trabalho; conferir uma é um minuto.
+- **critério:** os quatro campos preenchidos, e **nenhuma afirmação que os átomos
+  não sustentam**. É o defeito mais caro que este sistema pode ter — ninguém
+  revisa antes de gravar, e ficha inventada passa a decidir atribuição. Se
+  inventou, o conserto é o prompt do `enriquecimento`, em `/agentes`.
+
+### 3. Desfazer, e desfazer de novo
+
+Na mesma ficha: **desfazer** → conferir → **desfazer** outra vez.
+
+- **por quê:** o desfazer é o que substitui a tela de aprovação que a fatia
+  recusou. Se ele não funcionar, o "escreve sozinho" ficou sem contrapeso.
+- **critério:** o primeiro toque volta os quatro campos ao que eram; o segundo
+  traz a ficha do agente de volta. Ele é uma troca, não uma restauração.
+
+### 4. Preparar o que só a 4.11 mede
+
+Em `/entidades`, antes de gravar:
+
+- [ ] marcar uma entidade como **canônica** — a palavra tem de chegar ao prompt
+- [ ] acrescentar à mão uma **grafia** que o STT ainda vai errar
+
+- **por quê:** as duas coisas nasceram na 4.11 e não existiam de jeito nenhum
+  antes; nenhuma delas é exercitada pelo lote.
+- **critério:** as duas aparecem na linha da entidade depois de salvar.
+
+### 5. O lote sobre o grafo inteiro
+
+**Selecionar todas** → **enriquecer N marcadas** → **fechar a aba** → voltar
+depois.
+
+- **por quê:** é o critério da fatia inteira. "Assíncrono, sem eu manter nada
+  rodando nem nenhuma janela aberta" foi o pedido; fechar a aba é o teste.
+- **critério:** a leitura é o selo de cada linha —
+
+| O que aparece na linha | O que quer dizer |
 |---|---|
-| `[desempate] sessão <id>: N menção(ões) abaixo do limiar` | o caminho novo está vivo |
-| nenhuma `[desempate]`, **com resumos vazios** | limiar baixo demais ou confiança inflada — calibrar em `/agentes` |
-| `[desempate]` em **toda** menção, **com resumos escritos** | limiar alto demais, ou o resumo não identifica |
-| `[grafias] sessão <id>: N grafia(s) viraram alias` | o alias gravou, agora sem nó |
+| `ficha de N átomo(s) em DD/MM` | a fila andou até ela — é o que se espera de todas |
+| `sem átomo para ler` | entidade sem átomo: não foi ao modelo, e a ficha ficou intocada. Correto |
+| `falhou: <motivo>` | caminho previsto; a entidade seguinte não foi afetada |
+| parada em `enriquecendo` | o elo morreu no meio. Apertar o botão de novo: a retomada a repesca depois de 5 min |
+| parada em `na fila` | o encadeamento caiu antes de chegar nela. Mesmo conserto |
 
-**No grafo, depois de confirmar:**
+### 6. Gravar uma sessão real, e ler o log
+
+- **por quê:** **é a medida que fecha as duas fatias.** Com as fichas escritas, a
+  segunda passada tem de virar exceção — era esse o ponto de tudo.
+- **critério:** as linhas abaixo.
+
+| Linha do log | O que quer dizer |
+|---|---|
+| `[desempate]` **calado** na maioria das menções | ✅ o resumo está identificando. É o número que fecha a fatia |
+| `[desempate]` em **toda** menção, com as fichas escritas | ❌ o resumo não identifica (conserto: prompt do `enriquecimento`) ou o limiar está alto (conserto: `/agentes`) |
+| **nenhuma** `[desempate]`, nunca | ❌ limiar baixo demais ou confiança inflada — o limiar virou decoração |
+| `[grafias] sessão <id>: N grafia(s) viraram alias` | a grafia gravou na propriedade, sem nó (009) |
+| `[enriquecimento] <nome>: ficha escrita de N átomo(s)` | o agente 4 rodou; N é quantos átomos ele leu |
+
+### 7. Conferir no grafo, depois de confirmar
 
 ```cypher
 MATCH (e:Entidade {nome_normalizado:'jean'}) RETURN e            // tem de vir vazio
 MATCH (e:Entidade {nome_normalizado:'giampaolo lepore'})
-RETURN e.aliases, e.resumo, e.canonico
+RETURN e.resumo, e.aliases, e.canonico, e.enriquecimento_estado, e.resumo_anterior
 ```
 
-**Três coisas que só olho vê:**
-
-- [ ] **o átomo continua soando como eu?** Se a frase soar como o modelo, o
-      dossiê novo está competindo com o `COM AS MINHAS PALAVRAS` — conserto é
-      prompt, em `/agentes`
-- [ ] **a confiança tem relação com estar certo?** Menção que voltou 0,9 e estava
-      errada = limiar decorativo. É a pergunta que decide se o desenho serve
-- [ ] **a segunda passada muda de ideia?** Concordar com a primeira em 100% dos
-      casos = uma chamada paga para nada, e o perfil inteiro não era o que
-      faltava. O `motivo` dela está no `extracao.json`
-
-**Depois:** a 4.12 (`Specs/slice-4.12.md`) preenche os resumos em lote, e é ela
-que faz a segunda passada voltar a ser exceção.
+- **por quê:** a grafia deixou de ser nó na 009, e o estado da fila mora no nó
+  desde a 010. As duas coisas se veem aqui e em nenhum outro lugar.
+- **critério:** o primeiro `MATCH` vem vazio; o segundo traz `resumo` escrito,
+  `enriquecimento_estado: 'pronta'` e `resumo_anterior` com o texto de antes.
 
 ---
 
-## 8. O que testar na 4.12 — à mão, e depois do lote
+### As quatro perguntas que só olho responde
 
-Nada disto tem teste automático. **A ordem importa**: o passo 1 é o que permite
-olhar antes de soltar o lote sobre o grafo inteiro.
-
-**1. Aprovar a migration 010.** `db/migrations/010_enriquecimento.cypher` é
-no-op (0 statements) e existe para o schema não mentir. `pnpm migrate` a aplica
-junto com as outras.
-
-**2. Uma entidade à mão, primeiro.** Em `/entidades`, abrir a ficha de uma
-entidade que já tenha vários átomos e apertar **enriquecer esta**. Ler os quatro
-campos antes de qualquer lote.
-
-- [ ] **o lote inventou alguma coisa?** É o risco que o §4.9 declarava e que
-      esta fatia aceita: ninguém revisa antes de gravar. Uma afirmação na ficha
-      que nenhum átomo sustenta é o defeito mais caro que este sistema pode ter,
-      porque ela passa a decidir atribuição
-- [ ] **o desfazer volta o que era?** Apertar, conferir, apertar de novo — ele é
-      uma troca, então o segundo toque traz de volta
-
-**3. O lote sobre o grafo inteiro.** Selecionar todas, disparar, **fechar a
-aba**, voltar depois.
-
-| O que aparece | O que quer dizer |
-|---|---|
-| todas em `ficha de N átomo(s)` | a fila andou inteira sem janela aberta — é o critério da fatia |
-| alguma parada em `enriquecendo` | o encadeamento morreu e a retomada não pegou; o motivo está no log, e apertar o botão de novo a repesca |
-| alguma parada em `na fila` | o encadeamento caiu antes de chegar nela — mesmo conserto |
-| `falhou` com o motivo na linha | é o caminho previsto, e a entidade seguinte não foi afetada |
-
-**4. A medida que fecha a fatia.** Gravar uma sessão real e olhar o log da
-resolução:
-
-- [ ] `[desempate]` **calado** na maioria das menções — é o número que diz se o
-      resumo está identificando. Se ele continuar disparando em tudo, o resumo
-      não está fazendo o trabalho, e o conserto é o prompt do agente 4, em
-      `/agentes`
 - [ ] **o resumo distingue, ou só descreve?** Ler o resumo de duas pessoas
       parecidas lado a lado: se os dois textos servissem para qualquer uma das
-      duas, o prompt falhou no que ele tem de fazer
-- [ ] **o que eu tinha escrito à mão fazia falta?** Se sim, o desfazer está a um
-      toque — e é a resposta de que o "sobrescreve" precisa de um contrapeso
-      maior que uma geração
+      duas, o prompt falhou no que ele tem de fazer. É o **propósito** do campo.
+- [ ] **o átomo continua soando como eu?** Se a frase soar como o modelo, o
+      dossiê está competindo com o `COM AS MINHAS PALAVRAS` — conserto é prompt.
+- [ ] **a confiança tem relação com estar certo?** Menção que voltou 0,9 e estava
+      errada = limiar decorativo. É a pergunta que decide se o desenho da 4.11
+      serve.
+- [ ] **a segunda passada muda de ideia?** Concordar com a primeira em 100% dos
+      casos = uma chamada paga para nada. O `motivo` dela está no `extracao.json`.
 
-**Depois:** decidir o que acontece com o **agente 3** (`perfil-1`). A 4.12
-deixou isso explicitamente em aberto: conviver, encolher ou sair se decide
-**depois** de o lote rodar e eu ver se ainda uso o botão de rascunhar.
+### Depois
+
+Decidir o que acontece com o **agente 3** (`perfil-1`): conviver, encolher ou
+sair. A 4.12 deixou isso explicitamente em aberto, e a resposta é uma só — se eu
+ainda uso o botão de **rascunhar** depois de o lote existir.
