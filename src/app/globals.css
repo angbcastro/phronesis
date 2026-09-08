@@ -758,6 +758,26 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .lista-sessoes li.aberta { background: color-mix(in srgb, var(--fundo-alto) 60%, transparent); }
 
+/* A caixa do lote fica à esquerda da linha, e o alvo de toque é maior que ela:
+   este é um app de celular, e caixa de 13 px não se acerta com o dedo. */
+.marca-lote {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  accent-color: var(--acento);
+  cursor: pointer;
+}
+.marca-todas {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--texto-fraco);
+  cursor: pointer;
+}
+.marca-todas input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--acento); }
+
 .perfil {
   display: flex;
   flex-direction: column;

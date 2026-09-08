@@ -93,6 +93,9 @@ const DICA: Record<CampoPerfil, string> = {
 
 const PERFIL_VAZIO: Perfil = { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" };
 
+/** O mesmo do corredor: rápido o bastante para parecer vivo, e barato. */
+const INTERVALO_FILA_MS = 4000;
+
 /** Só a data. A hora não muda o que eu faço, e a linha já é longa. */
 const dia = (iso: string) => (iso === "" ? "" : iso.slice(0, 10).split("-").reverse().join("/"));
 
@@ -133,6 +136,8 @@ export function Entidades() {
   const [propostas, setPropostas] = useState<Record<string, Rascunho>>({});
   /** A grafia que estou digitando para acrescentar, por chave de entidade. */
   const [grafiaNova, setGrafiaNova] = useState<Record<string, string>>({});
+  /** As chaves marcadas para o lote. Vazio = nada a enriquecer. */
+  const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
 
   const carregar = useCallback(async () => {
     // `?perfil=1`: esta é a tela que edita os três campos. A revisão não pede,
@@ -148,6 +153,27 @@ export function Entidades() {
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  /**
+   * Enquanto houver fila, a tela relê sozinha.
+   *
+   * **É o único aviso que esta fatia dá**, e é por decisão: notificação de PWA
+   * seria o primeiro uso de push neste sistema, e a informação mora onde a ação
+   * foi disparada. Fechar a aba não interrompe a fila — só para de mostrar o
+   * que ela está fazendo, e voltar aqui reencontra o estado no grafo.
+   *
+   * O intervalo é o do corredor (`Processando`), e o efeito se desliga sozinho
+   * quando a última linha sai de `na fila` ou `enriquecendo`.
+   */
+  const andando = (entidades ?? []).some(
+    (e) => e.enriquecimento.estado === "na_fila" || e.enriquecimento.estado === "rodando",
+  );
+
+  useEffect(() => {
+    if (!andando) return;
+    const t = setInterval(() => void carregar(), INTERVALO_FILA_MS);
+    return () => clearInterval(t);
+  }, [andando, carregar]);
 
   async function procurar() {
     setProcurando(true);
@@ -387,6 +413,33 @@ export function Entidades() {
     void carregar();
   }
 
+  /**
+   * O lote: as marcadas entram na fila, e a fila anda sozinha.
+   *
+   * A resposta volta na hora — o que ela confirma é que o `na_fila` está
+   * gravado, não que o trabalho acabou. Daí em diante quem conta a história é o
+   * selo de cada linha.
+   */
+  async function enriquecerMarcadas() {
+    if (marcadas.size === 0) return;
+    setOcupado("lote");
+    setFalha(null);
+    const r = await fetch("/api/entidades/enriquecer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chaves: [...marcadas] }),
+    }).catch(() => null);
+    setOcupado(null);
+    if (!r?.ok) {
+      setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
+      return;
+    }
+    // A seleção sai do caminho: o que interessa a partir daqui é o selo de cada
+    // linha, e uma lista marcada por cima disso só atrapalharia a leitura.
+    setMarcadas(new Set());
+    void carregar();
+  }
+
   /** O agente 3 propõe; nada é gravado até eu apertar salvar. */
   async function pedirRascunho(chave: string, campo: CampoPerfil) {
     const id = `${chave}|${campo}`;
@@ -449,6 +502,44 @@ export function Entidades() {
         </button>
       </div>
 
+      {/* O lote. Mesmo padrão do "procurar duplicatas" — eu escolho quando pagar
+          e sobre quem —, e a contagem aparece ANTES de disparar, porque é a
+          única coisa que a tela sabe dizer sobre o tamanho da conta (§14). */}
+      <div className="acoes-sessao criar-entidade">
+        <label className="marca-todas">
+          <input
+            type="checkbox"
+            checked={marcadas.size > 0 && marcadas.size === (entidades ?? []).length}
+            // Meio marcado quando é parte: sem isso, marcar duas de dez faria a
+            // caixa do topo parecer "nenhuma".
+            ref={(el) => {
+              if (el) el.indeterminate = marcadas.size > 0 && marcadas.size < (entidades ?? []).length;
+            }}
+            onChange={(ev) =>
+              setMarcadas(
+                ev.target.checked
+                  ? new Set((entidades ?? []).map((e) => e.nome_normalizado))
+                  : new Set(),
+              )
+            }
+          />
+          <span>selecionar todas</span>
+        </label>
+        <button
+          className="reextrair"
+          disabled={ocupado === "lote" || marcadas.size === 0}
+          title="o agente lê TODOS os átomos de cada uma e escreve a ficha inteira — e grava, sem eu aprovar campo a campo"
+          onClick={() => void enriquecerMarcadas()}
+        >
+          {ocupado === "lote"
+            ? "enfileirando…"
+            : `enriquecer ${marcadas.size === 0 ? "" : `${marcadas.size} `}marcada(s)`}
+        </button>
+        {andando && (
+          <span className="meta">a fila está andando — pode fechar a aba</span>
+        )}
+      </div>
+
       {pares?.length === 0 && (
         <p className="aguardando">nenhuma duplicata — o grafo está limpo.</p>
       )}
@@ -501,6 +592,20 @@ export function Entidades() {
           return (
             <li key={e.id} className={aberto ? "com-perfil aberta" : "com-perfil"}>
               <div className="linha-entidade">
+                <input
+                  type="checkbox"
+                  className="marca-lote"
+                  aria-label={`marcar ${e.nome} para enriquecer`}
+                  checked={marcadas.has(e.nome_normalizado)}
+                  onChange={(ev) =>
+                    setMarcadas((m) => {
+                      const proximo = new Set(m);
+                      if (ev.target.checked) proximo.add(e.nome_normalizado);
+                      else proximo.delete(e.nome_normalizado);
+                      return proximo;
+                    })
+                  }
+                />
                 <span className="quando">
                   <span>
                     {e.nome}

@@ -533,3 +533,132 @@ export async function enriquecer(
   );
   return { atomos: ficha.atomos, ficha };
 }
+
+// ──────────────────────────── a fila ────────────────────────────
+
+/**
+ * Quanto vale a reivindicação de uma entidade.
+ *
+ * Não é o tempo que um elo leva — é o tempo depois do qual vale mais arriscar
+ * uma ficha reescrita do que deixar a entidade travada em `rodando` para
+ * sempre. É a mesma conta do `LEASE_MS` da janela (`janela.ts`), com o número
+ * do teto de execução da rota: passado ele, a função que reivindicou está
+ * morta com certeza.
+ *
+ * **A retomada é isto, e não uma varredura à parte.** Entidade em `rodando` com
+ * o carimbo velho volta a ser reivindicável pela própria consulta de
+ * reivindicação — um lugar só decide quem é a próxima.
+ */
+export const LEASE_MS = 300_000;
+
+/**
+ * Põe as entidades na fila. Responde quantas de fato entraram.
+ *
+ * `na_fila` é escrito **antes** de a rota responder: é ele que faz fechar a aba
+ * não interromper nada. O que o `waitUntil` dispara é só o primeiro elo — o
+ * trabalho já está registrado no grafo quando a resposta sai.
+ */
+export async function enfileirar(
+  chaves: readonly string[],
+  agora: Date = new Date(),
+): Promise<number> {
+  const limpas = [...new Set(chaves.map(normalizarNome).filter((c) => c !== ""))];
+  if (limpas.length === 0) return 0;
+
+  const r = await query<{ chave: string }>(
+    `UNWIND $chaves AS chave
+     MATCH (e:Entidade { nome_normalizado: chave })
+     OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
+     WITH DISTINCT coalesce(v, e) AS alvo
+     WHERE coalesce(alvo.status, 'ativa') <> 'fundida'
+     SET alvo.enriquecimento_estado = 'na_fila',
+         alvo.enriquecimento_em = $agora,
+         alvo.enriquecimento_motivo = ''
+     RETURN alvo.nome_normalizado AS chave`,
+    { chaves: limpas, agora: agora.toISOString() },
+  );
+  return r.length;
+}
+
+/**
+ * Reivindica **uma** entidade: `na_fila` → `rodando`, numa escrita condicional.
+ *
+ * É a trava de concorrência da fila, na mesma ideia de `reivindicarJanela` — e
+ * com uma diferença que vale escrever, porque ela é um limite conhecido: lá a
+ * trava é o `If-Match` do R2, que o serviço garante; aqui é um `MATCH ... SET`,
+ * e Neo4j avalia o `WHERE` **antes** de tomar o lock da escrita. Duas invocações
+ * simultâneas do elo podem, na janela de milissegundos entre as duas, reivindicar
+ * a mesma entidade.
+ *
+ * **O custo de perder essa corrida é uma chamada de modelo repetida e a mesma
+ * ficha escrita duas vezes** — que é exatamente o que a idempotência da fatia já
+ * declara (rodar duas vezes a mesma entidade produz a mesma ficha a partir dos
+ * mesmos átomos). A fila é sequencial por construção: só há duas invocações
+ * simultâneas se eu apertar o botão duas vezes.
+ *
+ * A ordem é FIFO pelo carimbo, e `rodando` velho entra junto — é a retomada.
+ */
+export async function reivindicarProxima(agora: Date = new Date()): Promise<string | null> {
+  const r = await query<{ chave: string }>(
+    `MATCH (e:Entidade)
+     WHERE coalesce(e.status, 'ativa') <> 'fundida'
+       AND (e.enriquecimento_estado = 'na_fila'
+            OR (e.enriquecimento_estado = 'rodando'
+                AND coalesce(e.enriquecimento_em, '') < $limite))
+     WITH e ORDER BY coalesce(e.enriquecimento_em, '') ASC LIMIT 1
+     SET e.enriquecimento_estado = 'rodando',
+         e.enriquecimento_em = $agora
+     RETURN e.nome_normalizado AS chave`,
+    {
+      agora: agora.toISOString(),
+      // ISO 8601 em UTC compara como texto: é a mesma propriedade que faz o
+      // `ORDER BY` acima ser cronológico sem conversão nenhuma.
+      limite: new Date(agora.getTime() - LEASE_MS).toISOString(),
+    },
+  );
+
+  const chave = r[0]?.chave;
+  return typeof chave === "string" && chave !== "" ? chave : null;
+}
+
+/** Quantas entidades ainda esperam — o que a tela usa para saber se recarrega. */
+export async function tamanhoDaFila(): Promise<number> {
+  const r = await query<{ quantas: number }>(
+    `MATCH (e:Entidade)
+     WHERE coalesce(e.status, 'ativa') <> 'fundida'
+       AND e.enriquecimento_estado IN ['na_fila', 'rodando']
+     RETURN count(e) AS quantas`,
+  );
+  return r[0]?.quantas ?? 0;
+}
+
+/**
+ * Um elo: a entidade já reivindicada roda, e o resultado é gravado.
+ *
+ * **Falhar aqui não derruba a fila.** A entidade fica `falhou` com o motivo na
+ * linha dela — que é o caminho previsto da fatia — e o encadeamento segue para a
+ * próxima. É o mesmo contrato do bloco que não transcreve: uma peça ruim não
+ * leva o resto junto.
+ */
+export async function rodarElo(
+  chave: string,
+  catalogo: readonly EntidadeDoGrafo[],
+): Promise<Rodada | null> {
+  const alvo = catalogo.find((e) => e.nome_normalizado === chave);
+  if (!alvo) {
+    // O catálogo foi lido depois da reivindicação; se a entidade sumiu no meio
+    // (fusão), deixá-la em `rodando` a faria voltar à fila pela retomada e
+    // sumir de novo, para sempre.
+    await marcarEstado(chave, "falhou", "a entidade não está mais no catálogo");
+    return null;
+  }
+
+  try {
+    return await enriquecer(alvo);
+  } catch (e) {
+    const motivo = e instanceof Error ? e.message : String(e);
+    console.error(`[enriquecimento] ${alvo.nome} falhou:`, e);
+    await marcarEstado(chave, "falhou", motivo);
+    return null;
+  }
+}

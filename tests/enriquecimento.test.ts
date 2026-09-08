@@ -29,13 +29,17 @@ import {
   desfazerFicha,
   enriquecer,
   escreverFicha,
+  enfileirar,
   gravarFicha,
+  LEASE_MS,
   montarPrompt,
   parsearFicha,
+  reivindicarProxima,
+  rodarElo,
 } from "@/lib/enriquecimento";
 import type { AtomoDaEntidade } from "@/lib/enriquecimento";
 import { query } from "@/lib/neo4j";
-import { TETO_RESUMO } from "@/lib/tipos";
+import { NUNCA_ENRIQUECIDA, TETO_RESUMO } from "@/lib/tipos";
 
 const consulta = vi.mocked(query);
 const chamar = vi.mocked(generateText);
@@ -368,5 +372,114 @@ describe("uma entidade do começo ao fim", () => {
     expect(r.atomos).toBe(1);
     expect(r.ficha?.resumo).toBe("Produtor");
     expect(String(consulta.mock.calls[1][0])).toContain("resumo_anterior");
+  });
+});
+
+// ───────────────────────────── a fila ─────────────────────────────
+
+describe("enfileirar", () => {
+  const cypher = () => String(consulta.mock.calls[0][0]);
+
+  it("grava `na_fila` antes de qualquer trabalho — é o que faz fechar a aba não interromper", async () => {
+    consulta.mockResolvedValue([{ chave: "a" }, { chave: "b" }] as never);
+    expect(await enfileirar(["A", "B"])).toBe(2);
+    expect(cypher()).toContain("alvo.enriquecimento_estado = 'na_fila'");
+  });
+
+  it("normaliza e deduplica: a mesma entidade marcada duas vezes entra uma", async () => {
+    consulta.mockResolvedValue([{ chave: "rapha" }] as never);
+    await enfileirar(["Rapha", "rapha", "  RAPHA "]);
+    expect((consulta.mock.calls[0][1] as { chaves: string[] }).chaves).toEqual(["rapha"]);
+  });
+
+  it("atravessa alias e não enfileira nó fundido", async () => {
+    consulta.mockResolvedValue([{ chave: "rapha" }] as never);
+    await enfileirar(["raffa"]);
+    expect(cypher()).toContain("coalesce(v, e) AS alvo");
+    expect(cypher()).toContain("coalesce(alvo.status, 'ativa') <> 'fundida'");
+  });
+
+  it("lista vazia não vai ao banco", async () => {
+    expect(await enfileirar([])).toBe(0);
+    expect(consulta).not.toHaveBeenCalled();
+  });
+});
+
+describe("reivindicar a próxima", () => {
+  const AGORA = new Date("2026-09-08T12:00:00.000Z");
+  const cypher = () => String(consulta.mock.calls[0][0]);
+  const params = () => consulta.mock.calls[0][1] as { agora: string; limite: string };
+
+  it("reivindica UMA, e a escrita é condicional ao estado", async () => {
+    consulta.mockResolvedValue([{ chave: "rapha" }] as never);
+    expect(await reivindicarProxima(AGORA)).toBe("rapha");
+    expect(cypher()).toContain("LIMIT 1");
+    expect(cypher()).toContain("e.enriquecimento_estado = 'na_fila'");
+    expect(cypher()).toContain("SET e.enriquecimento_estado = 'rodando'");
+  });
+
+  it("`rodando` velho volta a ser reivindicável — é a retomada, e ela mora aqui", async () => {
+    // Sem isto, a entidade cuja função morreu no meio ficaria travada para
+    // sempre, e a fila pararia sem nada no log dizendo por quê.
+    consulta.mockResolvedValue([] as never);
+    await reivindicarProxima(AGORA);
+    expect(cypher()).toContain("e.enriquecimento_estado = 'rodando'");
+    expect(params().limite).toBe(new Date(AGORA.getTime() - LEASE_MS).toISOString());
+  });
+
+  it("`rodando` fresco não é reivindicado: o limite é o lease, não zero", async () => {
+    consulta.mockResolvedValue([] as never);
+    await reivindicarProxima(AGORA);
+    expect(Date.parse(params().limite)).toBeLessThan(Date.parse(params().agora));
+  });
+
+  it("FIFO pelo carimbo: quem esperou mais vai primeiro", async () => {
+    consulta.mockResolvedValue([] as never);
+    await reivindicarProxima(AGORA);
+    expect(cypher()).toContain("ORDER BY coalesce(e.enriquecimento_em, '') ASC");
+  });
+
+  it("fila vazia devolve null, e é isso que para o encadeamento", async () => {
+    consulta.mockResolvedValue([] as never);
+    expect(await reivindicarProxima(AGORA)).toBeNull();
+  });
+});
+
+describe("um elo", () => {
+  const alvo = {
+    id: "e1",
+    nome: "Rapha Bertoldo",
+    nome_normalizado: "rapha bertoldo",
+    chaves: ["rapha bertoldo"],
+    tipo: "Pessoa" as const,
+    sessoes: 1,
+    atomos: 2,
+    aliases: [],
+    resumo: "",
+    canonico: false,
+    perfil: { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" },
+    enriquecimento: NUNCA_ENRIQUECIDA,
+  };
+
+  it("uma entidade que falha vira `falhou` com o motivo, e não derruba a fila", async () => {
+    consulta.mockResolvedValueOnce([
+      { texto: "produziu o evento", tipo: "FATO", valido_em: "2026-08-01", sobre: true },
+    ] as never);
+    chamar.mockRejectedValue(new Error("o Gateway recusou") as never);
+
+    expect(await rodarElo("rapha bertoldo", [alvo])).toBeNull();
+    const marcada = consulta.mock.calls.find((c) =>
+      String(c[0]).includes("enriquecimento_estado = $estado"),
+    );
+    expect(marcada?.[1]).toMatchObject({ estado: "falhou" });
+    expect(String((marcada?.[1] as { motivo: string }).motivo)).toContain("o Gateway recusou");
+  });
+
+  it("entidade que sumiu do catálogo entre a reivindicação e a leitura não fica presa", async () => {
+    // Deixá-la em `rodando` a faria voltar pela retomada e sumir de novo, para
+    // sempre.
+    expect(await rodarElo("fantasma", [alvo])).toBeNull();
+    expect(chamar).not.toHaveBeenCalled();
+    expect(consulta.mock.calls[0][1]).toMatchObject({ estado: "falhou" });
   });
 });
