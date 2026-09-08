@@ -1,12 +1,24 @@
 # Checkpoint — 2026-09-05
 
-Documento de trabalho, não de arquitetura. **As slices 4.8, 4.8.1 e 4.9 estão
-construídas, commitadas e verificadas só por teste — a promessa das três ainda é
-previsão, não medição.** Apagar quando as validações da seção 2 estiverem feitas.
+Documento de trabalho, não de arquitetura. **As slices 4.8, 4.8.1, 4.9 e 4.10
+estão construídas, commitadas e medidas em sessão real.** O que sobra aqui é
+histórico e a fila do que vem — ver a seção 6.
 
 Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
-sistema funciona hoje) e `Specs/slice-4.10.md` (o que a fatia atual tem que ser).
+sistema funciona hoje) e `Specs/slice-4.11.md` (o que a fatia atual tem que ser).
 Este arquivo só diz o que fazer a seguir.
+
+> **Atualizado em 08/09, no fim do dia: a seção 2 está feita, e as duas fatias
+> da seção 6 estão especificadas.** As partes de UI e UX pedidas foram validadas
+> e estão funcionando; todos os áudios gravados foram importados e conferidos na
+> tela de revisão. A seção 2 deixou de ser trabalho e virou registro — está
+> mantida abaixo pelo que ela documenta, não pelo que ela pede.
+>
+> Depois disso veio a entrevista das duas fatias novas, em sete rodadas, e as
+> specs saíram dela: **`Specs/slice-4.11.md`** (o fluxo de resolução) e
+> **`Specs/slice-4.12.md`** (o enriquecimento em lote). A migration 009 está
+> escrita como **proposta** em `db/migrations/`, e **não foi rodada** — ela é a
+> primeira deste projeto que apaga nós, e o passo 2 da 4.11 é aprová-la.
 
 > **Atualizado em 08/09: a árvore estava suja com dois trabalhos misturados, e
 > foi fechada.** A migration 008 foi aprovada e aplicada (§2.4.1, riscada). O
@@ -105,12 +117,15 @@ Nada disto passou pelo Gateway. **Nenhuma janela real foi extraída ainda.**
 
 ---
 
-## 2. As validações que faltam
+## 2. As validações — feitas em 08/09
 
-Nesta ordem. As três primeiras são a 4.8; a quarta e a quinta são o que ela pode
-ter quebrado sem ninguém ver; a sexta é a 4.9, e ela só se olha depois que as
-três primeiras passarem — empilhar duas fatias não medidas faz qualquer
-estranheza ficar sem dono.
+~~Nesta ordem.~~ **Feito.** As sessões foram gravadas e todos os áudios
+importados e conferidos na tela de revisão; a UI e a UX pedidas foram validadas
+e estão funcionando. As slices 4.8, 4.8.1, 4.9 e 4.10 deixaram de ser previsão.
+
+O que segue abaixo fica como **registro do que foi olhado** — a tabela de sinais
+de log continua servindo para a próxima estranheza, e o §2.6 continua sendo a
+descrição de como o caso "Jean" se comporta. Nada aqui é trabalho pendente.
 
 ### 2.1 Gravar 3 minutos e ver a janela fechar antes de parar
 
@@ -317,20 +332,44 @@ resolvidos**; nada nesta sessão os tocou, e nada nesta sessão os verificou.
 
 ---
 
-## 6. Duas fatias novas: resolução de entidade (ainda não especificadas)
+## 6. Duas fatias novas: **especificadas em 08/09**
 
-Nenhuma das duas tem spec escrita. **Antes de escrever `Specs/slice-N.md`
-para qualquer uma das duas, a sessão que pegar este trabalho tem que me
-entrevistar a fundo — perguntas com opções concretas, trade-off explícito,
-várias rodadas, até ter certeza que entendeu minha visão completa.** Não
-inferir dos documentos existentes nem preencher as lacunas abaixo sozinho:
-são decisões de produto subjetivas, e é assim que este projeto já trabalha —
-não escrever a spec (nem código) antes da entrevista estar completa.
+A entrevista aconteceu — sete rodadas, opções concretas e trade-off explícito em
+cada uma — e as duas specs saíram dela:
 
-Ordem: fatia A primeiro — o `resumo` e o nome canônico mudam o que a fatia B
-vai enriquecer.
+| Fatia | Spec | O que é |
+|---|---|---|
+| A | **`Specs/slice-4.11.md`** | a entidade ganha `resumo`, `aliases` como propriedade e `canonico`; é isso o que os dois agentes leem por padrão; o agente 2 devolve **confiança** e, abaixo do limiar, um agente novo (`desempate`) faz a segunda passada com o perfil inteiro |
+| B | **`Specs/slice-4.12.md`** | enriquecimento em lote: checkbox em `/entidades`, o agente 4 lê **todos** os átomos `SOBRE` + `MENCIONA` e **escreve sozinho** resumo e os três campos, com desfazer de um toque; fila assíncrona, sem janela aberta |
 
-### 6.1 Fatia A — o fluxo de resolução (candidato, nome canônico, agente 2)
+**Ordem: A primeiro, medida numa sessão real, e B logo em seguida.** A cria o
+`resumo` vazio e B o preenche; no intervalo, quase toda menção cai na segunda
+passada — que é comportamento esperado e está escrito como tal na 4.11.
+
+**O próximo passo concreto é aprovar a migration 009**
+(`db/migrations/009_resumo_aliases_canonico.cypher`), que já está escrita como
+proposta. Ela **tem statements** e é a primeira deste projeto que **apaga nós**:
+converte em item de `aliases` os nós de grafia (os que têm só o label
+`:Entidade`) e os apaga, preservando antes de apagar. Fusão de duas entidades
+reais continua sendo `FUNDIDA_EM`.
+
+Duas coisas que a entrevista decidiu e que contrariam documento escrito — as
+duas deliberadas, as duas com o preço anotado nas specs:
+
+- **`TETO_PERFIL = 300` some** (4.11). O motivo declarado na migration 005 era o
+  consumo do agente 2, e esse consumo saiu do caminho comum;
+- **o lote escreve perfil sem revisão prévia** (4.12), o que reabre o
+  `ARCHITECTURE.md` §4.9. A regra 5 do `CLAUDE.md` continua intocada — ela fala
+  de átomo, e nenhum átomo entra por ali; a seleção mais o botão são o toque.
+
+O que segue abaixo é o material **de antes** da entrevista, mantido porque
+descreve o estado do código que as duas fatias vão encontrar.
+
+### 6.1 Fatia A — o material de antes da entrevista
+
+**Decidido: ver `Specs/slice-4.11.md`.** Os pontos marcados abaixo como "em
+aberto para a entrevista" foram todos respondidos; a spec tem as respostas e o
+que foi recusado em cada uma. Esta seção fica pelo mapa de código que ela traz.
 
 - **Novo campo `resumo` no perfil da entidade**, para o agente de extração.
   Não existe no schema hoje — o perfil é só `contexto`, `pode_ajudar_com`,
@@ -366,7 +405,11 @@ vai enriquecer.
   inteiros (`descrever()` em `src/lib/resolucao.ts`) — a fatia A muda isso
   também, ou só o agente 1?
 
-### 6.2 Fatia B — enriquecimento em lote
+### 6.2 Fatia B — o material de antes da entrevista
+
+**Decidido: ver `Specs/slice-4.12.md`.** As duas tensões levantadas aqui — o
+teto de 300 e o "escreve sozinho" — foram decididas contra o que estava
+escrito, e as duas estão com o preço anotado na spec.
 
 - **Chamada de API em lote** que pega todos os átomos que mencionam ou são
   sobre a entidade (`SOBRE` + `MENCIONA` — não só os marcados por
