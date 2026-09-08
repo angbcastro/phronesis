@@ -30,7 +30,7 @@ import { embutirVarios, fonteDaEntidade, hashDaFonte } from "./embedding";
 import { modeloEmbedding } from "./modelos";
 import { query } from "./neo4j";
 import { ehPronome, normalizarNome } from "./texto";
-import { PERFIL_VAZIO, TIPOS_ENTIDADE } from "./tipos";
+import { PERFIL_VAZIO, ROTULO_TIPO_ENTIDADE, TIPOS_ENTIDADE } from "./tipos";
 import type {
   EntidadeCandidata,
   EntidadePropostaFrase,
@@ -234,6 +234,50 @@ export async function nomesParaVocabulario(limite: number): Promise<string[]> {
     { limite },
   );
   return linhas.map((l) => l.nome).filter((n) => typeof n === "string" && n.trim() !== "");
+}
+
+/**
+ * **A apresentação de uma entidade num prompt — uma só, para os dois agentes**
+ * (slice 4.11).
+ *
+ * Até a 4.10 eram duas, e é o que esta função existe para não deixar acontecer
+ * de novo: o dossiê do extrator mostrava nome, tipo, grafias concatenadas numa
+ * string e o campo `contexto` isolado; o catálogo do agente 2 mostrava os
+ * **três** campos de perfil inteiros de **todas** as entidades, em toda chamada.
+ * Duas caras da mesma entidade, para dois agentes que leem o mesmo trecho — e
+ * nenhuma das duas era a apresentação que eu escreveria se me perguntassem "como
+ * você descreve essa pessoa para alguém que precisa distingui-la de outra
+ * parecida?". Essa apresentação é o `resumo` (§8.3.1).
+ *
+ * Mora aqui, e não em `extracao.ts` ou `resolucao.ts`, porque é este módulo que
+ * define o que uma entidade é para as outras camadas — e porque duas cópias do
+ * mesmo texto divergiriam no primeiro ajuste, que é exatamente o problema que a
+ * fatia resolveu.
+ *
+ * `sessoes` é a única diferença entre os dois usos, e ela é do agente 2: quantas
+ * vezes eu falei daquela entidade é sinal de o quanto ela é minha, e serve a
+ * quem decide a atribuição. O extrator não precisa dela para achar um nome.
+ *
+ * **Resumo vazio não ganha fallback.** A linha "(sem resumo escrito)" é a
+ * resposta certa: o agente devolve confiança baixa, e é isso que dispara a
+ * segunda passada com o perfil inteiro. Preencher com `contexto` esconderia o
+ * buraco em vez de mostrá-lo.
+ */
+export function apresentarEntidade(
+  e: EntidadeDoGrafo,
+  { sessoes = false }: { sessoes?: boolean } = {},
+): string {
+  const marcas = [
+    ROTULO_TIPO_ENTIDADE[e.tipo],
+    ...(sessoes ? [`${e.sessoes} sessão(ões)`] : []),
+    // A flag pesa **dita no prompt**, e não só no desempate determinístico: sem
+    // isto o modelo nunca saberia que uma ficha é a oficial, e é ele quem lê.
+    ...(e.canonico ? ["ficha oficial"] : []),
+  ];
+  const grafias = e.aliases.length > 0 ? `\n    também escrito: ${e.aliases.join(", ")}` : "";
+  const resumo = e.resumo === "" ? "\n    (sem resumo escrito)" : `\n    ${e.resumo}`;
+
+  return `- chave "${e.nome_normalizado}" — ${e.nome} (${marcas.join(", ")})${grafias}${resumo}`;
 }
 
 /** O nó cujo conjunto de grafias contém esta chave. Atravessa alias de graça. */

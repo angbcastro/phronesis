@@ -161,12 +161,13 @@ export const CAMPOS_PERFIL = ["contexto", "pode_ajudar_com", "fizemos_juntos"] a
 
 export type CampoPerfil = (typeof CAMPOS_PERFIL)[number];
 
-/**
- * Teto por campo. Não é estética: os três campos de **todas** as entidades
- * entram no prompt do agente 2, então sem teto o custo daquela chamada cresce
- * junto com o grafo.
- */
-export const TETO_PERFIL = 300;
+// **O `TETO_PERFIL = 300` morreu na 4.11**, e a migration 009 diz por quê. Ele
+// não era estética: os três campos de **todas** as entidades entravam no prompt
+// do agente 2 a cada resolução, e sem teto o custo daquela chamada crescia junto
+// com o grafo. Esse consumo saiu do caminho comum — os três campos só aparecem
+// na segunda passada (`desempate.ts`), para os poucos candidatos de uma menção
+// em dúvida. O motivo do teto deixou de existir, e o teto com ele. Quem cobra
+// tamanho agora é o `TETO_RESUMO`, do campo que entra em todo prompt.
 
 /**
  * O **retrato de identidade** de uma entidade (migration 009, slice 4.11): quem

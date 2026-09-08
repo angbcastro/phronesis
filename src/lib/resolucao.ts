@@ -30,7 +30,7 @@
  */
 import { generateText } from "ai";
 import { proximidade } from "./duplicatas";
-import { acharPorChave, candidatosSemanticos } from "./entidades";
+import { acharPorChave, apresentarEntidade, candidatosSemanticos } from "./entidades";
 import type { CandidatoSemantico, EntidadeDoGrafo } from "./entidades";
 import { comEsperaDeLimite } from "./limite";
 import {
@@ -44,7 +44,7 @@ import {
 import { carimbo, efetivo } from "./overrides";
 import type { RespostaDoModelo } from "./modelos";
 import { normalizarNome } from "./texto";
-import { CAMPOS_PERFIL, ROTULO_TIPO_ENTIDADE, TIPOS_SEMPRE_EU } from "./tipos";
+import { CAMPOS_PERFIL, TIPOS_SEMPRE_EU } from "./tipos";
 import type {
   AtomoCru,
   Camada,
@@ -78,8 +78,15 @@ export type { Camada };
  * organizações, e a regra de tipo passou a travar HISTORIA em `eu` junto com os
  * outros três. As duas frases do prompt mudaram; a lista de candidatos mudou de
  * conteúdo. Os dois motivos, de novo, e cada um bastaria.
+ *
+ * Subiu para `resolucao-5` na 4.11, e de novo os dois motivos. O catálogo
+ * deixou de mostrar os três campos de perfil e passou a mostrar `resumo`,
+ * grafias e a marca de ficha oficial — a mesma apresentação que o extrator vê. E
+ * o texto mudou: `certo: true|false` virou `confianca`, de 0 a 1, com o que o
+ * número significa dito em palavras. Abaixo do limiar, a menção vai à segunda
+ * passada (`desempate.ts`), que é quem então lê o perfil inteiro.
  */
-export const PROMPT_VERSION_RESOLUCAO = "resolucao-4";
+export const PROMPT_VERSION_RESOLUCAO = "resolucao-5";
 
 /**
  * Teto de candidatos sobre a **união** das cinco camadas.
@@ -444,16 +451,23 @@ Responda somente com JSON, sem texto antes ou depois:
 
 "motivo" é uma frase curta, em português, dizendo o que no átomo te fez escolher. Ela é mostrada ao dono quando você marca "certo": false.`;
 
-/** Como cada entidade aparece no prompt: nome, tipo e o que o dono escreveu dela. */
-function descrever(e: EntidadeDoGrafo): string {
-  const campos = CAMPOS_PERFIL.flatMap((c) =>
-    e.perfil[c] ? [`    ${c}: ${e.perfil[c]}`] : [],
-  );
-  const cabeca = `- chave "${e.nome_normalizado}" — ${e.nome} (${ROTULO_TIPO_ENTIDADE[e.tipo]}, ${e.sessoes} sessão(ões))`;
-  const alias = e.aliases.length > 0 ? `\n    também escrito: ${e.aliases.join(", ")}` : "";
-  const perfil = campos.length > 0 ? `\n${campos.join("\n")}` : "\n    (sem perfil escrito)";
-  return cabeca + alias + perfil;
-}
+/**
+ * Como cada entidade aparece no prompt: chave, nome, tipo, quantas sessões, a
+ * marca de ficha oficial, as grafias e o `resumo`.
+ *
+ * **É a mesma apresentação que o extrator vê** (`apresentarEntidade`, em
+ * `entidades.ts`), e é isso que a 4.11 comprou. Até a 4.10 este agente lia os
+ * **três** campos de perfil inteiros de **todas** as entidades, em toda chamada,
+ * e o extrator lia só `contexto` — duas caras da mesma entidade, para dois
+ * agentes que leem o mesmo trecho.
+ *
+ * E é esta linha que matou o `TETO_PERFIL`. O teto existia por causa deste
+ * consumo: "os três campos de todas as entidades entram no prompt do agente 2, e
+ * sem teto o custo cresce com o grafo" (migration 005). Os três campos saíram do
+ * caminho comum — eles só aparecem na segunda passada, para os poucos candidatos
+ * de uma menção em dúvida —, e o motivo do teto foi embora com eles.
+ */
+const descrever = (e: EntidadeDoGrafo): string => apresentarEntidade(e, { sessoes: true });
 
 /**
  * Uma menção que vai ao agente, com quem ela pode ser.

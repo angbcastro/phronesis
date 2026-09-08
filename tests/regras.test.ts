@@ -41,7 +41,7 @@ describe("sem regra aprovada, nada muda (critério 4)", () => {
 
   it("a versão sai sem sufixo", () => {
     expect(versaoDoPrompt([])).toBe(PROMPT_VERSION);
-    expect(versaoDoPrompt([])).toBe("extracao-8");
+    expect(versaoDoPrompt([])).toBe("extracao-9");
   });
 });
 
@@ -62,7 +62,7 @@ describe("com regra aprovada", () => {
 
   it("a versão ganha o sufixo do hash das regras usadas", () => {
     const v = versaoDoPrompt([regra("qualquer coisa")]);
-    expect(v).toMatch(/^extracao-8\+[0-9a-f]{8}$/);
+    expect(v).toMatch(/^extracao-9\+[0-9a-f]{8}$/);
   });
 
   it("o hash sai do conteúdo, não da identidade do rascunho", () => {

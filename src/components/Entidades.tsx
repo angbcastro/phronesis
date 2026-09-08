@@ -40,7 +40,6 @@ import { ehPronome, normalizarNome } from "@/lib/texto";
 import {
   CAMPOS_PERFIL,
   ROTULO_TIPO_ENTIDADE,
-  TETO_PERFIL,
   TETO_RESUMO,
   TIPOS_ENTIDADE,
 } from "@/lib/tipos";
@@ -643,10 +642,12 @@ export function Entidades() {
                         <label htmlFor={id}>
                           {ROTULO[campo]} <span className="meta">{DICA[campo]}</span>
                         </label>
+                        {/* Sem `maxLength` e sem contador desde a 4.11: o teto
+                            de 300 existia porque estes três campos entravam no
+                            prompt do agente 2 em toda chamada, e isso acabou. */}
                         <textarea
                           id={id}
                           rows={2}
-                          maxLength={TETO_PERFIL}
                           value={valor}
                           placeholder="—"
                           onChange={(ev) =>
@@ -654,9 +655,6 @@ export function Entidades() {
                           }
                         />
                         <div className="acoes-sessao">
-                          <span className="meta">
-                            {valor.length}/{TETO_PERFIL}
-                          </span>
                           <button
                             className="reextrair"
                             disabled={ocupado === id || !mexido}

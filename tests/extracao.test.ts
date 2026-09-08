@@ -518,8 +518,8 @@ describe("o bloco das candidatas (slice 4.9)", () => {
     sessoes: 3,
     atomos: 7,
     aliases: ["Giam"],
-    resumo: "",
-    canonico: false,
+    resumo: "Sócio na Adapta. Mora em Floripa, faz slackline.",
+    canonico: true,
     perfil: { contexto: "sócio na Adapta", pode_ajudar_com: "", fizemos_juntos: "" },
   };
   const dossie = [{ entidade: GIAMPAOLO, camada: "prefixo" as const, score: 0.5 }];
@@ -529,11 +529,31 @@ describe("o bloco das candidatas (slice 4.9)", () => {
     expect(montarPrompt("bla", [], undefined, undefined, [])).toBe(montarPrompt("bla"));
   });
 
-  it("lista chave, nome gravado, tipo, alias e contexto", () => {
+  /**
+   * A apresentação mudou na 4.11, e é a mesma que o agente 2 vê
+   * (`apresentarEntidade`, em `entidades.ts`). O `contexto` saiu: era um dos
+   * três campos de perfil, escolhido em código, sem que ninguém tivesse
+   * decidido que era o que mais identifica alguém.
+   */
+  it("lista chave, nome gravado, tipo, ficha oficial, grafias e resumo", () => {
     const b = blocoDasCandidatas(dossie);
     expect(b).toContain('chave "giampaolo lepore"');
-    expect(b).toContain("Giampaolo Lepore (pessoa; também escrito: Giam)");
-    expect(b).toContain("sócio na Adapta");
+    expect(b).toContain("Giampaolo Lepore (pessoa, ficha oficial)");
+    expect(b).toContain("também escrito: Giam");
+    expect(b).toContain("Sócio na Adapta. Mora em Floripa, faz slackline.");
+  });
+
+  /**
+   * Resumo vazio não ganha fallback, e é o que faz a segunda passada disparar:
+   * preencher com `contexto` esconderia o buraco em vez de mostrá-lo. Entre a
+   * 4.11 e a 4.12 esta é a linha que quase toda entidade vai ter.
+   */
+  it("entidade sem resumo diz que não tem, e não cai no perfil", () => {
+    const semResumo = { ...GIAMPAOLO, resumo: "", canonico: false };
+    const b = blocoDasCandidatas([{ entidade: semResumo, camada: "prefixo" as const, score: 0.5 }]);
+    expect(b).toContain("(sem resumo escrito)");
+    expect(b).not.toContain("sócio na Adapta");
+    expect(b).not.toContain("ficha oficial");
   });
 
   it("manda devolver a chave da lista, ou null — e nunca inventar uma", () => {

@@ -22,7 +22,6 @@ import {
   rascunhar,
 } from "@/lib/perfil";
 import { query } from "@/lib/neo4j";
-import { TETO_PERFIL } from "@/lib/tipos";
 
 const consulta = vi.mocked(query);
 const chamar = vi.mocked(generateText);
@@ -64,12 +63,17 @@ describe("gravar um campo", () => {
     expect(cypher()).toContain("coalesce(v, e) AS alvo");
   });
 
-  it("corta no teto, no servidor", async () => {
-    // O teto existe para o prompt do agente 2 não inchar com o grafo; regra que
-    // só vale na tela não é regra.
-    const { texto } = await gravarCampo("rapha", "contexto", "x".repeat(TETO_PERFIL + 200));
-    expect(texto).toHaveLength(TETO_PERFIL);
-    expect(String(params().texto)).toHaveLength(TETO_PERFIL);
+  /**
+   * O `TETO_PERFIL = 300` morreu na 4.11. Ele existia porque os três campos de
+   * TODAS as entidades entravam no prompt do agente 2 a cada resolução; esse
+   * consumo saiu do caminho comum, e os campos só aparecem agora na segunda
+   * passada, para os candidatos de uma menção em dúvida.
+   */
+  it("não corta mais: o teto de 300 saiu com o consumo que o justificava", async () => {
+    const longo = "x".repeat(900);
+    const { texto } = await gravarCampo("rapha", "contexto", longo);
+    expect(texto).toBe(longo);
+    expect(String(params().texto)).toHaveLength(900);
   });
 
   it("texto vazio limpa o campo — apagar o que escrevi errado é legítimo", async () => {
@@ -132,10 +136,13 @@ describe("o agente 3 propõe, e só", () => {
     expect(prompt).toContain("O Rapha produziu o evento inteiro");
   });
 
-  it("respeita o teto também no que propõe", async () => {
+  it("não corta o que propõe — quem pede concisão é o prompt, não o código", async () => {
+    // O `slice()` daqui saiu com o `TETO_PERFIL` na 4.11. O "no máximo 300
+    // caracteres" continua no texto do prompt, agora como número literal: ele
+    // nunca foi o corte, é instrução de concisão, e é texto calibrado.
     chamar.mockResolvedValue({ text: JSON.stringify({ texto: "y".repeat(900) }) } as never);
     const r = await rascunhar("Rapha", "contexto", "", marcados);
-    expect(r.texto).toHaveLength(TETO_PERFIL);
+    expect(r.texto).toHaveLength(900);
   });
 
   it("sem átomo marcado não há o que rascunhar, e ninguém é chamado", async () => {

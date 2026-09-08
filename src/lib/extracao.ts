@@ -29,7 +29,7 @@
  * (regra 5).
  */
 import { generateText } from "ai";
-import { agregarCandidatas, listarEntidades } from "./entidades";
+import { agregarCandidatas, apresentarEntidade, listarEntidades } from "./entidades";
 import { comEsperaDeLimite, ehLimiteDeTaxa } from "./limite";
 import {
   diagnostico,
@@ -92,8 +92,17 @@ import type {
  * lista de tipos de entidade. Átomo carimbado `extracao-7` saiu de um prompt
  * que não conhecia nenhum dos dois — é exatamente isso que o carimbo existe
  * para dizer.
+ *
+ * Subiu para `extracao-9` na 4.11, e é o critério do `extracao-6` de novo: o
+ * texto do bloco do dossiê mudou, e a **entrada** com ele. Cada candidato
+ * passou a se apresentar com `resumo`, as grafias como lista e a marca de ficha
+ * oficial, no lugar do `contexto` isolado — um dos três campos de perfil, que
+ * alguém escolheu em código sem que nunca se tivesse decidido que era o que
+ * mais identifica uma pessoa. `INSTRUCOES_BASE` e `FORMATO` continuam sem mudar
+ * um byte, e o resto do bloco das candidatas também: ele foi calibrado e
+ * funciona.
  */
-export const PROMPT_VERSION = "extracao-8";
+export const PROMPT_VERSION = "extracao-9";
 
 export class ExtracaoError extends Error {
   /** Mesma distinção de `SttError`: voltar mais tarde, ou mexer no código. */
@@ -294,7 +303,7 @@ ${linhas.join("\n")}
 }
 
 /**
- * O bloco do dossiê, ou string vazia (slice 4.9).
+ * O bloco do dossiê, ou string vazia (slice 4.9; a apresentação mudou na 4.11).
  *
  * **Dossiê vazio devolve `""`, e aí a chamada sai byte a byte igual à da 4.8.**
  * Grafo vazio, primeira sessão da vida do sistema, Gateway fora: tudo como
@@ -305,6 +314,23 @@ ${linhas.join("\n")}
  * 4.8: quem pede um campo é quem explica o campo, e sem o bloco não há campo
  * nenhum a pedir. `INSTRUCOES_BASE` e `FORMATO` continuam intactos.
  *
+ * **Como o candidato se apresenta** (4.11): chave, nome, tipo, a marca de ficha
+ * oficial, as grafias **como lista** e o `resumo`. O `contexto` saiu — ele era
+ * um dos três campos de perfil, escolhido em código, sem que ninguém tivesse
+ * decidido que era o que mais identifica alguém. Agora a entidade tem **uma**
+ * apresentação, e é a mesma que o agente 2 lê (`descrever`, em `resolucao.ts`):
+ * até aqui eram duas caras da mesma entidade para dois agentes que leem o mesmo
+ * trecho.
+ *
+ * Entidade sem resumo entra com nome, tipo e grafias e mais nada — **não há
+ * fallback para o perfil**. Resumo vazio faz o agente 2 devolver confiança
+ * baixa, e é a confiança baixa que dispara a segunda passada com o perfil
+ * inteiro (§4.8). Até a 4.12 rodar isso vai ser a regra, e é o preço declarado.
+ *
+ * O resto do bloco — a explicação de que o STT erra nome próprio, o formato
+ * `{"citado","chave"}`, a regra de só trocar o nome próprio e a trava de tipo —
+ * fica byte a byte igual: foi calibrado e funciona.
+ *
  * A amarra do fim é a que evita o pior efeito colateral possível: a lista de
  * entidades conhecidas na frente do modelo é convite para ele pendurar um
  * SENTIMENTO em alguém que não é `eu`. A frase pede; o parse recusa.
@@ -312,13 +338,7 @@ ${linhas.join("\n")}
 export function blocoDasCandidatas(dossie: Dossie): string {
   if (dossie.length === 0) return "";
 
-  const lista = dossie
-    .map(({ entidade: e }) => {
-      const alias = e.aliases.length > 0 ? `; também escrito: ${e.aliases.join(", ")}` : "";
-      const contexto = e.perfil.contexto ? `\n    ${e.perfil.contexto}` : "";
-      return `- chave "${e.nome_normalizado}" — ${e.nome} (${ROTULO_TIPO_ENTIDADE[e.tipo]}${alias})${contexto}`;
-    })
-    .join("\n");
+  const lista = dossie.map(({ entidade: e }) => apresentarEntidade(e)).join("\n");
 
   return `QUEM O DIÁRIO JÁ CONHECE
 Estas entidades já existem no diário, e este trecho parece citar alguma delas. A grafia da transcrição pode estar errada: quem transcreve erra nome próprio o tempo todo — "Jean" por "Giampaolo Lepore", "Dapta" por "Adapta".

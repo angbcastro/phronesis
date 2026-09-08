@@ -107,8 +107,16 @@ const atomo = (sobre: string, extra: Partial<AtomoCru> = {}): AtomoCru => ({
   ...extra,
 });
 
-/** O caso da slice: dois nomes que soam igual, dois nós distintos. */
+/**
+ * O caso da slice: dois nomes que soam igual, dois nós distintos.
+ *
+ * **O que os distingue mora no `resumo` desde a 4.11.** Até a 4.10 este agente
+ * lia os três campos de perfil inteiros de todas as entidades em toda chamada;
+ * agora ele lê a mesma apresentação que o extrator vê — resumo, grafias e a
+ * marca de ficha oficial. O perfil ficou para a segunda passada.
+ */
 const RAFFA = no("Raffa", {
+  resumo: "Amigo de fora do trabalho. Slackline no parque, todo sábado.",
   perfil: {
     contexto: "amigo de fora do trabalho",
     pode_ajudar_com: "",
@@ -116,6 +124,8 @@ const RAFFA = no("Raffa", {
   },
 });
 const RAPHA = no("Rapha", {
+  canonico: true,
+  resumo: "Sócio no evento. Produção de evento.",
   perfil: {
     contexto: "sócio no evento",
     pode_ajudar_com: "produção de evento",
@@ -610,7 +620,7 @@ describe("mecânica", () => {
     ]);
   });
 
-  it("o prompt leva o perfil, que é o que desambigua", () => {
+  it("o prompt leva o resumo e a marca de canônico, que é o que desambigua", () => {
     const p = montarPrompt(
       [atomo("Rafa")],
       [
@@ -625,9 +635,17 @@ describe("mecânica", () => {
       ],
       [RAFFA, RAPHA],
     );
-    expect(p).toContain("slackline no parque");
-    expect(p).toContain("produção de evento");
+    expect(p).toContain("Slackline no parque, todo sábado.");
+    expect(p).toContain("Produção de evento.");
     expect(p).toContain('"raffa"');
+    // A flag pesa dita no prompt, e não só no desempate determinístico: o
+    // modelo é quem lê o catálogo.
+    expect(p).toContain("ficha oficial");
+    // Os três campos saíram do caminho comum — é esta linha que matou o teto
+    // de 300. Eles voltam na segunda passada, e só para os candidatos de uma
+    // menção em dúvida.
+    expect(p).not.toContain("pode_ajudar_com:");
+    expect(p).not.toContain("fizemos_juntos:");
   });
 
   it("aceita JSON embrulhado em cerca de markdown", () => {
@@ -793,8 +811,10 @@ describe("as duas camadas semânticas (slice 4.5)", () => {
     // `resolucao-2` na 4.5 (o vetor entrou na união), `resolucao-3` na 4.9 (a
     // chave do extrator entrou, e a lista passou a ser de todas as menções),
     // `resolucao-4` na 007 (o catálogo ganhou organizações, e HISTORIA entrou
-    // na regra de tipo).
-    expect(PROMPT_VERSION_RESOLUCAO).toBe("resolucao-4");
+    // na regra de tipo), `resolucao-5` na 4.11 (o catálogo passou a mostrar
+    // resumo e grafias em vez dos três campos de perfil, e `certo` virou
+    // `confianca`).
+    expect(PROMPT_VERSION_RESOLUCAO).toBe("resolucao-5");
   });
 });
 

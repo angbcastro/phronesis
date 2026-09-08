@@ -48,9 +48,9 @@ o vencedor na sessão seguinte em vez de renascer como nó novo.
 **O sistema descobre de quem eu estou falando pelo contexto, e não pela grafia
 do nome** (seções 4.8 e 8.3). "Raffa" e "Rapha" são o mesmo som: o STT escreve
 uma grafia só para os dois, e a grafia carrega **zero** sinal sobre quem é. Por
-isso são **dois agentes e não um** — o `extracao-8` extrai e propõe o nó, e o
-`resolucao-4` valida cada menção, lendo os três campos de perfil da
-entidade. Dúvida **destaca, não trava**: a revisão marca o átomo, mostra o motivo
+isso são **dois agentes e não um** — o `extracao-9` extrai e propõe o nó, e o
+`resolucao-5` valida cada menção. Desde a 4.11 os dois leem a **mesma**
+apresentação da entidade: o `resumo`, as grafias e a marca de ficha oficial. Dúvida **destaca, não trava**: a revisão marca o átomo, mostra o motivo
 e o confirmar continua liberado. Sessão em que nenhuma menção é ambígua não
 chama o agente 2 e não paga nada.
 
@@ -134,7 +134,7 @@ janela de 2 min fecha durante a própria gravação**: extrai, resolve, e soma o
 A janela vê o que as anteriores propuseram e **estende** um átomo em vez de
 duplicá-lo — inclusive o `ROTINA`, que é no máximo um por sessão. É esse
 mecanismo, e não uma passada de costura no fim, que segura o volume da lista.
-`extracao-8` é a `INSTRUCOES_BASE` da 4.7 mais o que a migration 007
+`extracao-9` é a `INSTRUCOES_BASE` da 4.7 mais o que a migration 007
 acrescentou, e dois blocos injetados — o da janela e, desde a 4.9, o do dossiê;
 e numa sessão que cabe numa janela só — arquivo importado, gravação curta — o
 bloco some e o prompt sai idêntico ao de antes desta fatia.
@@ -166,7 +166,7 @@ disciplina de volume que rege os outros sete espremeria uma noite inteira numa
 linha. `:Entidade` ganhou o label `:Organizacao` — empresa, ONG, startup,
 escola, cliente —, que até aqui nasciam `:Pessoa`, o padrão de quem o extrator
 não classifica, ou `:Projeto`, quando ele via trabalho acontecendo. Os dois
-prompts subiram junto: `extracao-8` e `resolucao-4`. **Nada é reclassificado
+prompts subiram junto: `extracao-9` e `resolucao-5`. **Nada é reclassificado
 para trás**: a empresa que já está no grafo como `:Pessoa` continua `:Pessoa`
 até eu trocar o tipo à mão em `/entidades`.
 
@@ -175,7 +175,7 @@ ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
 deduplicação de **átomo** — dizer a mesma coisa em duas sessões ainda cria dois.
 A 4.6 está construída inteira — captura, tela, regras e o `calibracao-1`. O que
 falta é **uso**: nenhuma regra foi aprovada ainda, e enquanto não for, o
-`extracao-8` continua saindo byte a byte igual ao de antes dela.
+`extracao-9` continua saindo byte a byte igual ao de antes dela.
 Tudo slice 5, e tudo dependente de material acumulado: uma pergunta boa precisa
 saber de quem se está falando, que é o que a slice 4 entrega, e achar o que já foi
 dito sem varrer o grafo inteiro, que é o que a 4.5 entrega.
@@ -541,8 +541,8 @@ painel de `/agentes` (§4.13):
 | Função | Agente | Padrão |
 |---|---|---|
 | `modeloStt()` | STT | `xai/grok-stt` |
-| `modeloExtracao()` | `extracao-8` | `zai/glm-5.3-flash` |
-| `modeloResolucao()` | `resolucao-4` | o da extração |
+| `modeloExtracao()` | `extracao-9` | `zai/glm-5.3-flash` |
+| `modeloResolucao()` | `resolucao-5` | o da extração |
 | `modeloPerfil()` | `perfil-1` | o da extração |
 | `modeloCalibracao()` | `calibracao-1` | o da extração |
 | `modeloDuplicatas()` | `duplicatas-1` | `zai/glm-5.3-flash` |
@@ -984,7 +984,7 @@ modelo devolveu um átomo dizendo que o texto era confuso e circular; falar
 desorganizado é o esperado num diário falado, e lista vazia é a resposta certa
 quando não há o que extrair.
 
-#### O que o prompt manda fazer (`extracao-8`)
+#### O que o prompt manda fazer (`extracao-9`)
 
 A primeira versão pedia "uma afirmação por item" e só descartava hesitação. Numa
 sessão real de 45 s isso rendeu 9 átomos — "acordei", "pedalei", "nadei", "fui
@@ -1337,7 +1337,7 @@ acrescenta qualquer sujeito que eu tenha escrito à mão. Duas guardas no servid
 porque a regra não pode depender da UI: nome que caia na lista de pronomes é
 recusado com 400, e `tipo` é validado contra `TIPOS_ENTIDADE`.
 
-### 4.8 Identidade por contexto (agente 2, `resolucao-4`)
+### 4.8 Identidade por contexto (agente 2, `resolucao-5`)
 
 **"Raffa" e "Rapha" são o mesmo som.** O STT escreve uma grafia só para os dois,
 e ter os dois nomes no vocabulário não ajuda — só torna arbitrário qual sai. A
@@ -1346,18 +1346,57 @@ grafia na transcrição carrega **zero** sinal sobre quem é.
 Isso mata qualquer solução baseada em nome, e é o que separa esta slice da 3. Lá
 o problema era duas grafias para a mesma coisa, e `nome_normalizado` resolvia
 (8.2). Aqui é o contrário — **uma grafia para duas coisas** — e a chave não pode
-resolver, por construção. Só o contexto resolve, e o contexto são os três campos
-de perfil da entidade (8.3).
+resolver, por construção. Só o contexto resolve, e desde a 4.11 esse contexto é
+o **`resumo`** da entidade (8.3.1) — o retrato de identidade que eu escrevo, no
+lugar dos três campos de perfil que ele lia antes.
 
 ```
-janela ──────▶ agente 1: extracao-8   devolve {citado:"Rafa", chave}
+janela ──────▶ agente 1: extracao-9   devolve {citado:"Rafa", chave}
                       │
                       ▼
-                agente 2: resolucao-4  vê os átomos + as entidades com perfil
+                agente 2: resolucao-5  vê os átomos + as entidades com resumo
                       │                decide POR MENÇÃO: qual nó, ou nova
                       ▼                marca o que é informação de perfil
                 revisão ──▶ confirmar ──▶ grafo
 ```
+
+#### Uma apresentação só, para os dois agentes (4.11)
+
+Até a 4.10 a mesma entidade tinha **duas caras**, para dois agentes que leem o
+mesmo trecho: o dossiê do extrator mostrava nome, tipo, grafias concatenadas numa
+string e o campo `contexto` isolado — um dos três, escolhido em código, sem que
+ninguém tivesse decidido que era o que mais identifica alguém; e o catálogo do
+agente 2 mostrava os **três** campos inteiros, de **todas** as entidades do
+catálogo, em toda chamada.
+
+`apresentarEntidade` (`entidades.ts`) é a apresentação única, e mora no módulo que
+define o que uma entidade é para as outras camadas — duas cópias do mesmo texto
+divergiriam no primeiro ajuste, que é o problema que a fatia resolveu:
+
+```
+- chave "giampaolo lepore" — Giampaolo Lepore (pessoa, 3 sessão(ões), ficha oficial)
+    também escrito: Jean, Giam
+    Sócio na Adapta. Mora em Floripa, faz slackline.
+```
+
+`sessão(ões)` é a única diferença entre os dois usos, e é do agente 2: quantas
+vezes eu falei daquela entidade serve a quem decide a atribuição, não a quem só
+precisa achar um nome. A marca de ficha oficial entra **dita no prompt**, e não só
+no desempate determinístico: sem ela o modelo nunca saberia que uma ficha é a
+oficial, e é ele quem lê o catálogo.
+
+**Resumo vazio não ganha fallback** — a linha é "(sem resumo escrito)", e é a
+resposta certa. Preencher com `contexto` esconderia o buraco em vez de mostrá-lo:
+o agente devolve confiança baixa, e é isso que dispara a segunda passada com o
+perfil inteiro. Entre a 4.11 e a 4.12 essa passada vai ser a regra, e é o preço
+declarado (§14).
+
+**É esta seção que matou o `TETO_PERFIL`.** O teto de 300 existia por causa deste
+consumo, e a migration 005 o dizia com todas as letras: "os três campos de todas
+as entidades entram no prompt do agente de resolução, e sem teto o custo daquela
+chamada cresce com o tamanho do grafo". Os três campos saíram do caminho comum —
+eles só aparecem na segunda passada, para os poucos candidatos de uma menção em
+dúvida. O motivo do teto foi embora com eles.
 
 Dois agentes e não um, com `prompt_version` própria cada um (regra 7): calibram
 separado, e um erro de atribuição se conserta sem tocar na extração que está boa.
@@ -1455,7 +1494,7 @@ dúvida mataria os 60 s da revisão. "Ignorar é sempre uma saída válida"
 
 #### A regra de tipo é arbitrada pelo código, e não só pedida ao extrator
 
-O `extracao-8` diz, sem exceção: **SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA
+O `extracao-9` diz, sem exceção: **SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA
 são sempre de `eu`** (`HISTORIA` entrou na lista com a migration 007) —
 sentimento é meu por definição mesmo quando foi outra pessoa que o provocou, e
 quem provocou vai em `menciona`. A resolução não respeitava isso, e
@@ -1536,9 +1575,17 @@ pelo Gateway.
 ### 4.9 O perfil, e o agente 3 (`perfil-1`)
 
 Os três campos (`contexto`, `pode_ajudar_com`, `fizemos_juntos`) são texto livre,
-editáveis à mão em `/entidades`, com teto de 300 caracteres cada — teto que não é
-estética: os campos entram no prompt do agente 2, e sem ele o custo daquela
-chamada cresceria junto com o grafo.
+editáveis à mão em `/entidades`, **sem teto desde a 4.11**. O `TETO_PERFIL = 300`
+não era estética — os campos entravam no prompt do agente 2 em toda chamada, e
+sem ele o custo crescia junto com o grafo. Esse consumo acabou (§4.8): quem lê os
+três campos agora é a segunda passada (§4.8.1), e só para os candidatos de **uma**
+menção em dúvida. Quem cobra tamanho é o `TETO_RESUMO`, do campo que entra em
+todo prompt.
+
+O agente 3 continua `perfil-1`, byte a byte: o "no máximo 300 caracteres" do
+texto dele ficou, agora como número literal. Ele nunca foi o corte — é instrução
+de concisão para quem escreve a ficha, e é texto calibrado. O que saiu foi a
+constante, o corte no servidor e o `slice()` do rascunho.
 
 **Quem aponta o que é perfil é o agente 2**, que já está olhando átomo e entidade
 juntos — e é ele que a 4.9 passou a chamar em toda janela. A marca vira
@@ -1568,7 +1615,7 @@ grafo não escreveu. O vetor é a primeira comparação daqui que não passa por
 letra.
 
 **O que isto não é.** Não é economia de token: o gasto dominante continua sendo
-o `extracao-8`, que manda a fala inteira ao modelo — hoje repartida em janelas
+o `extracao-9`, que manda a fala inteira ao modelo — hoje repartida em janelas
 (§4.6), o que não muda o total —, e embedding não corta um token dele. O que ele compra é a **seleção de candidato**, que na slice 5 vira a única
 forma possível de deduplicar átomo — cinco sessões por semana a 15 átomos dão
 ~3.900 átomos por ano, ou ~7,6 milhões de pares, que não é caro: é impossível.
@@ -1693,7 +1740,7 @@ consultas de `entidades.ts` desfazem essa normalização antes de comparar. A ra
 é poder conferir o piso à mão — `cosineSimilarity` do pacote `ai` fala cosseno, e
 um número que só existe dentro do banco é um número que ninguém audita.
 
-#### A versão do prompt do agente 2, de `resolucao-2` a `resolucao-4`
+#### A versão do prompt do agente 2, de `resolucao-2` a `resolucao-5`
 
 `PROMPT_VERSION_RESOLUCAO` subiu para `resolucao-2` na 4.5, e o texto do prompt
 quase não mudou. **A versão acompanha a entrada, não só a redação:** o conjunto
@@ -1703,7 +1750,10 @@ chave do extrator entrou como quinta camada, a lista virou a de todas as mençõ
 com candidato, e duas frases entraram no prompt (§4.14). E para `resolucao-4` com
 a migration 007, pelos dois motivos outra vez — o catálogo passou a ter
 organizações, e a regra de tipo passou a travar `HISTORIA` em `eu` junto com os
-outros três. O prompt passou a dizer, ao lado de cada candidato, **por que ele está na lista** —
+outros três. E para `resolucao-5` na 4.11, pelos dois motivos mais uma vez: o
+catálogo trocou os três campos de perfil pela apresentação única (§4.8), e
+`certo: true|false` virou `confianca` de 0 a 1.
+O prompt passou a dizer, ao lado de cada candidato, **por que ele está na lista** —
 e quando o motivo é "átomos passados parecidos", os trechos vão junto, porque
 evidência de uso é o sinal mais forte que existe quando o perfil está vazio.
 
@@ -1796,7 +1846,7 @@ Cada correção sai etiquetada com o agente que a produziu:
 
 | Tipo | Agente | Por quê |
 |---|---|---|
-| `rejeitado`, `texto`, `tipo`, `faltou` | `extracao` | é o `extracao-8` produzindo o que não presta |
+| `rejeitado`, `texto`, `tipo`, `faltou` | `extracao` | é o `extracao-9` produzindo o que não presta |
 | `entidade_recusada` | `extracao` | listou como entidade o que não é pessoa, organização, projeto nem objetivo |
 | `entidade_tipo` | `extracao` | errou o palpite de tipo na lista `entidades` |
 | `sujeito`, `mencao_removida` | `resolucao` ou `extracao` | **por átomo**: `sobre.conhecida` decide |
@@ -1931,8 +1981,8 @@ arquivo anterior, 4620 caracteres nos dois. A slice inteira é um no-op até a
 minha primeira aprovação, e portanto incapaz de piorar nada enquanto eu não
 mandar. `tests/regras.test.ts` trava a junção exata das duas metades.
 
-`versaoDoPrompt` substitui o `PROMPT_VERSION` fixo: `extracao-8` sem regra,
-`extracao-8+a3f91c7d` com. **O hash sai das regras usadas na chamada, não do
+`versaoDoPrompt` substitui o `PROMPT_VERSION` fixo: `extracao-9` sem regra,
+`extracao-9+a3f91c7d` com. **O hash sai das regras usadas na chamada, não do
 arquivo** — se o R2 falhar, entram zero regras e a versão é a base. A
 procedência é verdadeira nos dois caminhos, que é o ponto: carimbar `+a3f91c7d`
 numa extração que rodou sem regra seria mentira gravada no grafo para sempre.
@@ -2031,8 +2081,8 @@ caixa abrindo o prompt e o modelo que a comandam.
 | Agente | Módulo | Quando | Modelo | Envelope que o parser exige |
 |---|---|---|---|---|
 | STT (sem prompt) | `stt.ts` | automático, por bloco | `STT_MODEL` | — |
-| `extracao-8` | `extracao.ts` | automático, por janela de 2 min | `EXTRACAO_MODEL` | `atomos`, `entidades` |
-| `resolucao-4` | `resolucao.ts` | automático: por janela, sobre toda menção com candidato | `RESOLUCAO_MODEL` | `referencias`, `perfil` |
+| `extracao-9` | `extracao.ts` | automático, por janela de 2 min | `EXTRACAO_MODEL` | `atomos`, `entidades` |
+| `resolucao-5` | `resolucao.ts` | automático: por janela, sobre toda menção com candidato | `RESOLUCAO_MODEL` | `referencias`, `perfil` |
 | `calibracao-1` | `calibracao.ts` | sob demanda, em `/calibracao` | `CALIBRACAO_MODEL` | `regras`, `cita` |
 | `perfil-1` | `perfil.ts` | sob demanda, em `/entidades` | `PERFIL_MODEL` | `texto` |
 | `duplicatas-1` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
@@ -2070,10 +2120,10 @@ hash resolve:
 
 | Carimbo | Quem produziu | Resolve em |
 |---|---|---|
-| `extracao-8` | a base do git, sem regra aprovada | o próprio git |
-| `extracao-8+a3f91c7d` | a base do git, com regra aprovada | `calibracao/regras-<hash>.json` |
-| `extracao-8+p1b2c3d4` | prompt editado no painel | `config/prompt-extracao-<hash>.json` |
-| `extracao-8+p1b2c3d4+a3f91c7d` | prompt editado **e** regra aprovada | os dois objetos, nesta ordem |
+| `extracao-9` | a base do git, sem regra aprovada | o próprio git |
+| `extracao-9+a3f91c7d` | a base do git, com regra aprovada | `calibracao/regras-<hash>.json` |
+| `extracao-9+p1b2c3d4` | prompt editado no painel | `config/prompt-extracao-<hash>.json` |
+| `extracao-9+p1b2c3d4+a3f91c7d` | prompt editado **e** regra aprovada | os dois objetos, nesta ordem |
 
 Sem o `p`, ler um carimbo antigo viraria adivinhação: um hash só não teria como
 resolver dois objetos diferentes. O hash sai do **conteúdo**, então salvar o
@@ -2200,10 +2250,10 @@ bloco transcrito ──▶ recuperarCandidatas   5 camadas, no R2: candidatas_NN
                              │
      parcial.atomos ─────────┼──▶ dossieDaJanela   união, teto de 30
                              ▼
-                     extracao-8  devolve {citado:"Jean", chave:"giampaolo lepore"}
+                     extracao-9  devolve {citado:"Jean", chave:"giampaolo lepore"}
                              │             e escreve "Giampaolo Lepore" no texto
                              ▼
-                     resolucao-4  valida TODA menção; a chave é a 5ª camada
+                     resolucao-5  valida TODA menção; a chave é a 5ª camada
                              ▼
                      revisão ──▶ confirmar ──▶ grafo + o alias "jean"
 ```
@@ -2288,9 +2338,9 @@ escolher na revisão.
 
 > Os dois números desta seção são os que **a 4.9 produziu**, e não os que estão
 > em vigor: a migration 007 subiu os dois logo depois, para `extracao-8` e
-> `resolucao-4` (§4.6 e §8.1). O que a 4.9 fez com o prompt continua descrito
-> aqui; o que cada versão diz de si está em `PROMPT_VERSION` e
-> `PROMPT_VERSION_RESOLUCAO`.
+> `resolucao-4`, e a 4.11 os subiu de novo, para `extracao-9` e `resolucao-5`
+> (§4.6, §4.8 e §8.1). O que a 4.9 fez com o prompt continua descrito aqui; o que
+> cada versão diz de si está em `PROMPT_VERSION` e `PROMPT_VERSION_RESOLUCAO`.
 
 `INSTRUCOES_BASE` e `FORMATO` **não mudaram um byte**. O bloco novo entra por
 `inserirAntesDoFormato`, como `blocoDeRegras` e `blocoDaJanela` já entravam, e
@@ -2299,12 +2349,18 @@ declara a chave nova de dentro de si — precedente que o `estende` da 4.8 abriu
 da 4.8**: grafo vazio, primeira sessão da vida do sistema, Gateway fora. É o
 mesmo no-op que `blocoDeRegras([]) === ""` garante desde a 4.6.
 
-O que o bloco manda fazer: listar as candidatas com chave, nome gravado, tipo,
-aliases e `contexto`; devolver a **chave** quando a menção for uma delas e
-`null` quando não for, nunca uma chave fora da lista; escrever no `texto` do
-átomo o **nome gravado** e não o que a transcrição escreveu — com a amarra
-explícita de que **só o nome próprio se troca**, e que no resto continua valendo
-`COM AS MINHAS PALAVRAS`.
+O que o bloco manda fazer: listar as candidatas; devolver a **chave** quando a
+menção for uma delas e `null` quando não for, nunca uma chave fora da lista;
+escrever no `texto` do átomo o **nome gravado** e não o que a transcrição
+escreveu — com a amarra explícita de que **só o nome próprio se troca**, e que no
+resto continua valendo `COM AS MINHAS PALAVRAS`.
+
+> **Como a candidata se apresenta mudou na 4.11**, e só isso: chave, nome, tipo,
+> a marca de ficha oficial, as grafias **como lista** e o `resumo`, no lugar dos
+> aliases concatenados numa string e do `contexto` isolado. É a mesma
+> apresentação que o agente 2 vê — `apresentarEntidade`, uma função só (§4.8). O
+> resto do bloco ficou byte a byte igual: ele foi calibrado e funciona. Foi essa
+> troca que levou `PROMPT_VERSION` a `extracao-9`.
 
 `AtomoCru.sobre` passou de `string` para
 `MencaoCrua = { citado, chave: string | null }`, e `menciona` para
@@ -2731,8 +2787,8 @@ com cada fatia, e hoje são estas:
 
 A trava de `extracao.json` vale para **os dois agentes**: proposta pronta não
 rechama nem a extração nem a resolução, e `forcar` refaz as duas. Calibrar o
-`resolucao-4` custa, sim, uma extração junto — o que a arquitetura de dois
-agentes barateia é o contrário: mexer no `resolucao-4` não mexe no `extracao-8`.
+`resolucao-5` custa, sim, uma extração junto — o que a arquitetura de dois
+agentes barateia é o contrário: mexer no `resolucao-5` não mexe no `extracao-9`.
 
 **A única saída da trava é `extrairSessao(id, { forcar: true })`**, exposta por
 `POST /api/sessoes/:id/extrair` com `{"forcar": true}`. Ela existe para calibrar
@@ -3138,7 +3194,7 @@ hoje. Sem índice: ninguém busca por perfil.
 
 **Por que aresta, e não propriedade do átomo.** Duas razões, e a primeira é a que
 manda: a marca precisa dizer **de quem** é a informação. "fui no parque andar de
-slackline com o Raffa" é `sobre: "eu"` pelas regras de tipo do `extracao-8`, e a
+slackline com o Raffa" é `sobre: "eu"` pelas regras de tipo do `extracao-9`, e a
 informação de perfil é do Raffa. A segunda é que Neo4j não guarda array de mapa
 como propriedade — foi isso que forçou as listas paralelas da 003. Aresta com
 propriedade ele guarda bem, e fica consultável: "todo átomo que diz o que o Rapha
@@ -4182,7 +4238,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   viraram três (`maxRetries: 0` nas chamadas embrulhadas por `limite.ts`), mas
   **o limite em si é questão de plano, não de código**.
 - **O alvo de 10 a 20 átomos por 15 min ainda é aposta.** O prompt está em
-  `extracao-8` e as sessões julgadas até agora são curtas; a primeira sessão longa
+  `extracao-9` e as sessões julgadas até agora são curtas; a primeira sessão longa
   confirma ou derruba o número. Desde a 4.8 ele é pedido **em proporção**, janela
   a janela (`orcamentoDaJanela`), o que troca uma aposta por outra: oito janelas
   pedindo de 1 a 3 dão de 8 a 24, e é o `estende` que tem de puxar o número para
@@ -4324,7 +4380,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   próprios reais — as 5 sessões confirmadas de 04/09 puseram lá "Behring
   Founders", "Adapta" e "Giampaolo Lepore" —, mas nomes próprios não são a mesma
   coisa que nomes **em disputa**: enquanto nada no grafo soar como outra coisa,
-  o `resolucao-4` não tem o que desempatar — ele é chamado (desde a 4.9 toda
+  o `resolucao-5` não tem o que desempatar — ele é chamado (desde a 4.9 toda
   menção com candidato vai), mas responde uma lista de um. O caso concreto de que eu sei a resposta — a sessão com o Rapha e o
   Raffa — depende dos dois estarem **cadastrados antes da primeira menção**. Que
   nomes estão lá hoje se vê em `/entidades`, não neste arquivo.
@@ -4361,12 +4417,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   eu rejeitar o átomo ou desmarcar a entidade, mas não dá para trocar o campo nem
   apontar outra entidade — é a única das três relações do átomo que continua sem
   controle na tela, agora que `menciona` ganhou o dele (4.7). Se o agente 2 errar o campo com
-  frequência, o que se ajusta é o `resolucao-4`.
+  frequência, o que se ajusta é o `resolucao-5`.
 - **O confirmar dispara uma passada de embedding** (4.8.1), em `waitUntil`, fora
   do caminho da resposta e engolindo a falha. É mais uma coisa acontecendo
   depois do clique que eu não vejo; o sinal é a linha `[entidades]` no log.
 - **A regra de tipo é arbitrada em três lugares** (4.8.1 e 4.9): pedida ao
-  extrator no `extracao-8`, pedida ao agente 2 no `resolucao-4`, e imposta pelo
+  extrator no `extracao-9`, pedida ao agente 2 no `resolucao-5`, e imposta pelo
   código nas duas pontas — o parse da extração derruba a chave do dossiê no
   sujeito desses quatro tipos, e a resolução recusa o julgamento que tira um
   SENTIMENTO, APRENDIZADO, HISTORIA ou ROTINA de `eu`. Pedir nos dois prompts
@@ -4415,7 +4471,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   fielmente o que a transcrição dizia —, mas elas saem como `extracao` (correção
   de texto) ou `grafo` (renome), porque nenhum sinal no material distingue "o
   modelo escreveu errado" de "o microfone ouviu errado". O risco concreto é o
-  `calibracao-1` ver quatro casos do mesmo padrão e propor, para o `extracao-8`,
+  `calibracao-1` ver quatro casos do mesmo padrão e propor, para o `extracao-9`,
   uma regra que conserta algo que nunca chegou até ele.
   **A saída foi construída na 4.9** (§4.14), e não é etiqueta nem regra de
   prompt: é a busca por bloco entregando ao extrator os nós que o trecho parece
@@ -4429,7 +4485,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   do átomo**, e não a referência de cada menção. É o sinal que a spec fixou, e é
   grosseiro: um átomo sobre "eu" cuja menção era candidata nova sai etiquetado
   `resolucao`. Não custa nada hoje, porque esta fatia só consome as correções de
-  `extracao`; custará no dia em que o `resolucao-4` for calibrado a partir deste
+  `extracao`; custará no dia em que o `resolucao-5` for calibrado a partir deste
   recorte. `mencao_adicionada` ficou de fora dessa regra: acrescentar uma menção
   que o extrator não listou é falha de extração por definição — não existe
   referência original para a resolução ter errado.

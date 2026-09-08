@@ -29,10 +29,19 @@ import {
 import { carimbo, efetivo } from "./overrides";
 import { query } from "./neo4j";
 import { normalizarNome } from "./texto";
-import { CAMPOS_PERFIL, TETO_PERFIL } from "./tipos";
+import { CAMPOS_PERFIL } from "./tipos";
 import type { CampoPerfil } from "./tipos";
 
-/** Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7). */
+/**
+ * Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7).
+ *
+ * **Continua `perfil-1` na 4.11, e é de propósito.** O que saiu dali foi o
+ * `TETO_PERFIL`: a constante, o corte no servidor e o `slice()` do rascunho. O
+ * "no máximo 300 caracteres" do texto abaixo **ficou**, agora como número
+ * literal, porque ele nunca foi o corte — é instrução de concisão para quem
+ * escreve a ficha, e é texto calibrado. O prompt sai byte a byte igual ao da
+ * 4.10, e por isso a versão não sobe.
+ */
 export const PROMPT_VERSION_PERFIL = "perfil-1";
 
 /** Quantos átomos marcados vão ao modelo. Além disso a proposta vira resumo de resumo. */
@@ -74,9 +83,11 @@ function statementDeCampo(campo: CampoPerfil): string {
  * Grava um dos três campos. Texto vazio limpa o campo — apagar o que eu escrevi
  * errado tem que ser possível, e campo vazio é estado válido.
  *
- * O corte em `TETO_PERFIL` acontece aqui, no servidor: o teto existe para o
- * prompt do agente 2 não inchar conforme o grafo cresce, e uma regra que só
- * vale na tela não é regra.
+ * **Sem corte desde a 4.11.** O `TETO_PERFIL = 300` era cortado aqui, e existia
+ * para o prompt do agente 2 não inchar conforme o grafo crescia. Esse prompt
+ * deixou de ler estes campos: quem os lê agora é a segunda passada
+ * (`desempate.ts`), e só para os candidatos de **uma** menção em dúvida. Quem
+ * cobra tamanho é o `TETO_RESUMO`, do campo que entra em todo prompt.
  */
 export async function gravarCampo(
   chaveOuNome: string,
@@ -87,7 +98,7 @@ export async function gravarCampo(
   if (chave === "") throw new PerfilError("gravar perfil exige a entidade");
   if (!CAMPOS_PERFIL.includes(campo)) throw new PerfilError(`Campo inválido: ${campo}`);
 
-  const limpo = texto.trim().slice(0, TETO_PERFIL);
+  const limpo = texto.trim();
   const r = await query<{ id: string; nome: string }>(statementDeCampo(campo), {
     chave,
     texto: limpo,
@@ -147,7 +158,7 @@ REGRAS
 - Junte o que se repete numa frase só. A ficha é curta por desenho.
 - Só afirme o que os trechos ou o texto atual sustentam. Não deduza, não complete com o que "costuma ser".
 - Se os trechos não acrescentam nada ao que já está escrito, devolva o texto atual sem mudanças.
-- No máximo ${TETO_PERFIL} caracteres. Se não couber, corte o menos específico — nome, habilidade e história concreta ficam; adjetivo sai.
+- No máximo 300 caracteres. Se não couber, corte o menos específico — nome, habilidade e história concreta ficam; adjetivo sai.
 
 FORMATO
 Responda somente com JSON, sem texto antes ou depois:
@@ -211,7 +222,7 @@ ${trechos}`;
   }
 
   return {
-    texto: extrairTexto(bruto).slice(0, TETO_PERFIL),
+    texto: extrairTexto(bruto),
     atomos: marcados.length,
     modelo,
     prompt_version: carimbo(PROMPT_VERSION_PERFIL, meu.hash),
