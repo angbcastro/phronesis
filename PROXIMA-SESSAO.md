@@ -22,9 +22,10 @@ Este arquivo só diz o que fazer a seguir.
 > confiança fica abaixo do limiar de 0,7, editável em `/agentes`.
 >
 > **O que falta é a única coisa que este sistema aceita como medida: uma sessão
-> real.** A seção 7 abaixo diz o que olhar. Depois dela vem a 4.12
-> (`Specs/slice-4.12.md`), que preenche os resumos — e até ela rodar, quase toda
-> menção vai passar pela segunda passada, o que é **comportamento esperado**.
+> real. A seção 7 é a lista do que testar** — nada dela tem teste automático.
+> Depois vem a 4.12 (`Specs/slice-4.12.md`), que preenche os resumos — e até ela
+> rodar, quase toda menção vai passar pela segunda passada, o que é
+> **comportamento esperado**.
 
 > **Atualizado em 08/09, no fim do dia: a seção 2 está feita, e as duas fatias
 > da seção 6 estão especificadas.** As partes de UI e UX pedidas foram validadas
@@ -448,60 +449,46 @@ escrito, e as duas estão com o preço anotado na spec.
 
 ---
 
-## 7. A 4.11 está em código e não foi medida
+## 7. O que testar na 4.11 — à mão, numa sessão real
 
-**Uma sessão real que cite gente conhecida.** É a única medida de qualidade que
-este sistema aceita, e nenhum dos 922 testes alcança o que ela mede.
+Nada disto tem teste automático. É a única medida que este sistema aceita.
 
-### 7.1 Antes de gravar: escrever dois ou três resumos à mão
+**Antes de gravar, em `/entidades`:**
 
-`/entidades`, botão **ficha**, campo **resumo**. Sem isso a sessão mede só o
-caminho degradado — resumo vazio faz a confiança vir baixa e **toda** menção cai
-na segunda passada, que é o comportamento esperado no intervalo até a 4.12, mas
-não é o que a fatia quer provar.
+- [ ] escrever o **resumo** de 2 ou 3 entidades (ficha → resumo). Sem isso a
+      sessão mede só o caminho degradado: resumo vazio derruba a confiança e
+      **toda** menção cai na segunda passada
+- [ ] marcar uma como **canônica** — a palavra tem de aparecer no prompt
+- [ ] acrescentar à mão uma **grafia** que o STT ainda vai errar. É o que a fatia
+      abriu, e não existia de jeito nenhum antes
 
-Vale escrever o do Giampaolo Lepore, o do Raffa e o do Rapha se os dois
-estiverem lá — é o par homófono, e é o caso que o §14 diz que a resolução nunca
-julgou de verdade. Marcar um deles como **canônica** para ver a palavra entrar no
-prompt.
+**No log, durante a gravação:**
 
-E, de quebra: acrescentar à mão uma grafia que o STT ainda **vai** errar. É o que
-a fatia abriu, e é a única coisa aqui que não existia de jeito nenhum antes.
-
-### 7.2 No log, durante a gravação
-
-| O que aparece | O que quer dizer |
+| Linha | O que quer dizer |
 |---|---|
 | `[desempate] sessão <id>: N menção(ões) abaixo do limiar` | o caminho novo está vivo |
-| nenhuma linha `[desempate]`, **com resumos vazios** | o limiar está baixo demais, ou a confiança está vindo inflada — é o primeiro número a calibrar, em `/agentes` |
-| `[desempate]` em **toda** menção depois dos resumos escritos | o limiar está alto demais, ou o resumo não está identificando |
-| `[grafias] sessão <id>: N grafia(s) viraram alias` | o caminho novo do alias gravou, agora sem nó |
+| nenhuma `[desempate]`, **com resumos vazios** | limiar baixo demais ou confiança inflada — calibrar em `/agentes` |
+| `[desempate]` em **toda** menção, **com resumos escritos** | limiar alto demais, ou o resumo não identifica |
+| `[grafias] sessão <id>: N grafia(s) viraram alias` | o alias gravou, agora sem nó |
 
-### 7.3 No grafo, depois de confirmar
+**No grafo, depois de confirmar:**
 
 ```cypher
-MATCH (e:Entidade {nome_normalizado:'jean'}) RETURN e            // vazio
+MATCH (e:Entidade {nome_normalizado:'jean'}) RETURN e            // tem de vir vazio
 MATCH (e:Entidade {nome_normalizado:'giampaolo lepore'})
 RETURN e.aliases, e.resumo, e.canonico
 ```
 
-A primeira consulta voltar vazia **é** o critério: a grafia deixou de ser nó.
+**Três coisas que só olho vê:**
 
-### 7.4 Três coisas que só olho vê
+- [ ] **o átomo continua soando como eu?** Se a frase soar como o modelo, o
+      dossiê novo está competindo com o `COM AS MINHAS PALAVRAS` — conserto é
+      prompt, em `/agentes`
+- [ ] **a confiança tem relação com estar certo?** Menção que voltou 0,9 e estava
+      errada = limiar decorativo. É a pergunta que decide se o desenho serve
+- [ ] **a segunda passada muda de ideia?** Concordar com a primeira em 100% dos
+      casos = uma chamada paga para nada, e o perfil inteiro não era o que
+      faltava. O `motivo` dela está no `extracao.json`
 
-- **o texto do átomo continua soando como eu?** A instrução manda trocar o nome
-  próprio e mais nada, e ela não mudou nesta fatia. Se a frase começar a soar
-  como o modelo, o culpado é o dossiê novo competindo com o `COM AS MINHAS
-  PALAVRAS` — e o conserto é o prompt, em `/agentes`;
-- **a confiança tem alguma relação com estar certo?** Menção que voltou 0,9 e
-  estava errada é o sinal de que o número não vale como régua, e aí a fatia
-  entregou um limiar decorativo. É a pergunta que decide se o desenho serve;
-- **a segunda passada muda de ideia?** Se ela concordar com a primeira em 100%
-  dos casos, ela está pagando uma chamada para não fazer nada — e o perfil
-  inteiro não é o que faltava. O `motivo` dela está no `extracao.json`, que é
-  onde se olha desde que a tela parou de mostrá-lo (§2.4).
-
-### 7.5 Depois: a 4.12
-
-`Specs/slice-4.12.md`, já escrita. Ela preenche os resumos em lote, e é o que
-faz a segunda passada voltar a ser exceção em vez de regra.
+**Depois:** a 4.12 (`Specs/slice-4.12.md`) preenche os resumos em lote, e é ela
+que faz a segunda passada voltar a ser exceção.
