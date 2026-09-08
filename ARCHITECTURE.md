@@ -2,7 +2,7 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.10.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.11.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
@@ -11,8 +11,22 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.10.md`.
 **Estado: slice 2 fechada e validada; slices 3 (higiene do grafo), 4
 (identidade por contexto), 4.5 (o grafo ganha vetor), 4.6 (o prompt aprende
 com a revisão), 4.7 (o painel dos agentes), 4.8 (a extração acompanha a fala),
-4.8.1 (as seis emendas), 4.9 (o extrator conhece o grafo) e 4.10 (o arquivo
-importado entra pela mesma porta) construídas.**
+4.8.1 (as seis emendas), 4.9 (o extrator conhece o grafo), 4.10 (o arquivo
+importado entra pela mesma porta) e 4.11 (a entidade se apresenta, e o agente 2
+mede a própria dúvida) construídas.**
+
+**A 4.11 está em código e verde nos testes, e NÃO foi medida numa sessão real.**
+A migration 009 foi aprovada e aplicada (duas grafias viraram `aliases`, dois nós
+apagados). O que ela entregou: `resumo`, `aliases` como propriedade e `canonico`
+no schema (§8.3.1); uma apresentação só da entidade, lida pelos dois agentes
+(§4.8); `extracao-9` e `resolucao-5`; o `TETO_PERFIL` morto; e o `desempate-1`, a
+segunda passada que roda quando a confiança fica abaixo do limiar (§4.8.1).
+**O que ainda não existe é a 4.12** — o enriquecimento em lote que preenche os
+resumos. Até ela rodar, os resumos nascem vazios e **quase toda menção vai à
+segunda passada**: são ~2 chamadas de modelo por janela em vez de 1, espalhadas
+pelos 15 minutos. É o preço declarado de separar as fatias, e ele acaba sozinho
+(§14).
+
 A primeira sessão longa real **rodou de ponta a ponta e custou quatro chamadas
 de modelo para entregar uma** (`mtqoeoqh3e3724514q1f`, 1044 s, 9 átomos em
 6 min 46 s). Três coisas saíram dessa medição, e as três são a 4.10: a janela não
@@ -43,15 +57,22 @@ gerado das entidades do grafo, em união com `config/vocabulario.txt`; e
 `/entidades` é onde eu vejo o que entrou e conserto o que entrou torto —
 fundindo duas grafias da mesma coisa, ou dando nome a quem ficou como "meu pai".
 **Fundir não apaga: cria alias**, e é isso que faz a grafia morta resolver para
-o vencedor na sessão seguinte em vez de renascer como nó novo.
+o vencedor na sessão seguinte em vez de renascer como nó novo. Desde a 4.11 são
+dois mecanismos e não um: **grafia é propriedade** (`aliases`, editável à mão),
+e `:FUNDIDA_EM` ficou significando só o que sempre quis dizer — fusão de duas
+entidades reais, que é o registro de uma decisão minha.
 
 **O sistema descobre de quem eu estou falando pelo contexto, e não pela grafia
 do nome** (seções 4.8 e 8.3). "Raffa" e "Rapha" são o mesmo som: o STT escreve
 uma grafia só para os dois, e a grafia carrega **zero** sinal sobre quem é. Por
 isso são **dois agentes e não um** — o `extracao-9` extrai e propõe o nó, e o
 `resolucao-5` valida cada menção. Desde a 4.11 os dois leem a **mesma**
-apresentação da entidade: o `resumo`, as grafias e a marca de ficha oficial. Dúvida **destaca, não trava**: a revisão marca o átomo, mostra o motivo
-e o confirmar continua liberado. Sessão em que nenhuma menção é ambígua não
+apresentação da entidade: o `resumo`, as grafias e a marca de ficha oficial. E o
+agente 2 devolve **confiança**, não mais um booleano — abaixo do limiar a menção
+vai a uma segunda leitura, que tem a ficha inteira dos candidatos daquela menção
+na mão (§4.8.1).
+Dúvida **destaca, não trava**: a revisão marca o átomo, mostra o motivo
+e o confirmar continua liberado. Sessão em que nenhuma menção tem candidato não
 chama o agente 2 e não paga nada.
 
 **A jornada não passa pela transcrição.** Parar de falar leva à tela de
@@ -1084,8 +1105,9 @@ valida **toda** menção que tenha candidato.
 
 | Função | Faz |
 |---|---|
-| `listarEntidades` | o catálogo: tudo que está no grafo, com tipo, sessões, aliases e os três campos de perfil. Uma consulta só, e é o mesmo objeto que a tela `/entidades` mostra |
-| `acharPorChave` | casamento exato que **atravessa alias** de graça: `chaves` traz a grafia própria e as já fundidas no nó |
+| `listarEntidades` | o catálogo: tudo que está no grafo, com tipo, sessões, grafias, `resumo`, `canonico` e os três campos de perfil. Uma consulta só, e é o mesmo objeto que a tela `/entidades` mostra |
+| `acharPorChave` | casamento exato que **atravessa alias** de graça: `chaves` traz a grafia própria, as de `e.aliases` e as dos nós fundidos |
+| `apresentarEntidade` | como a entidade aparece num prompt — **uma só, para os dois agentes** (§4.8) |
 | `agregarCandidatas` | a visão agregada da revisão: uma linha por entidade, com quantas menções caíram nela |
 
 **Só entidade recorrente deve virar nó, e quem filtra é quem revisa.** A
@@ -1231,7 +1253,8 @@ que era o comportamento anterior; `tests/revisao.test.ts` fixa isso.
 **O perfil não vem nesse payload** (4.8.1). A revisão baixa o grafo inteiro a
 cada abertura (§14) e usa nome, chaves e tipo; os três campos de perfil são o
 campo mais pesado da resposta e ninguém os lê ali. Quem quer os campos pede
-`?perfil=1`, que é o que `/entidades` faz — a tela que os edita. O corte é campo
+`?perfil=1`, que é o que `/entidades` faz — a tela que os edita. `resumo` e
+`canonico` (009) seguem o perfil, e pela mesma razão. O corte é campo
 a campo e não `delete`, para que campo novo em `EntidadeDoGrafo` não vaze para o
 contrato do catálogo sem alguém decidir.
 
@@ -1722,7 +1745,7 @@ onde os erros de desenho moram — testável sem banco e sem chave.
 | Nó | Fonte do vetor |
 |---|---|
 | `:Atomo` | **só `a.texto`** |
-| `:Entidade` | uma string canônica: `nome`, `tipo`, `aliases` e os três campos de perfil, com campo vazio **omitido** |
+| `:Entidade` | uma string canônica: `nome`, `tipo`, `aliases` e os três campos de perfil, com campo vazio **omitido**. As grafias vêm da união das duas fontes desde a 009 (§8.2); o `resumo` **não entra** — pô-lo ali reembutiria o grafo inteiro e mudaria a camada 3a, e isso é decisão que a 4.11 não tomou |
 
 Nada de tipo, entidade ou sessão no átomo: as três já são estrutura no grafo, e a
 divisão é essa — **o corte estrutural é do grafo, o semântico é do vetor.** Enfiar
@@ -3926,7 +3949,7 @@ execução não há requisição a terceiros.
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, perfil, deduplicação, embedding, calibração
+AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, deduplicação, embedding, calibração
 STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
@@ -4069,8 +4092,19 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   resposta ruim vira dúvida, nunca atribuição errada em silêncio.
 - `tests/referencias.test.ts` — proposta do formato antigo ainda abre na revisão
   (critério 10 da slice 4).
-- `tests/perfil.test.ts` — que o agente 3 **não escreve**, e que o teto de 300
-  caracteres é cortado no servidor e não só na tela.
+- `tests/perfil.test.ts` — que o agente 3 **não escreve**, e que o corte de 300
+  no servidor **saiu** com a 4.11: o "no máximo 300 caracteres" continua no texto
+  do prompt, como instrução de concisão, e não como teto.
+- `tests/desempate.test.ts` — o que a segunda passada vê e a primeira não via (os
+  três campos de perfil, sem teto, dos candidatos daquela menção), e o que ela faz
+  quando o modelo não coopera: `duvida` ausente conta como dúvida, e falha devolve
+  `null` em vez de estourar. A qualidade da decisão eu avalio à mão.
+- `tests/fusao.test.ts` — que grafia deixou de ser nó (009): `registrarGrafia` e
+  `renomear` escrevem em `aliases`, ninguém cria `:Entidade`, e as recusas que o
+  índice único fazia de graça passaram a ser leitura explícita.
+- `tests/entidades-grafo.test.ts` — que `chaves` atravessa a propriedade, que o
+  casamento exato encontra "jean" sem nó nenhum, e que o vocabulário do STT lê só
+  `e.nome`.
 - Qualidade da resolução (slice 4) também não tem teste automático, e pelo mesmo
   motivo. A diferença é que agora existe um caso concreto de que eu sei a
   resposta: a sessão que fala do Rapha e do Raffa.
@@ -4115,6 +4149,27 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
+- **Entre a 4.11 e a 4.12, quase toda menção passa pela segunda passada.** Os
+  resumos nascem vazios, resumo vazio faz a confiança vir baixa, e confiança
+  baixa dispara o desempate. São ~2 chamadas de modelo por janela em vez de 1,
+  espalhadas pelos 15 minutos. É o preço declarado de separar as fatias, e ele
+  **acaba sozinho** conforme os resumos forem escritos — pela minha mão em
+  `/entidades`, ou pelo lote da 4.12.
+- **A confiança é auto-relatada** (4.11). O modelo diz o quanto confia; ninguém
+  verifica. Um modelo que devolva 0,9 para tudo torna o limiar decorativo, e o
+  sinal disso é a linha `[desempate]` **sumir** do log enquanto os resumos ainda
+  estão vazios. Não há calibração automática: quem olha sou eu, e a pergunta que
+  decide se o desenho serve é "menção que voltou 0,9 estava certa?".
+- **Se a segunda passada concordar com a primeira em 100% dos casos, ela está
+  pagando uma chamada para não fazer nada** (4.11) — e a conclusão seria que o
+  perfil inteiro não era o que faltava. É a terceira coisa a olhar numa sessão
+  real, ao lado do volume da lista e da voz do átomo.
+- **O `resumo` corta em 500 no servidor** (4.11). Texto colado maior que isso
+  perde o fim sem aviso, como o perfil fazia em 300.
+- **A migration 009 apagou nós** — a primeira deste projeto que apaga alguma
+  coisa. O que ela apagou não tinha átomo, perfil nem label de tipo; um
+  `:DISTINTA_DE` apontando para um nó de grafia teria ido junto no `DETACH
+  DELETE`, e no grafo em que ela rodou não havia nenhum.
 - **A importação passa a custar 35 chamadas de STT em vez de 1** (4.10),
   concentradas em cerca de um minuto em vez de espalhadas por dezessete. É o
   preço declarado de ter um caminho só; `BLOCOS_SIMULTANEOS = 2` mais a espera de

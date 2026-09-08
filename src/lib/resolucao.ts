@@ -9,8 +9,16 @@
  * Isso mata qualquer solução baseada em nome, e é o que separa esta slice da 3.
  * Lá o problema era duas grafias para a mesma coisa, e `nome_normalizado`
  * resolvia. Aqui é o contrário — uma grafia para duas coisas — e a chave não
- * pode resolver, por construção. Só o contexto resolve, e o contexto mora nos
- * três campos de perfil da entidade (migration 005).
+ * pode resolver, por construção. Só o contexto resolve, e desde a 4.11 esse
+ * contexto é o **`resumo`** da entidade (migration 009): o retrato de identidade
+ * que o dono escreve, e a mesma apresentação que o extrator vê. Os três campos
+ * de perfil (005) saíram do caminho comum — eles voltam na segunda passada
+ * (`desempate.ts`), para os candidatos de uma menção em dúvida.
+ *
+ * **E ele deixou de responder sim ou não.** `certo: true|false` virou
+ * `confianca`, de 0 a 1: abaixo do limiar a menção vai à segunda passada, e o
+ * que ela devolver vale como final. Não havia, antes, nem "resolvi raspando" nem
+ * caminho para o agente pedir mais informação.
  *
  * **O prompt da extração não muda.** Cinco versões de calibração produziram uma
  * extração que presta; enfiar o catálogo de entidades e a desambiguação dentro

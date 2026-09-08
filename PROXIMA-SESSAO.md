@@ -8,6 +8,24 @@ Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
 sistema funciona hoje) e `Specs/slice-4.11.md` (o que a fatia atual tem que ser).
 Este arquivo só diz o que fazer a seguir.
 
+> **Atualizado em 08/09, mais tarde: a 4.11 está construída, e não foi medida.**
+> A migration 009 foi **aprovada e aplicada** — duas grafias ("o senai" e
+> "Lícia") viraram item de `aliases` de SENAI e Alícia, e os dois nós foram
+> apagados. Nenhuma fusão real existia no grafo, então o `DETACH DELETE` não
+> encostou em decisão nenhuma minha.
+>
+> Os sete passos da `Specs/slice-4.11.md` estão em código, um commit cada, 922
+> testes verdes: grafia virou propriedade; `resumo`, `aliases` editáveis e
+> `canonico` entraram em `/entidades`; os dois agentes passaram a ler a **mesma**
+> apresentação da entidade (`extracao-9` e `resolucao-5`); o `TETO_PERFIL`
+> morreu; e o `desempate-1` nasceu — a segunda passada que roda quando a
+> confiança fica abaixo do limiar de 0,7, editável em `/agentes`.
+>
+> **O que falta é a única coisa que este sistema aceita como medida: uma sessão
+> real.** A seção 7 abaixo diz o que olhar. Depois dela vem a 4.12
+> (`Specs/slice-4.12.md`), que preenche os resumos — e até ela rodar, quase toda
+> menção vai passar pela segunda passada, o que é **comportamento esperado**.
+
 > **Atualizado em 08/09, no fim do dia: a seção 2 está feita, e as duas fatias
 > da seção 6 estão especificadas.** As partes de UI e UX pedidas foram validadas
 > e estão funcionando; todos os áudios gravados foram importados e conferidos na
@@ -19,6 +37,7 @@ Este arquivo só diz o que fazer a seguir.
 > **`Specs/slice-4.12.md`** (o enriquecimento em lote). A migration 009 está
 > escrita como **proposta** em `db/migrations/`, e **não foi rodada** — ela é a
 > primeira deste projeto que apaga nós, e o passo 2 da 4.11 é aprová-la.
+> *(Riscado: foi aprovada e aplicada — ver o bloco acima.)*
 
 > **Atualizado em 08/09: a árvore estava suja com dois trabalhos misturados, e
 > foi fechada.** A migration 008 foi aprovada e aplicada (§2.4.1, riscada). O
@@ -426,3 +445,63 @@ escrito, e as duas estão com o preço anotado na spec.
   entidades entram no prompt do agente 2 a cada resolução. Tirar o teto sem
   decidir o que o agente 2 passa a ler (fatia A, `resumo` vs. perfil inteiro)
   reintroduz esse custo — a entrevista precisa amarrar as duas fatias aqui.
+
+---
+
+## 7. A 4.11 está em código e não foi medida
+
+**Uma sessão real que cite gente conhecida.** É a única medida de qualidade que
+este sistema aceita, e nenhum dos 922 testes alcança o que ela mede.
+
+### 7.1 Antes de gravar: escrever dois ou três resumos à mão
+
+`/entidades`, botão **ficha**, campo **resumo**. Sem isso a sessão mede só o
+caminho degradado — resumo vazio faz a confiança vir baixa e **toda** menção cai
+na segunda passada, que é o comportamento esperado no intervalo até a 4.12, mas
+não é o que a fatia quer provar.
+
+Vale escrever o do Giampaolo Lepore, o do Raffa e o do Rapha se os dois
+estiverem lá — é o par homófono, e é o caso que o §14 diz que a resolução nunca
+julgou de verdade. Marcar um deles como **canônica** para ver a palavra entrar no
+prompt.
+
+E, de quebra: acrescentar à mão uma grafia que o STT ainda **vai** errar. É o que
+a fatia abriu, e é a única coisa aqui que não existia de jeito nenhum antes.
+
+### 7.2 No log, durante a gravação
+
+| O que aparece | O que quer dizer |
+|---|---|
+| `[desempate] sessão <id>: N menção(ões) abaixo do limiar` | o caminho novo está vivo |
+| nenhuma linha `[desempate]`, **com resumos vazios** | o limiar está baixo demais, ou a confiança está vindo inflada — é o primeiro número a calibrar, em `/agentes` |
+| `[desempate]` em **toda** menção depois dos resumos escritos | o limiar está alto demais, ou o resumo não está identificando |
+| `[grafias] sessão <id>: N grafia(s) viraram alias` | o caminho novo do alias gravou, agora sem nó |
+
+### 7.3 No grafo, depois de confirmar
+
+```cypher
+MATCH (e:Entidade {nome_normalizado:'jean'}) RETURN e            // vazio
+MATCH (e:Entidade {nome_normalizado:'giampaolo lepore'})
+RETURN e.aliases, e.resumo, e.canonico
+```
+
+A primeira consulta voltar vazia **é** o critério: a grafia deixou de ser nó.
+
+### 7.4 Três coisas que só olho vê
+
+- **o texto do átomo continua soando como eu?** A instrução manda trocar o nome
+  próprio e mais nada, e ela não mudou nesta fatia. Se a frase começar a soar
+  como o modelo, o culpado é o dossiê novo competindo com o `COM AS MINHAS
+  PALAVRAS` — e o conserto é o prompt, em `/agentes`;
+- **a confiança tem alguma relação com estar certo?** Menção que voltou 0,9 e
+  estava errada é o sinal de que o número não vale como régua, e aí a fatia
+  entregou um limiar decorativo. É a pergunta que decide se o desenho serve;
+- **a segunda passada muda de ideia?** Se ela concordar com a primeira em 100%
+  dos casos, ela está pagando uma chamada para não fazer nada — e o perfil
+  inteiro não é o que faltava. O `motivo` dela está no `extracao.json`, que é
+  onde se olha desde que a tela parou de mostrá-lo (§2.4).
+
+### 7.5 Depois: a 4.12
+
+`Specs/slice-4.12.md`, já escrita. Ela preenche os resumos em lote, e é o que
+faz a segunda passada voltar a ser exceção em vez de regra.
