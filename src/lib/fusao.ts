@@ -1,7 +1,8 @@
 /**
  * Escrita de manutenção de entidade: fundir, renomear, trocar tipo, criar,
- * recusar. É o par de `atomos.ts` — lá o grafo recebe o que a revisão aprovou,
- * aqui ele recebe as correções que eu faço depois, em `/entidades`.
+ * recusar, e — desde a 4.11 — escrever o resumo, editar as grafias e marcar a
+ * ficha oficial. É o par de `atomos.ts` — lá o grafo recebe o que a revisão
+ * aprovou, aqui ele recebe as correções que eu faço depois, em `/entidades`.
  *
  * **Fundir é criar alias, não apagar** (regra 6). O nó perdedor fica, ganha
  * `status = 'fundida'` e uma aresta `:FUNDIDA_EM` para o vencedor; as três
@@ -54,7 +55,7 @@
 import { query } from "./neo4j";
 import { novoId } from "./sessoes";
 import { ehPronome, normalizarNome } from "./texto";
-import { TIPOS_ENTIDADE } from "./tipos";
+import { TETO_RESUMO, TIPOS_ENTIDADE } from "./tipos";
 import type { TipoEntidade } from "./tipos";
 
 export const STATUS_ENTIDADE_ATIVA = "ativa";
@@ -412,6 +413,106 @@ export async function criarEntidade(
   );
 
   return { id, nome: limpo, tipo };
+}
+
+/**
+ * Tira uma grafia de `aliases`, à mão, em `/entidades` (slice 4.11).
+ *
+ * É o par de `registrarGrafia`, e é o que faz a lista ser **editável** — o que
+ * não existia enquanto a grafia era nó. Sem isto, o STT errando de três jeitos
+ * deixava três grafias no nó para sempre, e apagar uma era ir ao console.
+ *
+ * A comparação é por string exata, e é de propósito: a tela mostra a lista e
+ * manda de volta o item que eu cliquei. Grafia que **não** está na propriedade é
+ * o nome de um nó que perdeu uma fusão real — ela não sai por aqui, e a recusa
+ * diz isso, porque desfazer uma fusão é outra decisão e não tem este botão.
+ */
+export async function removerGrafia(
+  chaveDoNo: string,
+  grafia: string,
+): Promise<{ removida: boolean; motivo: string }> {
+  const chave = normalizarNome(chaveDoNo);
+  if (chave === "") throw new FusaoError("remover grafia exige a entidade");
+  if (grafia.trim() === "") return { removida: false, motivo: "a grafia está vazia" };
+
+  const linhas = await query<{ antes: number; depois: number }>(
+    `MATCH (v:Entidade { nome_normalizado: $chave })
+     WITH v, coalesce(v.aliases, []) AS antes
+     SET v.aliases = [a IN antes WHERE a <> $grafia]
+     RETURN size(antes) AS antes, size(v.aliases) AS depois`,
+    { chave, grafia },
+  );
+
+  if (linhas.length === 0) {
+    throw new FusaoError(`"${chaveDoNo}" não está no grafo`);
+  }
+  if (linhas[0].antes === linhas[0].depois) {
+    return {
+      removida: false,
+      motivo:
+        `"${grafia}" não está na lista de grafias deste nó — se ela aparece na tela, ` +
+        `é o nome de uma entidade que perdeu uma fusão, e isso não se desfaz por aqui`,
+    };
+  }
+  return { removida: true, motivo: "" };
+}
+
+/**
+ * O retrato de identidade, e a marca de ficha oficial (migration 009).
+ *
+ * Os dois são escrita minha e de mais ninguém, como os três campos de perfil: o
+ * `resumo` é o que os **dois** agentes leem por padrão desde a 4.11, e perfil
+ * escrito errado contamina toda atribuição futura (§4.9). A 4.12 é que vai
+ * propor texto para ele — e mesmo lá a escrita continua sendo um toque meu.
+ *
+ * O corte em `TETO_RESUMO` acontece aqui, no servidor, pela mesma razão que o
+ * corte do perfil acontecia: regra que só vale na tela não é regra.
+ *
+ * Atravessa alias como `gravarCampo`: escrever no perdedor de uma fusão tem de
+ * ir para o vencedor, senão o texto ficaria num nó que nenhuma leitura enxerga.
+ */
+export async function gravarResumo(
+  chaveOuNome: string,
+  texto: string,
+): Promise<{ id: string; nome: string; resumo: string }> {
+  const chave = normalizarNome(chaveOuNome);
+  if (chave === "") throw new FusaoError("gravar resumo exige a entidade");
+
+  const resumo = texto.trim().slice(0, TETO_RESUMO);
+  const r = await query<{ id: string; nome: string }>(
+    `MATCH (e:Entidade { nome_normalizado: $chave })
+     OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
+     WITH coalesce(v, e) AS alvo
+     SET alvo.resumo = $resumo
+     RETURN alvo.id AS id, alvo.nome AS nome`,
+    { chave, resumo },
+  );
+  if (r.length === 0) throw new FusaoError(`"${chaveOuNome}" não está no grafo`);
+
+  return { ...r[0], resumo };
+}
+
+/**
+ * Marca ou desmarca a ficha oficial. Um toque, reversível, sem consequência
+ * retroativa: nenhum átomo já gravado muda por causa disto.
+ *
+ * **É preferência, não obrigação.** Não exige sobrenome, não impede entidade
+ * nova de nascer e não trava unicidade nenhuma — a flag é sinal nos dois
+ * prompts e desempate determinístico quando dois candidatos empatam.
+ */
+export async function marcarCanonico(chaveOuNome: string, canonico: boolean): Promise<void> {
+  const chave = normalizarNome(chaveOuNome);
+  if (chave === "") throw new FusaoError("marcar canônico exige a entidade");
+
+  const r = await query<{ id: string }>(
+    `MATCH (e:Entidade { nome_normalizado: $chave })
+     OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
+     WITH coalesce(v, e) AS alvo
+     SET alvo.canonico = $canonico
+     RETURN alvo.id AS id`,
+    { chave, canonico },
+  );
+  if (r.length === 0) throw new FusaoError(`"${chaveOuNome}" não está no grafo`);
 }
 
 /**

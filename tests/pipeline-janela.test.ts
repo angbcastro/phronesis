@@ -221,6 +221,8 @@ describe("o dossiê da janela (slice 4.9)", () => {
     sessoes: 3,
     atomos: 7,
     aliases: [],
+    resumo: "",
+    canonico: false,
     perfil: { contexto: "sócio na Adapta", pode_ajudar_com: "", fizemos_juntos: "" },
   };
 

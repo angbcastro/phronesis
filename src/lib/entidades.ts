@@ -90,12 +90,26 @@ export interface EntidadeDoGrafo {
    * sobrou de `:FUNDIDA_EM` é fusão real.
    */
   aliases: string[];
+  /**
+   * O retrato de identidade (009) — o que os dois agentes leem por padrão desde
+   * a 4.11. Vazio é estado válido, e é o que toda entidade tem até eu escrever
+   * à mão em `/entidades`.
+   */
+  resumo: string;
+  /** "Esta é a ficha oficial desta entidade." Marcada à mão; ausente = false. */
+  canonico: boolean;
   /** Os três campos da migration 005. Campo ausente no grafo é string vazia. */
   perfil: Perfil;
 }
 
-interface LinhaGrafo extends Omit<EntidadeDoGrafo, "tipo" | "perfil" | "chaves" | "aliases"> {
+interface LinhaGrafo
+  extends Omit<
+    EntidadeDoGrafo,
+    "tipo" | "perfil" | "chaves" | "aliases" | "resumo" | "canonico"
+  > {
   labels: string[];
+  resumo: string | null;
+  canonico: boolean | null;
   /** `e.aliases` — as grafias que moram na propriedade (009). */
   aliases_prop: string[];
   /** `alias.nome` dos nós que perderam uma fusão real. */
@@ -124,6 +138,11 @@ const limpo = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
  * única diferença é de onde `chaves` vem. Nenhuma consulta a mais, nenhum
  * índice a mais — a grafia que era nó, e casava pelo índice único de
  * `nome_normalizado`, agora casa por esta lista.
+ *
+ * **A ordem põe o canônico na frente** (009). Ela serve `/entidades`, que é onde
+ * eu marco a ficha oficial e quero vê-la em cima; e serve o desempate
+ * determinístico da resolução, onde dois candidatos empatados são decididos pela
+ * ordem em que este catálogo os entrega.
  */
 export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
   const linhas = await query<LinhaGrafo>(
@@ -139,10 +158,12 @@ export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
             coalesce(e.aliases, []) AS aliases_prop,
             collect(DISTINCT alias.nome) AS aliases,
             collect(DISTINCT alias.nome_normalizado) AS chaves_alias,
+            coalesce(e.resumo, '') AS resumo,
+            coalesce(e.canonico, false) AS canonico,
             coalesce(e.contexto, '') AS contexto,
             coalesce(e.pode_ajudar_com, '') AS pode_ajudar_com,
             coalesce(e.fizemos_juntos, '') AS fizemos_juntos
-     ORDER BY sessoes DESC, e.nome`,
+     ORDER BY canonico DESC, sessoes DESC, e.nome`,
   );
 
   return linhas.map((l) => {
@@ -174,6 +195,8 @@ export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
       sessoes: l.sessoes ?? 0,
       atomos: l.atomos ?? 0,
       aliases,
+      resumo: limpo(l.resumo),
+      canonico: l.canonico === true,
       perfil: {
         contexto: limpo(l.contexto),
         pode_ajudar_com: limpo(l.pode_ajudar_com),
@@ -325,7 +348,7 @@ export interface ResumoEmbeddings {
  * string canônica muda, o hash muda, e a próxima passada por aqui reembute.
  *
  * **Quem faz essa próxima passada acontecer é `passadaDeVetores`**, logo abaixo,
- * chamada em `waitUntil` pelo confirmar e pelas cinco rotas de `/entidades`
+ * chamada em `waitUntil` pelo confirmar e pelas oito rotas de `/entidades`
  * (4.8.1). Até a 4.8 a única chamadora era `POST /api/entidades/embutir`, que
  * nenhuma tela chama: a "próxima passada" descrita aqui não existia, e entidade
  * nascida num confirmar ficava sem vetor **para sempre** — a camada 3a

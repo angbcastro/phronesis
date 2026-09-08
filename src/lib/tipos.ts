@@ -168,6 +168,21 @@ export type CampoPerfil = (typeof CAMPOS_PERFIL)[number];
  */
 export const TETO_PERFIL = 300;
 
+/**
+ * O **retrato de identidade** de uma entidade (migration 009, slice 4.11): quem
+ * ela é para mim e, antes de tudo, o que a distingue de outra parecida.
+ *
+ * Teto de 500, cortado no servidor. Sem teto o custo de todo prompt passa a
+ * depender do tamanho de cada ficha, e uma entidade muito falada empurra as
+ * outras para fora do contexto. 300 era pouco para um retrato — e este campo
+ * cobra sozinho o que antes se cobrava dos três de perfil juntos.
+ *
+ * Nasce vazio, e vazio é estado válido: entidade sem resumo entra no prompt com
+ * nome, tipo e grafias, o agente devolve confiança baixa, e a confiança baixa é
+ * o que dispara a segunda passada com o perfil inteiro.
+ */
+export const TETO_RESUMO = 500;
+
 /** Perfil completo. Campo ausente no grafo é lido como string vazia. */
 export type Perfil = Record<CampoPerfil, string>;
 

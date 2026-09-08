@@ -58,6 +58,8 @@ const no = (nome: string, extra: Partial<EntidadeDoGrafo> = {}): EntidadeDoGrafo
     sessoes: 1,
     atomos: 1,
     aliases: [],
+    resumo: "",
+    canonico: false,
     perfil: { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" },
     ...extra,
   };

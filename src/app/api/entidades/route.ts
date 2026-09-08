@@ -13,11 +13,14 @@ export const dynamic = "force-dynamic";
  * assim guardar o histórico do nome.
  *
  * **O perfil sai por padrão** (4.8.1). Os dois clientes desta rota querem coisas
- * diferentes: `/entidades` edita os três campos e pede `?perfil=1`; a revisão só
- * quer nome, chaves e tipo para a barra pesquisável, e baixa o grafo inteiro a
- * cada abertura (§14). O perfil é o campo mais pesado da resposta, e era carga
- * que ninguém lia ali — `catalogo.ts` já dizia que ele ficava de fora, e não
- * ficava.
+ * diferentes: `/entidades` edita os campos e pede `?perfil=1`; a revisão só quer
+ * nome, chaves e tipo para a barra pesquisável, e baixa o grafo inteiro a cada
+ * abertura (§14). O perfil é o campo mais pesado da resposta, e era carga que
+ * ninguém lia ali — `catalogo.ts` já dizia que ele ficava de fora, e não ficava.
+ *
+ * `resumo` e `canonico` (009) seguem o perfil, e pela mesma razão: quem os edita
+ * é `/entidades`, e o `resumo` é o segundo campo mais pesado da resposta. Os
+ * agentes não passam por aqui — eles chamam `listarEntidades()` no servidor.
  */
 export async function GET(req: Request) {
   const comPerfil = new URL(req.url).searchParams.get("perfil") === "1";

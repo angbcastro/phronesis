@@ -773,6 +773,44 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .campo-perfil .meta { font-size: 0.78rem; color: var(--texto-fraco); }
 
+/* A ficha oficial se vê na linha, sem abrir nada. */
+.canonica { margin-left: 0.35rem; color: var(--acento); }
+.reextrair.canonico { border-color: var(--acento); color: var(--acento); }
+
+/* As grafias, uma por etiqueta, com o × que tira. Editável à mão é o ponto:
+   é o único jeito de ensinar uma grafia ANTES de o STT errar pela primeira
+   vez, que é justamente quando ele mais erra. */
+.lista-grafias {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.lista-grafias li {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  background: var(--fundo-alto);
+  border: 1px solid var(--linha);
+  border-radius: 999px;
+  padding: 0.15rem 0.3rem 0.15rem 0.6rem;
+}
+.lista-grafias button {
+  font: inherit;
+  line-height: 1;
+  color: var(--texto-fraco);
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.1rem 0.3rem;
+  cursor: pointer;
+}
+.lista-grafias button:hover:not(:disabled) { color: var(--acento); }
+.lista-grafias button:disabled { opacity: 0.5; cursor: default; }
+
 /* O que o agente 3 propôs: ao lado do atual, nunca por cima. */
 .proposta-perfil {
   border-left: 2px solid var(--acento);

@@ -1722,7 +1722,7 @@ slice 4. É também o que permite este código ir ao ar antes de a migration 006
 rodar.
 
 E vale para o vetor da **entidade** desde a 4.8.1: `passadaDeVetores()` roda em
-`waitUntil` depois do confirmar e das cinco rotas de `/entidades`, engolindo a
+`waitUntil` depois do confirmar e das oito rotas de `/entidades`, engolindo a
 falha com `[entidades]` no log (§8.4). Até ali a camada 3a era código que não
 podia achar nada — `garantirEmbeddings()` tinha um chamador só, uma rota que
 nenhuma tela chama —, e entidade nascida num confirmar ficava sem vetor para
@@ -2720,7 +2720,7 @@ com cada fatia, e hoje são estas:
 | o rascunho de perfil não escreve | `perfil.rascunhar` | pedir o rascunho dez vezes não muda o grafo; só `POST /api/entidades/perfil` grava |
 | status na cláusula `WHERE` | `sessoes.atualizarSessao` | transição já feita não volta atrás; confirmar duas vezes não reprocessa |
 | `embedding IS NULL` ou modelo diferente | `atomos.embutirAtomos` e `atomosSemVetor` | reconfirmar não reembute o que já tem vetor; rodar o retrofill duas vezes não gasta duas vezes |
-| `embedding_fonte` bater | `entidades.garantirEmbeddings` | entidade em dia não é reembutida — e por isso não há gancho a esquecer em nenhuma das cinco rotas de entidade |
+| `embedding_fonte` bater | `entidades.garantirEmbeddings` | entidade em dia não é reembutida — e por isso não há gancho a esquecer em nenhuma das oito rotas de entidade |
 | `CREATE VECTOR INDEX … IF NOT EXISTS` | migration 006 | reaplicar a migration é no-op |
 | `If-None-Match: *` em `correcoes.json` | `calibracao.capturarCorrecoes` | reenviar o confirmar não sobrescreve o registro permanente da revisão |
 | `If-Match` + laço de retry no índice | `calibracao.atualizarIndice` | duas capturas concorrentes se somam; quem perde a corrida relê e reaplica |
@@ -2852,9 +2852,9 @@ Quatro módulos escrevem em nó de conteúdo, e a divisão importa:
 | Módulo | Escreve | Quem chama |
 |---|---|---|
 | `atomos.ts` | `:Atomo`, `:Entidade` e `:PERFILA` | **só o confirmar** — nenhum átomo entra antes da revisão (regra 5) |
-| `fusao.ts` | `:Entidade` — funde, renomeia, troca tipo, cria | só as rotas de `/entidades`, com um toque meu em cada uma |
+| `fusao.ts` | `:Entidade` — funde, renomeia, troca tipo, cria, escreve `resumo`, edita `aliases`, marca `canonico` | as rotas de `/entidades`, com um toque meu em cada uma — e `registrarGrafia`, que o confirmar chama sozinho (§4.14) |
 | `perfil.ts` | `:Entidade` — os três campos de perfil (8.3) | só `POST /api/entidades/perfil`, com um toque meu |
-| `entidades.ts` | `:Entidade` — `embedding`, `embedding_modelo` e `embedding_fonte` (8.4) | `passadaDeVetores()` em `waitUntil`, no confirmar e nas cinco rotas de `/entidades`, mais `POST /api/entidades/embutir` para o retrofill; o módulo que lê o catálogo é o mesmo que põe o vetor em dia |
+| `entidades.ts` | `:Entidade` — `embedding`, `embedding_modelo` e `embedding_fonte` (8.4) | `passadaDeVetores()` em `waitUntil`, no confirmar e nas oito rotas de `/entidades`, mais `POST /api/entidades/embutir` para o retrofill; o módulo que lê o catálogo é o mesmo que põe o vetor em dia |
 
 `entidades.ts` está na lista porque escrever vetor é escrever no grafo, mesmo
 que o que ele escreva seja derivável do texto a qualquer momento. Ele é a
@@ -3165,15 +3165,77 @@ constante fechada, e nunca do cliente.
 no catálogo do agente 2 só com nome e tipo, que é o comportamento anterior à
 slice. Perfil vazio é perfil válido.
 
-Contrato completo de `:Entidade` depois da 005:
+### 8.3.1 A ficha se apresenta: `resumo`, `aliases`, `canonico` (migration 009)
+
+```
+(:Entidade { …, resumo, aliases, canonico })
+
+resumo    texto livre, teto de 500 (TETO_RESUMO); ausente = ''
+aliases   lista de grafias; ausente = []          — ver §8.2
+canonico  booleano, marcado à mão; ausente = false
+```
+
+**O `resumo` é o retrato de identidade**: quem a entidade é para mim e, antes de
+tudo, o que a distingue de outra parecida. Ele é o que os **dois** agentes leem
+por padrão desde a 4.11 — o dossiê do extrator (§4.14) e o catálogo do agente 2
+(§4.8). Até aqui eles liam coisas diferentes da mesma entidade: o extrator via só
+`contexto`, escolhido em código entre os três, e o agente 2 via os três campos
+inteiros de **todas** as entidades em toda chamada. Uma apresentação só, nos dois
+lugares.
+
+O teto de 500 não é estética, e é o mesmo argumento que a 005 usou com 300: sem
+teto, o custo de todo prompt passa a depender do tamanho de cada ficha, e uma
+entidade muito falada empurra as outras para fora do contexto. 300 era pouco para
+um retrato — e este campo cobra sozinho o que antes se cobrava dos três juntos.
+O corte é no servidor (`gravarResumo`), como o do perfil era.
+
+**Resumo vazio é estado válido, e não ganha fallback.** É como toda entidade
+nasce. A entidade sem resumo entra no prompt com nome, tipo e grafias e mais
+nada; o agente devolve confiança baixa, a confiança baixa dispara a segunda
+passada, e a segunda passada carrega o perfil inteiro — que é exatamente o que o
+agente 2 lia antes desta fatia. Entre a 4.11 e a 4.12 essa passada vai ser a
+regra, e isso é **comportamento esperado** (§14): a frequência cai sozinha
+conforme os resumos forem escritos.
+
+**`canonico` é preferência, não obrigação.** "Esta é a ficha oficial desta
+entidade": marcada à mão, um toque, reversível, sem consequência retroativa —
+nenhum átomo já gravado muda. Ela não exige sobrenome, não impede entidade nova
+de nascer e não trava unicidade nenhuma. O que ela faz:
+
+| Onde | O que ela vale |
+|---|---|
+| no dossiê do extrator e no catálogo do agente 2 | uma palavra na linha do candidato dizendo que aquela é a ficha oficial |
+| em `/entidades` | marca na linha e ordenação na frente (`ORDER BY canonico DESC`) |
+| no desempate determinístico | quando dois candidatos empatam, o canônico vence — em código, antes de qualquer chamada |
+
+Nome canônico é preferência do mesmo jeito: `:Pessoa` sem sobrenome funciona
+igual, e `/entidades` mostra que falta. Nada bloqueia, e nenhuma gravação é
+recusada por isso.
+
+**Sem índice**, como o perfil: ninguém busca por `resumo` nem por `canonico`, e o
+Aura Free tem cota de índice.
+
+**O `TETO_PERFIL` de 300 saiu** com esta migration, e é ela que o mata. O motivo
+declarado na 005 era o consumo do agente 2 — "os três campos de todas as
+entidades entram no prompt de resolução, e sem teto o custo cresce com o grafo".
+A partir da 4.11 os três campos **não entram mais no caminho comum**: eles só
+aparecem na segunda passada, para os poucos candidatos de uma menção em dúvida.
+O motivo do teto deixou de existir, e o teto com ele.
+
+Contrato completo de `:Entidade` depois da 009:
 
 ```
 (:Entidade { id, nome, nome_normalizado, criado_em, status,
-             contexto, pode_ajudar_com, fizemos_juntos })
+             contexto, pode_ajudar_com, fizemos_juntos,
+             embedding, embedding_modelo, embedding_fonte,
+             resumo, aliases, canonico })
 status ∈ 'ativa' | 'fundida'
+resumo   ≤ 500 (TETO_RESUMO)   aliases  lista   canonico  booleano
+contexto, pode_ajudar_com, fizemos_juntos — SEM TETO a partir da 009
 
-(:Entidade)-[:FUNDIDA_EM]->(:Entidade)      do alias para o vencedor     (004)
-(:Entidade)-[:DISTINTA_DE]->(:Entidade)     recusa minha                 (004)
+(:Entidade)-[:FUNDIDA_EM]->(:Entidade)   fusão de duas entidades reais   (004)
+                                         — grafia de STT não usa mais    (009)
+(:Entidade)-[:DISTINTA_DE]->(:Entidade)  recusa minha                    (004)
 (:Atomo)-[:PERFILA { campo }]->(:Entidade)                               (005)
 ```
 
@@ -3355,14 +3417,17 @@ sessão, e apagá-las seria desaprender (§14).
 | `GET /api/calibracao/sugestao` | `{ sugerir: boolean }` | **puro, nunca escreve**; a gaveta o consulta ao abrir |
 | `POST /api/calibracao/rascunho` | o `calibracao-1` propõe até duas regras | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/calibracao/regras` | a lista inteira que passa a valer, e o que ela fecha | o **único** lugar que escreve regra; lista vazia revoga tudo |
-| `GET /api/entidades` | o que está no grafo, com átomos, sessões e aliases; `?perfil=1` traz os três campos | só leitura; nó fundido vira alias do vencedor; alimenta também o seletor da revisão, que não pede o perfil |
+| `GET /api/entidades` | o que está no grafo, com átomos, sessões e grafias; `?perfil=1` traz também `resumo`, `canonico` e os três campos | só leitura; nó fundido vira alias do vencedor; alimenta também o seletor da revisão, que não pede o perfil |
 | `POST /api/entidades/duplicatas` | propõe pares que parecem a mesma coisa | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/entidades/fundir` | `{vencedora, perdedora}` — migra arestas, marca alias | idempotente pela guarda de `status` |
 | `POST /api/entidades/distintas` | `{a, b}` — a recusa que impede a pergunta de voltar | |
-| `POST /api/entidades/renomear` | `{chave, nome}` — grafia velha vira alias | recusa pronome, como o confirmar |
+| `POST /api/entidades/renomear` | `{chave, nome}` — grafia velha entra em `aliases` | recusa pronome, como o confirmar; recusa nome que já é grafia de outro nó |
 | `POST /api/entidades/tipo` | `{chave, tipo}` — troca o label | o tipo só era editável enquanto a entidade era nova |
 | `POST /api/entidades/criar` | `{nome, tipo}` — semeia um nome antes de falá-lo | cria nó órfão de propósito |
-| `POST /api/entidades/perfil` | `{chave, campo, texto}` — grava um dos três campos | o único lugar que escreve perfil; corta no teto de 300 no servidor |
+| `POST /api/entidades/perfil` | `{chave, campo, texto}` — grava um dos três campos | o único lugar que escreve perfil; **sem teto** desde a 009 |
+| `POST /api/entidades/resumo` | `{chave, texto}` — grava o retrato de identidade | o único lugar que o escreve; corta em `TETO_RESUMO` (500) no servidor; texto vazio limpa |
+| `POST /api/entidades/aliases` | `{chave, grafia, acao}` — acrescenta ou tira uma grafia | um item por chamada: a lista na tela é a união de duas fontes, e mandá-la de volta gravaria uma na outra. Acrescentar reusa `registrarGrafia`, com as quatro recusas |
+| `POST /api/entidades/canonico` | `{chave, canonico}` — marca a ficha oficial | reversível, sem consequência retroativa; não trava nada |
 | `POST /api/entidades/perfil/rascunho` | `{chave, campo}` — o agente 3 propõe | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/atomos/embutir` | dá vetor aos átomos que ainda não têm, em lote | retrofill e retry; 200 por chamada, `continua: true` enquanto sobrar; não toca no texto nem reextrai |
 | `POST /api/entidades/embutir` | põe em dia o vetor das entidades, comparando `embedding_fonte` | não editar nada devolve `embutidas: 0` |
@@ -3428,7 +3493,7 @@ número não vai bater com a tela.
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
-| `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, escrever o perfil |
+| `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, marcar a ficha oficial — e a **ficha** de cada uma: resumo, grafias e os três campos de perfil |
 | `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
 | `/agentes` | `Agentes` | o fluxo desenhado — os sete agentes, os dados entre eles e o único nó humano; clicar numa caixa abre o prompt e o modelo daquele agente |
 | `/entrar` | página de login | pede o e-mail permitido |

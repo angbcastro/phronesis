@@ -120,6 +120,41 @@ describe("a lista da tela de manutenção", () => {
     expect(cypher()).toContain("coalesce(e.aliases, []) AS aliases_prop");
   });
 
+  it("lê resumo e canonico, com ausente valendo vazio e false (009)", async () => {
+    await listarEntidades();
+    expect(cypher()).toContain("coalesce(e.resumo, '') AS resumo");
+    expect(cypher()).toContain("coalesce(e.canonico, false) AS canonico");
+  });
+
+  /**
+   * A ordem serve dois lugares: `/entidades`, onde eu marquei a ficha oficial e
+   * quero vê-la em cima; e o desempate determinístico da resolução, onde dois
+   * candidatos empatados são decididos pela ordem em que este catálogo os
+   * entrega.
+   */
+  it("põe o canônico na frente, antes do desempate por sessões", async () => {
+    await listarEntidades();
+    expect(cypher()).toContain("ORDER BY canonico DESC, sessoes DESC, e.nome");
+  });
+
+  it("resumo ausente é string vazia, e canonico ausente é false", async () => {
+    consulta.mockResolvedValue([
+      {
+        id: "id-1",
+        nome: "Isinha",
+        nome_normalizado: "isinha",
+        labels: ["Entidade", "Pessoa"],
+        atomos: 4,
+        sessoes: 2,
+        aliases: [],
+      },
+    ] as never);
+
+    const [e] = await listarEntidades();
+    expect(e.resumo).toBe("");
+    expect(e.canonico).toBe(false);
+  });
+
   /**
    * O caso "jean" da 4.11, e é ele que a fatia inteira existe para entregar: a
    * grafia deixou de ser nó, então ela só casa se `chaves` a incluir. Sem esta

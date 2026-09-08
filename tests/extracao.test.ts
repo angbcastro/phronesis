@@ -518,6 +518,8 @@ describe("o bloco das candidatas (slice 4.9)", () => {
     sessoes: 3,
     atomos: 7,
     aliases: ["Giam"],
+    resumo: "",
+    canonico: false,
     perfil: { contexto: "sócio na Adapta", pode_ajudar_com: "", fizemos_juntos: "" },
   };
   const dossie = [{ entidade: GIAMPAOLO, camada: "prefixo" as const, score: 0.5 }];

@@ -15,12 +15,15 @@ import {
   criarEntidade,
   fundir,
   FusaoError,
+  gravarResumo,
+  marcarCanonico,
   marcarDistintas,
   registrarGrafia,
+  removerGrafia,
   renomear,
-  STATUS_ENTIDADE_FUNDIDA,
   trocarTipo,
 } from "@/lib/fusao";
+import { TETO_RESUMO } from "@/lib/tipos";
 
 const consulta = vi.mocked(query);
 const todoCypher = () => consulta.mock.calls.map((c) => String(c[0])).join("\n---\n");
@@ -507,5 +510,81 @@ describe("registrar a grafia falada", () => {
       { alvo: null, alvoFundido: false, ja: null, jaFundida: false, destino: null, donos: [] },
     ] as never);
     expect((await registrarGrafia("fantasma", "Jean")).criada).toBe(false);
+  });
+});
+
+/**
+ * O que a 4.11 acrescentou de escrita minha: o retrato de identidade, a lista
+ * de grafias editável, e a marca de ficha oficial.
+ */
+describe("o resumo (migration 009)", () => {
+  it("grava, atravessando alias — texto em nó fundido iria para lugar nenhum", async () => {
+    consulta.mockResolvedValue([{ id: "id-1", nome: "Giampaolo Lepore" }] as never);
+    const r = await gravarResumo("jean", "Sócio na Adapta. Mora em Floripa.");
+
+    expect(r.resumo).toBe("Sócio na Adapta. Mora em Floripa.");
+    const cypher = todoCypher();
+    expect(cypher).toContain("(e)-[:FUNDIDA_EM]->(v:Entidade)");
+    expect(cypher).toContain("SET alvo.resumo = $resumo");
+  });
+
+  it("corta em 500 no servidor: regra que só vale na tela não é regra", async () => {
+    consulta.mockResolvedValue([{ id: "id-1", nome: "Isinha" }] as never);
+    const r = await gravarResumo("isinha", "x".repeat(TETO_RESUMO + 120));
+    expect(r.resumo).toHaveLength(TETO_RESUMO);
+  });
+
+  it("texto vazio limpa o campo — resumo vazio é estado válido", async () => {
+    consulta.mockResolvedValue([{ id: "id-1", nome: "Isinha" }] as never);
+    expect((await gravarResumo("isinha", "   ")).resumo).toBe("");
+  });
+
+  it("entidade que não existe é erro, e não gravação silenciosa", async () => {
+    consulta.mockResolvedValue([] as never);
+    await expect(gravarResumo("fantasma", "oi")).rejects.toThrow(/não está no grafo/);
+  });
+});
+
+describe("a marca de ficha oficial", () => {
+  it("liga e desliga, atravessando alias", async () => {
+    consulta.mockResolvedValue([{ id: "id-1" }] as never);
+    await marcarCanonico("giampaolo lepore", true);
+    expect(todoCypher()).toContain("SET alvo.canonico = $canonico");
+    expect(consulta.mock.calls.at(-1)?.[1]).toMatchObject({ canonico: true });
+  });
+
+  it("é reversível, e não trava nada", async () => {
+    consulta.mockResolvedValue([{ id: "id-1" }] as never);
+    await marcarCanonico("giampaolo lepore", false);
+    expect(consulta.mock.calls.at(-1)?.[1]).toMatchObject({ canonico: false });
+  });
+});
+
+describe("tirar uma grafia à mão", () => {
+  it("tira da propriedade, e o array volta menor", async () => {
+    consulta.mockResolvedValue([{ antes: 3, depois: 2 }] as never);
+    expect(await removerGrafia("giampaolo lepore", "Jean")).toEqual({
+      removida: true,
+      motivo: "",
+    });
+    expect(todoCypher()).toContain("[a IN antes WHERE a <> $grafia]");
+  });
+
+  /**
+   * A grafia que aparece na tela mas não está na propriedade é o nome de um nó
+   * que perdeu uma fusão real. Ela não sai por aqui, e a recusa diz por quê:
+   * desfazer uma fusão é outra decisão, e não tem este botão.
+   */
+  it("recusa a grafia que veio de uma fusão real, e explica", async () => {
+    consulta.mockResolvedValue([{ antes: 2, depois: 2 }] as never);
+    const r = await removerGrafia("giampaolo lepore", "Giampa");
+
+    expect(r.removida).toBe(false);
+    expect(r.motivo).toContain("perdeu uma fusão");
+  });
+
+  it("entidade que não existe é erro", async () => {
+    consulta.mockResolvedValue([] as never);
+    await expect(removerGrafia("fantasma", "Jean")).rejects.toThrow(/não está no grafo/);
   });
 });
