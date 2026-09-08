@@ -4104,7 +4104,11 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   índice único fazia de graça passaram a ser leitura explícita.
 - `tests/entidades-grafo.test.ts` — que `chaves` atravessa a propriedade, que o
   casamento exato encontra "jean" sem nó nenhum, e que o vocabulário do STT lê só
-  `e.nome`.
+  `e.nome`. **O Cypher em si nenhum teste valida** — `query` está mockado, e quem
+  recusa é o banco: a 4.11 escreveu `coalesce(e.aliases, []) + collect(...)`
+  direto no RETURN de `garantirEmbeddings`, passou em 922 testes e só apareceu
+  contra o Aura (somar chave de agrupamento a agregação na mesma expressão é
+  ilegal). O conserto foi um `WITH` próprio, e a linha que o fixa está lá.
 - Qualidade da resolução (slice 4) também não tem teste automático, e pelo mesmo
   motivo. A diferença é que agora existe um caso concreto de que eu sei a
   resposta: a sessão que fala do Rapha e do Raffa.

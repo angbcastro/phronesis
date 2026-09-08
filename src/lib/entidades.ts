@@ -426,8 +426,12 @@ export async function garantirEmbeddings(limite = 500): Promise<ResumoEmbeddings
     `MATCH (e:Entidade)
      WHERE coalesce(e.status, 'ativa') <> 'fundida'
      OPTIONAL MATCH (alias:Entidade)-[:FUNDIDA_EM]->(e)
+     // A união num WITH próprio, e não dentro do RETURN: somar a propriedade
+     // (chave de agrupamento) ao collect (agregação) na mesma expressão é
+     // ilegal em Cypher, e o erro só aparece contra o banco de verdade.
+     WITH e, collect(DISTINCT alias.nome) AS deFusao
      RETURN e.id AS id, e.nome AS nome, labels(e) AS labels,
-            coalesce(e.aliases, []) + collect(DISTINCT alias.nome) AS aliases,
+            coalesce(e.aliases, []) + deFusao AS aliases,
             e.contexto AS contexto, e.pode_ajudar_com AS pode_ajudar_com,
             e.fizemos_juntos AS fizemos_juntos,
             e.embedding_fonte AS embedding_fonte,

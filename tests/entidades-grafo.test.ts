@@ -287,6 +287,23 @@ describe("o vetor da entidade (slice 4.5)", () => {
       }),
     );
 
+  /**
+   * O Cypher desta consulta **não é validado por nenhum teste** — `query` está
+   * mockado, e o banco é quem recusa. Esta linha existe porque a 4.11 escreveu
+   * `coalesce(e.aliases, []) + collect(DISTINCT alias.nome)` direto no RETURN, e
+   * o Neo4j recusou: somar uma chave de agrupamento a uma agregação na mesma
+   * expressão é ilegal. Passou nos 922 testes e só apareceu contra o Aura.
+   */
+  it("a união das duas fontes de grafia acontece num WITH, não no RETURN", async () => {
+    await garantirEmbeddings();
+    const cypher = String(consulta.mock.calls[0][0]);
+    expect(cypher).toContain("WITH e, collect(DISTINCT alias.nome) AS deFusao");
+    expect(cypher).toContain("coalesce(e.aliases, []) + deFusao AS aliases");
+    // A união numa linha só do RETURN é justamente o que o banco recusa.
+    const doRetorno = cypher.split(/\r?\n/).find((l) => l.includes("AS aliases")) ?? "";
+    expect(doRetorno).not.toContain("collect(");
+  });
+
   it("entidade sem vetor nenhum é embutida", async () => {
     consulta.mockResolvedValueOnce([linha()] as never).mockResolvedValue([] as never);
     const r = await garantirEmbeddings();
