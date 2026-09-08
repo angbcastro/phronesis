@@ -43,7 +43,7 @@ import {
   TETO_RESUMO,
   TIPOS_ENTIDADE,
 } from "@/lib/tipos";
-import type { CampoPerfil, Perfil, TipoEntidade } from "@/lib/tipos";
+import type { CampoPerfil, Enriquecimento, Perfil, TipoEntidade } from "@/lib/tipos";
 
 interface Entidade {
   id: string;
@@ -56,6 +56,7 @@ interface Entidade {
   resumo: string;
   canonico: boolean;
   perfil: Perfil;
+  enriquecimento: Enriquecimento;
 }
 
 interface Par {
@@ -91,6 +92,29 @@ const DICA: Record<CampoPerfil, string> = {
 };
 
 const PERFIL_VAZIO: Perfil = { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" };
+
+/** Só a data. A hora não muda o que eu faço, e a linha já é longa. */
+const dia = (iso: string) => (iso === "" ? "" : iso.slice(0, 10).split("-").reverse().join("/"));
+
+/**
+ * O estado do lote **na própria linha** — a fatia decidiu que nenhum aviso mora
+ * fora desta tela. Notificação de PWA seria o único canal que me alcança com o
+ * app fechado, e seria o primeiro uso de push neste sistema: recusado por agora.
+ *
+ * `null` (nunca enriquecida) não vira selo nenhum: é o estado de quase todo o
+ * grafo, e um selo em toda linha não informa nada.
+ */
+function selo(e: Enriquecimento): string {
+  if (e.estado === "na_fila") return " · na fila";
+  if (e.estado === "rodando") return " · enriquecendo…";
+  if (e.estado === "falhou") return ` · falhou: ${e.motivo || "sem motivo registrado"}`;
+  if (e.estado === "pronta") {
+    return e.atomos === 0
+      ? ` · sem átomo para ler${e.em === "" ? "" : ` em ${dia(e.em)}`}`
+      : ` · ficha de ${e.atomos} átomo(s)${e.em === "" ? "" : ` em ${dia(e.em)}`}`;
+  }
+  return "";
+}
 
 export function Entidades() {
   const [entidades, setEntidades] = useState<Entidade[] | null>(null);
@@ -317,6 +341,52 @@ export function Entidades() {
     void carregar();
   }
 
+  /**
+   * O agente 4 escreve a ficha inteira — e **grava**, sem eu ver antes.
+   *
+   * É a única coisa desta tela que escreve conteúdo sem o meu toque campo a
+   * campo, e é decisão declarada da 4.12: o atrito de aprovar campo por campo é
+   * o que deixou as fichas vazias. O contrapeso é o desfazer, logo abaixo.
+   */
+  async function enriquecerUma(chave: string) {
+    const id = `${chave}|enriquecer`;
+    setOcupado(id);
+    setFalha(null);
+    const r = await fetch("/api/entidades/enriquecer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chave }),
+    }).catch(() => null);
+    setOcupado(null);
+    if (!r?.ok) {
+      setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
+    }
+    // Recarrega nos dois casos: quando falha, é a linha da entidade que passa a
+    // mostrar o motivo, e é isso que a fatia prometeu.
+    void carregar();
+  }
+
+  /** Os quatro campos voltam de uma vez. Um toque — ele restaura, não destrói. */
+  async function desfazer(chave: string) {
+    const id = `${chave}|desfazer`;
+    setOcupado(id);
+    setFalha(null);
+    const r = await fetch("/api/entidades/desfazer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chave }),
+    }).catch(() => null);
+    setOcupado(null);
+    if (!r?.ok) {
+      setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
+      return;
+    }
+    // O textarea local tem de sair da frente: o que ele mostra é o texto de
+    // antes do desfazer, e ele venceria o que veio do grafo.
+    setTextos({});
+    void carregar();
+  }
+
   /** O agente 3 propõe; nada é gravado até eu apertar salvar. */
   async function pedirRascunho(chave: string, campo: CampoPerfil) {
     const id = `${chave}|${campo}`;
@@ -449,6 +519,7 @@ export function Entidades() {
                     {e.aliases.length > 0 && ` · também: ${e.aliases.join(", ")}`}
                     {e.resumo === "" ? " · sem resumo" : " · com resumo"}
                     {escritos > 0 && ` · perfil ${escritos}/3`}
+                    {selo(e.enriquecimento)}
                   </span>
                 </span>
 
@@ -524,6 +595,33 @@ export function Entidades() {
                     é isto que o agente lê para saber de quem eu estou falando quando dois nomes
                     soam igual
                   </p>
+
+                  {/* O lote, e o que o desfaz. Ficam no topo da ficha porque
+                      escrevem os quatro campos abaixo de uma vez só — e porque
+                      o desfazer tem de estar à vista de quem acabou de ver a
+                      ficha mudar sem ter aprovado nada. */}
+                  <div className="acoes-sessao lote">
+                    <button
+                      className="reextrair"
+                      disabled={ocupado === `${e.nome_normalizado}|enriquecer`}
+                      title="o agente lê TODOS os átomos que falam dela e escreve a ficha inteira — e grava, sem eu aprovar campo a campo"
+                      onClick={() => void enriquecerUma(e.nome_normalizado)}
+                    >
+                      {ocupado === `${e.nome_normalizado}|enriquecer`
+                        ? "escrevendo…"
+                        : "enriquecer esta"}
+                    </button>
+                    {e.enriquecimento.tem_anterior && (
+                      <button
+                        className="reextrair"
+                        disabled={ocupado === `${e.nome_normalizado}|desfazer`}
+                        title="volta os quatro campos para a geração anterior — outro toque traz de volta"
+                        onClick={() => void desfazer(e.nome_normalizado)}
+                      >
+                        {ocupado === `${e.nome_normalizado}|desfazer` ? "voltando…" : "desfazer"}
+                      </button>
+                    )}
+                  </div>
 
                   {/* O resumo vem primeiro porque é o que os dois agentes leem
                       por padrão. Os três campos abaixo dele só entram na segunda

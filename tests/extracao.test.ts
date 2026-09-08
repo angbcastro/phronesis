@@ -16,6 +16,7 @@ import {
   tetoDaSegundaTentativa,
 } from "@/lib/extracao";
 import type { Atribuicoes } from "@/lib/resolucao";
+import { NUNCA_ENRIQUECIDA } from "@/lib/tipos";
 import type { AtomoCru, Palavra, Transcricao } from "@/lib/tipos";
 
 /**
@@ -520,6 +521,7 @@ describe("o bloco das candidatas (slice 4.9)", () => {
     aliases: ["Giam"],
     resumo: "Sócio na Adapta. Mora em Floripa, faz slackline.",
     canonico: true,
+    enriquecimento: NUNCA_ENRIQUECIDA,
     perfil: { contexto: "sócio na Adapta", pode_ajudar_com: "", fizemos_juntos: "" },
   };
   const dossie = [{ entidade: GIAMPAOLO, camada: "prefixo" as const, score: 0.5 }];

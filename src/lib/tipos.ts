@@ -184,6 +184,49 @@ export type CampoPerfil = (typeof CAMPOS_PERFIL)[number];
  */
 export const TETO_RESUMO = 500;
 
+/**
+ * O estado da entidade na fila de enriquecimento (migration 010, slice 4.12).
+ *
+ * Ele mora no **nó**, e não no navegador, e é isso que faz "fechar a aba não
+ * interrompe nada" ser verdade: o elo seguinte da fila lê o banco. É também a
+ * trava de idempotência da fatia (regra 4), chaveada pela entidade.
+ */
+export const ESTADOS_ENRIQUECIMENTO = ["na_fila", "rodando", "pronta", "falhou"] as const;
+
+export type EstadoEnriquecimento = (typeof ESTADOS_ENRIQUECIMENTO)[number];
+
+export const ehEstadoEnriquecimento = (v: unknown): v is EstadoEnriquecimento =>
+  typeof v === "string" && (ESTADOS_ENRIQUECIMENTO as readonly string[]).includes(v);
+
+/** O que a linha de `/entidades` mostra sobre a última rodada do lote. */
+export interface Enriquecimento {
+  /** `null` = nunca enriquecida. Não é erro: é o estado de toda entidade hoje. */
+  estado: EstadoEnriquecimento | null;
+  /** O erro, quando `falhou`. É o que aparece na própria linha. */
+  motivo: string;
+  /** ISO 8601 — quando o estado mudou. */
+  em: string;
+  /** Quantos átomos entraram na última rodada. */
+  atomos: number;
+  /**
+   * Há uma geração anterior guardada? É o que acende o desfazer.
+   *
+   * **Uma geração só**, e o desfazer é uma troca: ele põe o `_anterior` de volta
+   * e guarda o que estava lá. Por isso o botão não some depois de usado — o
+   * pior caso de um toque acidental é outro toque.
+   */
+  tem_anterior: boolean;
+}
+
+/** Entidade que nunca passou pelo lote — o estado de todas elas até a 4.12. */
+export const NUNCA_ENRIQUECIDA: Enriquecimento = {
+  estado: null,
+  motivo: "",
+  em: "",
+  atomos: 0,
+  tem_anterior: false,
+};
+
 /** Perfil completo. Campo ausente no grafo é lido como string vazia. */
 export type Perfil = Record<CampoPerfil, string>;
 

@@ -637,6 +637,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .par p { margin: 0; }
 
 /* Semear uma entidade antes de falar o nome, e a busca de duplicatas. */
+/* O lote fica separado do resto da ficha por uma linha: ele escreve os quatro
+   campos abaixo de uma vez, e o desfazer é o contrapeso disso. */
+.perfil .lote {
+  flex-wrap: wrap;
+  padding-bottom: 0.6rem;
+  margin-bottom: 0.2rem;
+  border-bottom: 1px solid var(--linha);
+}
+
 .criar-entidade { margin: 0.6rem 0 0.2rem; flex-wrap: wrap; }
 .criar-entidade .campo-nome { width: 12rem; }
 

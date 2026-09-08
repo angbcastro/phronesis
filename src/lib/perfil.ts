@@ -75,6 +75,7 @@ function statementDeCampo(campo: CampoPerfil): string {
   return `MATCH (e:Entidade { nome_normalizado: $chave })
      OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
      WITH coalesce(v, e) AS alvo
+     SET alvo.${campo}_anterior = coalesce(alvo.${campo}, '')
      SET alvo.${campo} = $texto
      RETURN alvo.id AS id, alvo.nome AS nome`;
 }
@@ -88,6 +89,14 @@ function statementDeCampo(campo: CampoPerfil): string {
  * deixou de ler estes campos: quem os lê agora é a segunda passada
  * (`desempate.ts`), e só para os candidatos de **uma** menção em dúvida. Quem
  * cobra tamanho é o `TETO_RESUMO`, do campo que entra em todo prompt.
+ *
+ * **Ela guarda a geração anterior desde a 4.12** (`<campo>_anterior`, migration
+ * 010), e isso não é simetria de enfeite. O botão de desfazer de `/entidades`
+ * volta os quatro campos de uma vez; se a minha edição à mão não empurrasse o
+ * `_anterior` junto, ele continuaria apontando para o que existia **antes do
+ * lote** — e o toque no desfazer apagaria o texto que eu tinha acabado de
+ * escrever, em vez de voltar uma geração. O invariante é um só, e vale para toda
+ * escrita de campo de ficha: `_anterior` é a geração imediatamente anterior.
  */
 export async function gravarCampo(
   chaveOuNome: string,

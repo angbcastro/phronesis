@@ -480,9 +480,13 @@ export async function gravarResumo(
 
   const resumo = texto.trim().slice(0, TETO_RESUMO);
   const r = await query<{ id: string; nome: string }>(
+    // `resumo_anterior` pela mesma razão de `gravarCampo` (010): o desfazer de
+    // `/entidades` volta UMA geração, e ela tem de ser a imediatamente anterior
+    // — senão um toque no desfazer apagaria o que eu acabei de escrever aqui.
     `MATCH (e:Entidade { nome_normalizado: $chave })
      OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
      WITH coalesce(v, e) AS alvo
+     SET alvo.resumo_anterior = coalesce(alvo.resumo, '')
      SET alvo.resumo = $resumo
      RETURN alvo.id AS id, alvo.nome AS nome`,
     { chave, resumo },

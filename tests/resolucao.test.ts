@@ -49,6 +49,7 @@ import {
 } from "@/lib/resolucao";
 import { normalizarNome } from "@/lib/texto";
 import type { CandidatoSemantico, EntidadeDoGrafo } from "@/lib/entidades";
+import { NUNCA_ENRIQUECIDA } from "@/lib/tipos";
 import type { AtomoCru, MencaoCrua, ReferenciaResolvida } from "@/lib/tipos";
 
 const chamar = vi.mocked(generateText);
@@ -99,6 +100,7 @@ const no = (nome: string, extra: Partial<EntidadeDoGrafo> = {}): EntidadeDoGrafo
     aliases: [],
     resumo: "",
     canonico: false,
+    enriquecimento: NUNCA_ENRIQUECIDA,
     perfil: { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" },
     ...extra,
   };
@@ -135,6 +137,7 @@ const RAFFA = no("Raffa", {
 });
 const RAPHA = no("Rapha", {
   canonico: true,
+  enriquecimento: NUNCA_ENRIQUECIDA,
   resumo: "Sócio no evento. Produção de evento.",
   perfil: {
     contexto: "sócio no evento",

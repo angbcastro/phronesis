@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { distancia, extrairJson, parecidas, proximidade } from "@/lib/duplicatas";
 import { chaveDoPar } from "@/lib/fusao";
+import { NUNCA_ENRIQUECIDA } from "@/lib/tipos";
 import type { EntidadeDoGrafo } from "@/lib/entidades";
 
 const ent = (nome: string, extra: Partial<EntidadeDoGrafo> = {}): EntidadeDoGrafo => {
@@ -25,6 +26,7 @@ const ent = (nome: string, extra: Partial<EntidadeDoGrafo> = {}): EntidadeDoGraf
     aliases: [],
     resumo: "",
     canonico: false,
+    enriquecimento: NUNCA_ENRIQUECIDA,
     perfil: { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" },
     ...extra,
   };

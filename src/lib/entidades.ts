@@ -30,9 +30,15 @@ import { embutirVarios, fonteDaEntidade, hashDaFonte } from "./embedding";
 import { modeloEmbedding } from "./modelos";
 import { query } from "./neo4j";
 import { ehPronome, normalizarNome } from "./texto";
-import { PERFIL_VAZIO, ROTULO_TIPO_ENTIDADE, TIPOS_ENTIDADE } from "./tipos";
+import {
+  ehEstadoEnriquecimento,
+  PERFIL_VAZIO,
+  ROTULO_TIPO_ENTIDADE,
+  TIPOS_ENTIDADE,
+} from "./tipos";
 import type {
   EntidadeCandidata,
+  Enriquecimento,
   EntidadePropostaFrase,
   Evidencia,
   Perfil,
@@ -100,12 +106,25 @@ export interface EntidadeDoGrafo {
   canonico: boolean;
   /** Os três campos da migration 005. Campo ausente no grafo é string vazia. */
   perfil: Perfil;
+  /**
+   * A última rodada do lote, e se há geração para desfazer (010, slice 4.12).
+   *
+   * Vive no mesmo objeto que a ficha, e não numa segunda consulta, porque é
+   * **por linha** que `/entidades` mostra o estado: `na fila`, `enriquecendo`,
+   * `pronta` com a data e a contagem, ou `falhou` com o motivo. Nenhum aviso
+   * fora da tela — foi decisão da fatia não abrir canal novo (notificação de
+   * PWA seria o primeiro uso de push neste sistema).
+   *
+   * Os agentes não leem este campo: para eles a entidade continua sendo nome,
+   * tipo, grafias e resumo (`apresentarEntidade`).
+   */
+  enriquecimento: Enriquecimento;
 }
 
 interface LinhaGrafo
   extends Omit<
     EntidadeDoGrafo,
-    "tipo" | "perfil" | "chaves" | "aliases" | "resumo" | "canonico"
+    "tipo" | "perfil" | "chaves" | "aliases" | "resumo" | "canonico" | "enriquecimento"
   > {
   labels: string[];
   resumo: string | null;
@@ -118,6 +137,12 @@ interface LinhaGrafo
   contexto: string | null;
   pode_ajudar_com: string | null;
   fizemos_juntos: string | null;
+  enriquecimento_estado: string | null;
+  enriquecimento_motivo: string | null;
+  enriquecimento_em: string | null;
+  enriquecimento_atomos: number | null;
+  /** Só o que interessa dos quatro `_anterior`: existe geração guardada? */
+  tem_anterior: boolean | null;
 }
 
 const limpo = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
@@ -162,7 +187,18 @@ export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
             coalesce(e.canonico, false) AS canonico,
             coalesce(e.contexto, '') AS contexto,
             coalesce(e.pode_ajudar_com, '') AS pode_ajudar_com,
-            coalesce(e.fizemos_juntos, '') AS fizemos_juntos
+            coalesce(e.fizemos_juntos, '') AS fizemos_juntos,
+            e.enriquecimento_estado AS enriquecimento_estado,
+            coalesce(e.enriquecimento_motivo, '') AS enriquecimento_motivo,
+            coalesce(e.enriquecimento_em, '') AS enriquecimento_em,
+            coalesce(e.enriquecimento_atomos, 0) AS enriquecimento_atomos,
+            // Os quatro _anterior não viajam: a tela não mostra o texto
+            // guardado, só oferece o botão. O que ela precisa saber é se há o
+            // que desfazer, e isso é um booleano em vez de quatro campos que
+            // podem ser longos (os três de perfil não têm teto desde a 009).
+            size([t IN [e.resumo_anterior, e.contexto_anterior,
+                        e.pode_ajudar_com_anterior, e.fizemos_juntos_anterior]
+                    WHERE t IS NOT NULL AND t <> '']) > 0 AS tem_anterior
      ORDER BY canonico DESC, sessoes DESC, e.nome`,
   );
 
@@ -201,6 +237,17 @@ export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
         contexto: limpo(l.contexto),
         pode_ajudar_com: limpo(l.pode_ajudar_com),
         fizemos_juntos: limpo(l.fizemos_juntos),
+      },
+      enriquecimento: {
+        // Estado que o código não conhece conta como "nunca enriquecida", como
+        // `status` ausente conta como ativa (004): a defesa fica na leitura.
+        estado: ehEstadoEnriquecimento(l.enriquecimento_estado)
+          ? l.enriquecimento_estado
+          : null,
+        motivo: limpo(l.enriquecimento_motivo),
+        em: limpo(l.enriquecimento_em),
+        atomos: l.enriquecimento_atomos ?? 0,
+        tem_anterior: l.tem_anterior === true,
       },
     };
   });

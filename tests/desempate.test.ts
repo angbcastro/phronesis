@@ -18,6 +18,7 @@ import {
   parsearResposta,
 } from "@/lib/desempate";
 import type { MencaoEmDuvida } from "@/lib/desempate";
+import { NUNCA_ENRIQUECIDA } from "@/lib/tipos";
 import type { EntidadeDoGrafo } from "@/lib/entidades";
 import { normalizarNome } from "@/lib/texto";
 
@@ -42,6 +43,7 @@ const no = (nome: string, extra: Partial<EntidadeDoGrafo> = {}): EntidadeDoGrafo
     aliases: [],
     resumo: "",
     canonico: false,
+    enriquecimento: NUNCA_ENRIQUECIDA,
     perfil: { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" },
     ...extra,
   };
@@ -59,6 +61,7 @@ const RAFFA = no("Raffa", {
 
 const RAPHA = no("Rapha", {
   canonico: true,
+  enriquecimento: NUNCA_ENRIQUECIDA,
   perfil: {
     contexto: "sócio no evento",
     pode_ajudar_com: "produção de evento",

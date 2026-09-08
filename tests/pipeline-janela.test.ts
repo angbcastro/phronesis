@@ -49,6 +49,7 @@ import { extrair, extrairJanela } from "@/lib/extracao";
 import { listarEntidades } from "@/lib/entidades";
 import { carregarManifest } from "@/lib/manifest";
 import { getJson, putJson } from "@/lib/r2";
+import { NUNCA_ENRIQUECIDA } from "@/lib/tipos";
 import type { EntidadeDoGrafo } from "@/lib/entidades";
 import type { Dossie } from "@/lib/recuperacao";
 import type { Parcial, Transcricao } from "@/lib/tipos";
@@ -223,6 +224,7 @@ describe("o dossiê da janela (slice 4.9)", () => {
     aliases: [],
     resumo: "",
     canonico: false,
+    enriquecimento: NUNCA_ENRIQUECIDA,
     perfil: { contexto: "sócio na Adapta", pode_ajudar_com: "", fizemos_juntos: "" },
   };
 

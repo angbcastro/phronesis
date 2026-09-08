@@ -49,7 +49,7 @@ import { query } from "./neo4j";
 import { carimbo, efetivo } from "./overrides";
 import { normalizarNome } from "./texto";
 import { CAMPOS_PERFIL, PERFIL_VAZIO, ROTULO_TIPO_ENTIDADE, TETO_RESUMO } from "./tipos";
-import type { Perfil } from "./tipos";
+import type { EstadoEnriquecimento, Perfil } from "./tipos";
 
 /** Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7). */
 export const PROMPT_VERSION_ENRIQUECIMENTO = "enriquecimento-1";
@@ -325,4 +325,211 @@ export async function escreverFicha(
     modelo: r.response?.modelId ?? meu.modelo,
     prompt_version: carimbo(PROMPT_VERSION_ENRIQUECIMENTO, meu.hash),
   };
+}
+
+// ──────────────────────── a gravação, e o desfazer ────────────────────────
+
+/** O erro cabe na linha da entidade; a causa inteira fica no log. */
+export const TETO_MOTIVO = 300;
+
+/**
+ * Os quatro campos da ficha, e onde cada um guarda a geração anterior.
+ *
+ * A lista mora aqui porque três escritas dependem dela na mesma ordem — gravar,
+ * desfazer e o `tem_anterior` de `listarEntidades` —, e uma delas esquecer um
+ * campo seria o desfazer restaurando três dos quatro sem erro nenhum.
+ *
+ * Nome de propriedade não vem de parâmetro em Neo4j, então ele vai literal no
+ * Cypher — mesmo padrão de `statementDeCampo` (`perfil.ts`) e do label literal
+ * de `atomos.ts`, e seguro pela mesma razão: sai daqui, constante fechada, e
+ * nunca do cliente.
+ */
+export const CAMPOS_DA_FICHA = ["resumo", ...CAMPOS_PERFIL] as const;
+
+export type CampoDaFicha = (typeof CAMPOS_DA_FICHA)[number];
+
+export const anteriorDe = (campo: CampoDaFicha): string => campo + "_anterior";
+
+/** O `SET` que empurra o que está gravado para a geração anterior. */
+const GUARDAR_ANTERIOR = CAMPOS_DA_FICHA.map(
+  (c) => `alvo.${anteriorDe(c)} = coalesce(alvo.${c}, '')`,
+).join(",\n         ");
+
+/** O `SET` que escreve a ficha nova. Cláusula separada, e a ordem importa. */
+const ESCREVER_FICHA = CAMPOS_DA_FICHA.map((c) => `alvo.${c} = $${c}`).join(",\n         ");
+
+/**
+ * A troca do desfazer: o campo recebe o `_anterior`, e o `_anterior` recebe o
+ * que estava no campo. Os dois lados são lidos **antes** de qualquer escrita,
+ * num mapa `velho` — sem isso a segunda metade leria o que a primeira acabou de
+ * escrever, e a troca viraria um no-op silencioso.
+ */
+const LER_VELHO = [
+  ...CAMPOS_DA_FICHA.map((c) => `${c}: coalesce(alvo.${anteriorDe(c)}, '')`),
+  ...CAMPOS_DA_FICHA.map((c) => `atual_${c}: coalesce(alvo.${c}, '')`),
+].join(", ");
+
+const TROCAR = [
+  ...CAMPOS_DA_FICHA.map((c) => `alvo.${c} = velho.${c}`),
+  ...CAMPOS_DA_FICHA.map((c) => `alvo.${anteriorDe(c)} = velho.atual_${c}`),
+].join(",\n         ");
+
+/** As quatro strings guardadas, para saber se existe geração anterior. */
+const GUARDADOS = CAMPOS_DA_FICHA.map((c) => `velho.${c}`).join(", ");
+
+/**
+ * O começo de toda escrita de ficha: acha a entidade e atravessa alias.
+ *
+ * Escrever no perdedor de uma fusão tem de ir para o vencedor, senão o texto
+ * ficaria num nó que nenhuma leitura enxerga — mesma regra de `gravarCampo` e
+ * `gravarResumo`.
+ */
+const ACHAR_ALVO = `MATCH (e:Entidade { nome_normalizado: $chave })
+     OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(v:Entidade)
+     WITH coalesce(v, e) AS alvo`;
+
+export interface EntidadeEscrita {
+  id: string;
+  nome: string;
+}
+
+/**
+ * Grava a ficha, guardando a geração anterior, e marca a entidade como
+ * `pronta`.
+ *
+ * **Uma consulta só**, e as duas cláusulas `SET` em ordem: a primeira empurra o
+ * que está lá para o `_anterior`, a segunda escreve por cima. Numa cláusula só a
+ * ordem de avaliação decidiria o resultado, e a decisão mais importante desta
+ * fatia — que existe uma geração para voltar — dependeria de uma sutileza de
+ * Cypher.
+ *
+ * **É a única escrita de conteúdo deste sistema que não passa pelo meu toque
+ * campo a campo**, e é a reabertura declarada do §4.9. O que a substitui é a
+ * seleção, o botão, e o desfazer logo abaixo.
+ */
+export async function gravarFicha(
+  chaveOuNome: string,
+  ficha: Ficha,
+  atomos: number,
+  agora: Date = new Date(),
+): Promise<EntidadeEscrita> {
+  const chave = normalizarNome(chaveOuNome);
+  if (chave === "") throw new EnriquecimentoError("gravar ficha exige a entidade");
+
+  const r = await query<EntidadeEscrita>(
+    `${ACHAR_ALVO}
+     SET ${GUARDAR_ANTERIOR}
+     SET ${ESCREVER_FICHA}
+     SET alvo.enriquecimento_estado = 'pronta',
+         alvo.enriquecimento_em = $agora,
+         alvo.enriquecimento_atomos = $atomos,
+         alvo.enriquecimento_motivo = ''
+     RETURN alvo.id AS id, alvo.nome AS nome`,
+    {
+      chave,
+      resumo: ficha.resumo.slice(0, TETO_RESUMO),
+      ...ficha.perfil,
+      atomos,
+      agora: agora.toISOString(),
+    },
+  );
+  if (r.length === 0) throw new EnriquecimentoError(`"${chaveOuNome}" não está no grafo`);
+  return r[0];
+}
+
+/**
+ * Marca o estado sem tocar na ficha: `na_fila`, `rodando` ou `falhou`.
+ *
+ * A ficha e o estado se separam aqui de propósito. Um elo que morre entre
+ * gravar a ficha e marcar `pronta` deixa a entidade em `rodando` até a retomada
+ * — a ficha já está escrita, e a próxima rodada a reescreve a partir dos mesmos
+ * átomos. Não há perda, só trabalho repetido (§14).
+ */
+export async function marcarEstado(
+  chaveOuNome: string,
+  estado: EstadoEnriquecimento,
+  motivo = "",
+  agora: Date = new Date(),
+): Promise<void> {
+  const chave = normalizarNome(chaveOuNome);
+  if (chave === "") return;
+
+  await query(
+    `${ACHAR_ALVO}
+     SET alvo.enriquecimento_estado = $estado,
+         alvo.enriquecimento_em = $agora,
+         alvo.enriquecimento_motivo = $motivo`,
+    { chave, estado, motivo: motivo.slice(0, TETO_MOTIVO), agora: agora.toISOString() },
+  );
+}
+
+/**
+ * O desfazer: os quatro campos voltam de uma vez.
+ *
+ * **É uma troca, e não uma restauração.** O que estava na ficha vai para o
+ * `_anterior`, então o invariante da migration 010 — "o `_anterior` é sempre a
+ * geração imediatamente anterior" — continua verdadeiro depois dele, e um toque
+ * acidental se conserta com outro toque. É por isso que o desfazer é de **um**
+ * toque, e não de dois como o de apagar sessão: ele restaura, não destrói.
+ *
+ * Devolve `null` quando não há geração guardada — a tela não oferece o botão
+ * nesse caso, e a rota não apaga a ficha atual contra quatro strings vazias se
+ * ele for chamado assim mesmo.
+ */
+export async function desfazerFicha(chaveOuNome: string): Promise<EntidadeEscrita | null> {
+  const chave = normalizarNome(chaveOuNome);
+  if (chave === "") throw new EnriquecimentoError("desfazer exige a entidade");
+
+  const r = await query<EntidadeEscrita & { tinha: boolean }>(
+    `${ACHAR_ALVO}
+     WITH alvo, { ${LER_VELHO} } AS velho
+     WITH alvo, velho, size([c IN [${GUARDADOS}] WHERE c <> '']) > 0 AS tinha
+     FOREACH (_ IN CASE WHEN tinha THEN [1] ELSE [] END |
+       SET ${TROCAR})
+     RETURN alvo.id AS id, alvo.nome AS nome, tinha`,
+    { chave },
+  );
+
+  if (r.length === 0) throw new EnriquecimentoError(`"${chaveOuNome}" não está no grafo`);
+  return r[0].tinha ? { id: r[0].id, nome: r[0].nome } : null;
+}
+
+/** Quantos átomos entraram, e a ficha — `null` quando não houve o que escrever. */
+export interface Rodada {
+  atomos: number;
+  ficha: FichaEscrita | null;
+}
+
+/**
+ * O caminho de uma entidade do começo ao fim: ler os átomos, escrever a ficha,
+ * gravar.
+ *
+ * **Entidade sem átomo nenhum não vai ao modelo**: ela sai `pronta` com os
+ * campos inalterados e `enriquecimento_atomos: 0`. Pagar uma chamada para não
+ * ter o que dizer é desperdício, e sobrescrever a ficha com o vazio seria perda.
+ *
+ * Quem trata a falha é quem chama: na fila ela vira `falhou` com o motivo na
+ * linha da entidade, e a entidade seguinte não é afetada.
+ */
+export async function enriquecer(
+  e: Pick<EntidadeDoGrafo, "nome" | "nome_normalizado" | "tipo" | "aliases">,
+): Promise<Rodada> {
+  const atomos = await atomosDaEntidade(e.nome_normalizado);
+
+  if (atomos.length === 0) {
+    await marcarEstado(e.nome_normalizado, "pronta");
+    await query(`${ACHAR_ALVO}\n     SET alvo.enriquecimento_atomos = 0`, {
+      chave: normalizarNome(e.nome_normalizado),
+    });
+    console.log(`[enriquecimento] ${e.nome}: nenhum átomo fala dela — ficha intocada.`);
+    return { atomos: 0, ficha: null };
+  }
+
+  const ficha = await escreverFicha(e, atomos);
+  await gravarFicha(e.nome_normalizado, ficha, ficha.atomos);
+  console.log(
+    `[enriquecimento] ${e.nome}: ficha escrita de ${ficha.atomos} átomo(s) — ` +
+      `${ficha.modelo}, ${ficha.prompt_version}`,
+  );
+  return { atomos: ficha.atomos, ficha };
 }

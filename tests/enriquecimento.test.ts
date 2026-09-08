@@ -20,12 +20,16 @@ vi.mock("@/lib/r2", () => ({
 
 import { generateText } from "ai";
 import {
+  CAMPOS_DA_FICHA,
   EnriquecimentoError,
   INSTRUCOES,
   PROMPT_VERSION_ENRIQUECIMENTO,
   atomosDaEntidade,
   blocoDeAtomos,
+  desfazerFicha,
+  enriquecer,
   escreverFicha,
+  gravarFicha,
   montarPrompt,
   parsearFicha,
 } from "@/lib/enriquecimento";
@@ -243,5 +247,126 @@ describe("escrever a ficha", () => {
     responder(`{"resumo":"x"}`);
     await escreverFicha(RAPHA, [atomo()]);
     expect((chamar.mock.calls[0][0] as { maxRetries: number }).maxRetries).toBe(0);
+  });
+});
+
+// ───────────────────── a gravação, e a geração anterior ─────────────────────
+
+describe("gravar a ficha", () => {
+  beforeEach(() => consulta.mockResolvedValue([{ id: "e1", nome: "Rapha" }] as never));
+
+  const ficha = {
+    resumo: "Produtor",
+    perfil: { contexto: "amigo", pode_ajudar_com: "produção", fizemos_juntos: "slackline" },
+  };
+  const cypher = () => String(consulta.mock.calls[0][0]);
+
+  it("guarda os quatro `_anterior` ANTES de escrever por cima", async () => {
+    await gravarFicha("rapha", ficha, 7);
+    const c = cypher();
+    for (const campo of CAMPOS_DA_FICHA) {
+      expect(c).toContain(`alvo.${campo}_anterior = coalesce(alvo.${campo}, '')`);
+      expect(c.indexOf(`${campo}_anterior = coalesce`)).toBeLessThan(
+        c.indexOf(`alvo.${campo} = $${campo}`),
+      );
+    }
+  });
+
+  it("as escritas são cláusulas SET separadas — a ordem não pode depender de sutileza", async () => {
+    // Numa cláusula só, a ordem de avaliação decidiria se existe geração para
+    // voltar. É a decisão mais importante da fatia; ela não fica implícita.
+    await gravarFicha("rapha", ficha, 1);
+    expect(cypher().split("SET ").length - 1).toBe(3);
+  });
+
+  it("escreve os quatro campos e o estado da rodada", async () => {
+    await gravarFicha("rapha", ficha, 7);
+    const p = consulta.mock.calls[0][1] as Record<string, unknown>;
+    expect(p).toMatchObject({
+      chave: "rapha",
+      resumo: "Produtor",
+      contexto: "amigo",
+      pode_ajudar_com: "produção",
+      fizemos_juntos: "slackline",
+      atomos: 7,
+    });
+    expect(cypher()).toContain("alvo.enriquecimento_estado = 'pronta'");
+  });
+
+  it("corta o resumo no servidor, como gravarResumo — regra que só vale na tela não é regra", async () => {
+    await gravarFicha("rapha", { ...ficha, resumo: "a".repeat(TETO_RESUMO + 50) }, 1);
+    const p = consulta.mock.calls[0][1] as { resumo: string };
+    expect(p.resumo).toHaveLength(TETO_RESUMO);
+  });
+
+  it("atravessa alias: escrever no perdedor de uma fusão vai para o vencedor", async () => {
+    await gravarFicha("raffa", ficha, 1);
+    expect(cypher()).toContain("coalesce(v, e) AS alvo");
+  });
+
+  it("entidade fora do grafo é erro, e não escrita silenciosa", async () => {
+    consulta.mockResolvedValue([] as never);
+    await expect(gravarFicha("ninguem", ficha, 1)).rejects.toThrow(EnriquecimentoError);
+  });
+});
+
+describe("o desfazer", () => {
+  const cypher = () => String(consulta.mock.calls[0][0]);
+
+  it("é uma TROCA: o `_anterior` vira ficha, e a ficha vira `_anterior`", async () => {
+    consulta.mockResolvedValue([{ id: "e1", nome: "Rapha", tinha: true }] as never);
+    await desfazerFicha("rapha");
+    const c = cypher();
+    for (const campo of CAMPOS_DA_FICHA) {
+      expect(c).toContain(`alvo.${campo} = velho.${campo}`);
+      expect(c).toContain(`alvo.${campo}_anterior = velho.atual_${campo}`);
+    }
+  });
+
+  it("lê os dois lados antes de escrever — senão a troca vira no-op silencioso", async () => {
+    consulta.mockResolvedValue([{ id: "e1", nome: "Rapha", tinha: true }] as never);
+    await desfazerFicha("rapha");
+    const c = cypher();
+    expect(c.indexOf("AS velho")).toBeLessThan(c.indexOf("SET alvo."));
+  });
+
+  it("sem geração guardada devolve null, e não apaga a ficha contra quatro vazios", async () => {
+    consulta.mockResolvedValue([{ id: "e1", nome: "Rapha", tinha: false }] as never);
+    expect(await desfazerFicha("rapha")).toBeNull();
+  });
+
+  it("entidade fora do grafo é erro", async () => {
+    consulta.mockResolvedValue([] as never);
+    await expect(desfazerFicha("ninguem")).rejects.toThrow(EnriquecimentoError);
+  });
+});
+
+describe("uma entidade do começo ao fim", () => {
+  const RAPHA_NO = { ...RAPHA, nome_normalizado: "rapha bertoldo" };
+
+  it("sem átomo nenhum não vai ao modelo — e a ficha fica intocada", async () => {
+    // Pagar uma chamada para não ter o que dizer é desperdício; escrever o
+    // vazio por cima seria perda.
+    consulta.mockResolvedValue([] as never);
+    const r = await enriquecer(RAPHA_NO);
+    expect(chamar).not.toHaveBeenCalled();
+    expect(r).toEqual({ atomos: 0, ficha: null });
+    const escritas = consulta.mock.calls.map((c) => String(c[0]));
+    expect(escritas.some((c) => c.includes("enriquecimento_estado = $estado"))).toBe(true);
+    expect(escritas.some((c) => c.includes("resumo_anterior"))).toBe(false);
+  });
+
+  it("com átomos, escreve a ficha e a grava numa rodada só", async () => {
+    consulta
+      .mockResolvedValueOnce([
+        { texto: "produziu o evento", tipo: "FATO", valido_em: "2026-08-01", sobre: true },
+      ] as never)
+      .mockResolvedValue([{ id: "e1", nome: "Rapha Bertoldo" }] as never);
+    responder(`{"resumo":"Produtor","contexto":"amigo"}`);
+
+    const r = await enriquecer(RAPHA_NO);
+    expect(r.atomos).toBe(1);
+    expect(r.ficha?.resumo).toBe("Produtor");
+    expect(String(consulta.mock.calls[1][0])).toContain("resumo_anterior");
   });
 });

@@ -42,6 +42,7 @@ import {
 } from "@/lib/recuperacao";
 import { tokenizar } from "@/lib/texto";
 import type { CandidatasDoBloco } from "@/lib/recuperacao";
+import { NUNCA_ENRIQUECIDA } from "@/lib/tipos";
 import type { EntidadeDoGrafo } from "@/lib/entidades";
 import type { AtomoProposto } from "@/lib/tipos";
 
@@ -60,6 +61,7 @@ const no = (nome: string, extra: Partial<EntidadeDoGrafo> = {}): EntidadeDoGrafo
     aliases: [],
     resumo: "",
     canonico: false,
+    enriquecimento: NUNCA_ENRIQUECIDA,
     perfil: { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" },
     ...extra,
   };
