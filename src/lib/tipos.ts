@@ -667,6 +667,7 @@ export const AGENTE_IDS = [
   "resolucao",
   "desempate",
   "perfil",
+  "enriquecimento",
   "calibracao",
   "duplicatas",
   "embedding",

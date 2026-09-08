@@ -4,9 +4,9 @@
  * **Ele importa o prompt de cada agente; não o copia.** Duas cópias do mesmo
  * texto divergem no primeiro ajuste, e divergiriam em silêncio — a tela mostraria
  * um prompt e o modelo receberia outro, que é a falha mais cara que este painel
- * poderia ter. Por isso as constantes viraram `export` nos cinco módulos.
+ * poderia ter. Por isso as constantes viraram `export` em cada módulo de agente.
  *
- * **Ele fica acima dos agentes, nunca abaixo.** Este módulo importa os cinco;
+ * **Ele fica acima dos agentes, nunca abaixo.** Este módulo importa todos eles;
  * nenhum deles importa este. Quem cada agente consulta em tempo de execução é
  * `overrides.ts`, que não sabe que este registro existe. Invertida, a dependência
  * fecharia um ciclo, e ciclo de módulo com `const` no topo vira `undefined` em
@@ -20,6 +20,10 @@ import { BASE as BASE_EXTRACAO, PROMPT_VERSION as VERSAO_EXTRACAO } from "./extr
 import { INSTRUCOES as BASE_RESOLUCAO, LIMIAR_CONFIANCA, PROMPT_VERSION_RESOLUCAO } from "./resolucao";
 import { INSTRUCOES as BASE_DESEMPATE, PROMPT_VERSION_DESEMPATE } from "./desempate";
 import { INSTRUCOES as BASE_PERFIL, PROMPT_VERSION_PERFIL } from "./perfil";
+import {
+  INSTRUCOES as BASE_ENRIQUECIMENTO,
+  PROMPT_VERSION_ENRIQUECIMENTO,
+} from "./enriquecimento";
 import { INSTRUCOES as BASE_CALIBRACAO, PROMPT_VERSION_CALIBRACAO } from "./calibracao";
 import { INSTRUCOES as BASE_DUPLICATAS, PROMPT_VERSION_DUPLICATAS } from "./duplicatas";
 import {
@@ -28,6 +32,7 @@ import {
   modeloDesempate,
   modeloDuplicatas,
   modeloEmbedding,
+  modeloEnriquecimento,
   modeloExtracao,
   modeloPerfil,
   modeloResolucao,
@@ -92,7 +97,7 @@ export interface Agente {
 }
 
 /**
- * Os oito. A ordem é a do fluxo, e é a que a tela usa quando lista em vez de
+ * Os nove. A ordem é a do fluxo, e é a que a tela usa quando lista em vez de
  * desenhar.
  */
 export const AGENTES: readonly Agente[] = [
@@ -186,6 +191,22 @@ export const AGENTES: readonly Agente[] = [
     envelope: ["texto"],
   },
   {
+    id: "enriquecimento",
+    versao: PROMPT_VERSION_ENRIQUECIMENTO,
+    rotulo: "enriquecimento",
+    papel:
+      "escreve a ficha inteira de uma entidade a partir de TODOS os átomos que falam dela — e grava sozinho",
+    quando: "sob_demanda",
+    gatilho:
+      "checkbox e botão em /entidades; a fila anda sozinha, um elo por entidade, sem janela aberta",
+    base: BASE_ENRIQUECIMENTO,
+    padrao: modeloEnriquecimento,
+    variavel: "ENRIQUECIMENTO_MODEL",
+    modulo: "src/lib/enriquecimento.ts",
+    modeloEditavel: true,
+    envelope: ["resumo", "contexto", "pode_ajudar_com", "fizemos_juntos"],
+  },
+  {
     id: "duplicatas",
     versao: PROMPT_VERSION_DUPLICATAS,
     rotulo: "duplicatas",
@@ -237,17 +258,23 @@ export function envelopeFaltando(a: Agente, texto: string): string[] {
  * e sistema que muda tem de quebrar um teste, não só ficar feio numa tela.
  *
  * A grade é **vertical**: este app vive no celular, e um canvas horizontal de
- * n8n não cabe num telefone. Quatro colunas, muitas linhas, e o que desce pelo
+ * n8n não cabe num telefone. Cinco colunas, muitas linhas, e o que desce pelo
  * meio é o caminho principal.
  *
  * **A regra que amarra o desenho: aresta de ida liga linhas vizinhas.** O
  * roteador desenha cotovelo — desce, atravessa, desce —, e um cotovelo que pula
- * uma linha atravessa a caixa que estiver no meio do caminho. Foi por isso que a
- * grade passou de três colunas para quatro: o `grafo` tem **três** filhos
- * (`duplicatas`, `perfil`, `embedding`), eles têm de caber na mesma linha, e a
- * quarta coluna é onde a calibração desce sem disputar espaço com eles.
+ * uma linha atravessa a caixa que estiver no meio do caminho. É essa regra que
+ * decide o número de colunas: o `grafo` tem quatro filhos (`duplicatas`,
+ * `perfil`, `enriquecimento`, `embedding`), eles têm de caber na **mesma**
+ * linha, e a coluna que sobra é onde a calibração desce sem disputar espaço com
+ * eles. Foi assim que a grade foi de três para quatro na 4.7, e de quatro para
+ * cinco na 4.12 — o agente 4 é o quarto filho do grafo.
  * `tests/agentes.test.ts` cobra o invariante. Realimentação (`volta`) é a única
  * exceção, e ela passa por fora da grade justamente por isso.
+ *
+ * A quinta coluna cabe porque o palco já rola na horizontal (`.palco-fluxo`):
+ * quem decide a largura de cada caixa é o `min-width` do `.fluxo`, e ele cresceu
+ * junto para as caixas não encolherem no telefone.
  */
 export type TipoDoNo = "agente" | "dado" | "eu";
 
@@ -258,7 +285,7 @@ export interface NoDoFluxo {
   /** Preenchido só quando o nó é um agente: é o que abre o editor. */
   agente?: AgenteId;
   faixa: Faixa;
-  coluna: 1 | 2 | 3 | 4;
+  coluna: 1 | 2 | 3 | 4 | 5;
   linha: number;
   /** Uma linha de explicação, para o nó que não é agente. */
   nota?: string;
@@ -286,14 +313,15 @@ export const NOS: readonly NoDoFluxo[] = [
   { id: "revisao", rotulo: "revisão", tipo: "eu", faixa: "eu", coluna: 2, linha: 7, nota: "eu. nada entra no grafo antes daqui" },
 
   { id: "grafo", rotulo: "grafo", tipo: "dado", faixa: "higiene", coluna: 2, linha: 8, nota: "átomos e entidades no Neo4j" },
-  { id: "correcoes", rotulo: "correções", tipo: "dado", faixa: "higiene", coluna: 4, linha: 8, nota: "o que a proposta dizia contra o que eu aprovei" },
+  { id: "correcoes", rotulo: "correções", tipo: "dado", faixa: "higiene", coluna: 5, linha: 8, nota: "o que a proposta dizia contra o que eu aprovei" },
 
   { id: "duplicatas", rotulo: "duplicatas", tipo: "agente", agente: "duplicatas", faixa: "higiene", coluna: 1, linha: 9 },
   { id: "perfil", rotulo: "perfil", tipo: "agente", agente: "perfil", faixa: "higiene", coluna: 2, linha: 9 },
-  { id: "embedding", rotulo: "embedding", tipo: "agente", agente: "embedding", faixa: "higiene", coluna: 3, linha: 9 },
-  { id: "calibracao", rotulo: "calibração", tipo: "agente", agente: "calibracao", faixa: "higiene", coluna: 4, linha: 9 },
+  { id: "enriquecimento", rotulo: "enriquecimento", tipo: "agente", agente: "enriquecimento", faixa: "higiene", coluna: 3, linha: 9 },
+  { id: "embedding", rotulo: "embedding", tipo: "agente", agente: "embedding", faixa: "higiene", coluna: 4, linha: 9 },
+  { id: "calibracao", rotulo: "calibração", tipo: "agente", agente: "calibracao", faixa: "higiene", coluna: 5, linha: 9 },
 
-  { id: "regras", rotulo: "regras", tipo: "dado", faixa: "higiene", coluna: 4, linha: 10, nota: "aprovadas por mim; entram no prompt da extração sem deploy" },
+  { id: "regras", rotulo: "regras", tipo: "dado", faixa: "higiene", coluna: 5, linha: 10, nota: "aprovadas por mim; entram no prompt da extração sem deploy" },
 ];
 
 export const ARESTAS: readonly ArestaDoFluxo[] = [
@@ -312,6 +340,7 @@ export const ARESTAS: readonly ArestaDoFluxo[] = [
   { de: "revisao", para: "correcoes" },
   { de: "grafo", para: "duplicatas" },
   { de: "grafo", para: "perfil" },
+  { de: "grafo", para: "enriquecimento", rotulo: "todos os átomos dela" },
   { de: "grafo", para: "embedding" },
   { de: "correcoes", para: "calibracao" },
   { de: "calibracao", para: "regras" },
@@ -319,6 +348,10 @@ export const ARESTAS: readonly ArestaDoFluxo[] = [
   { de: "perfil", para: "desempate", rotulo: "a ficha completa", volta: true },
   { de: "embedding", para: "resolucao", rotulo: "candidato por sentido", volta: true },
   { de: "duplicatas", para: "grafo", rotulo: "propõe; quem funde sou eu", volta: true },
+  // A única seta deste desenho que escreve no grafo sem passar pelo nó humano.
+  // Ela é a reabertura do §4.9 desenhada: a regra 5 continua inteira porque
+  // nenhum ÁTOMO entra por aqui — o que entra é a ficha da entidade.
+  { de: "enriquecimento", para: "grafo", rotulo: "escreve a ficha sozinho", volta: true },
   { de: "grafo", para: "candidatas", rotulo: "quem já existe", volta: true },
 ];
 
@@ -357,10 +390,10 @@ export interface AgenteNaTela {
 }
 
 /**
- * Os oito resolvidos contra a configuração, numa leitura só do índice.
+ * Os nove resolvidos contra a configuração, numa leitura só do índice.
  *
- * Um `resolver` por agente e um `configAgentes()` para todos: oito GETs para
- * responder a mesma pergunta seria pagar oito vezes por um objeto só.
+ * Um `resolver` por agente e um `configAgentes()` para todos: nove GETs para
+ * responder a mesma pergunta seria pagar nove vezes por um objeto só.
  */
 export async function retrato(cfg: ConfigAgentes): Promise<AgenteNaTela[]> {
   return Promise.all(

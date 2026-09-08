@@ -126,6 +126,21 @@ export function modeloPerfil(): string {
 }
 
 /**
+ * Modelo que escreve a ficha inteira de uma entidade a partir de todos os
+ * átomos que falam dela (slice 4.12, o lote).
+ *
+ * Padrão igual ao da extração, como os outros. **É o candidato mais provável a
+ * ser separado um dia**, e por isso a variável existe desde o primeiro commit:
+ * este agente lê a entrada mais longa do sistema — todos os átomos de uma
+ * entidade, sem teto — e escreve o texto que os dois agentes vão ler em toda
+ * chamada depois. Se algum lugar merece um modelo melhor, é este; e trocar é
+ * `ENRIQUECIMENTO_MODEL`, sem tocar em código.
+ */
+export function modeloEnriquecimento(): string {
+  return validarIdDeModelo(process.env.ENRIQUECIMENTO_MODEL || modeloExtracao());
+}
+
+/**
  * Modelo que lê as minhas correções e rascunha uma regra nova para o prompt de
  * extração (slice 4.6, agente 4). Mesma regra dos outros: padrão é o da
  * extração, e `CALIBRACAO_MODEL` separa sem tocar em código.
