@@ -8,6 +8,32 @@ Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
 sistema funciona hoje) e `Specs/slice-4.10.md` (o que a fatia atual tem que ser).
 Este arquivo só diz o que fazer a seguir.
 
+> **Atualizado em 08/09: a árvore estava suja com dois trabalhos misturados, e
+> foi fechada.** A migration 008 foi aprovada e aplicada (§2.4.1, riscada). O
+> conserto da importação — dez tentativas no manifest e 502 legível na rota
+> `pronto` — virou `26850ad`; e a tela de revisão, que tinha sido enxugada sem
+> documento nenhum acompanhando, virou `57b9562` com o `ARCHITECTURE.md` §4.7,
+> §4.10, §4.14, §11 e §14 junto: o texto do átomo edita no lugar, a dúvida virou
+> `acho que é X — confirma?` e a procedência do GraphRAG foi para um modal atrás
+> do `ⓘ`. **Nenhuma dessas duas mudanças foi medida**: a de UI foi feita a olho e
+> a de manifest só se prova na próxima importação — a §2.4 exercita as duas.
+> Uma consequência que ficou escrita no §14: o `motivo` do agente 2 não tem mais
+> caminho de UI nenhum; ele continua no `extracao.json`, e é lá que se olha
+> quando a atribuição surpreender. Isso muda o que a §2.6 pede para olhar.
+
+> **Atualizado em 07/09, mais uma vez: duas fatias novas na fila, ainda não
+> escritas.** O fluxo de resolução de entidade vai mudar em duas frentes — o
+> formato do candidato que a extração vê, o nome canônico e o papel do agente
+> de validação (fatia A); e um enriquecimento em lote que constrói o perfil a
+> partir de todos os átomos que apontam para a entidade, sem teto de
+> caracteres (fatia B). Nenhuma das duas tem `Specs/slice-N.md` ainda — a
+> seção 6 lista o que cada uma muda e deixa travado que a sessão que for
+> escrever essas specs tem que me entrevistar a fundo antes, porque há
+> tensões reais com o que já existe (o teto de 300 caracteres tem uma razão
+> de custo documentada em `ARCHITECTURE.md` §4.9, e o `resumo` novo se
+> relaciona com os três campos de perfil de um jeito que ainda não está
+> decidido).
+
 > **Atualizado em 07/09, de novo: a slice 4.10 está construída.** A sessão longa
 > foi rodada de ponta a ponta e mediu o que os 869 testes não alcançam: quatro
 > chamadas de modelo para entregar uma. Três consertos saíram daí, todos
@@ -177,9 +203,10 @@ Três coisas que só olho vê:
 
 ### 2.4.1 O botão de apagar, e a migration 008
 
-Antes de gerar sessão de teste com 35 objetos cada, **aprovar e rodar a
-migration 008** (`pnpm migrate`) — ela é no-op, e o que ela faz é declarar
-`descartada_em` no schema, que é onde o `CLAUDE.md` manda a verdade morar.
+~~Antes de gerar sessão de teste com 35 objetos cada, **aprovar e rodar a
+migration 008**.~~ **Feito em 08/09**: aprovada e aplicada com `pnpm migrate`, as
+oito em ordem, a 008 com 0 statement(s) como previsto. `descartada_em` está
+declarado no schema, que é onde o `CLAUDE.md` manda a verdade morar.
 
 Depois, apagar uma sessão de teste e conferir: a linha some da lista na hora, o
 prefixo `sessoes/<id>/` fica vazio no console do R2, e o nó continua no Neo4j com
@@ -228,7 +255,9 @@ Três coisas que só olho vê, e que são o risco desta fatia:
 - **apareceu nome de gente conhecida em átomo que não fala dela?** É o falso
   positivo do dossiê: a lista na frente do modelo é convite para ele usar um nome
   que combina com o assunto. O sinal é a discordância entre os dois agentes, que
-  a revisão marca;
+  a revisão marca como dúvida — **mas desde 08/09 ela marca sem dizer por quê**:
+  o `motivo` do agente 2 saiu da tela. Quando a marca aparecer e o `ⓘ` não
+  explicar, o motivo está em `sessoes/<id>/extracao.json`;
 - **quantas menções o agente 2 está julgando?** Agora são todas as que têm
   candidato — se a espera depois de parar de falar crescer, é aí.
 
@@ -285,3 +314,72 @@ resolvidos**; nada nesta sessão os tocou, e nada nesta sessão os verificou.
 | Sem operação de renome na janela | o painel de entidades da revisão já reaponta todos os átomos num gesto |
 | A sessão inteira é uma janela, não um caminho paralelo | um prompt só para calibrar, para sempre |
 | `JANELA_BLOCOS = 0` desliga tudo | botão de pânico sem deploy de emergência |
+
+---
+
+## 6. Duas fatias novas: resolução de entidade (ainda não especificadas)
+
+Nenhuma das duas tem spec escrita. **Antes de escrever `Specs/slice-N.md`
+para qualquer uma das duas, a sessão que pegar este trabalho tem que me
+entrevistar a fundo — perguntas com opções concretas, trade-off explícito,
+várias rodadas, até ter certeza que entendeu minha visão completa.** Não
+inferir dos documentos existentes nem preencher as lacunas abaixo sozinho:
+são decisões de produto subjetivas, e é assim que este projeto já trabalha —
+não escrever a spec (nem código) antes da entrevista estar completa.
+
+Ordem: fatia A primeiro — o `resumo` e o nome canônico mudam o que a fatia B
+vai enriquecer.
+
+### 6.1 Fatia A — o fluxo de resolução (candidato, nome canônico, agente 2)
+
+- **Novo campo `resumo` no perfil da entidade**, para o agente de extração.
+  Não existe no schema hoje — o perfil é só `contexto`, `pode_ajudar_com`,
+  `fizemos_juntos` (migration 005). Decidido: o campo só é preenchido depois
+  que a fatia B rodar; a fatia A cria o campo vazio.
+- **O dossiê de candidatos do GraphRAG** (hoje `blocoDasCandidatas()` em
+  `src/lib/extracao.ts`, alimentado por `src/lib/recuperacao.ts`) passa a
+  mostrar **nome, resumo e aliases como lista** — hoje mostra nome, tipo,
+  aliases como string e o campo `contexto` isolado. Aliases hoje não são uma
+  propriedade armazenada: são derivados percorrendo
+  `(:Entidade)-[:FUNDIDA_EM]->(:Entidade)` em `src/lib/entidades.ts`. A
+  entrevista decide se isso muda.
+- **Nome canônico = Nome + Sobrenome, só para `:Pessoa`** (Projeto, Objetivo e
+  Organização ficam como estão). Apelidos e outras grafias continuam em
+  aliases.
+- **Flag manual de "canônico" em toda entidade** (item novo): um nó pode ser
+  marcado à mão como canônico; nós marcados aparecem destacados em
+  `/entidades` e são priorizados no fluxo de resolução. É schema novo — exige
+  migration proposta e aprovada. Em aberto para a entrevista: prioridade em
+  qual etapa exatamente (agente 1, agente 2, ou as duas)? o que "destacar"
+  quer dizer na tela? a flag é só um sinal ou existe alguma trava de
+  unicidade por pessoa?
+- **O agente de validação (`src/lib/resolucao.ts`, hoje `resolucao-4`) muda
+  de papel**: de "decide a atribuição" para primariamente **verificar e
+  sinalizar** — confiança de que a entidade extraída no átomo é a canônica do
+  grafo, sinalizando entidades novas e entidades em dúvida; resolve sozinho
+  só quando a confiança permitir. Em aberto para a entrevista: o que muda no
+  JSON de saída do agente? como a tela de revisão (`Revisao.tsx`) mostra
+  "dúvida" hoje, e o que muda? "confiança suficiente para resolver sozinho" é
+  um número, uma instrução de prompt, ou os dois?
+- **Tensão a levar para a entrevista:** o `resumo` reduz o que entra no
+  prompt do agente 1, mas o agente 2 hoje lê os três campos de perfil
+  inteiros (`descrever()` em `src/lib/resolucao.ts`) — a fatia A muda isso
+  também, ou só o agente 1?
+
+### 6.2 Fatia B — enriquecimento em lote
+
+- **Chamada de API em lote** que pega todos os átomos que mencionam ou são
+  sobre a entidade (`SOBRE` + `MENCIONA` — não só os marcados por
+  `:PERFILA`) e usa tudo para construir o perfil. O único mecanismo parecido
+  hoje é o agente 3 (`src/lib/perfil.ts`, `perfil-1`): manual, por campo, sob
+  demanda, e só sobre átomos marcados via `:PERFILA`. `ARCHITECTURE.md` §4.9
+  documenta esse desenho como deliberado, com risco escrito — perfil errado
+  contamina toda atribuição futura, por isso "nada entra sem o meu toque". A
+  entrevista decide se o lote escreve sozinho ou continua exigindo
+  confirmação por toque: mudar isso é reabrir uma decisão de arquitetura já
+  tomada, não só trocar a fonte dos átomos.
+- **Tirar o teto de caracteres** (`TETO_PERFIL = 300`, `src/lib/tipos.ts`). O
+  teto existe por custo documentado: os três campos de perfil de todas as
+  entidades entram no prompt do agente 2 a cada resolução. Tirar o teto sem
+  decidir o que o agente 2 passa a ler (fatia A, `resumo` vs. perfil inteiro)
+  reintroduz esse custo — a entrevista precisa amarrar as duas fatias aqui.
