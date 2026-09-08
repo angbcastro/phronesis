@@ -186,29 +186,56 @@ describe("fundir", () => {
 });
 
 describe("renomear", () => {
-  it("a grafia velha vira alias do nome novo", async () => {
+  it("a grafia velha entra em aliases, e nenhum nó nasce (4.11)", async () => {
     await renomear("meu pai", "Antônio");
 
     const cypher = todoCypher();
     expect(cypher).toContain("SET e.nome = $novo, e.nome_normalizado = $chaveNova");
-    expect(cypher).toContain("MERGE (alias)-[:FUNDIDA_EM]->(e)");
-    // O alias nasce já fundido: ele nunca deve aparecer como entidade viva.
-    const params = consulta.mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    expect(params.fundida).toBe(STATUS_ENTIDADE_FUNDIDA);
+    expect(cypher).toContain("coalesce(e.aliases, []) + nomeVelho");
+    // O nó de grafia morreu na 009: nome velho é item de array, não entidade.
+    expect(cypher).not.toContain("CREATE (alias:Entidade");
+    expect(cypher).not.toContain("MERGE (alias)-[:FUNDIDA_EM]->(e)");
   });
 
-  it("mudar só a caixa não cria alias — a chave é a mesma", async () => {
+  it("mudar só a caixa não guarda grafia nenhuma — a chave é a mesma", async () => {
     await renomear("isinha", "Isinha");
     const cypher = todoCypher();
     expect(cypher).toContain("SET e.nome = $novo");
+    expect(cypher).not.toContain("aliases");
     expect(cypher).not.toContain("FUNDIDA_EM");
   });
 
   it("recusa nome que já é de outra entidade — isso é fusão, não renome", async () => {
     consulta.mockImplementation(async (statement: string) =>
-      statement.includes("RETURN e.id AS id") ? ([{ id: "outro" }] as never) : ([] as never),
+      statement.includes("AS chaveDoNo")
+        ? ([{ nome: "Isinha", chaveDoNo: "isinha", fundida: false, donos: [] }] as never)
+        : ([] as never),
     );
     await expect(renomear("meu pai", "Isinha")).rejects.toThrow(/funda as duas/);
+  });
+
+  /**
+   * A trava que a 4.11 teve de escrever à mão. Até a 009 a grafia era nó, e o
+   * índice único de `nome_normalizado` recusava sozinho; grafia em array o
+   * banco não recusa, e sem esta leitura o renome daria à entidade um nome que
+   * já resolve para outra — duas donas para a mesma chave.
+   */
+  it("recusa nome que já é grafia de outra entidade, e diz de quem", async () => {
+    consulta.mockImplementation(async (statement: string) =>
+      statement.includes("AS chaveDoNo")
+        ? ([
+            {
+              nome: null,
+              chaveDoNo: null,
+              fundida: false,
+              donos: [
+                { chave: "giampaolo lepore", nome: "Giampaolo Lepore", aliases: ["Jean"] },
+              ],
+            },
+          ] as never)
+        : ([] as never),
+    );
+    await expect(renomear("meu pai", "Jean")).rejects.toThrow(/grafia de "Giampaolo Lepore"/);
   });
 
   it("recusa nome vazio", async () => {
@@ -269,14 +296,38 @@ describe("criar entidade à mão", () => {
   });
 
   it("recusa nome que já está no grafo", async () => {
-    consulta.mockResolvedValue([{ nome: "Isinha", fundida: false }] as never);
+    consulta.mockResolvedValue([
+      { nome: "Isinha", chaveDoNo: "isinha", fundida: false, donos: [] },
+    ] as never);
     await expect(criarEntidade("isinha", "Pessoa")).rejects.toThrow(/já está no grafo/);
   });
 
-  it("recusa nome que é grafia já fundida, e diz em quem", async () => {
+  it("recusa nome que é o perdedor de uma fusão, e diz em quem", async () => {
     // Sem isso o erro seria a violação de constraint, que não explica nada.
-    consulta.mockResolvedValue([{ nome: "Exxmed", fundida: true }] as never);
+    consulta.mockResolvedValue([
+      { nome: "Exxmed", chaveDoNo: "exxmed", fundida: true, donos: [] },
+    ] as never);
     await expect(criarEntidade("Exx Med", "Projeto")).rejects.toThrow(/grafia de "Exxmed"/);
+  });
+
+  /**
+   * O buraco que a 009 abriu, tapado aqui: grafia deixou de ser nó, então
+   * semear "Jean" enquanto "Jean" é grafia do Giampaolo não esbarraria em
+   * constraint nenhuma — e o casamento exato passaria a achar dois donos para
+   * a mesma chave, decidido pela ordem do catálogo.
+   */
+  it("recusa nome que já é grafia de outra entidade, na propriedade", async () => {
+    consulta.mockResolvedValue([
+      {
+        nome: null,
+        chaveDoNo: null,
+        fundida: false,
+        donos: [{ chave: "giampaolo lepore", nome: "Giampaolo Lepore", aliases: ["Jean"] }],
+      },
+    ] as never);
+    await expect(criarEntidade("jean", "Pessoa")).rejects.toThrow(
+      /grafia de "Giampaolo Lepore"/,
+    );
   });
 
   it("recusa pronome, como o confirmar", async () => {
@@ -288,15 +339,15 @@ describe("criar entidade à mão", () => {
   });
 });
 
-describe("o nome que o alias guarda", () => {
+describe("o nome que a grafia guarda", () => {
   it("vem do nó, não do argumento — a tela passa a chave normalizada", async () => {
-    // Passando a chave crua como nome do alias, a lista mostrava
-    // "zztestefusao" onde devia estar "ZZTesteFusao". Peguei isso rodando o
-    // fluxo de verdade contra o Aura, não nos testes.
+    // Passando a chave crua como grafia, a lista mostrava "zztestefusao" onde
+    // devia estar "ZZTesteFusao". Peguei isso rodando o fluxo de verdade contra
+    // o Aura, não nos testes.
     await renomear("meu pai", "Antônio");
     const cypher = todoCypher();
     expect(cypher).toContain("WITH e, e.nome AS nomeVelho");
-    expect(cypher).toContain("nome: nomeVelho");
+    expect(cypher).toContain("+ nomeVelho");
     // O nome velho não pode mais viajar como parâmetro.
     const params = consulta.mock.calls.at(-1)?.[1] as Record<string, unknown>;
     expect(params.nomeVelho).toBeUndefined();
@@ -304,42 +355,95 @@ describe("o nome que o alias guarda", () => {
 });
 
 /**
- * A grafia falada vira alias no confirmar (slice 4.9).
+ * A grafia falada vira alias no confirmar (slice 4.9, reescrita na 4.11).
  *
  * É a única escrita automática deste módulo, e ela cabe porque **não é uma
- * fusão**: o nó nasce com zero átomo e nenhuma aresta a migrar, então desfazê-lo
- * é apagar a aresta e o nó. O que continua nunca sendo automático é juntar duas
- * entidades que já existem — e são as recusas abaixo que garantem isso.
+ * fusão**: desde a 009 ela acrescenta uma string a `v.aliases`, e desfazê-la é
+ * tirar um item da lista em `/entidades`. O que continua nunca sendo automático
+ * é juntar duas entidades que já existem — e são as recusas abaixo que garantem
+ * isso.
  */
 describe("registrar a grafia falada", () => {
-  /** O nó alvo existe e está ativo; a grafia ainda não é nó nenhum. */
+  /** O nó alvo existe e está ativo; a grafia não é nó nem alias de ninguém. */
   const grafoLimpo = () =>
     consulta.mockImplementation(async (statement: string) =>
       statement.includes("alvoFundido")
-        ? ([{ alvo: "id-v", alvoFundido: false, ja: null, jaFundida: false, destino: null }] as never)
+        ? ([
+            {
+              alvo: "id-v",
+              alvoFundido: false,
+              ja: null,
+              jaFundida: false,
+              destino: null,
+              donos: [],
+            },
+          ] as never)
         : ([] as never),
     );
 
   const comGrafia = (linha: Record<string, unknown>) =>
     consulta.mockImplementation(async (statement: string) =>
       statement.includes("alvoFundido")
-        ? ([{ alvo: "id-v", alvoFundido: false, ...linha }] as never)
+        ? ([{ alvo: "id-v", alvoFundido: false, donos: [], ...linha }] as never)
         : ([] as never),
     );
 
-  it("cria o nó de alias com status fundida, apontando para o nó confirmado", async () => {
+  it("acrescenta a grafia em aliases, sem criar nó nenhum", async () => {
     grafoLimpo();
     expect(await registrarGrafia("giampaolo lepore", "Jean")).toEqual({ criada: true, motivo: "" });
 
     const cypher = todoCypher();
-    expect(cypher).toContain("CREATE (alias:Entidade");
-    expect(cypher).toContain("MERGE (alias)-[:FUNDIDA_EM]->(v)");
-    // O nome de exibição é a grafia como eu a falei — é ela que a lista mostra
-    // como histórico do nome.
+    expect(cypher).toContain("SET v.aliases = coalesce(v.aliases, []) + $falada");
+    // O nó de grafia morreu na 009: nada de :Entidade novo, nada de :FUNDIDA_EM.
+    expect(cypher).not.toContain("CREATE (alias:Entidade");
+    expect(cypher).not.toContain("FUNDIDA_EM]->(v)");
+    // A grafia entra como eu a falei — é ela que a lista mostra.
     expect(consulta.mock.calls.at(-1)?.[1]).toMatchObject({
       falada: "Jean",
-      grafia: "jean",
-      fundida: STATUS_ENTIDADE_FUNDIDA,
+      chave: "giampaolo lepore",
+    });
+  });
+
+  /**
+   * Idempotência (regra 4): a checagem prévia já recusa a segunda confirmação
+   * da mesma sessão, e o `WHERE NOT ... IN` é a trava por baixo dela — duas
+   * confirmações em corrida não duplicam o item.
+   */
+  it("a escrita deduplica por baixo, mesmo com a checagem prévia passando", async () => {
+    grafoLimpo();
+    await registrarGrafia("giampaolo lepore", "Jean");
+    expect(todoCypher()).toContain("WHERE NOT $falada IN coalesce(v.aliases, [])");
+  });
+
+  /**
+   * A recusa 4 pela propriedade — o caso que a 009 tirou do índice único e pôs
+   * nesta leitura. Sem ela a grafia teria dois donos, e o casamento exato
+   * decidiria pela ordem do catálogo.
+   */
+  it("grafia que já está em aliases de OUTRO nó não muda de dono", async () => {
+    comGrafia({
+      ja: null,
+      jaFundida: false,
+      destino: null,
+      donos: [{ chave: "outra pessoa", aliases: ["Jean"] }],
+    });
+    const r = await registrarGrafia("giampaolo lepore", "Jean");
+
+    expect(r.criada).toBe(false);
+    expect(r.motivo).toContain('já é grafia de "outra pessoa"');
+    expect(todoCypher()).not.toContain("SET v.aliases");
+  });
+
+  it("grafia que já está em aliases DESTE nó é no-op", async () => {
+    comGrafia({
+      ja: null,
+      jaFundida: false,
+      destino: null,
+      donos: [{ chave: "giampaolo lepore", aliases: ["Jean"] }],
+    });
+    expect(await registrarGrafia("giampaolo lepore", "jean")).toEqual({
+      criada: false,
+      motivo: "já era grafia deste nó",
     });
   });
 
@@ -361,10 +465,10 @@ describe("registrar a grafia falada", () => {
 
     expect(r.criada).toBe(false);
     expect(r.motivo).toContain("já é uma entidade própria");
-    expect(todoCypher()).not.toContain("CREATE (alias:Entidade");
+    expect(todoCypher()).not.toContain("SET v.aliases");
   });
 
-  it("grafia que já é alias de OUTRO nó não muda de dono", async () => {
+  it("grafia que é o perdedor de uma fusão real não muda de dono", async () => {
     comGrafia({ ja: "id-g", jaFundida: true, destino: "outra pessoa" });
     const r = await registrarGrafia("giampaolo lepore", "Jean");
 
@@ -377,13 +481,22 @@ describe("registrar a grafia falada", () => {
     const r = await registrarGrafia("giampaolo lepore", "Jean");
 
     expect(r).toEqual({ criada: false, motivo: "já era grafia deste nó" });
-    expect(todoCypher()).not.toContain("CREATE (alias:Entidade");
+    expect(todoCypher()).not.toContain("SET v.aliases");
   });
 
-  it("nó alvo que já é alias não recebe grafia: ela apontaria para um nó morto", async () => {
+  it("nó alvo que já é alias não recebe grafia: ela ficaria num nó morto", async () => {
     consulta.mockImplementation(async (statement: string) =>
       statement.includes("alvoFundido")
-        ? ([{ alvo: "id-v", alvoFundido: true, ja: null, jaFundida: false, destino: null }] as never)
+        ? ([
+            {
+              alvo: "id-v",
+              alvoFundido: true,
+              ja: null,
+              jaFundida: false,
+              destino: null,
+              donos: [],
+            },
+          ] as never)
         : ([] as never),
     );
     expect((await registrarGrafia("rapha", "Jean")).criada).toBe(false);
@@ -391,7 +504,7 @@ describe("registrar a grafia falada", () => {
 
   it("nó alvo que não existe é recusa, não exceção: isto roda em waitUntil", async () => {
     consulta.mockResolvedValue([
-      { alvo: null, alvoFundido: false, ja: null, jaFundida: false, destino: null },
+      { alvo: null, alvoFundido: false, ja: null, jaFundida: false, destino: null, donos: [] },
     ] as never);
     expect((await registrarGrafia("fantasma", "Jean")).criada).toBe(false);
   });

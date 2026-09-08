@@ -115,6 +115,60 @@ describe("a lista da tela de manutenção", () => {
     expect(cypher()).toContain("(alias:Entidade)-[:FUNDIDA_EM]->(e)");
   });
 
+  it("lê também a propriedade `aliases` — a segunda fonte da 4.11", async () => {
+    await listarEntidades();
+    expect(cypher()).toContain("coalesce(e.aliases, []) AS aliases_prop");
+  });
+
+  /**
+   * O caso "jean" da 4.11, e é ele que a fatia inteira existe para entregar: a
+   * grafia deixou de ser nó, então ela só casa se `chaves` a incluir. Sem esta
+   * linha, "jean" cairia como entidade nova na sessão seguinte — que é
+   * exatamente o comportamento anterior à 4.9.
+   */
+  it("a grafia da propriedade entra em chaves, e o casamento exato a encontra", async () => {
+    consulta.mockResolvedValue([
+      {
+        id: "id-g",
+        nome: "Giampaolo Lepore",
+        nome_normalizado: "giampaolo lepore",
+        labels: ["Entidade", "Pessoa"],
+        atomos: 7,
+        sessoes: 3,
+        aliases_prop: ["Jean", "Giam"],
+        aliases: [],
+        chaves_alias: [],
+      },
+    ] as never);
+
+    const catalogo = await listarEntidades();
+    expect(catalogo[0].aliases).toEqual(["Jean", "Giam"]);
+    expect(acharPorChave("jean", catalogo)?.nome).toBe("Giampaolo Lepore");
+    expect(acharPorChave("giam", catalogo)?.nome).toBe("Giampaolo Lepore");
+  });
+
+  it("as duas fontes viram uma lista só, sem repetir a mesma grafia", async () => {
+    // A propriedade (009) e o nó de fusão real podem dizer o mesmo nome. A
+    // lista é para eu ler; mostrar "Jean, Jean" seria ruído.
+    consulta.mockResolvedValue([
+      {
+        id: "id-g",
+        nome: "Giampaolo Lepore",
+        nome_normalizado: "giampaolo lepore",
+        labels: ["Entidade", "Pessoa"],
+        atomos: 7,
+        sessoes: 3,
+        aliases_prop: ["Jean"],
+        aliases: ["jean", "Giampa"],
+        chaves_alias: ["jean", "giampa"],
+      },
+    ] as never);
+
+    const [e] = await listarEntidades();
+    expect(e.aliases).toEqual(["Jean", "Giampa"]);
+    expect(e.chaves).toEqual(["giampaolo lepore", "jean", "giampa"]);
+  });
+
   it("status ausente conta como ativa — nó criado antes da 004", async () => {
     // A defesa fica na leitura, e não numa migração de dado: migrar arrumaria
     // os nós de hoje e não o que um deploy antigo criasse amanhã.
@@ -141,6 +195,18 @@ describe("os nomes que vão para o STT", () => {
     // Mandar o alias ensinaria o modelo a reproduzir justamente a grafia errada.
     await nomesParaVocabulario(100);
     expect(cypher()).toContain("coalesce(e.status, 'ativa') <> 'fundida'");
+  });
+
+  /**
+   * Até a 009 isso saía de graça: a grafia era um nó `status = 'fundida'`, e o
+   * filtro acima a deixava de fora sem que ninguém decidisse nada. Agora ela é
+   * item de `e.aliases`, no mesmo nó do nome bom — então o array não pode ser
+   * lido aqui, e o que antes era consequência virou escolha escrita.
+   */
+  it("lê só e.nome: a propriedade `aliases` nunca entra no vocabulário", async () => {
+    await nomesParaVocabulario(100);
+    expect(cypher()).toContain("RETURN e.nome AS nome");
+    expect(cypher()).not.toContain("aliases");
   });
 
   it("ordena por sessões, com desempate estável pelo nome", async () => {

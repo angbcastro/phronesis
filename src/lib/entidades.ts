@@ -70,22 +70,36 @@ export interface EntidadeDoGrafo {
   nome: string;
   nome_normalizado: string;
   /**
-   * Todas as grafias que resolvem para este nó: a própria e as já fundidas
-   * nele. É por esta lista que o casamento exato atravessa alias sem uma
-   * segunda consulta.
+   * Todas as grafias que resolvem para este nó: a própria, as que estão em
+   * `e.aliases` e as dos nós já fundidos nele. É por esta lista que o casamento
+   * exato atravessa alias sem uma segunda consulta.
    */
   chaves: string[];
   tipo: TipoEntidade;
   sessoes: number;
   atomos: number;
-  /** Grafias que já foram fundidas nesta — o histórico do nome. */
+  /**
+   * As grafias desta entidade — o histórico do nome, e o que o STT costuma
+   * errar.
+   *
+   * **Duas fontes desde a 4.11**, e a lista é a união delas: a propriedade
+   * `e.aliases` (a grafia que eu confirmo na revisão, o nome velho de um
+   * renome, e o que eu escrevo à mão em `/entidades`) e os nós que perderam uma
+   * **fusão de verdade**, que continuam sendo nó porque são o registro de uma
+   * decisão minha. A migration 009 converteu as grafias que eram nó; o que
+   * sobrou de `:FUNDIDA_EM` é fusão real.
+   */
   aliases: string[];
   /** Os três campos da migration 005. Campo ausente no grafo é string vazia. */
   perfil: Perfil;
 }
 
-interface LinhaGrafo extends Omit<EntidadeDoGrafo, "tipo" | "perfil" | "chaves"> {
+interface LinhaGrafo extends Omit<EntidadeDoGrafo, "tipo" | "perfil" | "chaves" | "aliases"> {
   labels: string[];
+  /** `e.aliases` — as grafias que moram na propriedade (009). */
+  aliases_prop: string[];
+  /** `alias.nome` dos nós que perderam uma fusão real. */
+  aliases: string[];
   chaves_alias: string[];
   contexto: string | null;
   pode_ajudar_com: string | null;
@@ -102,7 +116,14 @@ const limpo = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
  * casamento). `status` ausente conta como ativa — os nós criados antes da
  * migration 004 não têm o campo, e a defesa fica na leitura em vez de numa
  * migração de dado que não protegeria o nó que um deploy antigo criasse amanhã.
- * Campo de perfil ausente segue a mesma regra (005).
+ * Campo de perfil ausente segue a mesma regra (005), e `aliases` ausente é `[]`
+ * pela mesma razão (009).
+ *
+ * **É aqui que o casamento exato passou a atravessar a propriedade** (4.11).
+ * `acharPorChave` não mudou uma linha: ela já varria `chaves` em memória, e a
+ * única diferença é de onde `chaves` vem. Nenhuma consulta a mais, nenhum
+ * índice a mais — a grafia que era nó, e casava pelo índice único de
+ * `nome_normalizado`, agora casa por esta lista.
  */
 export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
   const linhas = await query<LinhaGrafo>(
@@ -115,6 +136,7 @@ export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
             labels(e) AS labels,
             count(DISTINCT a) AS atomos,
             count(DISTINCT s) AS sessoes,
+            coalesce(e.aliases, []) AS aliases_prop,
             collect(DISTINCT alias.nome) AS aliases,
             collect(DISTINCT alias.nome_normalizado) AS chaves_alias,
             coalesce(e.contexto, '') AS contexto,
@@ -123,24 +145,42 @@ export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
      ORDER BY sessoes DESC, e.nome`,
   );
 
-  return linhas.map((l) => ({
-    id: l.id,
-    nome: l.nome,
-    nome_normalizado: l.nome_normalizado,
-    chaves: [
-      l.nome_normalizado,
-      ...(l.chaves_alias ?? []).filter((c) => typeof c === "string" && c !== ""),
-    ],
-    tipo: tipoDosLabels(l.labels ?? []),
-    sessoes: l.sessoes ?? 0,
-    atomos: l.atomos ?? 0,
-    aliases: (l.aliases ?? []).filter((n) => typeof n === "string"),
-    perfil: {
-      contexto: limpo(l.contexto),
-      pode_ajudar_com: limpo(l.pode_ajudar_com),
-      fizemos_juntos: limpo(l.fizemos_juntos),
-    },
-  }));
+  return linhas.map((l) => {
+    // A união das duas fontes, sem repetir a mesma grafia: a propriedade e os
+    // nós de fusão real podem dizer a mesma coisa, e a lista é para eu ler.
+    //
+    // **A primeira vista vence**, e por isso a propriedade vem antes: é ela que
+    // eu edito em `/entidades`, e é a caixa que eu escrevi que tem de aparecer.
+    const porGrafia = new Map<string, string>();
+    for (const n of [...(l.aliases_prop ?? []), ...(l.aliases ?? [])]) {
+      if (typeof n !== "string" || n.trim() === "") continue;
+      const k = normalizarNome(n);
+      if (k !== "" && !porGrafia.has(k)) porGrafia.set(k, n.trim());
+    }
+    const aliases = [...porGrafia.values()];
+
+    return {
+      id: l.id,
+      nome: l.nome,
+      nome_normalizado: l.nome_normalizado,
+      chaves: [
+        ...new Set([
+          l.nome_normalizado,
+          ...aliases.map(normalizarNome),
+          ...(l.chaves_alias ?? []).filter((c) => typeof c === "string" && c !== ""),
+        ]),
+      ].filter((c) => c !== ""),
+      tipo: tipoDosLabels(l.labels ?? []),
+      sessoes: l.sessoes ?? 0,
+      atomos: l.atomos ?? 0,
+      aliases,
+      perfil: {
+        contexto: limpo(l.contexto),
+        pode_ajudar_com: limpo(l.pode_ajudar_com),
+        fizemos_juntos: limpo(l.fizemos_juntos),
+      },
+    };
+  });
 }
 
 /**
@@ -151,8 +191,13 @@ export async function listarEntidades(): Promise<EntidadeDoGrafo[]> {
  * pelo nome, para a lista não dançar entre duas chamadas — cache com TTL não
  * ajuda se a mesma consulta devolve ordens diferentes.
  *
- * Alias não entra: mandar a grafia que eu já rejeitei ensinaria o STT a
- * reproduzi-la.
+ * **Alias não entra, e desde a 4.11 isso é explícito.** Mandar a grafia que eu
+ * já rejeitei ensinaria o STT a reproduzi-la. Até a 009 isso saía de graça: a
+ * grafia era um nó com `status = 'fundida'`, e o filtro de status a deixava de
+ * fora sem que ninguém precisasse decidir nada. Agora ela é item de
+ * `e.aliases`, no mesmo nó do nome bom — então a consulta lê **só `e.nome`**, e
+ * o array nunca é tocado. O filtro de status fica pelo que ele ainda cobre: o
+ * perdedor de uma fusão real, que continua sendo nó.
  */
 export async function nomesParaVocabulario(limite: number): Promise<string[]> {
   const linhas = await query<{ nome: string }>(
@@ -254,6 +299,7 @@ interface LinhaFonte {
   id: string;
   nome: string;
   labels: string[];
+  /** As duas fontes de grafia, já unidas pela consulta (009). */
   aliases: string[];
   contexto: string | null;
   pode_ajudar_com: string | null;
@@ -314,7 +360,7 @@ export async function garantirEmbeddings(limite = 500): Promise<ResumoEmbeddings
      WHERE coalesce(e.status, 'ativa') <> 'fundida'
      OPTIONAL MATCH (alias:Entidade)-[:FUNDIDA_EM]->(e)
      RETURN e.id AS id, e.nome AS nome, labels(e) AS labels,
-            collect(DISTINCT alias.nome) AS aliases,
+            coalesce(e.aliases, []) + collect(DISTINCT alias.nome) AS aliases,
             e.contexto AS contexto, e.pode_ajudar_com AS pode_ajudar_com,
             e.fizemos_juntos AS fizemos_juntos,
             e.embedding_fonte AS embedding_fonte,

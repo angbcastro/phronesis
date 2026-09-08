@@ -2365,27 +2365,33 @@ o limite da conta (§5.3).
 
 #### A grafia falada vira alias no confirmar
 
-`registrarGrafia(chaveDoNo, grafiaFalada)` cria o nó de alias exatamente como
-`renomear` já fazia: `:Entidade` com `status = 'fundida'` e `-[:FUNDIDA_EM]->` o
-nó. O confirmar a chama em `waitUntil`, **depois** de `gravarAtomos`, casando o
-`citado` de cada referência — relido de `extracao.json` pelo índice, nunca do
-corpo (§4.7) — com a chave final vinda da tela, e registrando quando as duas
-diferem.
+`registrarGrafia(chaveDoNo, grafiaFalada)` acrescenta a grafia a `v.aliases` — um
+item numa lista de strings do próprio nó. O confirmar a chama em `waitUntil`,
+**depois** de `gravarAtomos`, casando o `citado` de cada referência — relido de
+`extracao.json` pelo índice, nunca do corpo (§4.7) — com a chave final vinda da
+tela, e registrando quando as duas diferem.
+
+> Até a 4.10 ela criava um **nó** `:Entidade` com `status = 'fundida'` e
+> `-[:FUNDIDA_EM]->` o vencedor, exatamente como `renomear`. A migration 009
+> (slice 4.11) converteu esses nós em itens de array e os apagou; o porquê está
+> no §8.2, "grafia deixou de ser nó".
 
 Quatro recusas, e as quatro são correção e não política: grafia vazia, pronome
 ou igual à chave do próprio nó; nó alvo inexistente ou ele mesmo já fundido;
 grafia que já existe como nó **ativo** (seria fundir duas entidades reais
 automaticamente); e grafia que já é alias de **outro** nó (roubaria a grafia de
 quem já a tem, ou a deixaria com dois destinos). Segunda chamada com a mesma
-grafia é no-op: a checagem prévia é a trava.
+grafia é no-op: a checagem prévia é a trava, e o `WHERE NOT $falada IN
+coalesce(v.aliases, [])` da escrita é a trava por baixo dela.
 
-Dois efeitos de graça: `fonteDaEntidade` inclui aliases, então o hash muda e a
-passada de vetores do próprio confirmar reembute a entidade; e
-`nomesParaVocabulario` exclui fundidos, então "Jean" **não** é ensinado ao STT.
+Dois efeitos, e o segundo deixou de ser de graça: `fonteDaEntidade` inclui
+aliases, então o hash muda e a passada de vetores do próprio confirmar reembute
+a entidade; e "Jean" **não** é ensinado ao STT — antes porque o filtro de
+`status` excluía o nó de grafia, agora porque `nomesParaVocabulario` lê só
+`e.nome` e nunca toca o array.
 
-**Este alias não é uma fusão**, e é isso que permite ele ser automático — a
-distinção está no §8.2, cuja primeira linha ("nada aqui é automático") deixou de
-valer inteira com esta fatia.
+**Este alias não é uma fusão**, e a forma no grafo passou a dizer isso desde a
+4.11 — escrever uma string num array não junta nada. A distinção está no §8.2.
 
 #### Na tela
 
@@ -2704,7 +2710,7 @@ com cada fatia, e hoje são estas:
 | o `id` do átomo é carimbado **na escrita**, não na extração | `janela.aplicarJanela` | duas janelas nunca produzem o mesmo `<sessao_id>-<índice>` — que é o que faz o `MERGE` do confirmar ser idempotente |
 | `candidatas_NNN.json` existir | `recuperacao.recuperarCandidatas` | bloco já consultado não é reconsultado nem repago, por mais vezes que `/pronto` e `/finalizar` passem por ele |
 | `semantico: false` + `refeito` | catch-up do `/finalizar` | a camada de vetor que caiu é refeita **uma** vez, não a cada passada |
-| a checagem prévia da grafia | `fusao.registrarGrafia` | confirmar duas vezes não cria dois aliases |
+| a checagem prévia da grafia, e o `WHERE NOT … IN` do `SET` | `fusao.registrarGrafia` | confirmar duas vezes não acrescenta a mesma grafia duas vezes a `aliases` |
 | `extracao.json` existir | `pipeline.extrairSessao` | não rechama o modelo nem sobrescreve proposta que eu já posso ter revisado |
 | `If-None-Match: *` no PUT da proposta | `pipeline.extrairSessao` | dois workers na mesma sessão geram uma proposta só: quem chega em segundo usa a do primeiro |
 | entrada no manifest por `i` | `manifest.registrarChunk` | reenviar o mesmo bloco não duplica nem reabre bloco transcrito |
@@ -2948,10 +2954,18 @@ Duas grafias da mesma coisa entram como dois nós — a constraint de
 parecidas: "Exxmed" e "Exx Med" normalizam para chaves diferentes.
 
 ```
-(:Entidade { …, status })                status ∈ 'ativa' | 'fundida'
-(:Entidade)-[:FUNDIDA_EM]->(:Entidade)   do alias para o vencedor
+(:Entidade { …, status, aliases })       status ∈ 'ativa' | 'fundida'
+                                         aliases: lista de grafias (009)
+(:Entidade)-[:FUNDIDA_EM]->(:Entidade)   fusão de duas entidades reais
 (:Entidade)-[:DISTINTA_DE]->(:Entidade)  recusa minha: não propor de novo
 ```
+
+**Desde a 4.11 são dois mecanismos, e não um.** Grafia (o que o STT errou, o
+nome antigo de um renome, o que eu escrevo à mão) mora em `e.aliases`, uma lista
+de strings no próprio nó; `:FUNDIDA_EM` ficou significando uma coisa só — fusão
+de duas entidades reais, que é o registro de uma decisão minha. Até a migration
+009 as duas coisas tinham a **mesma forma** no grafo e nenhuma consulta as
+distinguia. Ver "grafia deixou de ser nó", abaixo.
 
 **Fundir não apaga** (regra 6). O perdedor fica com `status = 'fundida'` e uma
 aresta `:FUNDIDA_EM`; as **três** arestas que apontam para entidade — `:SOBRE`,
@@ -2998,48 +3012,66 @@ contrato que o §14 declara para ela não ser atômica.
 
 **E `fundir` recusa vencedora com `status = 'fundida'`.** Até a 4.8 só a
 perdedora era conferida, e fundir **para dentro** de um alias corrompe do mesmo
-jeito. A guarda importa mais desde a slice 4.9, que cria nó de alias
-automaticamente (`registrarGrafia`): ela fabrica em série exatamente os nós que
-uma cadeia perderia.
+jeito.
 
-#### O nó de alias é automático desde a 4.9 — e ele não é uma fusão
+#### Grafia deixou de ser nó (migration 009, slice 4.11)
 
-A primeira linha desta seção era "nada aqui é automático", e ela deixou de valer
-inteira. `registrarGrafia` (§4.14) cria, no confirmar, o nó da grafia que eu
-falei apontando para o nó que eu confirmei: eu disse "Jean", confirmei
-"Giampaolo Lepore", e na sessão seguinte "jean" casa por grafia exata, de graça,
-sem depender da busca.
+A grafia falada é registrada automaticamente no confirmar desde a 4.9
+(`registrarGrafia`, §4.14): eu disse "Jean", confirmei "Giampaolo Lepore", e na
+sessão seguinte "jean" casa por grafia exata, sem depender da busca. Até a 4.10
+ela virava um **nó** `:Entidade` com `status = 'fundida'` e uma `:FUNDIDA_EM`
+para o vencedor.
 
-**A distinção que permite isso: um alias novo não é uma fusão.** O nó nasce com
-zero átomo e nenhuma aresta a migrar, então desfazê-lo é apagar a aresta e o nó —
-ao contrário de uma fusão de verdade, que junta duas coisas que já têm história e
-não tem desfazer. Juntar duas entidades que **já existem** continua sendo um
-toque meu, e são as quatro recusas de `registrarGrafia` que garantem isso: grafia
-vazia, pronome ou igual à chave do nó; nó alvo inexistente ou ele mesmo já
-fundido; grafia que já é entidade **ativa**; grafia que já é alias de **outro**
-nó.
+**O problema não era o efeito, era a forma.** O grafo passou a ter duas espécies
+de nó fundido idênticas entre si — a grafia que o STT errou, criada sozinha, e o
+perdedor de uma fusão que eu mandei fazer, com arestas migradas — e nenhuma
+consulta as distinguia. `/entidades` mostrava as duas como "histórico do nome", a
+lista não era editável, e eu não conseguia ensinar uma grafia **antes** de o STT
+errar pela primeira vez, que é justamente quando ele mais erra.
 
-O preço está no §14: toda grafia confirmada vira nó permanente, então o STT
-errando de três jeitos deixa três aliases pendurados no mesmo nó — e eles
-engordam a string canônica do vetor daquela entidade.
+A migration 009 converteu as primeiras em itens de `aliases` do vencedor
+terminal da cadeia e apagou os nós. **O discriminador é o label**, e não a
+contagem de átomos: nó de grafia nasce só com `:Entidade`, entidade real ganha o
+label do tipo no `ON CREATE` — e o perdedor de uma fusão real também fica com
+zero átomo, porque `fundir()` migra as três arestas.
 
-Quem atravessa o alias:
+Depois disso:
 
-| Onde | Por quê |
+| Escrita | O que ela faz |
 |---|---|
-| `buscarConhecidas` / `resolver` | "Exx Med" numa sessão nova volta como conhecida, com o nome do vencedor |
-| `gravarAtomos` (`:SOBRE`, `:MENCIONA` e `:PERFILA`) | proposta montada antes da fusão penduraria átomo em nó morto — a trava é no servidor, não na tela |
-| `fundir` (as mesmas três) | a fusão leva junto tudo que apontava para a perdedora; o que ficasse para trás não daria erro, daria silêncio |
-| `nomesParaVocabulario` | mandar a grafia rejeitada ensinaria o STT a reproduzi-la |
-| `listarEntidades` | o alias vira histórico do nome, não linha própria |
+| `registrarGrafia` (confirmar) | `SET v.aliases = coalesce(v.aliases, []) + $falada` |
+| `renomear` | o nó assume o nome novo; o antigo entra em `aliases` |
+| `fundir` | inalterada: nó perdedor, `status = 'fundida'`, `:FUNDIDA_EM`, arestas migradas |
+
+As quatro recusas de `registrarGrafia` continuam de pé — grafia vazia, pronome
+ou igual à chave do nó; nó alvo inexistente ou ele mesmo fundido; grafia que já é
+entidade **ativa**; grafia que já é alias de outro nó. A quarta é a que mudou de
+mecanismo: até a 009 o índice único de `nome_normalizado` era a trava, porque a
+grafia era nó. String dentro de array o banco não recusa, então a trava passou a
+ser uma leitura do catálogo, em memória — a mesma decisão que `acharPorChave` já
+tomava. Pela mesma razão, `criarEntidade` e o conflito de `renomear` também
+conferem a propriedade: sem isso eu semearia "Jean" como pessoa nova enquanto
+"Jean" é grafia do Giampaolo, e o casamento exato passaria a ter dois donos para
+a mesma chave.
+
+Quem lê as grafias, e de onde:
+
+| Onde | Fonte | Por quê |
+|---|---|---|
+| `listarEntidades` | `e.aliases` **∪** `alias.nome` | monta `chaves`; é o que faz o casamento exato atravessar a grafia sem consulta a mais |
+| `garantirEmbeddings` | as duas, unidas em Cypher | a grafia entra na string canônica, então acrescentá-la muda o hash e a entidade se reembute sozinha |
+| `buscarConhecidas` / `resolver` | `chaves` | "Exx Med" numa sessão nova volta como conhecida, com o nome do vencedor |
+| `gravarAtomos` e `fundir` (`:SOBRE`, `:MENCIONA`, `:PERFILA`) | `:FUNDIDA_EM` | fusão real continua sendo nó, e a travessia continua igual |
+| `nomesParaVocabulario` | **só `e.nome`** | mandar a grafia rejeitada ensinaria o STT a reproduzi-la — e isso deixou de ser consequência do filtro de status para ser escolha escrita na consulta |
 
 Depois da travessia dois nomes distintos podem virar o mesmo nó, e `:SOBRE` +
 `:MENCIONA` para a mesma entidade não é contrato válido — a menção redundante é
 descartada, o sujeito vence.
 
-**Renomear é fundir consigo mesma sob outro nome:** o nó assume o nome novo e a
-grafia velha nasce como alias apontando para ele. É o que fecha o limite da
-slice 2 — renomear entidade existente criava um segundo nó.
+O que a 009 apaga não tem átomo, não tem perfil e não tem label de tipo. **Um
+`:DISTINTA_DE` apontando para um nó de grafia ia junto no `DETACH DELETE`** — no
+grafo em que ela rodou não havia nenhum, e a recusa contra uma *grafia* (e não
+contra uma entidade) não se sustenta depois que a grafia deixa de ser nó.
 
 **O tipo também se conserta.** Ele só era editável enquanto a entidade era
 `nova`, na primeira revisão em que aparecia; depois disso ela vira `conhecida`,
@@ -4153,10 +4185,20 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   opção testados chega ao modelo, e sem `warning` nenhum: a falha é silenciosa
   dos dois lados. Trocar de STT sem medir isso primeiro perde a metade A da
   slice 3 sem que nada apareça na tela.
-- **Toda grafia confirmada vira nó permanente** (4.9). O STT errando de três
-  jeitos deixa três aliases pendurados no mesmo nó, e eles engordam a string
-  canônica de `fonteDaEntidade` — que é o texto de onde sai o vetor daquela
-  entidade. Não há limpeza de alias em lugar nenhum; apagar um é ir ao console.
+- **Toda grafia confirmada entra em `aliases` e fica** (4.9, reescrito na 4.11).
+  O STT errando de três jeitos deixa três grafias no mesmo nó, e elas engordam a
+  string canônica de `fonteDaEntidade` — que é o texto de onde sai o vetor
+  daquela entidade. Deixou de ser nó permanente: agora é item de array, e
+  `/entidades` remove um com um toque, sem console.
+- **Alias não distingue mais "grafia que o STT errou" de "nome antigo depois de
+  um renome"** (4.11). As duas são item do mesmo array. `renomear` já produzia
+  as duas com a mesma forma; agora elas ficam indistinguíveis também na leitura.
+- **O casamento exato passa a depender do catálogo caber na memória** de uma
+  função (4.11). Até a 009 a grafia era nó e o índice único de `nome_normalizado`
+  resolvia; hoje `listarEntidades` traz tudo e `acharPorChave` varre. Hoje são
+  algumas dezenas de entidades e a consulta já carregava o catálogo inteiro; o
+  dia em que isso doer, a saída é um índice full-text sobre `aliases` — recusado
+  agora por cota de índice do Aura Free.
 - **O dossiê é uma foto do grafo no momento da janela** (4.9). Nome dito depois
   dela não volta atrás: se eu digo "ela" no minuto 2 e o nome no minuto 10, a
   janela 1 continua sem saber. Mesma limitação da extração e do agente 2, mesmo
