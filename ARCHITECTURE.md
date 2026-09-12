@@ -4278,8 +4278,11 @@ execução não há requisição a terceiros.
 
 ### 12.1 Produção, e os dois bancos
 
-O sistema roda na Vercel, plano Hobby, em **`https://phronesis-ashy.vercel.app`**,
-a partir do repositório privado `angbcastro/phronesis`. Push em `master` vai a
+O sistema roda na Vercel, plano Hobby, em **`https://phronesis-ang.vercel.app`**,
+a partir do repositório privado `angbcastro/phronesis`. `phronesis-ashy.vercel.app`
+foi o primeiro endereço e hoje **redireciona** para o canônico (307, que preserva
+método e corpo) — ele continua na política de CORS porque um link velho aberto no
+celular passa por lá antes de chegar aqui. Push em `master` vai a
 produção direto: **não há CI**, e a única rede é o `buildCommand` (abaixo)
 derrubar o deploy quando a migration falha.
 

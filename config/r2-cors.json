@@ -1,6 +1,10 @@
 [
   {
-    "AllowedOrigins": ["https://phronesis-ashy.vercel.app", "http://localhost:3000"],
+    "AllowedOrigins": [
+      "https://phronesis-ang.vercel.app",
+      "https://phronesis-ashy.vercel.app",
+      "http://localhost:3000"
+    ],
     "AllowedMethods": ["PUT"],
     "AllowedHeaders": ["content-type"],
     "ExposeHeaders": ["etag"],

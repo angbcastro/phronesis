@@ -65,7 +65,9 @@ porque a mecânica de upload é invisível. Aplicar `config/r2-cors.json` no buc
 (Settings → CORS Policy). O arquivo já traz as duas origens que existem:
 
 ```json
-{ "AllowedOrigins": ["https://phronesis-ashy.vercel.app", "http://localhost:3000"] }
+{ "AllowedOrigins": ["https://phronesis-ang.vercel.app",
+                     "https://phronesis-ashy.vercel.app",
+                     "http://localhost:3000"] }
 ```
 
 São **dois buckets e duas políticas**: o de produção leva as duas origens acima,
