@@ -4278,9 +4278,17 @@ execução não há requisição a terceiros.
 
 ### 12.1 Produção, e os dois bancos
 
-O sistema roda na Vercel, plano Hobby, em `*.vercel.app`. Push em `master` vai a
+O sistema roda na Vercel, plano Hobby, em **`https://phronesis-ashy.vercel.app`**,
+a partir do repositório privado `angbcastro/phronesis`. Push em `master` vai a
 produção direto: **não há CI**, e a única rede é o `buildCommand` (abaixo)
 derrubar o deploy quando a migration falha.
+
+**O que o primeiro deploy provou**, e que só produção responde: a migration roda
+no build (as dez, `010` com 0 statements como esperado, e de novo idempotente no
+deploy seguinte); o middleware **lê os segredos no Edge** — conferido mandando
+cookie forjado e `Bearer` errado, que forçam a leitura de `AUTH_SECRET` e
+`CRON_SECRET` e voltaram 307 e 401 em vez de 500; o Resend entrega o link; e a
+batida diária escreveu `backup/grafo-12.json` com 95 nós do grafo real.
 
 **Os 300 s de `maxDuration` cabem no Hobby.** Com Fluid Compute — ligado por
 padrão em projeto novo — o Hobby tem 300 s de padrão *e* de máximo, que é o teto
