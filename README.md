@@ -62,11 +62,16 @@ de leitura e escrita nesse bucket gera `R2_ACCESS_KEY_ID` e `R2_SECRET_ACCESS_KE
 **CORS é obrigatório.** O navegador faz PUT direto no R2, então sem política de
 CORS o preflight barra e nenhum bloco sobe — e a tela não mostra erro nenhum,
 porque a mecânica de upload é invisível. Aplicar `config/r2-cors.json` no bucket
-(Settings → CORS Policy), acrescentando o domínio de produção quando houver:
+(Settings → CORS Policy). O arquivo já traz as duas origens que existem:
 
 ```json
-{ "AllowedOrigins": ["http://localhost:3000", "https://<seu-app>.vercel.app"] }
+{ "AllowedOrigins": ["https://phronesis-ashy.vercel.app", "http://localhost:3000"] }
 ```
+
+São **dois buckets e duas políticas**: o de produção leva as duas origens acima,
+e o de desenvolvimento (`R2_BUCKET` do `.env.development.local`) leva só o
+`localhost`. Deploy de preview ganha URL aleatória e não está em nenhuma das
+duas — preview serve para ver tela, não para gravar.
 
 ### 3. Vercel AI Gateway
 
