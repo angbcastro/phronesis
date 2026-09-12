@@ -699,6 +699,12 @@ A sessão inteira vale o elo mais fraco: um único bloco por segmento rebaixa
 própria precisão — o aceite 6 (clicar no minuto 9 e ouvir o minuto 9) degrada
 para precisão de frase quando é só o que o provedor devolve.
 
+**Bloco sem palavra nenhuma não vota** (09/09). O bloco mudo volta vazio (§5.4) e
+não trouxe tempo de coisa alguma; deixá-lo entrar na conta faria uma pausa de
+30 s rebaixar a sessão inteira para `segmento` e apagar o player por palavra de
+átomos cujas âncoras são por palavra. `granularidadeDaSessao` olha só quem
+trouxe palavra.
+
 **Observado com `xai/grok-stt` (2026-08-24, primeira transcrição real):** o
 provedor não expõe nada em `providerMetadata`, então o bloco é registrado como
 `granularidade: "segmento"` — mas os `segments` que ele devolve têm **uma
@@ -3028,6 +3034,39 @@ Quando a espera não basta, a linha de desistência diz isso com todas as letras
 minutos costuma resolver" —, porque a alternativa é procurar defeito no código
 onde só havia pressa. O áudio fica intacto no R2 e o retry é o mesmo de sempre.
 
+### 5.4 Quando não há o que transcrever
+
+Há uma quarta classe, e ela não é falha nenhuma: **o bloco em que ninguém fala.**
+Trinta segundos de silêncio existem em toda sessão real — eu paro para pensar, o
+arquivo importado tem uma pausa longa. O provedor não devolve texto, e o AI SDK
+levanta `AI_NoTranscriptGeneratedError`.
+
+Até 09/09 isso derrubava a **sessão inteira**. O erro é determinístico: o laço de
+`finalizarSessao` insistia no mesmo bloco mudo pelos 150 s de `ESPERA_MAX_MS`,
+sempre com a mesma resposta, e depois mandava tudo para `erro`. Medido na sessão
+`mtu336r50a5i4j3k2o1g`: 9 blocos, 7 com fala, os blocos 4 e 8 com RMS de 0,004
+contra 0,11 dos outros. Quatro minutos e meio de diário perdidos por duas pausas
+minhas — e o diagnóstico custou baixar os WAV do R2 e medir, porque o log dizia
+"não transcreveu" para silêncio e para defeito com as mesmas palavras.
+
+`ehSemTranscricao` (`stt.ts`) reconhece esse erro e devolve **bloco vazio**:
+texto `""`, nenhuma palavra. O bloco é gravado, o manifest anda, a sessão segue.
+A concatenação já sabia lidar com ele — `juntarTexto` descarta texto vazio e o
+bloco não contribui palavra nenhuma —, e a janela de extração cujo texto sai
+vazio devolve lista vazia em vez de chamar o modelo (§4.6). Só a sessão **inteira**
+vazia continua estourando, que é o comportamento que `extrair` sempre teve.
+
+Reconhecido pelo `isInstance` do próprio SDK, com o `name` como segunda via para
+o erro que atravessou serialização — a mesma prudência de `ehLimiteDeTaxa`. `ai`
+não é pacote de provedor: a regra inviolável 8 continua de pé.
+
+**O que se perde:** um tropeço do provedor que devolva nada tem exatamente a
+mesma cara que silêncio, e agora vira bloco vazio em silêncio em vez de erro
+barulhento. A troca foi feita de olho aberto — o outro lado dela era perder a
+sessão inteira toda vez que eu faço uma pausa —, e o sinal é a linha
+`[pipeline] … STT não ouviu fala — bloco vazio`, que sai em todo bloco vazio.
+Transcrição com um buraco se confere ali, contra o áudio, que está intacto no R2.
+
 ## 6. Idempotência
 
 Regra inviolável 4: todo passo é chaveado por `sessao_id` (+ `chunk_index`).
@@ -4222,7 +4261,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 13. Verificação
 
-- `pnpm test` — **48 arquivos, 869 testes**, sem credencial e sem rede. A lista
+- `pnpm test` — **51 arquivos, 979 testes**, sem credencial e sem rede. A lista
   abaixo comenta os que valem uma explicação; a cobertura inteira se lê em
   `tests/`. Os que não têm bullet próprio cobrem a lógica pura da slice 1
   (chaves, manifest, estados, offsets, vocabulário, backoff, retry de rede,
@@ -4264,6 +4303,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   átomo — e `chavesDaSessao`, incluindo o manifest por último. **O que o fatiador
   faz se verifica na importação real**, pelo log: `[janela] sessão <id> janela 0
   (blocos 0-3)` é o critério da fatia.
+- `tests/stt.test.ts` — a distinção que o §5.4 declara: bloco sem fala volta
+  vazio, e qualquer outro erro continua subindo como `SttError`. Mocka só o
+  `experimental_transcribe`; o `NoTranscriptGeneratedError` é a classe de verdade
+  do SDK, senão o teste mediria o dublê e não o contrato que ele existe para
+  segurar. Afrouxar o segundo caso transformaria modelo inexistente e áudio
+  corrompido em sessão silenciosamente sem texto.
 - `tests/embedding.test.ts` — a string canônica da entidade e o hash dela: o que
   entra, o que é omitido, e o que faz uma entidade sair de dia. Sem rede: a
   qualidade da vizinhança em si eu avalio à mão, olhando a lista.
@@ -4386,6 +4431,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
+- **Bloco vazio por defeito do provedor é indistinguível de silêncio** (§5.4).
+  Desde 09/09 um bloco sem transcrição vira bloco vazio em vez de derrubar a
+  sessão, e um tropeço do STT que devolva nada passaria por pausa. O único sinal
+  é a linha `[pipeline] … STT não ouviu fala` no log, uma por bloco vazio; não
+  há checagem de energia do áudio antes de aceitar o vazio, e não vai haver
+  enquanto o log bastar.
 - **O perfil passa a ser escrito sem revisão prévia** (4.12). É a reabertura
   consciente do que o §4.9 declarava: ficha errada contamina toda atribuição
   futura, e o erro se realimenta. A defesa deixou de ser "nada entra sem o meu

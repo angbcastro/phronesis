@@ -92,6 +92,15 @@ export async function transcreverBloco(
   if (!audio) throw new Error(`Bloco ${i} da sessão ${sessao_id} não está no R2 (${key})`);
 
   const { texto, palavras, modelo, granularidade } = await transcrever(audio, { ate });
+
+  // O bloco vazio é legítimo (silêncio, `stt.ts`) e por isso não interrompe
+  // nada — mas é também com o que um tropeço do provedor se pareceria, e aí
+  // seriam 30 s de fala sumindo calados. A linha existe para essa segunda
+  // hipótese: sessão com texto faltando se confere aqui, contra o áudio.
+  if (texto.trim() === "") {
+    console.warn(`[pipeline] sessão ${sessao_id} bloco ${i}: STT não ouviu fala — bloco vazio`);
+  }
+
   const bloco: TranscricaoBloco = { i, texto, palavras, modelo, granularidade };
 
   await putJson(keyTranscricao, bloco);

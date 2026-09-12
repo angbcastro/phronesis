@@ -63,9 +63,19 @@ export function prefixoContiguo<T extends { i: number }>(blocos: T[]): T[] {
   return saida;
 }
 
-/** A sessão inteira vale o elo mais fraco: um bloco por segmento derruba o resto. */
+/**
+ * A sessão inteira vale o elo mais fraco: um bloco por segmento derruba o resto.
+ *
+ * **Bloco sem palavra nenhuma não vota.** Silêncio volta do STT como bloco vazio
+ * (`stt.ts`), e bloco que não trouxe tempo nenhum não tem o que dizer sobre a
+ * precisão dos tempos. Deixá-lo votar faria uma pausa de 30 s rebaixar a sessão
+ * inteira para "segmento" e apagar o player por palavra dos átomos que têm tempo
+ * por palavra.
+ */
 export function granularidadeDaSessao(blocos: TranscricaoBloco[]): Granularidade {
-  return blocos.some((b) => b.granularidade === "segmento") ? "segmento" : "palavra";
+  return blocos.some((b) => b.palavras.length > 0 && b.granularidade === "segmento")
+    ? "segmento"
+    : "palavra";
 }
 
 export function concatenar(sessao_id: string, blocos: TranscricaoBloco[]): Transcricao {

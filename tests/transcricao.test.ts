@@ -76,8 +76,20 @@ describe("procedência da sessão", () => {
   });
 
   it("um bloco só por segmento derruba a precisão da sessão inteira", () => {
-    const t = concatenar("s1", [bloco(0, "a", []), bloco(1, "b", [], "segmento")]);
+    const t = concatenar("s1", [
+      bloco(0, "a", [["a", 0, 1]]),
+      bloco(1, "b", [["b", 0, 4]], "segmento"),
+    ]);
     expect(t.granularidade).toBe("segmento");
+  });
+
+  // Sessão `mtu336r50a5i4j3k2o1g`: pausa de 30 s no meio do diário. O bloco mudo
+  // volta sem palavra nenhuma, e sem palavra ele não tem o que dizer sobre a
+  // precisão dos tempos — deixá-lo votar apagaria o player por palavra da sessão
+  // inteira por causa de um silêncio.
+  it("bloco mudo não rebaixa a precisão de quem falou", () => {
+    const t = concatenar("s1", [bloco(0, "a", [["a", 0, 1]]), bloco(1, "", [], "segmento")]);
+    expect(t.granularidade).toBe("palavra");
   });
 
   it("só declara precisão por palavra quando todos os blocos têm", () => {

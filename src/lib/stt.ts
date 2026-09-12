@@ -16,7 +16,7 @@
  * o bloco recusado morre no `catch` do `waitUntil` e a sessão inteira vai para
  * `erro` por um limite que passa sozinho em um minuto.
  */
-import { experimental_transcribe as transcribe } from "ai";
+import { experimental_transcribe as transcribe, NoTranscriptGeneratedError } from "ai";
 import { comEsperaDeLimite, ehLimiteDeTaxa } from "./limite";
 import { garantirGateway, modeloStt, opcoesDeVocabulario } from "./modelos";
 import { efetivo } from "./overrides";
@@ -38,6 +38,31 @@ export class SttError extends Error {
     this.name = "SttError";
     this.limiteDeTaxa = ehLimiteDeTaxa(opcoes?.cause);
   }
+}
+
+/**
+ * O provedor não devolveu transcrição nenhuma — e isso **não é falha**.
+ *
+ * Bloco de 30 s sem fala existe em toda sessão real: eu paro para pensar, ou o
+ * arquivo importado tem uma pausa longa. O STT não tem o que escrever, o AI SDK
+ * levanta `AI_NoTranscriptGeneratedError`, e até aqui isso derrubava a **sessão
+ * inteira**: o laço de `finalizarSessao` insistia 150 s no mesmo bloco mudo — o
+ * erro é determinístico, repetir não muda nada — e depois mandava tudo para
+ * `erro`. Medido na sessão `mtu336r50a5i4j3k2o1g` (09/09): 9 blocos, 7 com fala,
+ * os blocos 4 e 8 com RMS de 0,004 contra 0,11 dos outros. Quatro minutos e meio
+ * de diário perdidos por duas pausas.
+ *
+ * Reconhecido pelo `isInstance` do próprio SDK, com o `name` como segunda via
+ * para o erro que atravessou serialização — a mesma prudência de `limite.ts`.
+ * `ai` não é pacote de provedor: a regra 8 continua de pé.
+ */
+export function ehSemTranscricao(e: unknown): boolean {
+  if (NoTranscriptGeneratedError.isInstance(e)) return true;
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    (e as { name?: unknown }).name === "AI_NoTranscriptGeneratedError"
+  );
 }
 
 interface PalavraCrua {
@@ -116,6 +141,13 @@ export async function transcrever(
       { ate },
     );
   } catch (e) {
+    // Silêncio não é erro: o bloco mudo volta vazio e a sessão segue sem ele.
+    // `granularidade` fica em "segmento" por ser o padrão de quem não recebeu
+    // tempo por palavra, e não contamina a sessão — `granularidadeDaSessao`
+    // (`transcricao.ts`) não deixa bloco sem palavra nenhuma votar.
+    if (ehSemTranscricao(e)) {
+      return { texto: "", palavras: [], granularidade: "segmento", modelo };
+    }
     throw new SttError(e instanceof Error ? e.message : String(e), { cause: e });
   }
 
