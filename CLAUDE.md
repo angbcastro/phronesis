@@ -62,7 +62,17 @@ Contrato resumido (referência rápida, não substitui a leitura):
 Propriedades em português (`nome`, `criado_em`, `valido_em`, `texto`), IDs em `id`.
 
 **Mudança de schema = nova migration numerada (`002_...cypher`), proposta e aprovada
-por mim antes de rodar.** Nunca alterar schema direto no código ou no console do Aura.
+por mim.** Nunca alterar schema direto no código ou no console do Aura.
+
+**Onde a migration roda:** no build da Vercel (`vercel.json`, `pnpm migrate && next
+build`), contra o banco do ambiente daquele deploy. A aprovação é o ato de mandar
+buildar o commit que contém a migration — não há passo manual separado, e não pode
+haver: migration que dependesse da minha memória entre o push e o deploy seria
+descoberta em produção, gravando. Migration que falha derruba o build e o deploy não
+vai ao ar, que é a única rede que existe aqui (não há CI).
+
+Localmente, `pnpm migrate:dev` continua sendo o caminho para o banco de
+desenvolvimento, e `pnpm migrate` a saída de emergência contra produção.
 
 ## Regras invioláveis
 
@@ -131,7 +141,15 @@ ENRIQUECIMENTO_MODEL      opcional; padrão igual ao da extração
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
 EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões
 AUTH_SECRET, ALLOWED_EMAIL
+RESEND_API_KEY            entrega do magic link
+CRON_SECRET               o que a Vercel manda no header da batida diária
 ```
 
 Chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`, `LLM_API_KEY`…)
-não existe neste sistema — ver regra inviolável 8.
+não existe neste sistema — ver regra inviolável 8. `RESEND_API_KEY` não é uma
+delas: a regra 8 governa tráfego de **modelo**, e e-mail não é modelo.
+
+Dois ambientes, e a precedência do Next resolve qual vale:
+`.env.development.local` (Aura e bucket de desenvolvimento) vence `.env.local`
+(produção) quando `pnpm dev` roda. Variável que faltar no arquivo de dev **vaza do
+de produção** — os três do Neo4j e o `R2_BUCKET` têm que estar todos lá.

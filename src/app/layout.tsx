@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Nunito } from "next/font/google";
 import { Marca } from "@/components/Marca";
+import { ServiceWorker } from "@/components/ServiceWorker";
 import { Tipografia } from "@/components/Tipografia";
 import "./globals.css";
 
@@ -41,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Fica no layout, não em cada tela: assim nenhuma tela nova nasce sem
             caminho de volta. Ela mesma decide onde não aparecer. */}
         <Marca />
+        <ServiceWorker />
         <Tipografia>{children}</Tipografia>
       </body>
     </html>

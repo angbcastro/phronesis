@@ -15,6 +15,18 @@ com a revisão), 4.7 (o painel dos agentes), 4.8 (a extração acompanha a fala)
 importado entra pela mesma porta), 4.11 (a entidade se apresenta, e o agente 2
 mede a própria dúvida) e 4.12 (a ficha se escreve sozinha) construídas.**
 
+**E o sistema saiu do `localhost`.** Ele roda na Vercel, no plano Hobby, com o
+grafo de produção na instância Aura que sempre teve as sessões reais e um segundo
+banco só para o `pnpm dev` (§12.1). Push em `master` vai a produção direto, e a
+migration roda no build — a aprovação passou a ser o ato de mandar buildar
+(`CLAUDE.md`). A porta de entrada é o magic link entregue pelo Resend, o cookie de
+90 dias agora **desliza** em vez de vencer, e o app se instala na tela inicial do
+Android (§7, §2). Uma batida diária grava o dump do grafo no R2 e impede a
+instância Free de ser pausada por 72 h de silêncio (§9, §10).
+
+O que o deploy destrava não é conforto: é a **medição**. A 4.11 e a 4.12 esperam
+uma sessão real, e o telefone é onde eu falo.
+
 **A 4.11 e a 4.12 estão em código e verdes nos testes, e NENHUMA das duas foi
 medida numa sessão real.** A migration 009 foi aprovada e aplicada (duas grafias
 viraram `aliases`, dois nós apagados); **a 010 está escrita como proposta e não
@@ -220,15 +232,22 @@ dito sem varrer o grafo inteiro, que é o que a 4.5 entrega.
 
 ```
 ┌─ navegador ─────────────┐   ┌─ Vercel ────────────┐   ┌─ serviços ───────────┐
-│ MediaRecorder           │   │ middleware (auth)   │   │ Cloudflare R2        │
+│ MediaRecorder + wakeLock│   │ middleware (auth)   │   │ Cloudflare R2        │
 │ IndexedDB (blocos)      │   │ App Router /api/*   │   │  áudio + JSON        │
-│ fila de upload          │   │ waitUntil (STT)     │   │ Neo4j Aura (HTTP)    │
-│ React (9 telas)         │   │                     │   │  :Sessao + conteúdo  │
+│ fila de upload          │   │ waitUntil (STT)     │   │  + backup/ do grafo  │
+│ React (9 telas)         │   │ cron diário ────────┼──▶│ Neo4j Aura (HTTP)    │
+│ PWA instalado (sw.js)   │   │                     │   │  :Sessao + conteúdo  │
 └──────────┬──────────────┘   └──────────┬──────────┘   │ Vercel AI Gateway    │
            │                             │              │  → os nove agentes   │
-           │  PUT presigned (áudio)      │              └──────────────────────┘
-           └─────────────────────────────┴──────────────▶ R2
+           │  PUT presigned (áudio)      │              │ Resend → magic link  │
+           └─────────────────────────────┴──────────────▶ R2                   │
+                                                        └──────────────────────┘
 ```
+
+O cron diário (§10) é a única coisa que entra sem eu abrir o app, e faz duas
+coisas com uma consulta: grava o dump do grafo no R2, e mantém a instância Aura
+Free acordada — ela é pausada após 72 h de silêncio, e pausada o hostname nem
+resolve.
 
 Três planos de dado, cada um com uma responsabilidade única:
 
@@ -308,7 +327,10 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   e embute o átomo depois de gravá-lo, nunca antes
   pipeline.ts     transcrever bloco / avançar janelas / finalizar sessão
                   (o orquestrador)
-  auth.ts         magic link HMAC, cookie httpOnly
+  auth.ts         magic link HMAC, cookie httpOnly, a janela que desliza e a
+                  credencial do cron — as duas que a porta única reconhece
+  backup.ts       o dump do grafo para o R2: sem o vetor, e numa chave que gira
+                  pelo dia do mês. Não sabe restaurar
   backoff.ts      backoff exponencial com jitter                          (client)
   audio.ts        formatos aceitos na importação, limites de arquivo       (client)
   onda.ts         a matemática da onda do botão de gravar — nível, envelope (client)
@@ -338,10 +360,15 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                     lugares da revisão),
                   Leitura (a transcrição literal — porta de serviço),
                   Sessoes (lista de sessões, o apagar de dois toques — e a cor
-                    que diz o que falta revisar), Entidades (higiene do grafo)
-src/app/api/      31 rotas em seis famílias — sessão, entidade, calibração,
-                  agentes, átomos e as 2 de auth (seção 10)
-src/middleware.ts porta única: sem cookie válido nada responde
+                    que diz o que falta revisar), Entidades (higiene do grafo),
+                  ServiceWorker (registra `sw.js`; não desenha nada)
+src/app/api/      34 rotas em sete famílias — sessão, entidade, calibração,
+                  agentes, átomos, as 2 de auth e a do cron (seção 10)
+src/middleware.ts porta única: sem credencial válida nada responde — cookie de
+                  sessão, ou o header do cron sob /api/cron/
+public/           manifest.webmanifest, icone.svg, os 4 PNG (192/512, cada um
+                  também `maskable`) e sw.js — o mínimo que faz o Chrome no
+                  Android oferecer a instalação. `sw.js` não cacheia nada
 db/migrations/    definição canônica do schema
 scripts/          migrate.ts (aplica migrations), smoke.ts (confere externos),
                   raciocinio.ts (mede como pedir ao modelo para pensar menos)
@@ -3185,14 +3212,41 @@ nova na mesma sessão — está no §14 como limite.
   `escopo.exp.HMAC-SHA256`, assinado com `AUTH_SECRET` via WebCrypto; comparação
   em tempo constante. Link vale 15 min, cookie de sessão 90 dias, `httpOnly` +
   `sameSite=lax` + `secure` em produção. Sem signup, sem roles, sem reset.
-- **Middleware** é a porta única: no corpo dele só `/entrar` e `/api/auth/*`
-  passam sem cookie. Requisição a `/api/*` sem cookie recebe 401; navegação vai
-  para `/entrar`. Antes do corpo há o `matcher`, e ele decide onde o middleware
-  **nem roda**: `_next/static`, `_next/image`, `favicon.ico`,
-  `manifest.webmanifest` e `icone.svg`. Os dois últimos são exigência do PWA — o
-  navegador busca o manifest e o ícone sem cookie de app —, e por isso são
-  decisão e não descuido; os três primeiros são estático de build. A resposta
-  completa de "o que responde sem cookie" é a soma dos dois lugares.
+- **A janela de 90 dias desliza.** `precisaRenovar` (`auth.ts`) responde se sobra
+  menos de um terço da vida do token, e o middleware emite cookie novo quando
+  sobra. Dispositivo em uso regular não cai nunca; largado por 90 dias, cai. Sem
+  isto o prazo era fixo e o ritual morria quatro vezes por ano por relógio, e não
+  por decisão — que é exatamente o atrito que a tela de gravar existe para não
+  ter. Renovar por limiar, e não a cada requisição, evita um `Set-Cookie` em cada
+  asset. A renovação **não reconfere a assinatura**: quem chama é o middleware,
+  uma linha depois de `tokenValido` ter conferido.
+- **A entrega do magic link é o Resend** (`api/auth/link/route.ts`), por `fetch` e
+  sem SDK — o projeto já fala com o Neo4j e com o R2 assim, e não ganha uma sexta
+  dependência de runtime por um POST. Sem domínio verificado o Resend **só entrega
+  ao dono da conta**, que tem de ser o mesmo endereço do `ALLOWED_EMAIL`: a
+  restrição do provedor e a regra do app coincidem hoje, e isso é conveniência, não
+  garantia — verificar um domínio um dia solta a primeira sem soltar a segunda. A
+  resposta da rota é **idêntica nos três caminhos** em produção (e-mail errado,
+  entrega feita, entrega falhada): dizer na tela que a entrega falhou responderia,
+  a quem perguntasse, qual é o e-mail certo, porque só o endereço permitido chega a
+  ter entrega para falhar. Falha vira linha de log, e o link continua saindo no
+  `console.log` — que é por onde se recupera com o provedor fora.
+- **Middleware** é a porta única, e desde o deploy ela reconhece **duas**
+  credenciais. No corpo dele só `/entrar` e `/api/auth/*` passam sem nenhuma.
+  Requisição a `/api/*` sem credencial recebe 401; navegação vai para `/entrar`.
+  A segunda credencial é o header `Authorization: Bearer $CRON_SECRET` que a
+  Vercel manda na batida diária, e ela vale **só sob `/api/cron/`** — credencial
+  de máquina não abre o app. Mora no middleware, e não numa exceção do `matcher`,
+  justamente para a resposta de "o que entra sem cookie" continuar cabendo num
+  lugar só. `CRON_SECRET` é lido por `req()` e só quando há header para conferir:
+  requisição normal nunca toca nessa linha, e nome de variável errado vira erro
+  claro no log em vez de um 401 calado todo dia às 6 da manhã.
+- Antes do corpo há o `matcher`, e ele decide onde o middleware **nem roda**:
+  `_next/static`, `_next/image`, `favicon.ico`, `manifest.webmanifest`,
+  `sw.js`, `icone.svg` e tudo que começa com `icone-` (os quatro PNG). Todos os
+  do PWA são exigência do navegador, que busca manifest, ícone e service worker
+  **sem** cookie de app; os três primeiros são estático de build. A resposta
+  completa de "o que responde sem credencial" é a soma dos dois lugares.
 - **Nenhuma chave de servidor chega ao cliente** (regra 3): `src/lib/env.ts` só
   roda no servidor e nenhum segredo usa `NEXT_PUBLIC_`. O navegador recebe
   apenas URLs presigned de 5 minutos, uma por bloco.
@@ -3785,8 +3839,22 @@ calibracao/indice.json          a mesa de trabalho: as correções acumuladas de
 calibracao/regras-<hash>.json   uma composição de regras aprovada — imutável para sempre
 config/agentes.json             o que eu editei de cada agente: hash do prompt e modelo (slice 4.7)
 config/prompt-<agente>-<hash>.json  um prompt editado — imutável para sempre; é o que o sufixo `+p<hash>` resolve
+backup/grafo-<dia>.json         o dump diário do grafo: { gerado_em, nos, arestas } — sem `embedding`
 _smoke/                         objetos temporários do `pnpm smoke`, apagados no fim
 ```
+
+**`backup/` gira pelo dia do mês, e a chave que se repete é o mecanismo.**
+Sobrescrever `grafo-07.json` todo dia 7 deixa entre 28 e 31 cópias sem nenhum
+`LIST` e sem nenhum `DELETE` — e `r2.ts` não tem `LIST`, por decisão que um
+backup não vai derrubar. Datar a chave daria histórico infinito e exigiria listar
+para saber o que apagar.
+
+O `embedding` fica de fora, e a exclusão acontece **no Cypher**
+(`[k IN keys(n) WHERE k <> 'embedding' | [k, n[k]]]`): são ~12 KB por nó, ~48 MB
+num grafo de 4.000 átomos (§14), e excluir em JavaScript ainda faria esses
+megabytes atravessarem a Query API toda madrugada para serem jogados fora. É
+legítimo excluir porque o vetor é **derivado** — `passadaDeVetores()` o refaz a
+partir do texto, por hash (§8.4). O dump carrega o que só existe uma vez.
 
 `candidatas_NNN.json` **espelha `chunk_NNN.json`**, e a existência dele é a
 trava do RAG como a do bloco é a da transcrição (§6). Guarda chave, camada e
@@ -3868,8 +3936,9 @@ sessão, e apagá-las seria desaprender (§14).
 | `POST /api/entidades/embutir` | põe em dia o vetor das entidades, comparando `embedding_fonte` | não editar nada devolve `embutidas: 0` |
 | `GET /api/agentes` | os nove com o que está em vigor, mais o desenho do fluxo | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
 | `POST /api/agentes/:id` | `{prompt?, modelo?}` — o que passa a valer | o **único** lugar que escreve configuração de agente; `null` revoga o campo e volta à base; recusa prompt que quebre o envelope e id de modelo fora do formato |
-| `POST /api/auth/link` | pede o magic link | resposta idêntica com ou sem acerto no e-mail |
+| `POST /api/auth/link` | pede o magic link, e o Resend entrega | resposta idêntica nos três caminhos em produção — e-mail errado, entregue, falhou (§7). Fora de produção o link volta no corpo |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
+| `GET /api/cron/diario` | o dump do grafo para o R2, e a consulta que mantém a Aura acordada | **a única rota que não abre com cookie**: entra pelo header `Authorization: Bearer $CRON_SECRET`, conferido no middleware e só sob `/api/cron/` (§7). Uma vez por dia — é o que o Hobby dá, e é o que uma janela de 72 h pede |
 
 Todas com `runtime = "nodejs"`. `GET /api/sessoes`, `POST /api/sessoes`,
 `GET /api/sessoes/:id/extracao` e `GET /api/entidades` respondem **502** quando
@@ -4207,6 +4276,56 @@ arquivo; sessão é o que eu abro ali.
 Nunito na hora da build para servi-las do próprio domínio (§11.3). Em tempo de
 execução não há requisição a terceiros.
 
+### 12.1 Produção, e os dois bancos
+
+O sistema roda na Vercel, plano Hobby, em `*.vercel.app`. Push em `master` vai a
+produção direto: **não há CI**, e a única rede é o `buildCommand` (abaixo)
+derrubar o deploy quando a migration falha.
+
+**Os 300 s de `maxDuration` cabem no Hobby.** Com Fluid Compute — ligado por
+padrão em projeto novo — o Hobby tem 300 s de padrão *e* de máximo, que é o teto
+das quatro rotas pesadas (`/chunks/[i]/pronto`, `/finalizar`, `/extrair`,
+`/entidades/enriquecer`) e o que cobre os `waitUntil(passadaDeVetores(...))` das
+dez rotas de `/entidades`. Nada aqui pede plano pago. A **região da função**
+acompanha a da instância Aura: cada requisição do pipeline faz várias idas à
+Query API, e região trocada multiplica isso por round-trip.
+
+```json
+// vercel.json
+{ "buildCommand": "pnpm migrate && next build",
+  "crons": [{ "path": "/api/cron/diario", "schedule": "0 6 * * *" }] }
+```
+
+**A migration roda no build**, contra o banco do ambiente daquele deploy, e a
+aprovação passou a ser o ato de mandar buildar o commit que a contém (`CLAUDE.md`).
+Versionado, e não escondido no painel: o comando que aplica schema em produção tem
+de estar à vista. `scripts/migrate.ts` é TypeScript rodado direto pelo node, por
+type stripping — daí `engines.node: ">=22.6"` no `package.json`.
+
+Dois bancos e dois buckets, e a precedência do Next decide qual vale sem ninguém
+precisar lembrar:
+
+| Arquivo | Aponta para | Quem lê |
+|---|---|---|
+| `.env.development.local` | Aura **dev** + bucket **dev** | `pnpm dev` (precedência) e `pnpm migrate:dev` |
+| `.env.local` | **produção** | `pnpm migrate` e `pnpm smoke` — a saída de emergência |
+
+O Next mescla por chave, então **variável que faltar no arquivo de dev vaza do de
+produção**: os três do Neo4j e o `R2_BUCKET` têm de estar todos no de dev, ou
+`pnpm dev` escreve no diário de verdade com a senha certa. Na Vercel o mesmo
+cuidado é o **escopo** da variável: Neo4j e R2 de produção só em Production, os de
+dev em Preview/Development — com migration rodando no build, escopo errado faz um
+preview migrar produção.
+
+```
+NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
+R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
+AI_GATEWAY_API_KEY
+AUTH_SECRET, ALLOWED_EMAIL
+RESEND_API_KEY            entrega do magic link (§7) — não é chave de modelo
+CRON_SECRET               o header da batida diária (§7, §10)
+```
+
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
@@ -4261,7 +4380,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 13. Verificação
 
-- `pnpm test` — **51 arquivos, 979 testes**, sem credencial e sem rede. A lista
+- `pnpm test` — **53 arquivos, 990 testes**, sem credencial e sem rede. A lista
   abaixo comenta os que valem uma explicação; a cobertura inteira se lê em
   `tests/`. Os que não têm bullet próprio cobrem a lógica pura da slice 1
   (chaves, manifest, estados, offsets, vocabulário, backoff, retry de rede,
@@ -4303,6 +4422,14 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   átomo — e `chavesDaSessao`, incluindo o manifest por último. **O que o fatiador
   faz se verifica na importação real**, pelo log: `[janela] sessão <id> janela 0
   (blocos 0-3)` é o critério da fatia.
+- `tests/auth.test.ts` — as duas credenciais da porta única: o limiar em que a
+  janela de 90 dias desliza, e o header do cron. O teste do **prefixo** do
+  segredo certo existe para ninguém trocar a comparação de tempo constante por um
+  `startsWith` algum dia.
+- `tests/backup.test.ts` — a chave que gira pelo dia do mês (é a sobrescrita que
+  poda a janela, sem nenhum LIST) e a forma do dump. O Cypher que tira o
+  `embedding` **não** é testado: ele mora numa constante e só o banco responde
+  por ele; o que o teste guarda é a intenção, no lugar onde ela se lê.
 - `tests/stt.test.ts` — a distinção que o §5.4 declara: bloco sem fala volta
   vazio, e qualquer outro erro continua subindo como `SttError`. Mocka só o
   `experimental_transcribe`; o `NoTranscriptGeneratedError` é a classe de verdade
@@ -4597,9 +4724,38 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   `tests/onda.test.ts` cobre a matemática da onda, e `tsc` mais `next build`
   passam; ninguém abriu a tela e olhou o halo respirar. Não há navegador
   automatizado no projeto, e o `middleware` exige cookie para chegar em `/`.
-- **Entrega do magic link**: não há provedor de e-mail configurado. O link sai no
-  log do servidor e, fora de produção, no corpo da resposta. Único ponto a
-  mexer: a função `entregar` em `src/app/api/auth/link/route.ts`.
+- **O backup não sabe voltar.** O dump diário grava nós e arestas no R2 (§9), e
+  não existe `restaurar`: reescrever tudo num banco vazio é trabalho que ficaria
+  para a hora do desespero, e foi adiado de olho aberto. O que existe é a cópia.
+  Testar a volta pediria o banco de desenvolvimento, que agora existe justamente
+  para coisas assim.
+- **O dump não leva o vetor**, então restaurar a partir dele devolve um grafo sem
+  `embedding` — as duas camadas semânticas ficam cegas até `POST
+  /api/atomos/embutir` e `POST /api/entidades/embutir` rodarem o retrofill. É
+  consequência aceita da exclusão (§9), e o caminho de volta já existe e está
+  testado.
+- **Gravação com a tela apagada continua não medida.** O `wakeLock` mantém a tela
+  acesa enquanto grava, e com isso a aba nunca vai a segundo plano — a pergunta
+  de se o Chrome no Android estrangula o `setTimeout` de 30 s do gravador
+  (§3.1) fica **sem resposta**, não respondida. Página capturando mídia costuma
+  ser isenta; ninguém verificou aqui. Sistema que recuse a trava por bateria
+  baixa grava do mesmo jeito, e nesse dia a pergunta volta.
+- **O service worker não cacheia nada.** Ele existe só para o Chrome oferecer a
+  instalação (§2). Sem rede, o app não abre: o que o sistema promete é não perder
+  o que **já** foi gravado, e quem cumpre isso é o IndexedDB (§3.2). Gravar
+  offline exigiria criar a sessão localmente — `POST /api/sessoes` é a primeira
+  coisa que o botão faz — e é fatia, não linha.
+- **A instância Aura Free depende do cron para não pausar.** São 72 h de silêncio
+  e o hostname deixa de resolver; a batida diária zera o relógio. Se o cron parar
+  (variável removida, plano mudado, rota renomeada), a pausa volta a ser possível
+  e **nada avisa** — o sinal é o app responder 502 no dia em que eu for gravar.
+- **Um preview aponta para o banco de desenvolvimento, e isso é configuração, não
+  código.** Com a migration rodando no build (§12.1), escopo de variável errado na
+  Vercel faz um deploy de preview migrar produção. O que protege é o escopo estar
+  certo; nada no repositório verifica isso.
+- **Deploy de preview não grava áudio.** A URL é aleatória e não está na política
+  de CORS do R2 (§7), que lista a origem de produção e o `localhost`. Consequência
+  aceita: preview serve para ver tela, não para gravar.
 - **`finalizarSessao` espera no máximo 150 s** pelos blocos pendentes; passando
   disso a sessão vai para `erro` com a lista do que faltou. O áudio fica intacto
   e o retry é manual. Eram 45 s até 02/09 — menos que uma janela de rate limit

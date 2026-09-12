@@ -15,9 +15,21 @@
  *   calibracao/regras-<hash>.json
  *   config/agentes.json
  *   config/prompt-<agente>-<hash>.json
+ *   backup/grafo-<dia do mês>.json
  */
 import { EXT_GRAVACAO, extensaoAceita } from "./audio";
 import type { Manifest } from "./tipos";
+
+/**
+ * O dump do grafo, girando pelo dia do mês (`backup/grafo-07.json`).
+ *
+ * Não leva o ano nem o mês de propósito: a chave que se repete é o que poda a
+ * janela sozinha, por sobrescrita. Guardar `grafo-2026-09-07.json` daria
+ * histórico infinito e exigiria um `LIST` para saber o que apagar — e `r2.ts`
+ * não tem `LIST`, por decisão que não é este backup que vai derrubar.
+ */
+export const chaveBackup = (quando: Date = new Date()) =>
+  `backup/grafo-${String(quando.getUTCDate()).padStart(2, "0")}.json`;
 
 export const prefixoSessao = (id: string) => `sessoes/${id}`;
 export const chaveManifest = (id: string) => `${prefixoSessao(id)}/manifest.json`;

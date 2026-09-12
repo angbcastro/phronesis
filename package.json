@@ -1,6 +1,9 @@
 {
   "name": "phronesis",
   "private": true,
+  "engines": {
+    "node": ">=22.6"
+  },
   "type": "module",
   "scripts": {
     "dev": "next dev",

@@ -37,6 +37,8 @@ export class Gravador {
   private parando = false;
   private aoParar: (() => void) | null = null;
   private inicioMs = 0;
+  private trava: WakeLockSentinel | null = null;
+  private aoVoltar: (() => void) | null = null;
 
   constructor(private readonly opcoes: OpcoesGravador) {}
 
@@ -64,7 +66,53 @@ export class Gravador {
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
     });
     this.inicioMs = Date.now();
+    await this.segurarTela();
     this.novoRecorder();
+  }
+
+  /**
+   * Mantém a tela acesa enquanto grava.
+   *
+   * O recorder se recria a cada 30 s num `setTimeout` (topo do arquivo), e aba
+   * em segundo plano no Chrome Android sofre estrangulamento de timer. Página
+   * capturando mídia costuma ser isenta disso — **não foi medido neste
+   * sistema**, e a trava existe para a pergunta não precisar de resposta: com a
+   * tela acesa a aba nunca vai para segundo plano.
+   *
+   * Nunca é obrigatória. Navegador sem a API, ou sistema que recusa por bateria
+   * baixa, grava do mesmo jeito — perder a trava é perder uma garantia, não a
+   * gravação.
+   */
+  private async segurarTela(): Promise<void> {
+    if (typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
+    try {
+      this.trava = await navigator.wakeLock.request("screen");
+    } catch {
+      this.trava = null;
+    }
+
+    // O sistema solta a trava sozinho quando a página some, e não a devolve na
+    // volta. Sem repedir, uma notificação atendida no meio da sessão deixaria o
+    // resto da gravação desprotegida.
+    if (!this.aoVoltar) {
+      this.aoVoltar = () => {
+        if (document.visibilityState === "visible" && this.stream) void this.segurarTela();
+      };
+      document.addEventListener("visibilitychange", this.aoVoltar);
+    }
+  }
+
+  private async soltarTela(): Promise<void> {
+    if (this.aoVoltar) {
+      document.removeEventListener("visibilitychange", this.aoVoltar);
+      this.aoVoltar = null;
+    }
+    try {
+      await this.trava?.release();
+    } catch {
+      // Já solta pelo sistema — soltar de novo não é erro que interesse.
+    }
+    this.trava = null;
   }
 
   private novoRecorder(): void {
@@ -119,5 +167,6 @@ export class Gravador {
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
     this.recorder = null;
+    await this.soltarTela();
   }
 }

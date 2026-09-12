@@ -35,4 +35,22 @@ export const env = {
   get auth() {
     return { secret: req("AUTH_SECRET"), allowedEmail: req("ALLOWED_EMAIL") };
   },
+  /**
+   * Entrega do magic link. Não é chave de modelo — a regra inviolável 8 fala de
+   * tráfego de LLM, e e-mail não é LLM —, e entra por `fetch`, sem SDK: o
+   * projeto já fala com o Neo4j e com o R2 assim.
+   */
+  get resendKey() {
+    return req("RESEND_API_KEY");
+  },
+  /**
+   * O que a Vercel manda no header do cron. Lido por `req`, e não como
+   * opcional, de propósito: variável com nome errado vira erro claro no log da
+   * função em vez de um 401 calado todo dia às 6 da manhã. O middleware só
+   * chega aqui quando existe header `Authorization` para conferir — request
+   * normal nunca toca nesta linha.
+   */
+  get cronSecret() {
+    return req("CRON_SECRET");
+  },
 };
