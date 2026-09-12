@@ -4,9 +4,34 @@
  */
 
 function req(nome: string): string {
-  const v = process.env[nome];
-  if (!v) throw new Error(`Variável de ambiente ausente: ${nome}`);
-  return v;
+  return exigir(nome, process.env[nome]);
+}
+
+/**
+ * A mesma checagem, mas recebendo o valor já lido.
+ *
+ * Existe por causa do **middleware**, que roda no Edge: lá o bundler só
+ * garante o que consegue ler estaticamente, e `process.env[nome]` — chave
+ * dinâmica — pode chegar vazio. Confirmado no bundle: o `middleware-manifest`
+ * lista as variáveis que viajam, e uma leitura dinâmica não entra nessa lista.
+ *
+ * Rota de API roda em função Node, onde `process.env` é objeto de verdade e
+ * `req` basta. Quem é lido pela porta em **toda** requisição — o segredo que
+ * assina o cookie, o e-mail permitido que vem no mesmo getter, e o segredo do
+ * cron — passa por aqui, com `process.env.NOME` escrito por extenso.
+ *
+ * O que se conferiu no bundle: a forma escrita por extenso **sobrevive** como
+ * `process.env.AUTH_SECRET`, e o valor **não** é inlinado — o segredo não viaja
+ * dentro do artefato, e continua sendo lido em tempo de execução. A troca é de
+ * uma leitura que nenhuma análise estática alcança por uma que o Edge resolve.
+ *
+ * `env.auth` devolve os dois campos juntos, então ler o segredo avalia o e-mail
+ * no mesmo gesto — é por isso que `ALLOWED_EMAIL` está nesta lista mesmo sem o
+ * middleware nunca perguntar por ele.
+ */
+function exigir(nome: string, valor: string | undefined): string {
+  if (!valor) throw new Error(`Variável de ambiente ausente: ${nome}`);
+  return valor;
 }
 
 export const env = {
@@ -33,7 +58,10 @@ export const env = {
     return req("AI_GATEWAY_API_KEY");
   },
   get auth() {
-    return { secret: req("AUTH_SECRET"), allowedEmail: req("ALLOWED_EMAIL") };
+    return {
+      secret: exigir("AUTH_SECRET", process.env.AUTH_SECRET),
+      allowedEmail: exigir("ALLOWED_EMAIL", process.env.ALLOWED_EMAIL),
+    };
   },
   /**
    * Entrega do magic link. Não é chave de modelo — a regra inviolável 8 fala de
@@ -51,6 +79,6 @@ export const env = {
    * normal nunca toca nesta linha.
    */
   get cronSecret() {
-    return req("CRON_SECRET");
+    return exigir("CRON_SECRET", process.env.CRON_SECRET);
   },
 };

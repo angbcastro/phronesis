@@ -4345,6 +4345,16 @@ AUTH_SECRET, ALLOWED_EMAIL
 `env.ts` usa getters: a variável só é exigida quando alguém de fato precisa dela,
 e a falta vira erro claro em vez de `undefined` silencioso.
 
+**Três variáveis são lidas por acesso estático, e isso não é estilo.** `req()` lê
+por chave dinâmica (`process.env[nome]`), o que basta em função Node — mas o
+**middleware roda no Edge**, e lá o bundler só garante o que consegue ler
+estaticamente. `AUTH_SECRET`, `ALLOWED_EMAIL` (que vem no mesmo getter) e
+`CRON_SECRET` são lidas como `process.env.NOME` escrito por extenso, por
+`exigir()`. Conferido no bundle: a forma sobrevive como acesso estático e o valor
+**não** é inlinado — o segredo não viaja dentro do artefato. Uma leitura dinâmica
+ali é a diferença entre o sistema responder e nada responder, sem causa visível
+em lugar nenhum.
+
 **`next.config.mjs` decide se o vocabulário chega à produção**, e por isso não é
 arquivo de configuração qualquer:
 
