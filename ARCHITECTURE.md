@@ -2947,6 +2947,32 @@ julgadas à mão — ficaria congelado no prompt que as produziu. É destrutivo 
 não tem desfazer próprio; o contrapeso é que a varredura reconstrói, e que a
 tela pede dois toques.
 
+#### 4.15.2 O que a segunda rodada mediu, e a decisão que saiu dela
+
+O `confronto-2` rodou sobre os mesmos 58 átomos, e o resultado foi conferido
+contra o gabarito das 21 relações já julgadas: **21 relações viraram 13.**
+
+- **Os cinco erros foram corrigidos, 5 de 5.** `94→57` voltou como `CONFIRMA`,
+  que era o veredito; os outros quatro não voltaram.
+- **Das dezesseis aprovadas, oito sobreviveram** — e a perda é legível.
+  **Quatro delas (`63→27`, `64→27`, `65→27`, `68→27`) apontavam para o mesmo
+  átomo**, um `FATO` que diz "uma menina que eu conheci na festa do rock" e que
+  **não tem entidade ligada nenhuma**; os átomos novos dizem `cita: Franciele
+  Sena`, e a regra de referente recusou o par — certa pela letra, errada pelo
+  fato. Outras três (`67→5`, `80→26`, `93→29`) são exatamente o que as regras
+  novas proíbem — mesma pessoa, mesmo padrão de comportamento, abstração — e
+  tinham sido aprovadas.
+- **`68→27` prova que não foi o piso**: `CONTRADIZ` não tem piso de confiança, e
+  morreu igual. Foram as regras.
+
+**A decisão foi manter assim**, sabendo o preço: o confronto está calibrado
+para **precisão, não cobertura**. Num grafo que existe para responder perguntas,
+um falso positivo contamina a resposta e um falso negativo apenas deixa de
+ajudar — e as duas alavancas de recuperação (afrouxar "mesma pessoa"/"mesmo
+padrão", baixar o limiar) trariam ruído junto. Ligar o átomo órfão à entidade
+certa continua sendo o conserto honesto quando o caso voltar: ele arruma o
+dado, não o prompt.
+
 ## 5. Estados da sessão
 
 ```
@@ -5381,11 +5407,19 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   Quem seleciona é o top-`K_CANDIDATOS` do índice; o piso só pegaria se subisse
   a ponto de cortar `CONTRADIZ` boa junto. Mantido como rede, não como
   calibração.
-- **O piso do `COMPLEMENTA` (0,7) é que é o palpite agora** (slice 5.1) — ele
-  nasceu por medir, porque as confianças que o justificariam saíram do prompt
-  velho e não transferem para o `confronto-2`. Mora em `/agentes`, e é ali que
-  se ajusta. São **dois números de calibração no mesmo agente**, um em código
-  (similaridade) e um no painel (confiança).
+- **O piso do `COMPLEMENTA` (0,7) sobreviveu à primeira rodada e ficou** (slice
+  5.1). Ele mora em `/agentes`, e é ali que se ajusta. São **dois números de
+  calibração no mesmo agente**, um em código (similaridade) e um no painel
+  (confiança).
+- **O confronto perde ligação verdadeira de propósito** (§4.15.2): ele está
+  calibrado para precisão, e a segunda rodada custou oito relações aprovadas
+  para consertar cinco erradas. A decisão é essa mesma — falso positivo
+  contamina resposta, falso negativo só deixa de ajudar.
+- **A regra de referente cobra caro quando o átomo antigo não tem entidade
+  ligada**: um `FATO` que diz "uma menina que eu conheci na festa" nunca vai se
+  ligar a um átomo que nomeia a pessoa, porque o agente se recusa a presumir. O
+  conserto é ligar a entidade ao átomo — dado, não prompt —, e hoje não há tela
+  que faça isso num átomo já confirmado.
 - **O custo do confronto cresce com o volume de átomos**: cada um pendente paga
   uma busca vetorial e, havendo candidato acima do piso, uma fração de chamada
   de modelo — o lote de 10 dilui, não elimina. Sem teto de quantos processar por

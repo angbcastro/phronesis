@@ -32,12 +32,19 @@ Este arquivo só diz o que fazer a seguir.
 > tudo"** em `/confronto`, que é como um prompt novo alcança o que já foi
 > julgado. **Sem migration** — o schema da 011 não mudou.
 >
-> **O próximo passo é meu, e é o mesmo de sempre: apertar "reprocessar tudo" e
-> reler.** O gabarito já existe — são os 21 pares que eu julguei. O que se
-> espera: as cinco reprovadas não voltam, `94→57` volta como `CONFIRMA`, e as
-> dezesseis aprovadas continuam lá (em especial `63→27` e `64→27`, que são o
-> que justifica `COMPLEMENTA` existir). Se as boas sumirem junto, o piso de 0,7
-> está alto — e o conserto é `/agentes`, não deploy.
+> **Rodou, foi medido, e está fechado.** O reprocessar correu os 58 átomos em
+> 6 lotes: **21 relações viraram 13**. Os cinco erros foram corrigidos, 5 de 5
+> (`94→57` voltou como `CONFIRMA`), e das dezesseis aprovadas sobraram oito.
+> Quatro das perdidas apontavam para o mesmo átomo órfão de entidade ("uma
+> menina que eu conheci na festa do rock"), e três eram exatamente o que as
+> regras novas proíbem. **Decisão: manter assim** — o confronto fica calibrado
+> para precisão, porque falso positivo contamina resposta e falso negativo só
+> deixa de ajudar. `ARCHITECTURE.md` §4.15.2 tem a medição inteira.
+>
+> **A slice 5 e a 5.1 estão fechadas.** O que vem é a fatia C (modo aprendizado,
+> §8.1, ainda sem entrevista) ou a fatia 6 (o chat, `Specs/slice-6.md` já
+> escrita) — nenhuma das duas tem precedência declarada —, e depois o
+> ultrareview.
 
 > **Atualizado em 13/09: a fatia D virou a slice 5, e foi construída —
 > "Confrontar", não o chat.** O pedido da sessão era a camada de chat/GraphRAG
