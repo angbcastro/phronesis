@@ -33,11 +33,12 @@ interface Dados {
   atualizado_em: string | null;
 }
 
-/** O selo de quando. Três palavras, e a diferença é o que o agente custa. */
+/** O selo de quando. Quatro palavras, e a diferença é o que o agente custa. */
 const QUANDO: Record<QuandoRoda, string> = {
   automatico: "automático",
   condicional: "condicional",
   sob_demanda: "sob demanda",
+  periodico: "periódico",
 };
 
 // ───────────────────────────── as setas ─────────────────────────────

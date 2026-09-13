@@ -50,7 +50,7 @@ Contrato resumido (referência rápida, não substitui a leitura):
 (:Atomo)-[:SOBRE]->(:Entidade)          // 1, sujeito principal
 (:Atomo)-[:MENCIONA]->(:Entidade)       // 0..n
 (:Atomo)-[:PERFILA { campo }]->(:Entidade)  // campo ∈ contexto|pode_ajudar_com|fizemos_juntos
-(:Atomo)-[:ATUALIZA|:CONTRADIZ|:CONFIRMA]->(:Atomo)
+(:Atomo)-[:ATUALIZA|:CONTRADIZ|:CONFIRMA|:COMPLEMENTA]->(:Atomo)
 (:Entidade)-[:FUNDIDA_EM]->(:Entidade)  // fusão de duas entidades REAIS
                                         // grafia de STT é item de `aliases`
 (:Entidade)-[:DISTINTA_DE]->(:Entidade) // recusa minha: não propor de novo
@@ -130,7 +130,7 @@ o documento — conserte-o e me avise.
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, deduplicação, calibração, embedding
+AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, deduplicação, calibração, embedding, confronto
 STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
@@ -139,6 +139,7 @@ DESEMPATE_MODEL           opcional; padrão igual ao da resolução
 PERFIL_MODEL              opcional; padrão igual ao da extração
 ENRIQUECIMENTO_MODEL      opcional; padrão igual ao da extração
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
+CONFRONTO_MODEL           opcional; padrão igual ao da extração
 EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões
 AUTH_SECRET, ALLOWED_EMAIL
 RESEND_API_KEY            entrega do magic link

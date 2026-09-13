@@ -714,6 +714,7 @@ export const AGENTE_IDS = [
   "calibracao",
   "duplicatas",
   "embedding",
+  "confronto",
 ] as const;
 
 export type AgenteId = (typeof AGENTE_IDS)[number];
@@ -724,9 +725,11 @@ export const ehAgenteId = (v: unknown): v is AgenteId =>
 /**
  * Quando cada agente roda. É selo na tela, e a diferença importa para ler o
  * custo: `automatico` roda em toda sessão, `condicional` só quando o caso
- * aparece, `sob_demanda` só quando eu aperto um botão.
+ * aparece, `sob_demanda` só quando eu aperto um botão, `periodico` sozinho
+ * num cron próprio — e também sob demanda, o que nenhum dos três anteriores
+ * descreve sozinho (slice 5, `confronto`).
  */
-export type QuandoRoda = "automatico" | "condicional" | "sob_demanda";
+export type QuandoRoda = "automatico" | "condicional" | "sob_demanda" | "periodico";
 
 /**
  * O que eu editei de um agente. Ausente em qualquer campo = a base do git.
@@ -876,4 +879,57 @@ export interface Extensao {
   texto: string;
   /** Os trechos novos, literais da janela. Somam-se aos que o átomo já tinha. */
   trechos: string[];
+}
+
+// ───────── Slice 5: confrontar — relações entre átomos ao longo do tempo ─────────
+
+/**
+ * As quatro relações entre átomos que o agente `confronto` decide, sempre do
+ * mais novo para o mais antigo. `ATUALIZA` substitui a afirmação anterior,
+ * `CONTRADIZ` se opõe a ela, `CONFIRMA` a repete sem mudar nada, e
+ * `COMPLEMENTA` acrescenta informação nova e compatível sem mudar nem repetir
+ * o que já estava dito — é o meio-termo que faltava entre os três primeiros,
+ * que só nomeiam "igual", "oposto" e "substituído".
+ */
+export const TIPOS_RELACAO_CONFRONTO = ["ATUALIZA", "CONTRADIZ", "CONFIRMA", "COMPLEMENTA"] as const;
+
+export type TipoRelacaoConfronto = (typeof TIPOS_RELACAO_CONFRONTO)[number];
+
+export const ehTipoRelacaoConfronto = (v: unknown): v is TipoRelacaoConfronto =>
+  typeof v === "string" && (TIPOS_RELACAO_CONFRONTO as readonly string[]).includes(v);
+
+/**
+ * O estado do átomo na varredura de confronto (migration 011).
+ *
+ * Mais curto que o da fila de enriquecimento (`ESTADOS_ENRIQUECIMENTO`) porque
+ * não há passo de enfileirar: o cron e o botão "rodar agora" processam direto
+ * o que estiver pendente. `rodando` é só o *lease* que evita duas invocações
+ * pegando o mesmo átomo — mesma ideia de `reivindicarProxima`, na entidade.
+ * Ausente conta como nunca tentado, e é o estado de todo átomo hoje.
+ */
+export const ESTADOS_CONFRONTO = ["rodando", "processado", "falhou"] as const;
+
+export type EstadoConfronto = (typeof ESTADOS_CONFRONTO)[number];
+
+export const ehEstadoConfronto = (v: unknown): v is EstadoConfronto =>
+  typeof v === "string" && (ESTADOS_CONFRONTO as readonly string[]).includes(v);
+
+/**
+ * Um átomo mais antigo, candidato a se relacionar com o que está sendo
+ * processado — o resultado cru da busca vetorial, antes do agente decidir.
+ */
+export interface CandidatoDeConfronto {
+  id: string;
+  texto: string;
+  tipo: TipoAtomo;
+  valido_em: string;
+  similaridade: number;
+}
+
+/** O que o agente decidiu para um candidato — `null` quando decidiu "nenhuma". */
+export interface RelacaoDecidida {
+  candidato_id: string;
+  tipo: TipoRelacaoConfronto;
+  confianca: number;
+  motivo: string;
 }

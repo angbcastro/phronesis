@@ -2,11 +2,61 @@
 
 Documento de trabalho, não de arquitetura. **As slices 4.8, 4.8.1, 4.9 e 4.10
 estão construídas, commitadas e medidas em sessão real.** O que sobra aqui é
-histórico e a fila do que vem — ver a seção 6.
+histórico e a fila do que vem — ver a seção 6 e a seção 8.
 
 Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
 sistema funciona hoje) e `Specs/slice-4.11.md` (o que a fatia atual tem que ser).
 Este arquivo só diz o que fazer a seguir.
+
+> **Atualizado em 13/09: a fatia D virou a slice 5, e foi construída —
+> "Confrontar", não o chat.** O pedido da sessão era a camada de chat/GraphRAG
+> (fatia D, §8.2). A entrevista de alinhamento (nove perguntas, em três rodadas)
+> achou a mesma tensão que o §8.2 já registrava, e foi além dela: responder bem
+> "como minhas opiniões mudaram" pede relações entre átomos ao longo do tempo
+> (`:ATUALIZA`/`:CONTRADIZ`/`:CONFIRMA`), que nunca saíram do papel desde a
+> slice 2. **Decisão: pivotar e construir isso agora**, como fatia própria
+> (`Specs/slice-5.md`), antes de desenhar o chat sobre uma dependência que não
+> existe.
+>
+> **O que ficou decidido para quando o chat voltar** (agora **fatia 6**, não
+> mais D): tela de chat de verdade, com memória de conversa e histórico
+> persistente entre visitas, como ChatGPT/Claude — muda `Specs/visao.md` §10,
+> que precisa ser reescrito quando a fatia 6 chegar; procedência não aparece por
+> padrão na resposta, mas sempre disponível via um botão (i) que mostra os
+> átomos recuperados. Nenhuma das duas é código desta sessão — ver §8.2.
+>
+> **A slice 5 está construída, e não medida** — mesma posição da 4.11/4.12
+> abaixo. Entregou: a migration 011 (**PROPOSTA, não rodada** — três
+> propriedades de controle em `:Atomo`, mais `confronto_motivo`, e quatro
+> relações novas: `:ATUALIZA`/`:CONTRADIZ`/`:CONFIRMA` do contrato original e um
+> quarto tipo que a entrevista acrescentou, **`:COMPLEMENTA`** — informação nova
+> e compatível que não muda nem repete a anterior); o agente `confronto`
+> (`src/lib/confronto.ts`, décimo no painel de `/agentes`); a fila (mesmo
+> mecanismo de estado-idempotente-mais-`waitUntil` da 4.12), com dois
+> gatilhos — cron próprio (`vercel.json`, horário separado do `cron/diario`) e
+> sob demanda — e **nunca em tempo real**; `/confronto`, tela de manutenção
+> mínima com "rodar agora" e desfazer por átomo. `Specs/slice-5.md` tem o
+> escopo inteiro e a tabela de decisões da entrevista; `ARCHITECTURE.md` §4.15,
+> §8.5, §10, §11, §12 e §14, o sistema.
+>
+> **O próximo passo concreto é aprovar a migration 011**
+> (`db/migrations/011_confronto.cypher`), do mesmo jeito que a 010 espera logo
+> abaixo. Depois: rodar `/confronto` contra sessões reais com opiniões ou
+> decisões que mudaram entre si, e julgar a olho se `ATUALIZA`/`CONTRADIZ`/
+> `COMPLEMENTA` fazem sentido — sem gabarito, como o resto da extração.
+>
+> **A 4.11 e a 4.12 continuam não medidas** — isso não mudou nesta sessão; a
+> seção 7 continua sendo a lista pendente delas, e agora há uma terceira fatia
+> (a 5) esperando a mesma coisa: uma sessão real.
+
+> **Atualizado em 12/09: duas fatias novas na fila, ainda sem entrevista —
+> vêm antes do ultrareview.** A seção 8 registra o que foi pedido em sessão de
+> hoje: um modo de extração para áudios de "aprendizado explicado" (fatia C) e
+> uma interface de chat sobre o grafo (fatia D, GraphRAG). Nenhuma das duas foi
+> entrevistada ainda — só a ideia crua, para a próxima sessão não perder o fio.
+> Depois das duas: rodar o ultrareview e entrar na fase de otimização — usar
+> sessões reais para limpar o que foi acumulado ao longo do desenvolvimento e
+> polir as arestas de UX, UI e estrutura de dados.
 
 > **Atualizado em 08/09, no fim: a 4.12 está construída, e também não foi
 > medida.** Os seis passos da `Specs/slice-4.12.md` estão em código, um commit
@@ -599,3 +649,92 @@ RETURN e.resumo, e.aliases, e.canonico, e.enriquecimento_estado, e.resumo_anteri
 Decidir o que acontece com o **agente 3** (`perfil-1`): conviver, encolher ou
 sair. A 4.12 deixou isso explicitamente em aberto, e a resposta é uma só — se eu
 ainda uso o botão de **rascunhar** depois de o lote existir.
+
+---
+
+## 8. Duas fatias novas: na fila, ainda sem entrevista — antes do ultrareview
+
+Faladas em 12/09, cru — nenhuma das duas tinha `Specs/slice-N.md` nesta data.
+Como em 6.1/6.2, a sessão que for escrever a spec **tem que entrevistar antes**;
+o que segue é só o pedido e as tensões já visíveis, para a entrevista não
+começar do zero.
+
+**Ordem original:** fatia C, fatia D, e só depois o ultrareview. **O que de fato
+aconteceu em 13/09:** a sessão pulou direto para a fatia D (chat), a entrevista
+achou a dependência das relações entre átomos não resolvida, e o que saiu foi
+uma fatia nova — a slice 5, "Confrontar" (`Specs/slice-5.md`, bloco do topo). A
+fatia C continua não entrevistada; a fatia D voltou a ser **fatia 6**, com a
+tensão do §8.2 já respondida (ver abaixo) e a construção ainda pendente. A
+ordem daqui para frente: fatia C **ou** fatia 6 (nenhuma das duas tem
+precedência declarada), e só depois o ultrareview.
+
+### 8.1 Fatia C — modo "aprendizado explicado" na extração
+
+O diário passa a servir de notetaker também, sempre por áudio, em dois usos
+novos:
+
+- **coisas que quero registrar por serem interessantes, para não perder.**
+  Provavelmente já cabe em FATO/APRENDIZADO/CONQUISTA como estão hoje — não
+  parece pedir schema novo, mas é a entrevista que confirma;
+- **áudios explicando o que estudei** (exemplo dado: álgebra linear). Aqui há
+  pedido concreto de mudança na extração.
+
+O que foi pedido, ao pé da letra:
+
+- o átomo tem que deixar claro **o tópico** que estou estudando, e depois
+  explicar o que eu expliquei;
+- **nenhuma correção**, mesmo quando eu estiver errado (exemplo dado: errar
+  uma conta) — o sistema registra o que eu disse que entendi, não a verdade
+  matemática;
+- o motivo declarado é consumo futuro: consultar ("refresque minha memória
+  sobre o que aprendi nos últimos dois meses") e ser **testado** com perguntas
+  geradas a partir desses aprendizados. A extração tem que deixar a informação
+  no formato que serve a isso — é o critério de aceite da fatia, não uma
+  melhoria à parte.
+
+Tensões a levar para a entrevista:
+
+- hoje `APRENDIZADO` é "o que eu concluí" (`src/lib/extracao.ts`), sem campo de
+  tópico e sem instrução explícita contra correção — `COM AS MINHAS PALAVRAS`
+  já proíbe inventar, o que não é a mesma coisa que proibir corrigir um erro
+  factual ou matemático. A entrevista decide se isso é instrução nova dentro de
+  `APRENDIZADO` ou tipo novo (schema novo = migration proposta);
+- `HISTORIA` já é o único tipo com texto longo, sem resumir (`extracao.ts`,
+  em torno da linha 225). A entrevista decide se "explicar o que estudei" quer
+  o mesmo tratamento, ou se cabe no `APRENDIZADO` como está;
+- "me testar periodicamente" é consumo, não extração — depende de existir um
+  jeito de perguntar por período e por tipo. Amarra com a fatia D.
+
+### 8.2 Fatia 6 (era fatia D) — GraphRAG: interface de chat sobre o grafo
+
+> **Resolvido em 13/09, pela entrevista de alinhamento — construção ainda
+> pendente.** A tensão logo abaixo (chat de verdade vs. a tela "Perguntar" do
+> §6/§10 da visão) foi decidida: **é chat de verdade**, com memória de conversa
+> e histórico persistente entre visitas (como ChatGPT/Claude) — `Specs/visao.md`
+> §10 precisa ser reescrito quando esta fatia for construída, porque ele hoje
+> diz o contrário. Procedência não aparece por padrão na resposta; fica sempre
+> disponível via um botão (i) que mostra os átomos recuperados — o "mostrar a
+> origem, sempre" do §5.4 vira "sempre **poder** mostrar", não mostrar sozinho.
+> As perguntas técnicas do parágrafo seguinte (que consulta o grafo aceita,
+> reaproveitar `recuperacao.ts` ou não) continuam em aberto — não fizeram parte
+> desta entrevista, que pivotou para a slice 5 antes de chegar nelas.
+
+Pedido: uma tela de chat em que eu faço perguntas que consultam o grafo — inclui
+o teste periódico da fatia C ("me pergunte sobre o que aprendi nos últimos dois
+meses").
+
+**Tensão grande a levar para a entrevista, antes de qualquer linha de spec:**
+`Specs/visao.md` §6 já descreve a tela "Perguntar" — barra de texto, resposta em
+síntese com os itens que a sustentam, cada um clicável até a origem — e o §10 é
+explícito: **"Não é um chat — o diálogo existe só para completar o que ficou
+faltando na sessão."** "Chat" no pedido de 12/09 pode ser só a palavra usada
+para a mesma tela do §6, ou pode ser mudança de produto (histórico de conversa,
+perguntas encadeadas) que o §10 hoje recusa. Isso é decisão de produto, e vem
+antes de qualquer decisão técnica.
+
+Depois de resolvida essa tensão, a entrevista ainda decide: que consulta o
+grafo aceita (subgrafo por período, por tipo de átomo, por entidade); se
+"GraphRAG" aqui é o retrieval que já existe em `src/lib/recuperacao.ts` (hoje
+alimenta o dossiê da extração) reaproveitado para pergunta livre, ou um caminho
+novo; e como a resposta cita procedência na tela — o princípio "mostrar a
+origem, sempre" (`Specs/visao.md` §5.4) não abre exceção aqui.

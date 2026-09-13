@@ -1238,12 +1238,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
    por fora — é o "parede" de tracar(). Sem esta folga ela sairia do palco. */
 .fluxo {
   position: relative;
-  /* Cinco colunas desde a 4.12 (o agente 4 é o quarto filho do grafo). A
-     largura mínima cresceu junto para a caixa não encolher: o palco já rola na
+  /* Seis colunas desde a slice 5 (o `confronto` é o quinto filho do grafo,
+     depois do agente 4 na 4.12 ter levado de quatro para cinco). A largura
+     mínima cresce junto para a caixa não encolher: o palco já rola na
      horizontal, e caixa ilegível é pior que rolagem. */
-  min-width: 37rem;
+  min-width: 44rem;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   column-gap: 0.5rem;
   row-gap: 2.4rem;
   padding: 0.5rem 3rem 1rem;

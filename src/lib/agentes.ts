@@ -26,9 +26,11 @@ import {
 } from "./enriquecimento";
 import { INSTRUCOES as BASE_CALIBRACAO, PROMPT_VERSION_CALIBRACAO } from "./calibracao";
 import { INSTRUCOES as BASE_DUPLICATAS, PROMPT_VERSION_DUPLICATAS } from "./duplicatas";
+import { INSTRUCOES as BASE_CONFRONTO, PROMPT_VERSION_CONFRONTO } from "./confronto";
 import {
   DIMENSAO_EMBEDDING,
   modeloCalibracao,
+  modeloConfronto,
   modeloDesempate,
   modeloDuplicatas,
   modeloEmbedding,
@@ -97,7 +99,7 @@ export interface Agente {
 }
 
 /**
- * Os nove. A ordem é a do fluxo, e é a que a tela usa quando lista em vez de
+ * Os dez. A ordem é a do fluxo, e é a que a tela usa quando lista em vez de
  * desenhar.
  */
 export const AGENTES: readonly Agente[] = [
@@ -235,6 +237,21 @@ export const AGENTES: readonly Agente[] = [
     travado: `os dois índices vetoriais declaram ${DIMENSAO_EMBEDDING} dimensões na migration 006 — trocar por um modelo de outra dimensão pede DROP e migration nova, que é decisão aprovada e não toque de tela`,
     envelope: [],
   },
+  {
+    id: "confronto",
+    versao: PROMPT_VERSION_CONFRONTO,
+    rotulo: "confronto",
+    papel:
+      "compara um átomo com os mais antigos parecidos por vetor e decide se ATUALIZA, CONTRADIZ, CONFIRMA ou COMPLEMENTA — e grava sozinho",
+    quando: "periodico",
+    gatilho: "cron próprio (`/api/cron/confronto`) e botão \"rodar agora\" em /confronto — nunca em tempo real",
+    base: BASE_CONFRONTO,
+    padrao: modeloConfronto,
+    variavel: "CONFRONTO_MODEL",
+    modulo: "src/lib/confronto.ts",
+    modeloEditavel: true,
+    envelope: ["relacoes"],
+  },
 ];
 
 export const agentePorId = (id: AgenteId): Agente | undefined =>
@@ -264,15 +281,16 @@ export function envelopeFaltando(a: Agente, texto: string): string[] {
  * **A regra que amarra o desenho: aresta de ida liga linhas vizinhas.** O
  * roteador desenha cotovelo — desce, atravessa, desce —, e um cotovelo que pula
  * uma linha atravessa a caixa que estiver no meio do caminho. É essa regra que
- * decide o número de colunas: o `grafo` tem quatro filhos (`duplicatas`,
- * `perfil`, `enriquecimento`, `embedding`), eles têm de caber na **mesma**
- * linha, e a coluna que sobra é onde a calibração desce sem disputar espaço com
- * eles. Foi assim que a grade foi de três para quatro na 4.7, e de quatro para
- * cinco na 4.12 — o agente 4 é o quarto filho do grafo.
+ * decide o número de colunas: o `grafo` tem cinco filhos (`duplicatas`,
+ * `perfil`, `enriquecimento`, `embedding`, `confronto`), eles têm de caber na
+ * **mesma** linha, e a coluna que sobra é onde a calibração desce sem disputar
+ * espaço com eles. Foi assim que a grade foi de três para quatro na 4.7, de
+ * quatro para cinco na 4.12 — o agente 4 é o quarto filho do grafo — e de
+ * cinco para seis na slice 5 — o `confronto` é o quinto.
  * `tests/agentes.test.ts` cobra o invariante. Realimentação (`volta`) é a única
  * exceção, e ela passa por fora da grade justamente por isso.
  *
- * A quinta coluna cabe porque o palco já rola na horizontal (`.palco-fluxo`):
+ * A sexta coluna cabe porque o palco já rola na horizontal (`.palco-fluxo`):
  * quem decide a largura de cada caixa é o `min-width` do `.fluxo`, e ele cresceu
  * junto para as caixas não encolherem no telefone.
  */
@@ -285,7 +303,7 @@ export interface NoDoFluxo {
   /** Preenchido só quando o nó é um agente: é o que abre o editor. */
   agente?: AgenteId;
   faixa: Faixa;
-  coluna: 1 | 2 | 3 | 4 | 5;
+  coluna: 1 | 2 | 3 | 4 | 5 | 6;
   linha: number;
   /** Uma linha de explicação, para o nó que não é agente. */
   nota?: string;
@@ -320,6 +338,7 @@ export const NOS: readonly NoDoFluxo[] = [
   { id: "enriquecimento", rotulo: "enriquecimento", tipo: "agente", agente: "enriquecimento", faixa: "higiene", coluna: 3, linha: 9 },
   { id: "embedding", rotulo: "embedding", tipo: "agente", agente: "embedding", faixa: "higiene", coluna: 4, linha: 9 },
   { id: "calibracao", rotulo: "calibração", tipo: "agente", agente: "calibracao", faixa: "higiene", coluna: 5, linha: 9 },
+  { id: "confronto", rotulo: "confronto", tipo: "agente", agente: "confronto", faixa: "higiene", coluna: 6, linha: 9 },
 
   { id: "regras", rotulo: "regras", tipo: "dado", faixa: "higiene", coluna: 5, linha: 10, nota: "aprovadas por mim; entram no prompt da extração sem deploy" },
 ];
@@ -342,6 +361,7 @@ export const ARESTAS: readonly ArestaDoFluxo[] = [
   { de: "grafo", para: "perfil" },
   { de: "grafo", para: "enriquecimento", rotulo: "todos os átomos dela" },
   { de: "grafo", para: "embedding" },
+  { de: "grafo", para: "confronto", rotulo: "os mais antigos parecidos por vetor" },
   { de: "correcoes", para: "calibracao" },
   { de: "calibracao", para: "regras" },
   { de: "regras", para: "extracao", rotulo: "entram no prompt", volta: true },
@@ -353,6 +373,10 @@ export const ARESTAS: readonly ArestaDoFluxo[] = [
   // nenhum ÁTOMO entra por aqui — o que entra é a ficha da entidade.
   { de: "enriquecimento", para: "grafo", rotulo: "escreve a ficha sozinho", volta: true },
   { de: "grafo", para: "candidatas", rotulo: "quem já existe", volta: true },
+  // A segunda seta que escreve no grafo sem passar pelo nó humano — mesma
+  // reabertura declarada da 4.12, agora para relação entre átomos em vez de
+  // ficha de entidade.
+  { de: "confronto", para: "grafo", rotulo: "grava a relação sozinho", volta: true },
 ];
 
 

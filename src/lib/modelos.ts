@@ -355,3 +355,15 @@ export const DIMENSAO_EMBEDDING = 1536;
 export function modeloEmbedding(): string {
   return validarIdDeModelo(process.env.EMBEDDING_MODEL || MODELO_EMBEDDING_PADRAO);
 }
+
+/**
+ * Modelo que decide se dois átomos se relacionam — `ATUALIZA`, `CONTRADIZ`,
+ * `CONFIRMA` ou `COMPLEMENTA` (slice 5, agente `confronto`).
+ *
+ * Mesma família de trabalho da extração e da resolução: ler português e
+ * devolver JSON curto. Padrão é a extração, como a maioria dos outros;
+ * `CONFRONTO_MODEL` separa sem tocar em código.
+ */
+export function modeloConfronto(): string {
+  return validarIdDeModelo(process.env.CONFRONTO_MODEL || modeloExtracao());
+}

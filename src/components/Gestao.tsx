@@ -123,6 +123,11 @@ export function Gestao() {
         <Link className="item" href="/agentes" onClick={() => setAberto(false)}>
           agentes
         </Link>
+        {/* O agente que compara átomo com átomo ao longo do tempo — roda
+            sozinho por cron, e este é o botão de "rodar agora" (slice 5). */}
+        <Link className="item" href="/confronto" onClick={() => setAberto(false)}>
+          confronto
+        </Link>
         {/* Fica aqui sempre, e não só quando há o que calibrar: a gaveta é o
             mapa da gestão, e porta que aparece e some é porta que eu procuro
             no lugar errado. Quem aparece por tempo é a sugestão (slice 4.6). */}
