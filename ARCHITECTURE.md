@@ -2,7 +2,7 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.12.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-6.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
@@ -14,8 +14,9 @@ com a revisão), 4.7 (o painel dos agentes), 4.8 (a extração acompanha a fala)
 4.8.1 (as seis emendas), 4.9 (o extrator conhece o grafo), 4.10 (o arquivo
 importado entra pela mesma porta), 4.11 (a entidade se apresenta, e o agente 2
 mede a própria dúvida), 4.12 (a ficha se escreve sozinha), 5 (confrontar:
-relações entre átomos ao longo do tempo) e 5.1 (o confronto calibrado pela
-primeira revisão à mão) construídas.**
+relações entre átomos ao longo do tempo), 5.1 (o confronto calibrado pela
+primeira revisão à mão) e 6 (o chat: perguntar ao grafo em texto livre)
+construídas.**
 
 **E o sistema saiu do `localhost`.** Ele roda na Vercel, no plano Hobby, com o
 grafo de produção na instância Aura que sempre teve as sessões reais e um segundo
@@ -218,17 +219,26 @@ prompts subiram junto: `extracao-9` e `resolucao-5`. **Nada é reclassificado
 para trás**: a empresa que já está no grafo como `:Pessoa` continua `:Pessoa`
 até eu trocar o tipo à mão em `/entidades`.
 
-O que ainda não existe: busca, tela Perguntar (ou o chat que a substitui —
-decisão de produto tomada, construção adiada para a fatia 6), `:Foco`, as 2-4
-perguntas do ritual, e a deduplicação de **átomo** — dizer a mesma coisa em duas
-sessões ainda cria dois, só que agora possivelmente ligadas por `:CONFIRMA`
-(§4.15). As relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`, e um
-quarto tipo, `:COMPLEMENTA`, que a entrevista da slice 5 acrescentou) **existem
-desde a slice 5** — é o que a fatia 6 (o chat) vai poder ler.
+**E o grafo passou a responder** (seção 4.16). A fatia 6 é o chat que a decisão
+de produto da slice 5 já tinha escolhido no lugar da tela Perguntar minimalista
+de `Specs/visao.md` §6: uma bolha na tela inicial que expande para o centro, com
+memória de conversa e histórico entre visitas. Por dentro é um **agente com
+ferramentas**, e não um pipeline: o modelo decide quais buscas fazer e encadeia
+até oito antes de responder, porque "como eu estava depois que terminei com a
+Isinha" exige achar a data numa busca para filtrar por ela na seguinte. São duas
+ferramentas, as duas só-leitura — `buscar_atomos` (texto por vetor, entidade,
+tipos, período, tudo combinável) e `historico_do_atomo` (a cadeia de relações da
+slice 5, nas duas direções). A regra 5 fica intocada por decisão declarada:
+**nem por ferramenta o chat escreve no grafo**.
+
+O que ainda não existe: `:Foco`, as 2-4 perguntas do ritual, me testar sobre o
+que aprendi (a fatia C), e a deduplicação de **átomo** — dizer a mesma coisa em
+duas sessões ainda cria dois, só que agora possivelmente ligadas por `:CONFIRMA`
+(§4.15).
 A 4.6 está construída inteira — captura, tela, regras e o `calibracao-1`. O que
 falta é **uso**: nenhuma regra foi aprovada ainda, e enquanto não for, o
 `extracao-9` continua saindo byte a byte igual ao de antes dela.
-A fatia 6 (o chat) depende de material que já está pronto: saber de quem se está
+A fatia 6 se apoiou em material que já estava pronto: saber de quem se está
 falando, que a slice 4 entrega; achar o que já foi dito sem varrer o grafo
 inteiro, que a 4.5 entrega; e comparar o mesmo assunto ao longo do tempo, que a
 slice 5 entrega.
@@ -242,10 +252,10 @@ slice 5 entrega.
 │ MediaRecorder + wakeLock│   │ middleware (auth)   │   │ Cloudflare R2        │
 │ IndexedDB (blocos)      │   │ App Router /api/*   │   │  áudio + JSON        │
 │ fila de upload          │   │ waitUntil (STT)     │   │  + backup/ do grafo  │
-│ React (10 telas)        │   │ 2 crons diários ────┼──▶│ Neo4j Aura (HTTP)    │
+│ React (11 telas)        │   │ 2 crons diários ────┼──▶│ Neo4j Aura (HTTP)    │
 │ PWA instalado (sw.js)   │   │                     │   │  :Sessao + conteúdo  │
 └──────────┬──────────────┘   └──────────┬──────────┘   │ Vercel AI Gateway    │
-           │                             │              │  → os dez agentes    │
+           │                             │              │  → os doze agentes   │
            │  PUT presigned (áudio)      │              │ Resend → magic link  │
            └─────────────────────────────┴──────────────▶ R2                   │
                                                         └──────────────────────┘
@@ -314,6 +324,11 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   confronto.ts    o agente `confronto` (slice 5): candidatos por vetor entre
                   átomos, ATUALIZA/CONTRADIZ/CONFIRMA/COMPLEMENTA, e GRAVA —
                   mesmo padrão do enriquecimento, nunca em tempo real
+  chat.ts         o agente `chat` (slice 6): as duas ferramentas só-leitura, o
+                  loop com teto de 8 chamadas, e o rastro que o botão (i) abre.
+                  Não sabe que conversa existe
+  conversas.ts    :Conversa, as mensagens no R2, arquivar e apagar — e o agente
+                  `titulo-chat`, a única chamada de modelo que mora aqui
   entidades.ts    catálogo do grafo, a apresentação que os dois agentes leem, a
                   visão agregada da revisão; e o vetor da entidade: refresh por
                   hash e as duas consultas de vizinhança
@@ -328,7 +343,7 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   overrides.ts    o prompt e o modelo que eu editei na tela: leitura tolerante,
                   snapshot imutável por hash, e o carimbo. Não sabe quais
                   agentes existem — recebe o id e a base de quem chama
-  agentes.ts      o registro dos dez e o desenho do fluxo. Fica ACIMA dos
+  agentes.ts      o registro dos doze e o desenho do fluxo. Fica ACIMA dos
                   agentes: importa os prompts deles, e nenhum deles o importa
   referencias.ts  lê os dois formatos de proposta (antes e depois da 4)  (client)
   catalogo.ts     busca de entidade no navegador: trecho, acento, alias (client)
@@ -372,9 +387,12 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Sessoes (lista de sessões, o apagar de dois toques — e a cor
                     que diz o que falta revisar), Entidades (higiene do grafo),
                   Confronto (estado da varredura de relações, rodar e desfazer),
+                  Chat (a bolha, o painel, a lista de conversas, o progresso por
+                    passo e o (i) com o rastro — nasce dentro da `Gravacao`),
                   ServiceWorker (registra `sw.js`; não desenha nada)
-src/app/api/      38 rotas em oito famílias — sessão, entidade, calibração,
-                  agentes, átomos, confronto, as 2 de auth e a do cron (seção 10)
+src/app/api/      42 rotas em nove famílias — sessão, entidade, calibração,
+                  agentes, átomos, confronto, chat/conversas, as 2 de auth e a
+                  do cron (seção 10)
 src/middleware.ts porta única: sem credencial válida nada responde — cookie de
                   sessão, ou o header do cron sob /api/cron/
 public/           manifest.webmanifest, icone.svg, os 4 PNG (192/512, cada um
@@ -2382,11 +2400,11 @@ aprovando regra ou não: olhar já conta.
 
 ### 4.13 O painel dos agentes (slice 4.7)
 
-Oito pontos deste sistema falam com o Gateway. Até esta fatia, saber o que cada
-um fazia exigia abrir cinco arquivos de `src/lib/`, e mudar qualquer coisa exigia
-um deploy. `/agentes` é onde eles passam a ter rosto: o fluxo desenhado, e cada
-caixa abrindo o prompt e o modelo que a comandam — e, na resolução, o **limiar**
-(4.11).
+Doze pontos deste sistema falam com o Gateway — eram oito quando esta fatia
+nasceu. Até ela, saber o que cada um fazia exigia abrir cinco arquivos de
+`src/lib/`, e mudar qualquer coisa exigia um deploy. `/agentes` é onde eles
+passam a ter rosto: o fluxo desenhado, e cada caixa abrindo o prompt e o modelo
+que a comandam — e, na resolução e no confronto, o **limiar** (4.11, 5.1).
 
 | Agente | Módulo | Quando | Modelo | Envelope que o parser exige |
 |---|---|---|---|---|
@@ -2399,6 +2417,14 @@ caixa abrindo o prompt e o modelo que a comandam — e, na resolução, o **limi
 | `duplicatas-1` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
 | embedding (sem prompt) | `embedding.ts` | automático, depois de gravar | `EMBEDDING_MODEL` | — |
 | `confronto-2` | `confronto.ts` | periódico: cron próprio e sob demanda em `/confronto` (slice 5) | `CONFRONTO_MODEL` | `relacoes`, `novo`, `velho` |
+| `chat-1` | `chat.ts` | sob demanda, a cada mensagem na bolha de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo` |
+| `titulo-chat-1` | `conversas.ts` | sob demanda, uma vez por conversa nova (slice 6) | `CHAT_TITULO_MODEL` | `titulo` |
+
+**O `chat` é o único cujo envelope não são chaves de JSON**, e a diferença é
+real: o parser dele é o loop de *tool-calling*, não um `JSON.parse`. O que um
+prompt editado não pode perder é o nome do que ele pode chamar — um prompt que
+não cita `buscar_atomos` é um prompt que desliga a ferramenta, e a recusa diz
+isso antes de salvar.
 
 **O limiar é o terceiro campo editável** (4.11), e desde a 5.1 são **dois** os
 agentes que têm um — e eles medem coisas diferentes: na resolução, abaixo dele
@@ -2972,6 +2998,211 @@ ajudar — e as duas alavancas de recuperação (afrouxar "mesma pessoa"/"mesmo
 padrão", baixar o limiar) trariam ruído junto. Ligar o átomo órfão à entidade
 certa continua sendo o conserto honesto quando o caso voltar: ele arruma o
 dado, não o prompt.
+
+### 4.16 O chat: perguntar ao grafo (slice 6)
+
+`ARCHITECTURE.md` listava "busca" e "tela Perguntar" como inexistentes desde a
+slice 2. A entrevista de 13/09 resolveu a tensão de produto — é **chat de
+verdade**, com memória de conversa e histórico entre visitas, e não a tela
+minimalista de uma pergunta e uma resposta que `Specs/visao.md` §6 descrevia —
+e desviou para construir a slice 5 primeiro, porque o "Confrontar" é o material
+que esta fatia consome.
+
+#### 4.16.1 Agente com ferramentas, e não pipeline
+
+Foi a decisão técnica central, e ela foi tomada contra um exemplo real. O
+desenho proposto primeiro era um pipeline de passo fixo: um passo de extração
+estruturada da pergunta (entidade, período, tipo), seguido de uma busca
+determinística. Ele cai em perguntas como estas, que são as que eu de fato faço:
+
+- *"como eu estava me sentindo depois que terminei com a Isinha?"*
+- *"e depois da viagem pra Serra da Canastra?"*
+
+As duas exigem **achar a data de um evento numa busca para só então filtrar por
+ela na seguinte**. Nenhum pipeline de passo fixo cobre isso sem virar, na
+prática, um agente disfarçado — então ele é um agente declarado, com um teto
+escrito e o rastro visível.
+
+O loop mora em `src/lib/chat.ts` e é `generateText` com `tools` (SDK `ai`, id de
+modelo em **string** — regra 8, como todo o resto). Ele para quando o modelo
+escreve texto, ou quando a soma das chamadas de ferramenta chega a
+`TETO_FERRAMENTAS = 8`.
+
+**Oito, e o número tem os dois lados medidos contra a pergunta real.** Quatro
+foi recusado: o caso Isinha gasta duas chamadas só para achar a data do término,
+e sobraria orçamento de menos para o resto. Dezesseis foi recusado pelo lado
+oposto — o pior caso de latência cresce sem nenhum exemplo pedindo, e cada
+chamada é uma ida ao Gateway que eu pago.
+
+**A síntese pode custar uma segunda chamada, e isso não é acidente.** Quando o
+loop para no teto, ele para *em cima de um resultado de ferramenta*: o modelo
+ainda não escreveu nada. Aí sai uma segunda chamada, com o mesmo histórico e
+`toolChoice: "none"` — "agora responda com o que você tem". Sem ela, a pergunta
+mais composta do sistema, a que gastou as oito buscas, seria justamente a que
+volta vazia.
+
+**A data de hoje entra fora do prompt editável** (`montarSistema`). Ela é a
+única coisa deste agente que muda todo dia, e um prompt salvo com "hoje é 13/09"
+congelaria a mentira dentro do objeto imutável do `prompt_hash` — "esse mês" e
+"semana passada" passariam a ser resolvidos contra o dia em que eu editei o
+prompt em `/agentes`.
+
+#### 4.16.2 As duas ferramentas, e por que duas
+
+Quatro ferramentas de dimensão única — semântica, entidade, período, confronto —
+foram desenhadas primeiro e recusadas: uma pergunta composta ("o que eu fiz,
+aprendi e conquistei em agosto") exigiria encadear e cruzar à mão o que um
+parâmetro de lista resolve numa chamada só. Uma terceira, para comparar duas
+entidades diretamente, também foi recusada — nenhum exemplo real pediu, e se
+aparecer o agente tenta com duas chamadas de `buscar_atomos`.
+
+```
+buscar_atomos({ texto?, entidade?, tipo?: TipoAtomo[], desde?, ate? })
+```
+
+Todos opcionais, todos combináveis. **Sem `texto`** é um `MATCH` filtrado,
+ordenado por `valido_em` desc, com teto de `TETO_ATOMOS = 12`. **Com `texto`** o
+índice vetorial `atomo_embedding` (migration 006) entra e os demais filtros se
+somam como condição, ordenando por similaridade; `2 * score - 1` desfaz a
+normalização do índice de volta para cosseno, a mesma conta de `entidades.ts` e
+`confronto.ts`.
+
+Três detalhes que erram calado, e por isso estão fixados por teste:
+
+- **o período compara data com data.** O parâmetro é `AAAA-MM-DD` e o campo é um
+  instante; sem `left(a.valido_em, 10)`, um `<= '2026-08-31'` excluiria tudo o
+  que aconteceu no próprio dia 31;
+- **átomo sem `valido_em` sai de qualquer pergunta com período.** String vazia
+  passa no `<= ate` e apareceria como se fosse de antes do começo do diário;
+- **entidade que não existe volta com aviso, não com lista vazia.** A diferença
+  entre "essa pessoa não está no diário" e "você escreveu o nome de outro jeito"
+  é a diferença entre uma resposta errada e um segundo palpite; o aviso leva os
+  nomes parecidos do catálogo junto. A entidade resolve por `listarEntidades` +
+  `acharPorChave` — o mesmo caminho da extração, que atravessa alias de graça —
+  e a consulta atravessa `:FUNDIDA_EM` para alcançar o átomo antigo que ainda
+  aponta para o nó perdedor.
+
+```
+historico_do_atomo({ atomo_id })
+```
+
+Anda `[:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA*1..4]` **sem seta**, nas duas
+direções. É a parte que importa: as relações da migration 011 nascem sempre do
+mais novo para o mais antigo, então andar só para frente mostraria o que este
+átomo mudou, e andar só para trás mostraria o que mudou este átomo — e a
+pergunta "como minha opinião mudou" quer os dois lados do ponto onde eu parei.
+São duas consultas e não uma (os átomos, depois as arestas entre eles): todo o
+resto do sistema conversa com o Neo4j em escalar e mapa, e é o que mantém
+`linhas<T>` simples.
+
+**Átomo sem vizinho devolve um aviso, não uma lista de um item.** Um item só não
+é "não mudou": é "a varredura do confronto ainda não passou por aqui", e as duas
+coisas levam a respostas opostas.
+
+**As ferramentas nunca propagam erro.** Ferramenta que estoura derruba o loop e
+a pergunta fica sem resposta; ferramenta que devolve "não consegui" deixa o
+modelo tentar outro caminho — que é o que uma pessoa faria. O erro vai para o
+rastro do (i) do mesmo jeito, então nada fica escondido.
+
+#### 4.16.3 Só leitura, e nem por ferramenta
+
+Uma ferramenta de escrita com confirmação — arquivar um átomo direto do chat —
+foi considerada e recusada. É a leitura mais direta da regra 5 do `CLAUDE.md`, e
+espalhar o lugar onde escrita acontece para mais uma tela não tinha pedido real
+por trás. No desenho de `/agentes`, `grafo → chat` é a única seta que sai do
+grafo sem nenhuma chance de voltar para ele.
+
+#### 4.16.4 A conversa: nó leve, mensagens no R2
+
+Migration 012 (§8.6). O nó `:Conversa` carrega o que a lista precisa para
+desenhar uma linha e ordenar; as mensagens e o rastro de cada resposta ficam em
+`conversas/<id>/mensagens.json` (§9) — a regra 2 aplicada de novo, e o mesmo
+padrão de `:Sessao`. Guardar tudo no R2, com um manifesto e nenhum nó novo, foi
+considerado e recusado: listar viraria ler-e-regravar um arquivo em vez de uma
+query.
+
+Cada mensagem do agente carrega `rastro`, `modelo` e `prompt_version` — a regra
+7 aplicada em espírito, como a migration 011 já fez com a relação: ela fala de
+átomo, e uma resposta escrita por LLM pede a mesma auditoria.
+
+**A escrita é read-modify-write por etag**, como o manifest, e o `atualizada_em`
+do nó sobe **depois** do R2 — a lista ordenar por uma escrita que não aconteceu
+seria mentir na única tela onde a conversa é encontrada.
+
+**A pergunta é gravada antes de o modelo começar.** Se eu apertar "parar", ou se
+a função morrer no meio, a pergunta fica e a resposta não — que é o resultado
+honesto, e o mesmo que a tela mostra. Gravar as duas juntas no fim perderia a
+pergunta de uma resposta interrompida.
+
+**O rastro das respostas antigas não volta ao modelo.** Ele fica na mensagem,
+para o (i), mas não entra no prompt do turno seguinte: replicar as chamadas de
+ferramenta de todos os turnos anteriores encheria o contexto de material que já
+virou prosa. O que o modelo relê de um turno passado é a resposta que ele
+escreveu — que é também o que eu li.
+
+#### 4.16.5 Apagar e arquivar — as duas, e a exceção declarada à regra 6
+
+São ações distintas, e o pedido da entrevista foi explícito em ter as duas:
+
+| ação | o que faz |
+|---|---|
+| **arquivar** | `SET c.arquivada_em`. Congela: sai da lista principal, `POST /api/chat` recusa com 409, continua legível num separador de arquivadas. Desarquivar é o mesmo gesto com `false` |
+| **apagar** | `remover` no R2 e `DETACH DELETE` no nó. Some de vez, sem volta |
+
+**É a única deleção de verdade deste sistema.** A regra 6 do `CLAUDE.md` proíbe
+`DELETE` em átomo; conversa não é átomo — não é conhecimento, é a transcrição de
+uma pergunta que eu fiz a uma tela. Nenhum átomo perde procedência quando ela
+some, e nada do grafo depende dela. A migration 012 escreve isso por extenso.
+
+**O R2 primeiro, o grafo depois.** Na ordem inversa, uma falha no meio deixaria
+um objeto órfão que ninguém mais alcança: a chave só existia no nó que acabou de
+sumir, e `r2.ts` não tem `LIST` para reencontrá-la. É a mesma razão de
+`chavesDaSessao` pôr o manifest por último.
+
+#### 4.16.6 O título, e o agente `titulo-chat`
+
+Uma chamada barata sobre a primeira troca, gravada em `titulo` assim que sai.
+Título por truncamento da primeira mensagem foi recusado — sai sem sentido
+quando a pergunta é longa ou vaga, e o produto citado como referência
+(ChatGPT/Claude) gera título por modelo. O truncamento continua existindo como
+**fallback** na tela, enquanto o agente não respondeu.
+
+String vazia é resultado válido: se o modelo falhar, a conversa fica sem título
+e a lista mostra a primeira pergunta cortada. Ninguém perde uma resposta porque
+o batismo não saiu.
+
+`titulo-chat` é o primeiro id de agente com hífen, e por isso `chavePromptAgente`
+passou a aceitá-lo: o que aquele validador barra é travessia de caminho, não
+hífen.
+
+#### 4.16.7 O fluxo NDJSON, e o progresso por passo
+
+`POST /api/chat` devolve um fluxo de NDJSON — um objeto JSON por linha:
+
+```
+{"tipo":"conversa","conversa":{…}}     primeiro, para o cliente saber o id
+{"tipo":"passo","passo":{…}}           um por chamada de ferramenta concluída
+{"tipo":"resposta","mensagem":{…}}     a síntese, já gravada
+{"tipo":"titulo","titulo":"…"}         só na primeira troca
+{"tipo":"erro","erro":"…"}             o que não coube num código HTTP
+```
+
+**Nenhuma dependência nova.** O pacote `ai` traz protocolo de streaming pronto e
+ele foi recusado: ele fala de *token*, e o que esta tela mostra enquanto espera
+não é token — é qual busca o agente está fazendo. Um objeto por linha resolve
+isso com `fetch` e `TextDecoder`, que todo navegador já tem, e mantém o
+`package.json` do jeito que a slice 6 o encontrou.
+
+O evento de passo chega **depois** que a ferramenta respondeu, e por isso a
+linha de progresso fala no passado ("buscou 'término' · sobre Isinha — 4
+trechos"). Escrever "buscando…" sobre trabalho terminado seria o tipo de
+mentirinha de interface que faz a espera parecer mais longa do que é.
+
+**Sem chave de idempotência**, e é a única rota do sistema assim (regra 4). A
+regra chaveia por `sessao_id` porque o pipeline pode ser reexecutado sozinho,
+por `waitUntil` e por retomada; aqui quem dispara sou eu apertando enviar, e
+duas perguntas iguais seguidas são duas perguntas, não uma repetida.
+
 
 ## 5. Estados da sessão
 
@@ -4056,6 +4287,63 @@ Contrato completo do que esta migration acrescenta:
     criado_em, modelo, prompt_version }]->(:Atomo mais_antigo)            (011)
 ```
 
+### 8.6 A conversa, e o primeiro label solto do grafo (migration 012)
+
+Slice 6. **Proposta — não rodada.** Como a 005, a 007, a 008, a 010 e a 011, ela
+não tem statement nenhum: propriedade de valor livre não se declara no Aura Free
+(constraint de existência é Enterprise) e índice novo não entra por cota (§14).
+`scripts/migrate.ts` conta 0 statement(s) e segue. Ela existe porque
+`db/migrations/` é a definição canônica do schema e o contrato do grafo mudou.
+
+```
+(:Conversa {
+  id,                 // base36, o mesmo `novoId()` de :Sessao
+  titulo,             // do agente `titulo-chat`; string vazia até ele responder
+  criado_em,
+  atualizada_em,      // é por ele que a lista ordena
+  arquivada_em,       // ISO, ou AUSENTE — e ausente é o estado "ativa"
+  mensagens_key       // a chave do objeto no R2
+})
+```
+
+**Sem relação nenhuma, e é a característica que define o label.** `:Conversa`
+não é `:Entidade` nem `:Atomo`, e não se liga a nada do grafo de conhecimento —
+é metadado de aplicação, como `:Sessao`. Uma conversa enxerga o grafo pelas duas
+ferramentas do agente `chat`, nunca por aresta própria; e **uma conversa nunca
+enxerga outra**. Conversas virarem fonte de busca umas das outras — uma terceira
+ferramenta, com embedding nas mensagens — foi considerado e recusado na
+entrevista: nasceu de uma ambiguidade de linguagem, não de um pedido real.
+
+**Sem índice, e nem constraint de unicidade em `id`.** `listarConversas` varre
+`(:Conversa)` com `ORDER BY` e `LIMIT` sobre o grafo de uma pessoa só — a mesma
+conta de `todasSessoes` (008). E, ao contrário de `:Sessao` (001), nada aqui faz
+`MERGE` por id: a conversa nasce de um `CREATE` com id sorteado, e a unicidade
+vem da origem. Um índice para proteger o que a origem já garante seria cota
+gasta por simetria.
+
+**`arquivada_em` ausente conta como ativa, na leitura** — mesma decisão do
+`status` na 004, do perfil na 005 e do `descartada_em` na 008, e pela mesma
+razão: a defesa vale para o nó que um deploy antigo criar amanhã, não só para os
+que existem hoje.
+
+**Esta é a única exceção à regra 6 do `CLAUDE.md` em todo o sistema**, e ela é
+deliberada. A regra 6 fala de átomo: "deleção é soft, nunca `DELETE` em átomo".
+Conversa não é átomo — não é conhecimento, é a transcrição de uma pergunta que
+eu fiz a uma tela. Nada do grafo depende dela, nenhum átomo perde procedência
+quando ela some, e o pedido da entrevista foi explícito em ter as **duas** ações
+e não só uma: `arquivar` congela (`SET c.arquivada_em`), `apagar` apaga
+(`DETACH DELETE` mais o objeto no R2). O `DETACH` é cinto de segurança, não
+necessidade: o nó nasce sem aresta e deve morrer assim.
+
+Contrato completo do que esta migration acrescenta — e nada do que já existia
+muda:
+
+```
+(:Conversa { id, titulo, criado_em, atualizada_em,
+             arquivada_em, mensagens_key })                              (012)
+```
+
+
 ## 9. Layout do R2
 
 ```
@@ -4070,6 +4358,7 @@ sessoes/<id>/parcial.json       a proposta enquanto cresce: { janelas: [{n, de, 
 sessoes/<id>/extracao.json      proposta: átomos ancorados, referências resolvidas (com o `porque` da camada 3b), marcas de perfil, entidades agregadas, procedência dos dois agentes
 sessoes/<id>/extracao-anterior.json  a proposta que o `forcar` substituiu — só a última, para eu comparar
 sessoes/<id>/correcoes.json     o que eu corrigi naquela revisão — fotografia do momento da confirmação, escrita uma vez só
+conversas/<id>/mensagens.json   a conversa inteira (slice 6): { conversa_id, mensagens: [{papel, texto, criado_em, rastro?, modelo?, prompt_version?}] }
 calibracao/indice.json          a mesa de trabalho: as correções acumuladas de todas as sessões, teto de 500
 calibracao/regras-<hash>.json   uma composição de regras aprovada — imutável para sempre
 config/agentes.json             o que eu editei de cada agente: hash do prompt e modelo (slice 4.7)
@@ -4099,10 +4388,18 @@ chave → nó é o dossiê, com o catálogo da hora. `semantico: false` marca o 
 cuja camada de vetor não trouxe nada, e é o que o catch-up do `/finalizar` refaz
 uma vez (§4.14).
 
-`calibracao/` e `config/` ficam **fora** do prefixo `sessoes/` de propósito: nem
-o índice de correções nem a configuração dos agentes são de sessão nenhuma. E são
-dois prefixos e não um porque são duas coisas: `calibracao/` é material que o
-sistema acumulou sozinho, `config/` é o que eu escrevi.
+`calibracao/`, `config/` e `conversas/` ficam **fora** do prefixo `sessoes/` de
+propósito: nem o índice de correções, nem a configuração dos agentes, nem uma
+conversa são de sessão nenhuma. E são três prefixos e não um porque são três
+coisas: `calibracao/` é material que o sistema acumulou sozinho, `config/` é o
+que eu escrevi, e `conversas/` é o que eu perguntei.
+
+`conversas/<id>/mensagens.json` é o gêmeo de `transcricao.json` na outra ponta do
+sistema: no Neo4j vai só a chave (regra 2), e o conteúdo — incluindo o rastro de
+ferramentas de cada resposta, que é o material do botão (i) — fica aqui. Ele é o
+**único** objeto do R2 que é apagado de verdade fora de uma sessão descartada, e
+`apagarConversa` o remove **antes** do nó: a chave só existe no nó, e sem `LIST`
+não há como reencontrar um objeto órfão (§4.16.5).
 
 **`parcial.json` e `extracao.json` são dois objetos e não um** porque têm donos
 diferentes no tempo. O parcial é escrito por vários `waitUntil` concorrentes, com
@@ -4169,7 +4466,12 @@ sessão, e apagá-las seria desaprender (§14).
 | `POST /api/entidades/desfazer` | `{chave}` — os quatro campos da ficha voltam uma geração | é uma **troca**, não uma restauração: outro toque traz de volta. 400 quando não há geração guardada |
 | `POST /api/atomos/embutir` | dá vetor aos átomos que ainda não têm, em lote | retrofill e retry; 200 por chamada, `continua: true` enquanto sobrar; não toca no texto nem reextrai |
 | `POST /api/entidades/embutir` | põe em dia o vetor das entidades, comparando `embedding_fonte` | não editar nada devolve `embutidas: 0` |
-| `GET /api/agentes` | os dez com o que está em vigor, mais o desenho do fluxo | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
+| `POST /api/chat` | `{conversa_id?, texto}` — a pergunta; devolve um **fluxo de NDJSON** com a conversa, um evento por chamada de ferramenta, a resposta e o título | cria a conversa quando não vem `conversa_id`; **409 em conversa arquivada**; grava a pergunta antes de o modelo começar, para o "parar" não perdê-la; sem chave de idempotência, e é a única assim (§4.16.7) |
+| `GET /api/chat?conversa_id=` | as mensagens de uma conversa, com o rastro de cada resposta | mora aqui, e não em `/api/conversas/:id`, porque é a leitura do mesmo objeto do R2 que o `POST` escreve |
+| `GET /api/conversas` | a lista, ativas e arquivadas juntas, por `atualizada_em` desc | quem separa é a tela. **Sem `POST`**: conversa nasce da primeira pergunta, não de um botão — assim a lista nunca acumula conversa vazia |
+| `PATCH /api/conversas/:id` | `{arquivada: boolean}` — congela ou descongela | um booleano e não duas rotas: as duas direções são a mesma decisão |
+| `DELETE /api/conversas/:id` | apaga de vez — o objeto no R2 **e** o nó | a **única deleção de verdade** do sistema, e a exceção declarada à regra 6 (§4.16.5, migration 012). R2 antes do nó, sempre |
+| `GET /api/agentes` | os doze com o que está em vigor, mais o desenho do fluxo | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
 | `POST /api/agentes/:id` | `{prompt?, modelo?}` — o que passa a valer | o **único** lugar que escreve configuração de agente; `null` revoga o campo e volta à base; recusa prompt que quebre o envelope e id de modelo fora do formato |
 | `GET /api/confronto` | quantos átomos esperam, e os últimos que a varredura tocou | só leitura; alimenta a tela `/confronto` |
 | `POST /api/confronto/rodar` | reivindica um átomo pendente e roda; se autoencadeia em `waitUntil` até a fila esvaziar | mesmo cookie repassado do elo de enriquecimento; sem distinção entre "começar" e "elo seguinte" — não há passo de escolher o que entra |
@@ -4190,7 +4492,7 @@ detalhe de deploy: o teto de execução é o que decide se um `waitUntil` termin
 
 | `maxDuration` | Rotas |
 |---|---|
-| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/entidades/enriquecer`, `/confronto/rodar`, `/cron/confronto` — as que chamam modelo dentro de `waitUntil`, ou correm a mesma fila em loop |
+| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/entidades/enriquecer`, `/confronto/rodar`, `/cron/confronto`, `/chat` — as que chamam modelo dentro de `waitUntil`, correm a mesma fila em loop, ou encadeiam até oito chamadas antes de responder |
 | 60 s | `/confirmar`, `/atomos/embutir`, `/entidades/embutir`, `/entidades/duplicatas`, `/entidades/fundir`, `/entidades/perfil/rascunho`, `/calibracao/rascunho` |
 | padrão | todo o resto |
 
@@ -4204,10 +4506,16 @@ rate limit sem prazo** que a fila usa (§4.9): uma espera de 75 s estouraria um
 teto de 60 e mataria o elo no meio do sono. `LEASE_MS` é o mesmo número, e é por
 isso: passado ele, a função que reivindicou está morta com certeza.
 
-`dynamic = "force-dynamic"` em sete rotas, todas de leitura de estado:
+`dynamic = "force-dynamic"` em dez rotas, todas de leitura de estado:
 `GET /api/sessoes`, `GET /api/sessoes/:id`, `GET /api/sessoes/:id/extracao`,
-`GET /api/entidades`, `GET /api/calibracao`, `GET /api/calibracao/sugestao` e
-`GET /api/confronto`.
+`GET /api/entidades`, `GET /api/calibracao`, `GET /api/calibracao/sugestao`,
+`GET /api/confronto`, `GET /api/conversas`, e as duas de `/api/chat`.
+
+O 300 s do `/chat` é o mais justificado da tabela, e o único que não é sobre
+`waitUntil`: uma pergunta composta paga até oito idas ao Gateway antes da
+síntese, mais a síntese, e a espera de rate limit continua sem prazo. Ele
+responde em **fluxo**, então a resposta começa a chegar muito antes disso — o
+teto é para o pior caso, não para o normal.
 
 **O `DELETE` de sessão apaga o material, não o grafo** (slice 4.10). Existe porque
 calibrar gera sessão de teste, e uma sessão de 17 min fatiada são 35 objetos no
@@ -4239,14 +4547,14 @@ número não vai bater com a tela.
 
 | Rota | Componente | O que mostra |
 |---|---|---|
-| `/` | `Gravacao` + `BotaoGravar` + `Gestao` | o círculo "Como foi seu dia?" e uma engrenagem discreta no canto — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo" |
+| `/` | `Gravacao` + `BotaoGravar` + `Gestao` + `Chat` | o círculo "Como foi seu dia?", uma engrenagem discreta na borda esquerda e a bolha do chat no canto de baixo — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo", e nem a engrenagem nem a bolha |
 | `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e abre a revisão sozinho |
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, marcar a ficha oficial — e a **ficha** de cada uma: resumo, grafias e os três campos de perfil. Desde a 4.12: checkbox por linha, "selecionar todas", o botão que enfileira o lote, o estado da fila em cada linha e o desfazer |
 | `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
-| `/agentes` | `Agentes` | o fluxo desenhado — os dez agentes, os dados entre eles e o único nó humano; clicar numa caixa abre o prompt, o modelo e (na resolução) o limiar daquele agente |
+| `/agentes` | `Agentes` | o fluxo desenhado — os doze agentes, os dados entre eles e o único nó humano; clicar numa caixa abre o prompt, o modelo e (na resolução e no confronto) o limiar daquele agente |
 | `/confronto` | `Confronto` | quantos átomos esperam a varredura, o botão "rodar agora", e os últimos átomos tocados com as relações que ganharam e o desfazer por linha (slice 5) |
 | `/entrar` | página de login | pede o e-mail permitido |
 
@@ -4284,6 +4592,51 @@ fechar. **Clicar em "subir um áudio" não a fecha**, de propósito: o botão vi
 ficar visíveis onde eu cliquei. Ela some sozinha quando o upload termina e a rota
 troca. A engrenagem só existe com a gravação parada, como os três links que ela
 substituiu: navegar para fora no meio de uma gravação a mataria.
+
+`Gestao.tsx` **não** ganhou um item de chat, e é deliberado: ao contrário da
+slice 5, o chat não é uma rota. Ele mora na própria tela inicial.
+
+#### A bolha do chat, e o círculo que minimiza (slice 6)
+
+Uma rota própria e de destaque — `/chat`, ao lado de Gravar/Revisar — foi a
+primeira ideia levada à entrevista, e caiu assim que ficou claro que a
+integração era com a tela de gravar. O que existe é uma bolha:
+
+| estado da tela | o que aparece |
+|---|---|
+| **parado** | círculo ao centro + engrenagem + bolha do chat, pequena e semitransparente, no canto de baixo à direita |
+| **chat aberto** | o painel toma o centro; o círculo encolhe (`--circulo: 84px`), sobe para o topo e fica semitransparente — periférico, como a bolha era |
+| **gravando** | só círculo, timer, ponto de salvo e "parar". A bolha **some inteira**, como a engrenagem |
+
+A bolha e o painel são o **mesmo elemento** — uma `<section class="chat">` que
+cresce —, pela mesma razão que o `BotaoGravar` é o mesmo nó do DOM parado e
+gravando: sem isso não há o que transicionar, só um corte.
+
+**Manter a bolha visível durante a gravação foi recusado.** Nem a `Gestao`, a
+única porta de saída que já existia, tem esse privilégio — e a tela de gravar é
+onde este projeto historicamente corta, não adiciona (ver o comentário sobre o
+chip de recuperação removido em `Gravacao.tsx`).
+
+**Com o chat aberto, o primeiro toque no círculo não grava.** Ele restaura o
+círculo ao centro e fecha o chat; só o segundo toque começa a gravar. Um toque
+só — fechar e já gravar — foi considerado, por ser o gesto mais parecido com o
+"um botão, um toque" que rege esta tela, e recusado: começar uma gravação sem
+querer, só tentando sair do chat, custa mais que um toque. O `Esc` segue a mesma
+lógica em outra dimensão — com o agente respondendo ele **para a geração**, e só
+fecha o painel quando não há nada em curso.
+
+Dentro do painel: a lista de conversas (ativas, com as arquivadas atrás de um
+separador que conta quantas são), o botão de nova conversa, a conversa aberta
+com as mensagens, o campo de texto, e o "parar" no lugar do enviar enquanto o
+agente trabalha. Abrir a bolha pela primeira vez numa visita abre **a conversa
+mais recente ativa** — é o que faz "toco de novo e continuo de onde parei" ser
+verdade; depois disso, qual conversa está aberta é decisão minha.
+
+O progresso aparece como uma linha por passo concluído ("buscou 'término' ·
+sobre Isinha — 4 trechos"), e não como um carregando genérico: a espera de uma
+pergunta composta é real, e fica opaca demais sem sinal nenhum. Cada resposta do
+agente tem um **(i)** que abre o rastro completo — cada chamada, os parâmetros e
+os átomos que voltaram, com tipo, data, entidades e similaridade.
 
 #### O PWA, que é instalabilidade e tela cheia — e mais nada
 
@@ -4582,7 +4935,7 @@ CRON_SECRET               o header da batida diária (§7, §10)
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, deduplicação, embedding, calibração, confronto
+AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, deduplicação, embedding, calibração, confronto, chat, título
 STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
@@ -4592,6 +4945,8 @@ PERFIL_MODEL              opcional; padrão igual ao da extração
 ENRIQUECIMENTO_MODEL      opcional; padrão igual ao da extração
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
 CONFRONTO_MODEL           opcional; padrão igual ao da extração
+CHAT_MODEL                opcional; padrão igual ao da extração — é quem precisa de tool-calling multi-passo
+CHAT_TITULO_MODEL         opcional; padrão igual ao do chat
 EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões
 AUTH_SECRET, ALLOWED_EMAIL
 ```
@@ -4644,7 +4999,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 13. Verificação
 
-- `pnpm test` — **53 arquivos, 990 testes**, sem credencial e sem rede. A lista
+- `pnpm test` — **55 arquivos, 1094 testes**, sem credencial e sem rede. A lista
   abaixo comenta os que valem uma explicação; a cobertura inteira se lê em
   `tests/`. Os que não têm bullet próprio cobrem a lógica pura da slice 1
   (chaves, manifest, estados, offsets, vocabulário, backoff, retry de rede,
@@ -4792,6 +5147,24 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   trocar o sujeito viram correção (critério 1); que dois renomes na mesma sessão
   não colapsam num id só (critério 2); e que canonização **não** produz correção
   nenhuma (critério 3), que é o teste que impede o corpus de nascer envenenado.
+- `tests/chat.test.ts` — o que erraria **calado** na slice 6, que é quase tudo o
+  que ela tem: o período comparando data com data (sem `left(valido_em, 10)` um
+  `<= '2026-08-31'` exclui o próprio dia 31), o átomo sem data saindo de qualquer
+  pergunta com período, e a entidade inexistente voltando com **aviso e nomes
+  parecidos** em vez de lista vazia — a diferença entre "essa pessoa não está no
+  diário" e "você escreveu o nome de outro jeito". Do loop: que o teto conta
+  chamada de ferramenta e não passo do modelo, e que parar no teto **sem texto**
+  dispara a síntese com `toolChoice: "none"` — sem isso, a pergunta que gastou as
+  oito buscas é justamente a que volta vazia. Das ferramentas: que elas nunca
+  propagam erro, porque ferramenta que estoura derruba o loop e ferramenta que
+  devolve "não consegui" deixa o modelo tentar outro caminho. Da conversa: que
+  apagar tira o objeto do R2 **antes** do nó, que o `atualizada_em` sobe depois
+  da escrita e nunca antes, e que um conflito de etag relê e reaplica em vez de
+  apagar o que a outra aba escreveu. Da tela: o NDJSON partido no meio de uma
+  linha, que é a única coisa daquele componente que erraria em silêncio.
+  **A qualidade da resposta nenhum teste alcança** — se o agente escolheu as
+  buscas certas e se o rastro do (i) faz sentido, quem diz sou eu, pergunta real
+  por pergunta real.
 - `tests/gestos.test.ts` — a fronteira do que o cliente manda: a chave existir é
   o gesto, e caixa e acento não são renome.
 - `tests/calibracao.test.ts` — o `If-Match` com laço de retry: duas capturas
@@ -5441,6 +5814,47 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   número é lido — mas só para **descartar** `COMPLEMENTA` abaixo do limiar, e
   não para mandar o par a uma segunda leitura como o `desempate-1` faz na
   resolução. Nos outros três tipos, `confianca` continua sendo só auditoria.
+- **O chat assume que a slice 5 funciona bem** (slice 6). `historico_do_atomo`
+  lê as relações da migration 011, e se a varredura não tiver passado — ou tiver
+  passado e descartado o par certo — ele volta sistematicamente com "este átomo
+  ainda não tem nenhuma relação de confronto registrada", e perguntas de "como
+  mudei de opinião" ficam sem resposta real. Não é bug desta fatia, e o conserto
+  não mora nela: é o prompt do confronto, ou ligar o átomo órfão à entidade certa
+  (§4.15.2).
+- **O custo cresce com o teto de oito chamadas por pergunta** (slice 6). Uma
+  pergunta composta paga até oito idas ao Gateway antes da síntese, mais a
+  síntese em si — e, quando o loop para no teto, mais uma. Não há orçamento por
+  conversa nem por dia: o teto é por mensagem.
+- **`CHAT_MODEL` precisa de tool-calling multi-passo bom pelo Gateway, e isso
+  não foi medido** (slice 6). O padrão é o mesmo da extração
+  (`zai/glm-5.3-flash`), escolhido para devolver JSON curto — que não é a mesma
+  habilidade. Se ele encadear mal, o conserto é `CHAT_MODEL` ou o painel de
+  `/agentes`, sem deploy; mas qual modelo serve ainda é pergunta aberta.
+- **A conversa longa entra inteira no prompt, a cada mensagem** (slice 6). Não há
+  resumo nem poda de histórico: uma conversa de trinta trocas manda as trinta a
+  cada pergunta nova. Se virar problema de custo ou de teto de contexto, é fatia
+  própria — e a mitigação que já existe é acidental, o rastro das respostas
+  antigas **não** voltar ao modelo (§4.16.4).
+- **O título é mais uma chamada por conversa nova** (slice 6). Barata — duas
+  mensagens dentro, uma frase fora —, mas soma, e roda dentro do mesmo fluxo da
+  primeira resposta.
+- **A pergunta interrompida fica sem resposta, e isso é visível** (slice 6).
+  "Parar" aborta a chamada depois de a pergunta já estar gravada: ao reabrir a
+  conversa, ela aparece sem resposta embaixo. É o comportamento escolhido —
+  perder a pergunta seria pior —, mas não existe "regenerar": perguntar de novo é
+  mandar outra mensagem.
+- **Editar mensagem enviada e regenerar resposta não existem** (slice 6). Não
+  foram pedidos e não foram construídos.
+- **A tela otimista pode mostrar uma pergunta que o servidor não guardou**
+  (slice 6). O painel acrescenta a minha mensagem antes da resposta chegar; se a
+  rede cair entre o `fetch` e a gravação no R2, a linha fica na tela e some na
+  próxima abertura da conversa. O grafo e o R2 continuam certos — quem mente por
+  um instante é a tela.
+- **`buscar_atomos` sem `texto` devolve os mais recentes, sem dizer que cortou**
+  (slice 6). O teto é `TETO_ATOMOS = 12`, e o modelo não recebe a contagem total:
+  uma pergunta sobre um mês inteiro com trinta átomos vê doze e não sabe disso. O
+  sinal que existe é indireto — doze resultados redondos —, e o conserto honesto
+  seria devolver o total junto, que não foi feito nesta fatia.
 
 ---
 

@@ -31,9 +31,15 @@ import {
   LIMIAR_COMPLEMENTA,
   PROMPT_VERSION_CONFRONTO,
 } from "./confronto";
+import { INSTRUCOES as BASE_CHAT, PROMPT_VERSION_CHAT, TETO_FERRAMENTAS } from "./chat";
+import {
+  INSTRUCOES_TITULO as BASE_TITULO,
+  PROMPT_VERSION_TITULO,
+} from "./conversas";
 import {
   DIMENSAO_EMBEDDING,
   modeloCalibracao,
+  modeloChat,
   modeloConfronto,
   modeloDesempate,
   modeloDuplicatas,
@@ -43,14 +49,22 @@ import {
   modeloPerfil,
   modeloResolucao,
   modeloStt,
+  modeloTituloChat,
   provedorAceitaVocabulario,
 } from "./modelos";
 import { carimbo, resolver } from "./overrides";
 import type { ConfigAgentes } from "./tipos";
 import type { AgenteId, QuandoRoda } from "./tipos";
 
-/** As três faixas do desenho. `eu` tem um habitante só, e é o ponto da regra 5. */
-export type Faixa = "ingestao" | "eu" | "higiene";
+/**
+ * As faixas do desenho. `eu` tem um habitante só, e é o ponto da regra 5.
+ *
+ * `leitura` entrou na slice 6 e é a primeira que não faz parte do caminho de
+ * gravar: o chat não produz átomo nenhum, não limpa nada, e só lê. Separá-la de
+ * `higiene` é dizer isso no dado — quem lê o registro vê que existe um lugar do
+ * sistema cujo trabalho é devolver o que já está lá.
+ */
+export type Faixa = "ingestao" | "eu" | "higiene" | "leitura";
 
 export interface Agente {
   id: AgenteId;
@@ -104,7 +118,7 @@ export interface Agente {
 }
 
 /**
- * Os dez. A ordem é a do fluxo, e é a que a tela usa quando lista em vez de
+ * Os doze. A ordem é a do fluxo, e é a que a tela usa quando lista em vez de
  * desenhar.
  */
 export const AGENTES: readonly Agente[] = [
@@ -258,6 +272,39 @@ export const AGENTES: readonly Agente[] = [
     envelope: ["relacoes", "novo", "velho"],
     limiarPadrao: LIMIAR_COMPLEMENTA,
   },
+  {
+    id: "chat",
+    versao: PROMPT_VERSION_CHAT,
+    rotulo: "chat",
+    papel:
+      "lê a minha pergunta, escolhe sozinho quais buscas fazer no grafo, encadeia até " +
+      `${TETO_FERRAMENTAS} e escreve a resposta citando os átomos que usou`,
+    quando: "sob_demanda",
+    gatilho: "a cada mensagem que eu mando na bolha de chat da tela inicial",
+    base: BASE_CHAT,
+    padrao: modeloChat,
+    variavel: "CHAT_MODEL",
+    modulo: "src/lib/chat.ts",
+    modeloEditavel: true,
+    // As duas ferramentas, e não chaves de JSON: este é o único agente cujo
+    // parser é o loop de tool-calling. O que um prompt editado não pode perder
+    // é justamente o nome do que ele pode chamar.
+    envelope: ["buscar_atomos", "historico_do_atomo"],
+  },
+  {
+    id: "titulo-chat",
+    versao: PROMPT_VERSION_TITULO,
+    rotulo: "título",
+    papel: "dá nome a uma conversa a partir da primeira troca",
+    quando: "sob_demanda",
+    gatilho: "uma vez por conversa, assim que a primeira resposta sai",
+    base: BASE_TITULO,
+    padrao: modeloTituloChat,
+    variavel: "CHAT_TITULO_MODEL",
+    modulo: "src/lib/conversas.ts",
+    modeloEditavel: true,
+    envelope: ["titulo"],
+  },
 ];
 
 export const agentePorId = (id: AgenteId): Agente | undefined =>
@@ -296,7 +343,12 @@ export function envelopeFaltando(a: Agente, texto: string): string[] {
  * `tests/agentes.test.ts` cobra o invariante. Realimentação (`volta`) é a única
  * exceção, e ela passa por fora da grade justamente por isso.
  *
- * A sexta coluna cabe porque o palco já rola na horizontal (`.palco-fluxo`):
+ * A slice 6 levou de seis para sete: o `chat` é o sexto filho do `grafo`, e ele
+ * tinha de caber na mesma linha dos outros cinco pela mesma regra. Abaixo dele
+ * desce a faixa de leitura inteira — o `titulo-chat` e a `conversa` —, que é a
+ * primeira coluna deste desenho que não toca o caminho de gravar.
+ *
+ * A sétima coluna cabe porque o palco já rola na horizontal (`.palco-fluxo`):
  * quem decide a largura de cada caixa é o `min-width` do `.fluxo`, e ele cresceu
  * junto para as caixas não encolherem no telefone.
  */
@@ -309,7 +361,7 @@ export interface NoDoFluxo {
   /** Preenchido só quando o nó é um agente: é o que abre o editor. */
   agente?: AgenteId;
   faixa: Faixa;
-  coluna: 1 | 2 | 3 | 4 | 5 | 6;
+  coluna: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   linha: number;
   /** Uma linha de explicação, para o nó que não é agente. */
   nota?: string;
@@ -347,6 +399,14 @@ export const NOS: readonly NoDoFluxo[] = [
   { id: "confronto", rotulo: "confronto", tipo: "agente", agente: "confronto", faixa: "higiene", coluna: 6, linha: 9 },
 
   { id: "regras", rotulo: "regras", tipo: "dado", faixa: "higiene", coluna: 5, linha: 10, nota: "aprovadas por mim; entram no prompt da extração sem deploy" },
+
+  // A faixa de leitura (slice 6). Ela pendura no `grafo` como os agentes de
+  // higiene, e desce por fora deles: nada aqui escreve átomo, entidade ou
+  // relação — as duas ferramentas do `chat` são só-leitura por decisão da
+  // entrevista, que é a leitura mais direta da regra 5.
+  { id: "chat", rotulo: "chat", tipo: "agente", agente: "chat", faixa: "leitura", coluna: 7, linha: 9 },
+  { id: "titulo-chat", rotulo: "título", tipo: "agente", agente: "titulo-chat", faixa: "leitura", coluna: 7, linha: 10 },
+  { id: "conversa", rotulo: "conversa", tipo: "dado", faixa: "leitura", coluna: 6, linha: 10, nota: "nó leve no Neo4j; as mensagens e o rastro de cada resposta no R2" },
 ];
 
 export const ARESTAS: readonly ArestaDoFluxo[] = [
@@ -383,6 +443,12 @@ export const ARESTAS: readonly ArestaDoFluxo[] = [
   // reabertura declarada da 4.12, agora para relação entre átomos em vez de
   // ficha de entidade.
   { de: "confronto", para: "grafo", rotulo: "grava a relação sozinho", volta: true },
+  // A leitura. `grafo → chat` é a única seta que sai do grafo sem nenhuma
+  // chance de voltar para ele: o chat lê e não escreve, nem por ferramenta.
+  { de: "grafo", para: "chat", rotulo: "as duas buscas" },
+  { de: "chat", para: "conversa", rotulo: "a resposta e o rastro" },
+  { de: "chat", para: "titulo-chat", rotulo: "a primeira troca" },
+  { de: "titulo-chat", para: "conversa", rotulo: "o título" },
 ];
 
 
@@ -420,10 +486,10 @@ export interface AgenteNaTela {
 }
 
 /**
- * Os nove resolvidos contra a configuração, numa leitura só do índice.
+ * Todos eles resolvidos contra a configuração, numa leitura só do índice.
  *
- * Um `resolver` por agente e um `configAgentes()` para todos: nove GETs para
- * responder a mesma pergunta seria pagar nove vezes por um objeto só.
+ * Um `resolver` por agente e um `configAgentes()` para todos: um GET por agente
+ * para responder a mesma pergunta seria pagar doze vezes por um objeto só.
  */
 export async function retrato(cfg: ConfigAgentes): Promise<AgenteNaTela[]> {
   return Promise.all(

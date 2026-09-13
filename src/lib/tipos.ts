@@ -703,6 +703,10 @@ export const MAX_REGRAS = 12;
  *
  * `stt` e `embedding` estão na lista mesmo sem prompt: eles têm modelo, e o
  * painel é de tudo que sai pelo Gateway, não só do que tem texto.
+ *
+ * `titulo-chat` é o primeiro id com hífen, e por isso `chavePromptAgente`
+ * (`chaves.ts`) passou a aceitá-lo: o nome do agente vira caminho no R2, e o
+ * que aquele validador barra é travessia de caminho, não hífen.
  */
 export const AGENTE_IDS = [
   "stt",
@@ -715,6 +719,8 @@ export const AGENTE_IDS = [
   "duplicatas",
   "embedding",
   "confronto",
+  "chat",
+  "titulo-chat",
 ] as const;
 
 export type AgenteId = (typeof AGENTE_IDS)[number];
@@ -957,4 +963,120 @@ export interface RelacaoDecidida {
   tipo: TipoRelacaoConfronto;
   confianca: number;
   motivo: string;
+}
+
+// ─────────────── Slice 6: o chat — a conversa, e o rastro da resposta ───────────────
+
+/**
+ * O nó `:Conversa` (migration 012). Metadado de aplicação, como `:Sessao`: não
+ * é `:Entidade` nem `:Atomo`, e não se liga a nada do grafo de conhecimento.
+ *
+ * As mensagens **não** estão aqui — elas vivem em `mensagens_key`, no R2
+ * (regra 2). O que o nó carrega é só o que a lista precisa para desenhar uma
+ * linha e ordenar.
+ */
+export interface Conversa {
+  id: string;
+  /** Gerado pelo agente `titulo-chat`. Vazio enquanto ele não respondeu. */
+  titulo: string;
+  criado_em: string;
+  /** Sobe a cada mensagem. É por ele que a lista ordena. */
+  atualizada_em: string;
+  /** ISO quando congelada; `null` = ativa. */
+  arquivada_em: string | null;
+  mensagens_key: string;
+}
+
+/** Quem falou. Duas partes, e uma delas sou eu — é um diário, não um grupo. */
+export const PAPEIS_MENSAGEM = ["eu", "agente"] as const;
+
+export type PapelMensagem = (typeof PAPEIS_MENSAGEM)[number];
+
+export const ehPapelMensagem = (v: unknown): v is PapelMensagem =>
+  typeof v === "string" && (PAPEIS_MENSAGEM as readonly string[]).includes(v);
+
+/** As duas ferramentas do agente `chat`. Só leitura, as duas (regra 5). */
+export const FERRAMENTAS_CHAT = ["buscar_atomos", "historico_do_atomo"] as const;
+
+export type FerramentaChat = (typeof FERRAMENTAS_CHAT)[number];
+
+/**
+ * O que `buscar_atomos` aceita. **Todos opcionais e combináveis**, e é essa
+ * composição que dispensou as quatro ferramentas de dimensão única que a
+ * entrevista desenhou primeiro: "o que eu fiz, aprendi e conquistei em agosto"
+ * é uma chamada, não três encadeadas à mão.
+ */
+export interface BuscaDeAtomos {
+  /** Dispara a busca vetorial sobre `atomo_embedding` (migration 006). */
+  texto?: string;
+  /** Nome ou grafia de uma entidade; resolve pelo catálogo, alias incluído. */
+  entidade?: string;
+  /** Lista, não valor único: os tipos se somam com OU. */
+  tipo?: TipoAtomo[];
+  /** `AAAA-MM-DD`. Compara contra os dez primeiros caracteres de `valido_em`. */
+  desde?: string;
+  ate?: string;
+}
+
+/** Um átomo como as ferramentas o devolvem ao modelo e ao rastro do (i). */
+export interface AtomoAchado {
+  id: string;
+  texto: string;
+  tipo: TipoAtomo;
+  valido_em: string;
+  sobre: string[];
+  cita: string[];
+  /** Só quando a busca foi vetorial. Cosseno, como em todo o resto. */
+  similaridade?: number;
+}
+
+/** Um elo da cadeia que `historico_do_atomo` percorre (as relações da 011). */
+export interface EloDoHistorico {
+  de: string;
+  para: string;
+  tipo: TipoRelacaoConfronto;
+  motivo: string;
+  confianca: number;
+}
+
+/**
+ * Uma chamada de ferramenta, inteira: o que o modelo pediu e o que voltou.
+ *
+ * É o material do botão (i), e ele guarda o **rastro completo** — cada chamada,
+ * os parâmetros usados, e o que ela trouxe. Uma lista plana dos átomos citados
+ * (o que a revisão faz) foi recusada na entrevista: com até oito chamadas
+ * possíveis, saber *por que* um átomo apareceu importa mais do que saber que
+ * ele apareceu.
+ */
+export interface PassoDeFerramenta {
+  ferramenta: FerramentaChat;
+  parametros: Record<string, unknown>;
+  /** Os átomos que a chamada trouxe, já cortados para caber na tela. */
+  achados: AtomoAchado[];
+  /** Só de `historico_do_atomo`: as relações entre os átomos achados. */
+  elos?: EloDoHistorico[];
+  /** Preenchido quando a ferramenta falhou — o modelo recebeu isto e seguiu. */
+  erro?: string;
+}
+
+/**
+ * Uma mensagem da conversa, como ela vive no R2.
+ *
+ * `rastro`, `modelo` e `prompt_version` só existem nas do agente. Os dois
+ * últimos são a regra 7 aplicada em espírito: ela fala de átomo, e uma
+ * resposta escrita por LLM pede a mesma auditoria.
+ */
+export interface Mensagem {
+  papel: PapelMensagem;
+  texto: string;
+  criado_em: string;
+  rastro?: PassoDeFerramenta[];
+  modelo?: string;
+  prompt_version?: string;
+}
+
+/** `conversas/<id>/mensagens.json` — a conversa inteira, num objeto só. */
+export interface MensagensDaConversa {
+  conversa_id: string;
+  mensagens: Mensagem[];
 }

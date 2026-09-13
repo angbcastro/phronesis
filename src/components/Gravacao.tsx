@@ -22,6 +22,18 @@
  * viraram um só: a engrenagem da `Gestao`, no meio da borda esquerda. O canto
  * superior esquerdo é da `Marca`, e continua sendo só dela. Ela sai do caminho
  * do olho, que vai direto ao círculo.
+ *
+ * **A bolha do chat entrou na slice 6, e ela não fura nenhuma dessas regras.**
+ * Ela mora no mesmo ramo de "parado" que a `Gestao`: durante a gravação, some
+ * inteira. Aberta, ela expande para o centro e o círculo minimiza e vai para o
+ * topo — os dois ficam periféricos quando não estão em foco, e nenhum dos dois
+ * desaparece.
+ *
+ * **Com o chat aberto, o primeiro toque no círculo não grava.** Ele restaura o
+ * círculo ao centro e fecha o chat; só o segundo toque começa a gravar. Um
+ * toque só — fechar e já gravar — foi considerado, por ser o gesto mais
+ * parecido com o "um botão, um toque" que rege esta tela, e recusado: começar
+ * uma gravação sem querer, só tentando sair do chat, custa mais que um toque.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -29,6 +41,7 @@ import { Gravador, suportado } from "@/client/gravador";
 import { acordar, enfileirar, observarFila, type EstadoFila } from "@/client/fila";
 import { guardarSessaoAtual, limparSessaoAtual } from "@/client/deposito";
 import { BotaoGravar } from "./BotaoGravar";
+import { Chat } from "./Chat";
 import { Gestao } from "./Gestao";
 
 type Fase = "parado" | "abrindo" | "gravando" | "encerrando";
@@ -50,6 +63,7 @@ export function Gravacao() {
   // O stream vira estado, não só ref: a onda do botão precisa re-renderizar
   // quando o microfone abre, e um ref não avisa ninguém.
   const [faixa, setFaixa] = useState<MediaStream | null>(null);
+  const [chatAberto, setChatAberto] = useState(false);
 
   useEffect(() => observarFila(setFila), []);
   useEffect(() => acordar(), []);
@@ -121,14 +135,26 @@ export function Gravacao() {
   const gravando = fase === "gravando" || fase === "encerrando";
   const salvo = fila.pendentes === 0 && fila.ultimo_salvo_em !== null;
 
+  /**
+   * O toque no círculo, com o chat aberto, é "volta pro centro" — não "grava".
+   * Gravar continua sendo o segundo toque, no círculo já central e inteiro.
+   */
+  const tocarNoCirculo = useCallback(() => {
+    if (chatAberto) {
+      setChatAberto(false);
+      return;
+    }
+    void comecar();
+  }, [chatAberto, comecar]);
+
   return (
-    <main className={`tela ${gravando ? "gravando" : ""}`}>
+    <main className={`tela ${gravando ? "gravando" : ""} ${chatAberto ? "com-chat" : ""}`}>
       <BotaoGravar
         gravando={gravando}
         ocupado={fase === "abrindo" || fase === "encerrando"}
         rotulo="Como foi seu dia?"
         faixa={faixa}
-        aoTocar={() => void comecar()}
+        aoTocar={tocarNoCirculo}
       />
 
       {gravando ? (
@@ -145,9 +171,18 @@ export function Gravacao() {
           </button>
         </>
       ) : (
-        // Porta de serviço única, discreta de propósito: a tela de gravar é
-        // onde eu passo o tempo, e nada aqui pode virar cobrança.
-        <Gestao />
+        <>
+          {/* Porta de serviço única, discreta de propósito: a tela de gravar é
+              onde eu passo o tempo, e nada aqui pode virar cobrança. */}
+          <Gestao />
+          {/* Mesma condição, e não uma segunda: a bolha some durante a gravação
+              pelo mesmo motivo que a engrenagem some. */}
+          <Chat
+            aberto={chatAberto}
+            aoAbrir={() => setChatAberto(true)}
+            aoFechar={() => setChatAberto(false)}
+          />
+        </>
       )}
 
       {problema && <p className="aviso">{problema}</p>}

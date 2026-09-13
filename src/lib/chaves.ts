@@ -11,6 +11,7 @@
  *   sessoes/<id>/extracao.json
  *   sessoes/<id>/extracao-anterior.json
  *   sessoes/<id>/correcoes.json
+ *   conversas/<id>/mensagens.json
  *   calibracao/indice.json
  *   calibracao/regras-<hash>.json
  *   config/agentes.json
@@ -114,10 +115,27 @@ export const chaveAgentes = () => `config/agentes.json`;
  * `extracao-6+a3f91c7d` resolve o texto que o produziu.
  */
 export const chavePromptAgente = (agente: string, hash: string) => {
-  if (!/^[a-z]{3,20}$/.test(agente)) throw new Error(`Agente inválido: ${agente}`);
+  // O hífen entrou na slice 6, com o `titulo-chat`: o que este validador barra
+  // é travessia de caminho (`.`, `/`, maiúscula acidental), não hífen. Ele
+  // continua não aceitando nada que possa sair do prefixo `config/`.
+  if (!/^[a-z][a-z-]{2,19}$/.test(agente)) throw new Error(`Agente inválido: ${agente}`);
   if (!/^[0-9a-f]{8,64}$/.test(hash)) throw new Error(`Hash inválido: ${hash}`);
   return `config/prompt-${agente}-${hash}.json`;
 };
+
+/**
+ * As mensagens de uma conversa (slice 6, migration 012).
+ *
+ * Mesmo desenho de `chaveTranscricao`: no Neo4j vai só a chave, o conteúdo fica
+ * no R2 (regra 2). Um objeto por conversa, e não um por mensagem, porque a
+ * conversa inteira é lida de uma vez a cada mensagem nova — ela entra no prompt
+ * do modelo, e o painel a desenha do começo.
+ *
+ * Fora do prefixo `sessoes/` de propósito: conversa não é sessão, não tem
+ * áudio, e nunca entra em `chavesDaSessao`.
+ */
+export const prefixoConversa = (id: string) => `conversas/${id}`;
+export const chaveMensagens = (id: string) => `${prefixoConversa(id)}/mensagens.json`;
 
 export function indiceChunk(i: number): string {
   if (!Number.isInteger(i) || i < 0 || i > 999_999) {

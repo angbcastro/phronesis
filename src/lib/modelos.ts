@@ -367,3 +367,31 @@ export function modeloEmbedding(): string {
 export function modeloConfronto(): string {
   return validarIdDeModelo(process.env.CONFRONTO_MODEL || modeloExtracao());
 }
+
+/**
+ * Modelo do agente `chat` — o que lê a minha pergunta, escolhe as buscas e
+ * escreve a resposta (slice 6).
+ *
+ * Padrão igual ao da extração, como quase todos. **É o segundo candidato mais
+ * provável a ser separado**, depois do enriquecimento, e por um motivo que os
+ * outros agentes não têm: este é o único que usa *tool-calling* multi-passo
+ * pelo Gateway — ele decide quais ferramentas chamar, lê o que voltou e decide
+ * de novo, até oito vezes. Um modelo bom em devolver JSON curto não é
+ * necessariamente bom nisso, e isso não está medido (§14). Quando doer,
+ * `CHAT_MODEL` separa sem tocar em código.
+ */
+export function modeloChat(): string {
+  return validarIdDeModelo(process.env.CHAT_MODEL || modeloExtracao());
+}
+
+/**
+ * Modelo que dá nome à conversa a partir da primeira troca (slice 6).
+ *
+ * Padrão igual ao do `chat`, e não ao da extração: é a chamada mais barata do
+ * sistema — duas mensagens dentro, uma frase fora — e separá-la do chat só faz
+ * sentido no dia em que o `CHAT_MODEL` virar um modelo caro. `CHAT_TITULO_MODEL`
+ * é exatamente essa saída, e ela existe desde o primeiro commit por isso.
+ */
+export function modeloTituloChat(): string {
+  return validarIdDeModelo(process.env.CHAT_TITULO_MODEL || modeloChat());
+}

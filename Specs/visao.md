@@ -76,7 +76,11 @@ O que o sistema tem que garantir, em ordem de importância:
 
 **Revisar.** A tela mais difícil de acertar. Precisa mostrar muita informação — o que foi extraído, de que tipo, ligado a quem, o que conflita com o passado — e ainda assim ser resolvível em menos de um minuto. Aprovar tudo é um toque; discordar de um item é dois. O caso comum é aprovar; o caso raro é que pode custar atenção.
 
-**Perguntar.** Uma barra de texto. A resposta é uma síntese com os itens que a sustentam, cada um clicável até o áudio. Sem chat longo, sem histórico de conversa: pergunta, resposta, origem.
+**Perguntar.** Uma bolha na tela de gravar, que expande para o centro quando eu toco nela — e o círculo de gravação minimiza e vai para o topo. Dentro: minhas conversas, e a conversa aberta. Escrevo uma pergunta em texto livre, o sistema decide sozinho quais buscas fazer no grafo, mostra cada passo enquanto procura, e responde citando os trechos que usou — com um (i) que abre o rastro inteiro: cada busca feita e o que ela trouxe.
+
+> **Isto mudou na entrevista de 13/09, e o que estava escrito aqui antes era o contrário:** "uma barra de texto, sem chat longo, sem histórico de conversa: pergunta, resposta, origem". A referência que eu dei foi explícita — ChatGPT/Claude —, e por três razões concretas: uma pergunta como "como eu estava depois que terminei com a Isinha" não se responde numa busca só, então **o sistema precisa poder encadear**; a pergunta seguinte quase sempre depende da resposta anterior, então **a conversa precisa de memória**; e eu volto a um assunto dias depois, então **ela precisa persistir entre visitas**. Uma barra sem memória obrigaria a reescrever o contexto toda vez, que é exatamente a fricção que o §8 lista como forma de morte.
+
+O que **não** mudou: a resposta continua mostrando a origem (princípio 4 do §5), e o tom continua sendo o do §7 — bibliotecário, não coach. E a conversa **só enxerga o grafo**: nenhuma conversa é fonte de busca de outra.
 
 ---
 
@@ -120,5 +124,8 @@ Não são métricas de produto, são sinais que eu vou reconhecer no meu própri
 Não é app de produtividade — não gerencia tarefas, não cobra prazo, não tem checkbox.
 Não é ferramenta de trabalho — não é para transcrever reunião de cliente; isso já tem lugar.
 Não é rede social nem tem qualquer forma de compartilhamento.
-Não é um chat — o diálogo existe só para completar o que ficou faltando na sessão.
 Não é um assistente que fala comigo. É um lugar onde eu falo e que devolve o que eu disse, quando eu preciso.
+
+> **A linha "não é um chat" saiu daqui em 13/09**, e é a única coisa desta seção que já foi revogada. Ela dizia: "o diálogo existe só para completar o que ficou faltando na sessão". O chat que a slice 6 construiu é o oposto disso — é diálogo sobre o que **já** foi registrado, e ele existe porque a alternativa (uma barra de texto sem memória) não responde as perguntas que eu de fato faço (§6).
+>
+> O que a linha protegia continua protegido, e por outros meios: o chat **não escreve no grafo, nem por ferramenta** (regra 5 do `CLAUDE.md`); ele não puxa conversa, não pergunta nada de volta e não aparece durante a gravação; e a tela de gravar continua sendo um botão, um timer e um jeito de parar. O que este sistema não é continua sendo um assistente que fala comigo — é um que responde quando eu pergunto.

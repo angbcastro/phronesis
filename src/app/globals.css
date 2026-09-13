@@ -1238,13 +1238,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
    por fora — é o "parede" de tracar(). Sem esta folga ela sairia do palco. */
 .fluxo {
   position: relative;
-  /* Seis colunas desde a slice 5 (o `confronto` é o quinto filho do grafo,
-     depois do agente 4 na 4.12 ter levado de quatro para cinco). A largura
-     mínima cresce junto para a caixa não encolher: o palco já rola na
-     horizontal, e caixa ilegível é pior que rolagem. */
-  min-width: 44rem;
+  /* Sete colunas desde a slice 6 (o `chat` é o sexto filho do grafo, depois do
+     `confronto` na 5 ter levado de cinco para seis). A largura mínima cresce
+     junto para a caixa não encolher: o palco já rola na horizontal, e caixa
+     ilegível é pior que rolagem. */
+  min-width: 51rem;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   column-gap: 0.5rem;
   row-gap: 2.4rem;
   padding: 0.5rem 3rem 1rem;
@@ -1458,4 +1458,323 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) {
   .editor-agente { transition: transform 1ms; }
+}
+
+/* ─────────────────────────── o chat (slice 6) ───────────────────────────
+   A bolha e o painel são o mesmo elemento: uma `<section class="chat">` que
+   cresce. É a mesma ideia do `BotaoGravar` — não trocar de árvore entre dois
+   estados é o que permite a transição existir em vez de um corte.
+
+   Fechada, ela é periférica e semitransparente: fica no canto de baixo à
+   direita, longe do círculo, e não compete com ele. Aberta, ela toma o centro
+   e o círculo é que minimiza (ver `.tela.com-chat`, mais abaixo).
+
+   Ela nunca é montada durante a gravação — quem decide isso é a `Gravacao`, no
+   mesmo ramo que já esconde a `Gestao`. Aqui não há regra de visibilidade
+   nenhuma, de propósito: a tela de gravar não pode depender de CSS para não
+   mostrar o que não deve existir. */
+.chat {
+  position: fixed;
+  z-index: 5;
+  right: max(1.25rem, env(safe-area-inset-right));
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+}
+
+.bolha {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 1px solid var(--linha);
+  background: var(--fundo-alto);
+  display: grid;
+  place-items: center;
+  opacity: 0.45;
+  transition: opacity 250ms ease, transform 120ms ease;
+}
+.bolha svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--texto-fraco);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bolha:hover { opacity: 1; }
+.bolha:hover svg { stroke: var(--texto); }
+.bolha:active { transform: scale(0.92); }
+.bolha:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+/* Aberta, a caixa deixa de morar no canto: ela é o centro da tela, com o
+   círculo minimizado por cima dela e a engrenagem por baixo. O `top` começa
+   abaixo do círculo minimizado — os dois convivem, nenhum cobre o outro. */
+.chat.aberto {
+  right: max(0.75rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  left: max(0.75rem, env(safe-area-inset-left));
+  top: 8.5rem;
+  max-width: 34rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--fundo-alto);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  overflow: hidden;
+  transform-origin: bottom right;
+  animation: abrir-chat 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes abrir-chat {
+  from { opacity: 0; transform: scale(0.9) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.chat.aberto header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--linha);
+}
+.chat.aberto header h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat .icone {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  opacity: 0.7;
+}
+.chat .icone svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: var(--texto);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.chat .icone:hover { opacity: 1; background: color-mix(in srgb, var(--texto) 8%, transparent); }
+.chat .icone:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
+
+.chat .corpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.chat .aguardando { color: var(--texto-fraco); font-size: 0.9rem; margin: 0; }
+.chat .aviso { margin: 0 0.75rem 0.5rem; }
+
+/* ---- a lista de conversas ---- */
+
+.lista-conversas ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.lista-conversas li {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0;
+  border-bottom: 1px solid var(--linha);
+}
+.lista-conversas li.atual .titulo span:first-child { color: var(--acento); }
+.lista-conversas li.arquivada { opacity: 0.55; }
+.lista-conversas .titulo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 0.55rem 0.2rem;
+}
+.lista-conversas .titulo span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lista-conversas .meta { flex: none; font-size: 0.76rem; color: var(--texto-fraco); }
+.lista-conversas .acao {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--texto-fraco);
+  font-size: 0.76rem;
+  padding: 0.35rem 0.3rem;
+}
+.lista-conversas .acao:hover { color: var(--texto); }
+.lista-conversas .acao.apagar:hover { color: var(--rec); }
+
+.lista-conversas .separador {
+  align-self: flex-start;
+  margin-top: 0.4rem;
+  border: none;
+  background: none;
+  color: var(--texto-fraco);
+  font-size: 0.82rem;
+  padding: 0.35rem 0.2rem;
+}
+.lista-conversas .separador:hover { color: var(--texto); }
+
+/* ---- as mensagens ---- */
+
+.chat .fala { position: relative; max-width: 88%; }
+.chat .fala p { margin: 0; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat .fala.eu {
+  align-self: flex-end;
+  background: color-mix(in srgb, var(--acento) 16%, transparent);
+  border-radius: 12px 12px 2px 12px;
+  padding: 0.5rem 0.7rem;
+}
+.chat .fala.agente { align-self: flex-start; padding: 0.1rem 0 0.2rem; }
+
+/* O (i). Discreto, do tamanho de um dedo, e sempre no mesmo lugar — é a porta
+   da procedência, e ela não pode ser caça ao tesouro. */
+.chat .porque {
+  margin-top: 0.35rem;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--linha);
+  background: none;
+  color: var(--texto-fraco);
+  font-size: 0.72rem;
+  font-style: italic;
+  line-height: 1;
+}
+.chat .porque:hover { color: var(--acento); border-color: var(--acento); }
+.chat .porque:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+
+.chat .rastro {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  border-left: 2px solid var(--linha);
+  padding-left: 0.7rem;
+}
+.chat .rastro .cabecalho { font-size: 0.8rem; color: var(--texto-fraco); }
+.chat .rastro code { font-size: 0.74rem; color: var(--acento); }
+.chat .rastro ul {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.chat .rastro li { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.82rem; line-height: 1.4; }
+.chat .rastro .meta { font-size: 0.72rem; color: var(--texto-fraco); }
+.chat .rastro .elos { border-top: 1px dashed var(--linha); padding-top: 0.4rem; }
+
+/* O progresso por passo. Sem barra e sem porcentagem: o que a espera precisa
+   dizer é *o que está sendo procurado*, e isso é uma frase. */
+.chat .progresso {
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.82rem;
+  color: var(--texto-fraco);
+}
+.chat .progresso .pensando { opacity: 0.75; animation: piscar 1.6s ease-in-out infinite alternate; }
+
+@keyframes piscar {
+  from { opacity: 0.35; }
+  to   { opacity: 0.9; }
+}
+
+/* ---- escrever ---- */
+
+.chat .escrever {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border-top: 1px solid var(--linha);
+}
+.chat .escrever textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 30dvh;
+  resize: none;
+  border: 1px solid var(--linha);
+  border-radius: 12px;
+  background: var(--fundo);
+  color: var(--texto);
+  padding: 0.6rem 0.7rem;
+  font: inherit;
+  line-height: 1.4;
+  field-sizing: content;
+}
+.chat .escrever textarea:focus-visible { outline: 2px solid var(--acento); outline-offset: -1px; }
+.chat .escrever .mandar {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: var(--acento);
+  color: var(--sobre-acento);
+  font-size: 1.1rem;
+}
+.chat .escrever .mandar:disabled { opacity: 0.35; cursor: default; }
+.chat .escrever .parar {
+  flex: none;
+  border: 1px solid var(--linha);
+  background: none;
+  color: var(--texto);
+  border-radius: 999px;
+  padding: 0.55rem 1rem;
+  font-size: 0.85rem;
+}
+.chat .ligacao {
+  border: none;
+  background: none;
+  color: var(--acento);
+  padding: 0;
+  text-decoration: underline;
+}
+
+/* ---- o círculo minimizado ---- */
+
+/* Com o chat aberto o círculo não sai da tela: ele encolhe e sobe. Continua
+   sendo o mesmo elemento, no mesmo lugar da pilha — o que muda é a medida e a
+   presença. O primeiro toque nele fecha o chat; o segundo grava. */
+.tela.com-chat {
+  --circulo: 84px;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  padding-top: 1.5rem;
+}
+.tela.com-chat .palco { padding: 0.25rem 0; opacity: 0.45; transition: opacity 250ms ease; }
+.tela.com-chat .palco:hover { opacity: 0.8; }
+/* O rótulo não cabe em 84px, e encolhê-lo daria um texto ilegível fingindo que
+   cabe. Ele continua no DOM — é o nome acessível do botão —, só não é pintado. */
+.tela.com-chat .botao-gravar { font-size: 0; padding: 0; }
+.tela.com-chat .brilho { animation: none; box-shadow: 0 0 12px var(--glow); }
+.tela.com-chat .engrenagem { opacity: 0.25; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chat.aberto { animation-duration: 1ms; }
+  .chat .progresso .pensando { animation: none; opacity: 0.75; }
 }

@@ -1,0 +1,708 @@
+/**
+ * O agente `chat` — a pergunta em texto livre que consulta o grafo (slice 6).
+ *
+ * **O que ele faz:** lê a minha pergunta, decide sozinho quais buscas fazer,
+ * encadeia até `TETO_FERRAMENTAS` chamadas, e só então escreve a resposta.
+ *
+ * **Por que é agente e não pipeline.** A entrevista desenhou primeiro um passo
+ * fixo — extrair filtros da pergunta, depois uma busca determinística — e o
+ * recusou contra exemplo real: "como eu estava depois que terminei com a
+ * Isinha" exige *achar a data do término numa busca* para só então filtrar por
+ * ela na seguinte. Nenhum pipeline de passo fixo cobre isso sem virar, na
+ * prática, um agente disfarçado; então ele é um agente declarado.
+ *
+ * **Duas ferramentas, compostas.** Quatro ferramentas de dimensão única
+ * (semântica, entidade, período, confronto) foram desenhadas e recusadas: uma
+ * pergunta composta — "o que eu fiz, aprendi e conquistei em agosto" — exigiria
+ * encadear e cruzar à mão o que um parâmetro de lista resolve numa chamada só.
+ *
+ *   buscar_atomos        texto (vetor), entidade, tipo[], desde, ate — todos
+ *                        opcionais, todos combináveis
+ *   historico_do_atomo   a cadeia de ATUALIZA/CONTRADIZ/CONFIRMA/COMPLEMENTA
+ *                        em volta de um átomo, nas duas direções
+ *
+ * **Só leitura, e nem por ferramenta** (regra 5 do CLAUDE.md). Uma ferramenta
+ * de escrita com confirmação — arquivar um átomo direto do chat — foi
+ * considerada e recusada: espalhar o lugar onde escrita acontece para mais uma
+ * tela não tinha pedido real por trás.
+ *
+ * **O rastro é o produto, junto com a resposta.** Cada chamada, com os
+ * parâmetros usados e o que voltou, vira `PassoDeFerramenta` e fica guardada na
+ * mensagem — é o que o botão (i) abre. Uma lista plana dos átomos citados (o
+ * padrão que a revisão já usa) foi recusada: com até oito chamadas, saber *por
+ * que* um átomo apareceu importa mais do que saber que ele apareceu.
+ *
+ * **Ele não sabe que conversa existe.** Persistência, título e R2 são de
+ * `conversas.ts`; aqui entra uma lista de mensagens e sai um texto com rastro.
+ * É a mesma separação de `decidirLote`/`gravarRelacoes` no confronto, e é o que
+ * deixa o loop testável sem R2 nenhum.
+ */
+import { generateText, jsonSchema, tool } from "ai";
+import { embutir } from "./embedding";
+import { acharPorChave, listarEntidades } from "./entidades";
+import { comEsperaDeLimite } from "./limite";
+import {
+  diagnostico,
+  faltouOrcamento,
+  garantirGateway,
+  modeloChat,
+  textoDaResposta,
+  veioDoPensamento,
+} from "./modelos";
+import { query } from "./neo4j";
+import { carimbo, efetivo } from "./overrides";
+import { normalizarNome } from "./texto";
+import {
+  TIPOS_ATOMO,
+  ehTipoRelacaoConfronto,
+  type AtomoAchado,
+  type BuscaDeAtomos,
+  type EloDoHistorico,
+  type Mensagem,
+  type PassoDeFerramenta,
+  type TipoAtomo,
+} from "./tipos";
+
+/** Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7). */
+export const PROMPT_VERSION_CHAT = "chat-1";
+
+export class ChatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChatError";
+  }
+}
+
+// ──────────────────────── os tetos ────────────────────────
+
+/**
+ * Quantas chamadas de ferramenta o agente pode encadear antes da síntese.
+ *
+ * **Oito, por medida da pergunta real.** Quatro foi recusado na entrevista: o
+ * caso Isinha gasta duas chamadas só para achar a data do término, e sobraria
+ * orçamento demais de menos para o resto da pergunta. Dezesseis foi recusado
+ * pelo lado oposto — o pior caso de latência cresce sem nenhum exemplo real
+ * pedindo, e cada chamada é uma ida ao Gateway que eu pago.
+ */
+export const TETO_FERRAMENTAS = 8;
+
+/** Quantos átomos uma busca devolve. Doze cabem no prompt e na tela do (i). */
+export const TETO_ATOMOS = 12;
+
+/**
+ * Quantos vizinhos o índice vetorial traz antes dos filtros cortarem.
+ *
+ * Folgado em relação ao `TETO_ATOMOS` de propósito: `tipo`, `entidade` e
+ * período entram **depois** do `queryNodes`, e um `k` justo faria uma busca com
+ * filtro voltar vazia não por falta de átomo, mas por falta de candidato.
+ */
+export const K_BUSCA = 48;
+
+/**
+ * O piso de similaridade da busca por texto.
+ *
+ * Mais baixo que o `PISO_CONFRONTO` (0,45) e que os pisos da resolução, e é de
+ * propósito: lá o custo de um candidato ruim é uma relação errada gravada
+ * sozinha no grafo; aqui é uma linha a mais que o modelo lê e descarta, com a
+ * pergunta inteira à vista. Numa leitura, perder o átomo certo custa mais que
+ * carregar um errado.
+ */
+export const PISO_BUSCA = 0.3;
+
+/**
+ * Quantos degraus `historico_do_atomo` anda a partir do átomo dado.
+ *
+ * Não é 1 porque uma opinião pode ter mudado em mais de um passo — a cadeia
+ * inteira é o que a pergunta "como eu mudei de ideia sobre X" quer. Não é
+ * ilimitado porque `COMPLEMENTA` liga assunto vizinho, e sem teto uma cadeia
+ * longa arrastaria meio grafo para dentro de uma resposta.
+ *
+ * Vai **literal** na consulta: Neo4j não aceita limite de caminho de tamanho
+ * variável vindo de parâmetro. Mesmo motivo do tipo de relação em
+ * `gravarRelacoes` (confronto.ts), e mesma defesa — o número sai daqui, nunca
+ * do modelo.
+ */
+export const PROFUNDIDADE_HISTORICO = 4;
+
+/** Quanto do texto de um átomo vai para o rastro do (i). */
+export const TRECHO_NO_RASTRO = 400;
+
+const MAX_TOKENS_SAIDA = 4000;
+const FATOR_DE_FOLGA = 2;
+
+// ──────────────────────── o que o modelo lê ────────────────────────
+
+export const INSTRUCOES = `Você responde perguntas sobre um diário pessoal falado. Quem pergunta é o dono do diário, falando de si mesmo: "eu" é sempre ele.
+
+O diário não está no seu contexto. Ele está num grafo, e você o alcança por duas ferramentas:
+
+buscar_atomos — procura trechos registrados. Todos os parâmetros são opcionais e se combinam:
+  texto      busca por sentido, não por palavra exata. Escreva a ideia, não a pergunta.
+  entidade   o nome de uma pessoa, projeto, objetivo ou organização.
+  tipo       um ou mais de: FATO, OPINIAO, SENTIMENTO, APRENDIZADO, CONQUISTA, DECISAO, HISTORIA, ROTINA.
+  desde/ate  datas AAAA-MM-DD.
+historico_do_atomo — dado o id de um trecho, devolve a cadeia de trechos ligados a ele no tempo: o que o atualizou, o que o contradisse, o que o confirmou, o que o complementou. É o que responde "como isso mudou".
+
+COMO TRABALHAR
+Busque antes de responder. Você não sabe nada sobre esta pessoa que não tenha vindo de uma busca.
+Encadeie quando a pergunta pedir. "Como eu estava depois que terminei com a Isinha" são duas buscas: primeiro achar quando foi o término, depois buscar o período seguinte. Uma data que você não tem, você procura — não estima.
+Uma busca vazia é resposta. Se voltou nada, tente outro caminho (outra palavra, sem filtro de tipo, período mais largo) antes de desistir; e se continuar vazio, diga que não encontrou.
+Pare quando tiver o suficiente. Buscar mais do que precisa é lento e não melhora a resposta.
+
+COMO RESPONDER
+Você é um bibliotecário atento, não um coach. Devolve o que está registrado; não dá conselho que ninguém pediu, não anima, não interpreta sentimento além do que o texto diz.
+Responda em português, na segunda pessoa ("você"), em prosa curta. Sem lista com marcador quando duas frases bastam.
+Cite as datas. "Em 12 de agosto você escreveu que..." vale mais que "você já disse que...".
+Não invente. Nada que não tenha vindo de uma busca entra na resposta. Se o que você achou não responde a pergunta, diga isso — é uma resposta melhor que uma inventada.
+Se os trechos se contradizem, mostre os dois e diga que mudaram; não escolha um.`;
+
+/**
+ * O sistema que de fato vai ao modelo: o prompt (editável em `/agentes`) mais a
+ * data de hoje.
+ *
+ * A data fica **fora** do texto editável de propósito. Ela é a única coisa aqui
+ * que muda todo dia, e um prompt salvo com "hoje é 13/09" congelaria uma
+ * mentira no objeto imutável do `prompt_hash` — e "esse mês", "semana passada",
+ * "depois da viagem" passariam a ser resolvidos contra o dia em que eu editei o
+ * prompt.
+ */
+export function montarSistema(base: string = INSTRUCOES, agora: Date = new Date()): string {
+  return `${base}
+
+Hoje é ${agora.toISOString().slice(0, 10)}.`;
+}
+
+// ──────────────────────── ferramenta 1: buscar_atomos ────────────────────────
+
+/**
+ * O trecho de Cypher que pendura as entidades de um átomo, **sem o `"eu"`**.
+ *
+ * Decalcado de `confronto.ts`, e pela mesma razão: `"eu"` é `SOBRE` em quase
+ * todo átomo de um diário, e repeti-lo em toda linha é token gasto para dizer
+ * o que o prompt já diz na primeira frase.
+ */
+const ENTIDADES_DE = (no: string) => `
+     OPTIONAL MATCH (${no})-[:SOBRE]->(s:Entidade) WHERE toLower(coalesce(s.nome, '')) <> 'eu'
+     OPTIONAL MATCH (${no})-[:MENCIONA]->(m:Entidade) WHERE toLower(coalesce(m.nome, '')) <> 'eu'`;
+
+interface LinhaDeAtomo {
+  id: string;
+  texto: string;
+  tipo: TipoAtomo;
+  valido_em: string;
+  sobre: string[];
+  cita: string[];
+  similaridade?: number;
+}
+
+const daLinha = (l: LinhaDeAtomo): AtomoAchado => ({
+  id: l.id,
+  texto: l.texto ?? "",
+  tipo: l.tipo,
+  valido_em: l.valido_em ?? "",
+  sobre: l.sobre ?? [],
+  cita: l.cita ?? [],
+  ...(typeof l.similaridade === "number" ? { similaridade: l.similaridade } : {}),
+});
+
+/** `2026-09-13T10:00:00.000Z` e `13/09/2026` viram ambos `2026-09-13`, ou "". */
+export function dataSimples(v: unknown): string {
+  if (typeof v !== "string") return "";
+  const iso = v.trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : "";
+}
+
+/** Só os tipos que existem. Tipo inventado pelo modelo é ignorado, não erra. */
+export function tiposValidos(v: unknown): TipoAtomo[] {
+  const lista = Array.isArray(v) ? v : typeof v === "string" ? [v] : [];
+  const bons = lista.filter((t): t is TipoAtomo =>
+    (TIPOS_ATOMO as readonly string[]).includes(t as string),
+  );
+  return [...new Set(bons)];
+}
+
+export interface ResultadoDeBusca {
+  achados: AtomoAchado[];
+  /** Preenchido quando pedi uma entidade que o grafo não conhece. */
+  aviso?: string;
+}
+
+/**
+ * A ferramenta 1, por dentro.
+ *
+ * **Dois caminhos, e a diferença é só o `texto`:** sem ele, é um `MATCH`
+ * filtrado ordenado do mais recente para o mais antigo; com ele, o índice
+ * vetorial entra e os demais filtros se somam como condição, ordenando por
+ * similaridade.
+ *
+ * A entidade resolve pelo **catálogo inteiro** (`listarEntidades`), e não por
+ * uma consulta de nome: é o único caminho que atravessa alias e fusão de graça
+ * — a mesma lista que `acharPorChave` já varre na extração. "Isinha", "Isa" e
+ * o nome completo caem no mesmo nó sem nenhuma consulta a mais.
+ */
+export async function buscarAtomos(
+  p: BuscaDeAtomos,
+  limite: number = TETO_ATOMOS,
+): Promise<ResultadoDeBusca> {
+  const texto = typeof p.texto === "string" ? p.texto.trim() : "";
+  const nome = typeof p.entidade === "string" ? p.entidade.trim() : "";
+  const tipos = tiposValidos(p.tipo);
+  const desde = dataSimples(p.desde);
+  const ate = dataSimples(p.ate);
+
+  let entidadeId: string | null = null;
+  if (nome !== "") {
+    const catalogo = await listarEntidades();
+    const achada = acharPorChave(normalizarNome(nome), catalogo);
+    if (!achada) {
+      // Não é erro: é informação que o modelo precisa para tentar outro nome em
+      // vez de concluir que a pessoa nunca apareceu no diário.
+      return {
+        achados: [],
+        aviso: `não existe entidade chamada "${nome}" no grafo. Nomes parecidos: ${vizinhosDeNome(nome, catalogo).join(", ") || "nenhum"}`,
+      };
+    }
+    entidadeId = achada.id;
+  }
+
+  const condicoes = ["coalesce(a.status, 'ativo') = 'ativo'"];
+  const parametros: Record<string, unknown> = { limite };
+
+  if (entidadeId !== null) {
+    // A fusão é atravessada aqui, e não no catálogo: o átomo antigo continua
+    // apontando para o nó perdedor, e ele é do mesmo assunto.
+    condicoes.push(
+      `EXISTS { MATCH (a)-[:SOBRE|:MENCIONA]->(e:Entidade)
+                WHERE e.id = $entidadeId OR (e)-[:FUNDIDA_EM]->(:Entidade { id: $entidadeId }) }`,
+    );
+    parametros.entidadeId = entidadeId;
+  }
+  if (tipos.length > 0) {
+    condicoes.push(`a.tipo IN $tipos`);
+    parametros.tipos = tipos;
+  }
+  if (desde !== "" || ate !== "") {
+    // Átomo sem data nunca entra numa pergunta com período: `''` passaria no
+    // `<= ate` e apareceria como se fosse de antes do começo do diário.
+    condicoes.push(`coalesce(a.valido_em, '') <> ''`);
+  }
+  if (desde !== "") {
+    condicoes.push(`left(a.valido_em, 10) >= $desde`);
+    parametros.desde = desde;
+  }
+  if (ate !== "") {
+    condicoes.push(`left(a.valido_em, 10) <= $ate`);
+    parametros.ate = ate;
+  }
+
+  const filtro = condicoes.join("\n       AND ");
+
+  const linhas =
+    texto === ""
+      ? await query<LinhaDeAtomo>(
+          `MATCH (a:Atomo)
+     WHERE ${filtro}${ENTIDADES_DE("a")}
+     WITH a, collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
+     RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
+            coalesce(a.valido_em, '') AS valido_em, sobre, cita
+     ORDER BY valido_em DESC
+     LIMIT $limite`,
+          parametros,
+        )
+      : await query<LinhaDeAtomo>(
+          `CALL db.index.vector.queryNodes('atomo_embedding', $k, $vetor) YIELD node AS a, score
+     WITH a, 2 * score - 1 AS similaridade
+     WHERE similaridade >= $piso
+       AND ${filtro}${ENTIDADES_DE("a")}
+     WITH a, similaridade, collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
+     RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
+            coalesce(a.valido_em, '') AS valido_em, sobre, cita, similaridade
+     ORDER BY similaridade DESC
+     LIMIT $limite`,
+          {
+            ...parametros,
+            k: K_BUSCA,
+            piso: PISO_BUSCA,
+            vetor: (await embutir(texto)).embedding,
+          },
+        );
+
+  return { achados: linhas.map(daLinha) };
+}
+
+/**
+ * Os nomes do catálogo que mais parecem com o que o modelo pediu.
+ *
+ * Existe só para a mensagem de "não achei": devolver a lista inteira gastaria
+ * tokens à toa, e devolver nada faria o modelo concluir que a pessoa não está
+ * no diário quando o que ele errou foi a grafia.
+ */
+function vizinhosDeNome(
+  nome: string,
+  catalogo: readonly { nome: string; chaves: string[] }[],
+  quantos = 5,
+): string[] {
+  const alvo = normalizarNome(nome);
+  const pedacos = alvo.split(" ").filter((t) => t.length >= 3);
+  return catalogo
+    .filter((e) => e.chaves.some((c) => pedacos.some((t) => c.includes(t) || t.includes(c))))
+    .slice(0, quantos)
+    .map((e) => e.nome);
+}
+
+// ──────────────────── ferramenta 2: historico_do_atomo ────────────────────
+
+export interface ResultadoDeHistorico {
+  achados: AtomoAchado[];
+  elos: EloDoHistorico[];
+  aviso?: string;
+}
+
+/**
+ * A ferramenta 2, por dentro: a cadeia de confronto em volta de um átomo.
+ *
+ * **Nas duas direções**, e é a parte que importa. As relações da migration 011
+ * nascem sempre do mais novo para o mais antigo; andar só para frente mostraria
+ * o que este átomo mudou, e andar só para trás mostraria o que mudou este
+ * átomo. A pergunta "como minha opinião mudou" quer os dois lados do ponto onde
+ * eu parei.
+ *
+ * **Duas consultas, não uma.** A primeira traz os átomos; a segunda, as arestas
+ * entre eles. Uma consulta só devolveria objetos de relação, e todo o resto
+ * deste sistema conversa com o Neo4j em escalar e mapa — é o que mantém
+ * `linhas<T>` (neo4j.ts) simples.
+ */
+export async function historicoDoAtomo(atomoId: string): Promise<ResultadoDeHistorico> {
+  const id = typeof atomoId === "string" ? atomoId.trim() : "";
+  if (id === "") return { achados: [], elos: [], aviso: "id de átomo vazio" };
+
+  const salto = `*1..${PROFUNDIDADE_HISTORICO}`;
+  const linhas = await query<LinhaDeAtomo>(
+    `MATCH (raiz:Atomo { id: $id })
+     OPTIONAL MATCH (raiz)-[:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA${salto}]-(o:Atomo)
+     WHERE coalesce(o.status, 'ativo') = 'ativo'
+     WITH collect(DISTINCT o) + collect(DISTINCT raiz) AS todos
+     UNWIND todos AS a
+     WITH DISTINCT a${ENTIDADES_DE("a")}
+     WITH a, collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
+     RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
+            coalesce(a.valido_em, '') AS valido_em, sobre, cita
+     ORDER BY valido_em ASC`,
+    { id },
+  );
+
+  if (linhas.length === 0) {
+    return { achados: [], elos: [], aviso: `não existe átomo com id "${id}"` };
+  }
+
+  const achados = linhas.map(daLinha);
+  if (achados.length === 1) {
+    // O átomo existe e não tem vizinho nenhum. É o caso mais comum enquanto a
+    // varredura do confronto não passou por ele, e dizer isso é melhor que
+    // devolver uma lista de um item que o modelo leria como "não mudou".
+    return {
+      achados,
+      elos: [],
+      aviso: "este átomo ainda não tem nenhuma relação de confronto registrada",
+    };
+  }
+
+  const ids = achados.map((a) => a.id);
+  const arestas = await query<EloDoHistorico>(
+    `UNWIND $ids AS x
+     MATCH (a:Atomo { id: x })-[r:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA]->(b:Atomo)
+     WHERE b.id IN $ids
+     RETURN a.id AS de, b.id AS para, type(r) AS tipo,
+            coalesce(r.motivo, '') AS motivo, coalesce(r.confianca, 0) AS confianca`,
+    { ids },
+  );
+
+  return { achados, elos: arestas.filter((e) => ehTipoRelacaoConfronto(e.tipo)) };
+}
+
+// ──────────────────────── o loop ────────────────────────
+
+/** Um átomo, do jeito que ele entra no prompt de volta ao modelo. */
+export function linhaDeAtomo(a: AtomoAchado): string {
+  const quando = a.valido_em === "" ? "sem data" : a.valido_em.slice(0, 10);
+  const quem = [
+    ...(a.sobre.length > 0 ? [`sobre: ${a.sobre.join(", ")}`] : []),
+    ...(a.cita.length > 0 ? [`cita: ${a.cita.join(", ")}`] : []),
+  ];
+  return `[id ${a.id} · ${a.tipo} · ${quando}${quem.length > 0 ? ` · ${quem.join(" · ")}` : ""}] ${a.texto}`;
+}
+
+/**
+ * O que a ferramenta devolve ao modelo, em texto.
+ *
+ * Texto e não JSON, de propósito: o modelo vai **ler** isto para escrever prosa,
+ * e o id precisa estar visível em cada linha para ele poder chamar
+ * `historico_do_atomo` em seguida. Um envelope JSON gastaria tokens em chaves
+ * que ninguém usa.
+ */
+export function respostaDaBusca(r: ResultadoDeBusca): string {
+  if (r.achados.length === 0) return r.aviso ?? "nenhum trecho encontrado.";
+  return r.achados.map(linhaDeAtomo).join("\n");
+}
+
+export function respostaDoHistorico(r: ResultadoDeHistorico): string {
+  if (r.achados.length === 0) return r.aviso ?? "nenhum trecho encontrado.";
+  const trechos = r.achados.map(linhaDeAtomo).join("\n");
+  const elos =
+    r.elos.length === 0
+      ? (r.aviso ?? "sem relação registrada entre eles.")
+      : r.elos
+          .map((e) => `${e.de} ${e.tipo} ${e.para}${e.motivo === "" ? "" : ` — ${e.motivo}`}`)
+          .join("\n");
+  return `${trechos}\n\nRELAÇÕES (o mais novo → o mais antigo):\n${elos}`;
+}
+
+/** O átomo cortado para o rastro: o (i) mostra uma linha, não o átomo inteiro. */
+const paraRastro = (a: AtomoAchado): AtomoAchado => ({
+  ...a,
+  texto: a.texto.length > TRECHO_NO_RASTRO ? `${a.texto.slice(0, TRECHO_NO_RASTRO)}…` : a.texto,
+});
+
+/** Os parâmetros de fato usados, sem os vazios — é o que o (i) mostra. */
+export function parametrosLimpos(p: BuscaDeAtomos): Record<string, unknown> {
+  const limpos: Record<string, unknown> = {};
+  const texto = typeof p.texto === "string" ? p.texto.trim() : "";
+  const entidade = typeof p.entidade === "string" ? p.entidade.trim() : "";
+  const tipos = tiposValidos(p.tipo);
+  const desde = dataSimples(p.desde);
+  const ate = dataSimples(p.ate);
+  if (texto !== "") limpos.texto = texto;
+  if (entidade !== "") limpos.entidade = entidade;
+  if (tipos.length > 0) limpos.tipo = tipos;
+  if (desde !== "") limpos.desde = desde;
+  if (ate !== "") limpos.ate = ate;
+  return limpos;
+}
+
+const ESQUEMA_BUSCA = jsonSchema<BuscaDeAtomos>({
+  type: "object",
+  properties: {
+    texto: {
+      type: "string",
+      description:
+        "busca por sentido no texto dos trechos. Escreva a ideia procurada, não a pergunta inteira.",
+    },
+    entidade: {
+      type: "string",
+      description:
+        "nome de uma pessoa, projeto, objetivo ou organização. Apelido e grafia errada resolvem para o mesmo nó.",
+    },
+    tipo: {
+      type: "array",
+      items: { type: "string", enum: [...TIPOS_ATOMO] },
+      description: "um ou mais tipos; eles se somam com OU.",
+    },
+    desde: { type: "string", description: "data AAAA-MM-DD, inclusive." },
+    ate: { type: "string", description: "data AAAA-MM-DD, inclusive." },
+  },
+});
+
+const ESQUEMA_HISTORICO = jsonSchema<{ atomo_id: string }>({
+  type: "object",
+  properties: {
+    atomo_id: {
+      type: "string",
+      description: "o id de um trecho, como ele aparece em `[id ...]` numa busca anterior.",
+    },
+  },
+  required: ["atomo_id"],
+});
+
+export interface OpcoesResposta {
+  /** Chamado assim que uma ferramenta termina — é o progresso na tela. */
+  aoPasso?: (passo: PassoDeFerramenta) => void;
+  /** O "parar" da tela. Aborta a chamada em curso e nada é gravado. */
+  sinal?: AbortSignal;
+  agora?: Date;
+}
+
+export interface Resposta {
+  texto: string;
+  rastro: PassoDeFerramenta[];
+  modelo: string;
+  prompt_version: string;
+}
+
+/**
+ * As duas ferramentas, prontas para o SDK.
+ *
+ * **Elas nunca propagam erro.** Ferramenta que estoura derruba o loop inteiro e
+ * a pergunta fica sem resposta; ferramenta que devolve "não consegui" deixa o
+ * modelo tentar outro caminho — que é o que uma pessoa faria. O erro vai para o
+ * rastro do (i) do mesmo jeito, então nada fica escondido.
+ */
+export function ferramentas(aoPasso?: (p: PassoDeFerramenta) => void) {
+  const anunciar = (p: PassoDeFerramenta) => {
+    try {
+      aoPasso?.(p);
+    } catch (e) {
+      // O progresso é enfeite: ninguém perde uma resposta porque a tela caiu.
+      console.error("[chat] falha ao anunciar o passo:", e);
+    }
+  };
+
+  return {
+    buscar_atomos: tool({
+      description:
+        "Procura trechos do diário. Todos os parâmetros são opcionais e se combinam; sem nenhum, devolve os mais recentes.",
+      inputSchema: ESQUEMA_BUSCA,
+      execute: async (entrada: BuscaDeAtomos) => {
+        const parametros = parametrosLimpos(entrada ?? {});
+        try {
+          const r = await buscarAtomos(entrada ?? {});
+          anunciar({
+            ferramenta: "buscar_atomos",
+            parametros,
+            achados: r.achados.map(paraRastro),
+            ...(r.aviso ? { erro: r.aviso } : {}),
+          });
+          return respostaDaBusca(r);
+        } catch (e) {
+          const erro = e instanceof Error ? e.message : String(e);
+          console.error("[chat] buscar_atomos falhou:", e);
+          anunciar({ ferramenta: "buscar_atomos", parametros, achados: [], erro });
+          return `a busca falhou: ${erro}`;
+        }
+      },
+    }),
+
+    historico_do_atomo: tool({
+      description:
+        "Dado o id de um trecho, devolve a cadeia de trechos ligados a ele no tempo — o que o atualizou, contradisse, confirmou ou complementou.",
+      inputSchema: ESQUEMA_HISTORICO,
+      execute: async ({ atomo_id }: { atomo_id: string }) => {
+        const parametros = { atomo_id };
+        try {
+          const r = await historicoDoAtomo(atomo_id);
+          anunciar({
+            ferramenta: "historico_do_atomo",
+            parametros,
+            achados: r.achados.map(paraRastro),
+            elos: r.elos,
+            ...(r.aviso ? { erro: r.aviso } : {}),
+          });
+          return respostaDoHistorico(r);
+        } catch (e) {
+          const erro = e instanceof Error ? e.message : String(e);
+          console.error("[chat] historico_do_atomo falhou:", e);
+          anunciar({ ferramenta: "historico_do_atomo", parametros, achados: [], erro });
+          return `a busca falhou: ${erro}`;
+        }
+      },
+    }),
+  };
+}
+
+/** Quantas chamadas de ferramenta já saíram. É o que o teto conta. */
+export const chamadasFeitas = (
+  passos: readonly { toolCalls?: readonly unknown[] }[],
+): number => passos.reduce((n, p) => n + (p.toolCalls?.length ?? 0), 0);
+
+/**
+ * A conversa como o modelo a recebe.
+ *
+ * **O rastro das respostas antigas não volta.** Ele fica na mensagem, para o
+ * (i), mas não entra no prompt: replicar as chamadas de ferramenta de todos os
+ * turnos anteriores encheria o contexto de material que já virou prosa. O que o
+ * modelo relê de um turno passado é a resposta que ele escreveu — que é também
+ * o que eu li.
+ */
+export const paraOModelo = (m: Mensagem) =>
+  ({ role: m.papel === "eu" ? "user" : "assistant", content: m.texto }) as const;
+
+/**
+ * A resposta a uma pergunta, com o rastro do que foi consultado.
+ *
+ * `historico` termina na pergunta nova. Nada é gravado aqui — quem grava é
+ * `conversas.ts`.
+ *
+ * **A síntese pode custar uma segunda chamada.** Quando o loop para no teto de
+ * `TETO_FERRAMENTAS`, ele para *em cima de um resultado de ferramenta*: o
+ * modelo ainda não escreveu nada. A segunda chamada vai com o mesmo histórico e
+ * `toolChoice: "none"` — ou seja, "agora responda com o que você tem". Sem ela,
+ * a pergunta mais composta do sistema seria justamente a que volta vazia.
+ */
+export async function responder(
+  historico: readonly Mensagem[],
+  opcoes: OpcoesResposta = {},
+): Promise<Resposta> {
+  garantirGateway();
+  const { aoPasso, sinal, agora = new Date() } = opcoes;
+
+  const meu = await efetivo("chat", { prompt: INSTRUCOES, modelo: modeloChat() });
+  const system = montarSistema(meu.prompt, agora);
+  const messages = historico.map(paraOModelo);
+
+  // O rastro definitivo sai dos `steps` no fim, e não do `aoPasso`: se
+  // `comEsperaDeLimite` repetir a chamada inteira por rate limit, as
+  // ferramentas rodam de novo e o `aoPasso` anunciaria os dois conjuntos.
+  const rastro: PassoDeFerramenta[] = [];
+  const ferr = ferramentas((p) => {
+    rastro.push(p);
+    aoPasso?.(p);
+  });
+
+  const comum = {
+    model: meu.modelo, // string de propósito: id em string sai pelo Gateway (regra 8)
+    system,
+    tools: ferr,
+    temperature: 0,
+    maxRetries: 0,
+    ...(sinal ? { abortSignal: sinal } : {}),
+  };
+
+  const r = await comEsperaDeLimite(`chat ${meu.modelo}`, () => {
+    rastro.length = 0;
+    return generateText({
+      ...comum,
+      messages,
+      maxOutputTokens: MAX_TOKENS_SAIDA,
+      stopWhen: ({ steps }) => chamadasFeitas(steps) >= TETO_FERRAMENTAS,
+    });
+  });
+
+  let texto = textoDaResposta(r).trim();
+  let ultima: { response?: { modelId?: string } } = r;
+
+  if (texto === "") {
+    console.warn(
+      `[chat] o loop parou sem texto (${chamadasFeitas(r.steps)} chamada(s) de ferramenta); ` +
+        `pedindo a síntese.`,
+      diagnostico(r),
+    );
+    const sintese = await comEsperaDeLimite(`chat síntese ${meu.modelo}`, () =>
+      generateText({
+        ...comum,
+        messages: [...messages, ...r.responseMessages],
+        toolChoice: "none",
+        maxOutputTokens: MAX_TOKENS_SAIDA * FATOR_DE_FOLGA,
+      }),
+    );
+    texto = textoDaResposta(sintese).trim();
+    ultima = sintese;
+    if (veioDoPensamento(sintese)) {
+      console.warn(`[chat] texto vazio na síntese, lendo o pensamento.`, diagnostico(sintese));
+    }
+    if (faltouOrcamento(sintese) && texto === "") {
+      throw new ChatError(
+        `o modelo não escreveu resposta nenhuma: ${diagnostico(sintese)}`,
+      );
+    }
+  } else if (veioDoPensamento(r)) {
+    console.warn(`[chat] texto vazio, lendo a resposta do pensamento.`, diagnostico(r));
+  }
+
+  if (texto === "") throw new ChatError(`o modelo não escreveu resposta nenhuma: ${diagnostico(r)}`);
+
+  return {
+    texto,
+    rastro,
+    modelo: ultima.response?.modelId ?? meu.modelo,
+    prompt_version: carimbo(PROMPT_VERSION_CHAT, meu.hash),
+  };
+}

@@ -45,6 +45,9 @@ Contrato resumido (referência rápida, não substitui a leitura):
                                 — resumo (≤500), aliases (lista), canonico (bool)
 :Atomo                          — tipo ∈ FATO|OPINIAO|SENTIMENTO|APRENDIZADO|CONQUISTA|DECISAO|ROTINA
 :Sessao, :Foco, :Pergunta
+:Conversa                       — metadado de aplicação, sem elo com o grafo
+                                — titulo, criado_em, atualizada_em,
+                                  arquivada_em (null = ativa), mensagens_key
 
 (:Sessao)-[:GEROU]->(:Atomo)
 (:Atomo)-[:SOBRE]->(:Entidade)          // 1, sujeito principal
@@ -82,6 +85,10 @@ desenvolvimento, e `pnpm migrate` a saída de emergência contra produção.
 4. Todo passo do pipeline é idempotente, chaveado por `sessao_id` (+ `chunk_index` quando aplicável). Retry não pode duplicar átomo.
 5. Nada é gravado no grafo antes da minha confirmação na tela de revisão.
 6. Deleção é soft: `status = 'rejeitado' | 'arquivado'`. Nunca `DELETE` em átomo.
+   **A única exceção é `:Conversa`** (slice 6): ela não é conhecimento, é a
+   transcrição de uma pergunta que eu fiz a uma tela, nada do grafo depende dela,
+   e o chat tem as duas ações por pedido meu — arquivar congela, apagar apaga o nó
+   e o objeto no R2. Nenhum outro label ganha essa exceção sem eu aprovar.
 7. Todo átomo gravado carrega `prompt_version` e `modelo`.
 8. **Todo tráfego de modelo sai pelo Vercel AI Gateway.** Nenhum pacote de provedor nas dependências (`@ai-sdk/openai`, `openai`, `groq-sdk`…), nenhum endpoint de provedor escrito à mão, nenhuma chave de provedor além de `AI_GATEWAY_API_KEY`. Modelo se referencia por string `provedor/modelo`, sempre por `src/lib/modelos.ts` — passar objeto de provedor fura a porta e o Gateway não vê a chamada. `tests/gateway.test.ts` falha quando alguém fura; o conserto é usar a porta, não afrouxar o teste.
 
@@ -130,7 +137,7 @@ o documento — conserte-o e me avise.
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, deduplicação, calibração, embedding, confronto
+AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, deduplicação, calibração, embedding, confronto, chat, título
 STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
 DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
@@ -140,6 +147,8 @@ PERFIL_MODEL              opcional; padrão igual ao da extração
 ENRIQUECIMENTO_MODEL      opcional; padrão igual ao da extração
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
 CONFRONTO_MODEL           opcional; padrão igual ao da extração
+CHAT_MODEL                opcional; padrão igual ao da extração
+CHAT_TITULO_MODEL         opcional; padrão igual ao do chat
 EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões
 AUTH_SECRET, ALLOWED_EMAIL
 RESEND_API_KEY            entrega do magic link
