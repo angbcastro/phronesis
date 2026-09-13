@@ -24,14 +24,16 @@ const ORCAMENTO_MS = 270_000;
 export async function GET() {
   const comeco = Date.now();
   let processados = 0;
+  let lotes = 0;
 
   try {
     while (Date.now() - comeco < ORCAMENTO_MS) {
       const r = await rodarElo();
       if (!r) break; // fila vazia
-      processados++;
+      processados += r.ids.length;
+      lotes++;
     }
-    return NextResponse.json({ ok: true, processados });
+    return NextResponse.json({ ok: true, processados, lotes });
   } catch (e) {
     return erroDeInfra("cron-confronto", e);
   }

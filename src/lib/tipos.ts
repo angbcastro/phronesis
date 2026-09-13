@@ -915,14 +915,39 @@ export const ehEstadoConfronto = (v: unknown): v is EstadoConfronto =>
   typeof v === "string" && (ESTADOS_CONFRONTO as readonly string[]).includes(v);
 
 /**
- * Um átomo mais antigo, candidato a se relacionar com o que está sendo
- * processado — o resultado cru da busca vetorial, antes do agente decidir.
+ * As entidades que um átomo aponta, como o prompt do confronto as vê.
+ *
+ * **Sem o `"eu"`** (slice 5.1): ele é `SOBRE` em quase todo átomo de um diário,
+ * e listá-lo ensinaria o modelo que "entidade em comum" é barato — que é
+ * exatamente a pista falsa que se está tentando cortar. Um átomo sem entidade
+ * nomeada chega ao modelo dizendo isso, e é o contraste entre os dois lados que
+ * desfaz a suposição de referente.
  */
-export interface CandidatoDeConfronto {
+export interface EntidadesDoAtomo {
+  /** O sujeito principal, quando não sou eu. */
+  sobre: string[];
+  /** As citadas. */
+  cita: string[];
+}
+
+/**
+ * Um átomo como o acervo numerado do lote o apresenta — a mesma forma para o
+ * que está sendo julgado e para o que serve de candidato, porque no acervo os
+ * dois papéis se misturam: um alvo de hoje é candidato do alvo de amanhã.
+ */
+export interface AtomoNoAcervo {
   id: string;
   texto: string;
   tipo: TipoAtomo;
   valido_em: string;
+  entidades: EntidadesDoAtomo;
+}
+
+/**
+ * Um átomo mais antigo, candidato a se relacionar com o que está sendo
+ * processado — o resultado cru da busca vetorial, antes do agente decidir.
+ */
+export interface CandidatoDeConfronto extends AtomoNoAcervo {
   similaridade: number;
 }
 

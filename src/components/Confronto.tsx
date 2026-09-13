@@ -37,6 +37,7 @@ export function Confronto() {
   const [falha, setFalha] = useState<string | null>(null);
   const [rodando, setRodando] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
+  const [armado, setArmado] = useState(false);
 
   const carregar = useCallback(async () => {
     const r = await fetch("/api/confronto", { cache: "no-store" }).catch(() => null);
@@ -66,6 +67,34 @@ export function Confronto() {
     if (!r?.ok) setFalha("não consegui começar a rodada");
     // A resposta chega antes de a fila terminar — a espera visível é o
     // próprio intervalo de releitura, não este botão.
+    setTimeout(() => setRodando(false), INTERVALO_FILA_MS);
+    await carregar();
+  }
+
+  /**
+   * Dois toques, como o apagar sessão: o primeiro arma e o rótulo passa a
+   * dizer o tamanho do estrago, o segundo executa. É destrutivo — apaga TODAS
+   * as relações — e sem desfazer próprio; o que o justifica é que a varredura
+   * reconstrói, e que trocar o prompt sem isto deixaria o passado congelado no
+   * prompt velho.
+   */
+  async function reprocessar() {
+    if (!armado) {
+      setArmado(true);
+      return;
+    }
+    setArmado(false);
+    setRodando(true);
+    setFalha(null);
+
+    const r = await fetch("/api/confronto/reprocessar", { method: "POST" }).catch(() => null);
+    if (!r?.ok) {
+      setRodando(false);
+      setFalha("não consegui reprocessar");
+      return;
+    }
+    // Reprocessar só devolve os átomos à fila; quem faz a fila andar é o elo.
+    await fetch("/api/confronto/rodar", { method: "POST" }).catch(() => null);
     setTimeout(() => setRodando(false), INTERVALO_FILA_MS);
     await carregar();
   }
@@ -102,6 +131,15 @@ export function Confronto() {
       <div className="acoes-sessao">
         <button className="reextrair" onClick={() => void rodar()} disabled={rodando}>
           {rodando ? "rodando…" : "rodar agora"}
+        </button>
+        <button
+          className={armado ? "reextrair armado" : "reextrair"}
+          onClick={() => void reprocessar()}
+          onBlur={() => armado && setArmado(false)}
+          disabled={rodando}
+          title="apaga todas as relações e devolve o grafo inteiro à fila — é como um prompt novo alcança o que já foi julgado"
+        >
+          {armado ? "apagar tudo e rodar de novo?" : "reprocessar tudo"}
         </button>
         {estado && estado.fila > 0 && (
           <span className="meta">{estado.fila} átomo(s) na fila — pode fechar a aba</span>

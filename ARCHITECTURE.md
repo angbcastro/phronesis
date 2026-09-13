@@ -13,8 +13,9 @@ invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-4.12.md`.
 com a revisão), 4.7 (o painel dos agentes), 4.8 (a extração acompanha a fala),
 4.8.1 (as seis emendas), 4.9 (o extrator conhece o grafo), 4.10 (o arquivo
 importado entra pela mesma porta), 4.11 (a entidade se apresenta, e o agente 2
-mede a própria dúvida), 4.12 (a ficha se escreve sozinha) e 5 (confrontar:
-relações entre átomos ao longo do tempo) construídas.**
+mede a própria dúvida), 4.12 (a ficha se escreve sozinha), 5 (confrontar:
+relações entre átomos ao longo do tempo) e 5.1 (o confronto calibrado pela
+primeira revisão à mão) construídas.**
 
 **E o sistema saiu do `localhost`.** Ele roda na Vercel, no plano Hobby, com o
 grafo de produção na instância Aura que sempre teve as sessões reais e um segundo
@@ -2397,9 +2398,12 @@ caixa abrindo o prompt e o modelo que a comandam — e, na resolução, o **limi
 | `perfil-1` | `perfil.ts` | sob demanda, em `/entidades` | `PERFIL_MODEL` | `texto` |
 | `duplicatas-1` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
 | embedding (sem prompt) | `embedding.ts` | automático, depois de gravar | `EMBEDDING_MODEL` | — |
-| `confronto-1` | `confronto.ts` | periódico: cron próprio e sob demanda em `/confronto` (slice 5) | `CONFRONTO_MODEL` | `relacoes` |
+| `confronto-2` | `confronto.ts` | periódico: cron próprio e sob demanda em `/confronto` (slice 5) | `CONFRONTO_MODEL` | `relacoes`, `novo`, `velho` |
 
-**O limiar é o terceiro campo editável** (4.11), e só a resolução tem um.
+**O limiar é o terceiro campo editável** (4.11), e desde a 5.1 são **dois** os
+agentes que têm um — e eles medem coisas diferentes: na resolução, abaixo dele
+a menção vai à segunda passada; no confronto, abaixo dele a relação
+`COMPLEMENTA` é descartada em vez de gravada (§4.15).
 `OverrideDeAgente` ganhou `limiar?: number | null` ao lado de `prompt_hash` e
 `modelo`, com a mesma regra: ausente = a base do git, `null` no corpo revoga e
 volta a ela, número igual ao do git não é edição. Número fora de `[0,1]` no
@@ -2798,7 +2802,7 @@ nome dito **depois** da janela — a janela 1 continua sem saber o nome que só
 aparece no minuto 10, e o conserto é o de sempre: o painel de entidades da
 revisão, num gesto.
 
-### 4.15 Confrontar: relações entre átomos ao longo do tempo (slice 5)
+### 4.15 Confrontar: relações entre átomos ao longo do tempo (slice 5, calibrada na 5.1)
 
 O pilar "Confrontar" que `Specs/visao.md` sempre descreveu, e que este arquivo
 listava como não existente desde a slice 2: perceber que uma posição mudou.
@@ -2853,13 +2857,22 @@ seguinte substitui, nunca duplica. `execucao` continua gravado, em cada
 relação e no átomo (`confronto_execucao`) — é rastro de auditoria, não trava.
 
 **A fila é o mesmo mecanismo da 4.12: estado idempotente mais `waitUntil`.**
-Um átomo por vez (`reivindicarProximoAtomo`), do `valido_em` mais antigo para o
-mais novo — processar nessa ordem evita avaliar um átomo recente antes de um
-antigo do qual ele dependeria —, com o mesmo *lease* de retomada de
+Um **lote** por vez (`reivindicarProximosAtomos`, até `ALVOS_POR_LOTE` = 10
+átomos), do `valido_em` mais antigo para o mais novo — processar nessa ordem
+evita avaliar um átomo recente antes de um antigo do qual ele dependeria, e de
+quebra faz os alvos de um lote serem vizinhos no tempo, que é quando eles
+compartilham candidato —, com o mesmo *lease* de retomada de
 `reivindicarProxima`. `POST /api/confronto/rodar` não distingue "começar" de
 "elo seguinte" como `enriquecer` faz — não há passo de escolher o que entra:
-todo POST reivindica um átomo pendente e se autoencadeia. O cron corre a mesma
+todo POST reivindica um lote pendente e se autoencadeia. O cron corre a mesma
 fila num loop simples, até ela esvaziar ou o orçamento de tempo acabar.
+
+**A falha é do lote inteiro** (`marcarFalhaEmLote`), e por escolha: tentar
+salvar individualmente os alvos que vieram no JSON complicaria o parser para
+cobrir um caso que a retentativa já cobre de graça (regra 4). Ela só marca quem
+ainda está `rodando`, então um alvo que já saiu `processado` antes de o lote
+morrer não é rejulgado — e dez linhas com o mesmo motivo em `/confronto` são
+uma falha, não dez.
 
 **Ele escreve sozinho, sem tela de aprovação** — mesmo padrão do agente 4
 (enriquecimento, §4.9/§4.14). A regra 5 do `CLAUDE.md` continua inteira: ela
@@ -2867,15 +2880,72 @@ fala de átomo e da tela de revisão, e nenhum átomo entra no grafo por aqui �
 que entra é a relação **entre** átomos já confirmados.
 
 **`/confronto`** (`src/components/Confronto.tsx`) é manutenção mínima, não
-navegação: botão "rodar agora", quantos átomos ainda esperam (a tela relê
-sozinha a cada 4 s enquanto houver fila, mesma decisão de `/entidades`), e a
-lista dos últimos átomos tocados com as relações que ganharam e um desfazer por
-linha. Uma tela de navegar relação por relação fica para quando o chat
-precisar mostrar isso como procedência.
+navegação: botão "rodar agora", botão "reprocessar tudo" (dois toques), quantos
+átomos ainda esperam (a tela relê sozinha a cada 4 s enquanto houver fila,
+mesma decisão de `/entidades`), e a lista dos últimos átomos tocados com as
+relações que ganharam e um desfazer por linha. Uma tela de navegar relação por
+relação fica para quando o chat precisar mostrar isso como procedência.
 
 Décimo agente do registro (`src/lib/agentes.ts`); o fluxo desenhado em
 `/agentes` ganhou a sexta coluna — `confronto` é o quinto filho do `grafo`,
 depois do agente 4 ter levado de quatro para cinco na 4.12.
+
+#### 4.15.1 O que a primeira revisão à mão mudou (slice 5.1)
+
+A slice 5 foi medida do único jeito que este sistema aceita: **58 átomos
+processados, 21 relações escritas, todas lidas uma a uma por mim.** Cinco
+reprovadas — e **todas as cinco eram `COMPLEMENTA`**; as seis que não eram
+(`ATUALIZA`, `CONFIRMA`, `CONTRADIZ`) passaram inteiras. `Specs/slice-5.1.md`
+tem a tabela par a par; o que segue é o sistema que saiu dela.
+
+**Dois botões foram medidos e recusados antes de qualquer conserto.**
+`PISO_CONFRONTO` está **inerte**: o par menos parecido dos 21 tinha
+similaridade 0,728, muito acima de 0,45 — quem seleciona é o top-8 do índice, e
+subir o piso até onde cortaria os falsos positivos (0,77) levaria junto duas
+das três `CONTRADIZ` aprovadas. Um piso de confiança **global** também não
+separa: das reprovadas, três estavam em 0,6 e duas em 0,7, mas havia três
+aprovadas em 0,6 e três em 0,7. O que sobrou foi prompt, informação e um piso
+por tipo.
+
+**O prompt virou `confronto-2`**, com `NENHUMA` declarada como a resposta
+padrão, um portão explícito (nomear a afirmação específica compartilhada, com
+palavras dos **dois** trechos, ou é `NENHUMA`), e três proibições que vieram
+direto dos erros: não vale mesma pessoa/mesmo dia/mesmo tema; não vale presumir
+que duas referências vagas ("a empresa", "o negócio", "ela") são a mesma coisa;
+e não vale inventar a abstração que liga os dois — num dos erros o `motivo` do
+próprio modelo dizia "generaliza a percepção antiga". `CONFIRMA` foi
+redefinido de "repete sem acrescentar nada" para **corroboração**: o novo
+sustenta a afirmação antiga, repetindo-a **ou** trazendo resultado que mostra
+que ela se cumpriu.
+
+**O átomo chega ao modelo com as entidades que ele aponta**, sem o `"eu"` —
+`sobre:` e `cita:`, e `sem entidade nomeada` quando não há. Elas custam 700
+chars no grafo inteiro e servem para **barrar** referente presumido, nunca para
+justificar ligação: dois dos falsos positivos eram pares em que um lado é
+`sobre: Behring Founders` e o outro não nomeia empresa nenhuma, mas um terceiro
+era um par que **compartilha** duas pessoas e mesmo assim não tem relação — daí
+a regra de que entidade em comum não é motivo estar escrita no prompt.
+
+**O lote com acervo numerado compartilhado** substituiu uma chamada por átomo.
+A medição: numa varredura completa o desenho antigo gastava 39 chamadas e
+mandava 47.322 chars de candidato para 14.431 distintos — o mesmo texto **3,3
+vezes**. Agora cada átomo envolvido entra uma vez só num acervo numerado, e a
+lista de pares vem depois (`7 → 3`); a resposta referencia os números do
+acervo, e **par que ninguém pediu é descartado** — inclusive o mesmo par na
+direção errada. `MAX_TOKENS_SAIDA` subiu de 1.500 para 4.000, porque o teto
+antigo era dimensionado para um alvo.
+
+**O `COMPLEMENTA` ganhou piso de confiança próprio** (`LIMIAR_COMPLEMENTA`,
+0,7), e é o `limiarPadrao` do agente — o mesmo campo que a resolução usa desde
+a 4.11, editável em `/agentes` sem deploy, que é o que uma calibração precisa
+ser. Os outros três tipos não têm piso.
+
+**`POST /api/confronto/reprocessar`** apaga todas as relações e devolve o grafo
+inteiro à fila. Existe porque trocar o prompt é o trabalho normal desta fatia:
+sem ele, `confronto-2` só alcançaria átomo novo e o gabarito — as relações já
+julgadas à mão — ficaria congelado no prompt que as produziu. É destrutivo e
+não tem desfazer próprio; o contrapeso é que a varredura reconstrói, e que a
+tela pede dois toques.
 
 ## 5. Estados da sessão
 
@@ -4078,6 +4148,7 @@ sessão, e apagá-las seria desaprender (§14).
 | `GET /api/confronto` | quantos átomos esperam, e os últimos que a varredura tocou | só leitura; alimenta a tela `/confronto` |
 | `POST /api/confronto/rodar` | reivindica um átomo pendente e roda; se autoencadeia em `waitUntil` até a fila esvaziar | mesmo cookie repassado do elo de enriquecimento; sem distinção entre "começar" e "elo seguinte" — não há passo de escolher o que entra |
 | `POST /api/confronto/desfazer` | `{atomo_id}` — apaga as relações de saída daquele átomo e limpa o estado | uma **troca** para "nunca tentado", não uma restauração de conteúdo; 400 quando o átomo nunca foi tocado |
+| `POST /api/confronto/reprocessar` | apaga **todas** as relações de confronto e devolve o grafo inteiro à fila (5.1) | é como um prompt novo alcança o que já foi julgado. Não roda a fila — a tela chama `rodar` em seguida; destrutivo e sem desfazer, por isso dois toques na tela |
 | `POST /api/auth/link` | pede o magic link, e o Resend entrega | resposta idêntica nos três caminhos em produção — e-mail errado, entregue, falhou (§7). Fora de produção o link volta no corpo |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
 | `GET /api/cron/diario` | o dump do grafo para o R2, e a consulta que mantém a Aura acordada | **não abre com cookie**: entra pelo header `Authorization: Bearer $CRON_SECRET`, conferido no middleware e só sob `/api/cron/` (§7). Uma vez por dia — é o que o Hobby dá, e é o que uma janela de 72 h pede |
@@ -5305,22 +5376,37 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - `scripts/smoke.ts` roda solto no node e não importa de `src/`, então repete o
   id de modelo padrão. O teste "o smoke usa o mesmo modelo padrão que a lib"
   existe para as duas cópias não divergirem.
-- **`PISO_CONFRONTO` é um palpite inicial, não uma medição** (slice 5) — o mesmo
-  valor de `PISO_VIZINHOS`, copiado como ponto de partida. Vai precisar do
-  mesmo ajuste à mão que os pisos da resolução já pedem, sessão real por sessão
-  real, olhando `/confronto`.
+- **`PISO_CONFRONTO` está medido como inerte** (slice 5.1), e continua lá: o par
+  menos parecido das 21 primeiras relações tinha 0,728, contra um piso de 0,45.
+  Quem seleciona é o top-`K_CANDIDATOS` do índice; o piso só pegaria se subisse
+  a ponto de cortar `CONTRADIZ` boa junto. Mantido como rede, não como
+  calibração.
+- **O piso do `COMPLEMENTA` (0,7) é que é o palpite agora** (slice 5.1) — ele
+  nasceu por medir, porque as confianças que o justificariam saíram do prompt
+  velho e não transferem para o `confronto-2`. Mora em `/agentes`, e é ali que
+  se ajusta. São **dois números de calibração no mesmo agente**, um em código
+  (similaridade) e um no painel (confiança).
 - **O custo do confronto cresce com o volume de átomos**: cada um pendente paga
-  uma busca vetorial e, havendo candidato acima do piso, uma chamada de modelo.
-  Sem teto de quantos processar por rodada além do orçamento de tempo da
-  função — um grafo com anos de histórico leva várias rodadas (cron diário, ou
-  vários toques em "rodar agora") para terminar de cobrir o retroativo.
+  uma busca vetorial e, havendo candidato acima do piso, uma fração de chamada
+  de modelo — o lote de 10 dilui, não elimina. Sem teto de quantos processar por
+  rodada além do orçamento de tempo da função: um grafo com anos de histórico
+  leva várias rodadas (cron diário, ou vários toques em "rodar agora") para
+  terminar de cobrir o retroativo.
+- **O acervo compartilhado acopla os alvos de um lote** (slice 5.1): um texto
+  muito longo — uma `HISTORIA` de 2.000 chars — entra uma vez só, que é o ganho,
+  mas o lote inteiro cresce com ele. `ALVOS_POR_LOTE` conta alvos, não
+  caracteres, e não há teto de tamanho.
+- **`reprocessar` é destrutivo e não tem desfazer** (slice 5.1): apaga as
+  relações de todos os átomos de uma vez. O contrapeso é a varredura
+  reconstruir, e os dois toques na tela.
 - **Átomo sem `valido_em` nunca é candidato de ninguém** (slice 5): a
   comparação de data usa string ISO, e string vazia nunca é "anterior" a nada.
   Ele ainda é processado normalmente — só não entra na lista de candidatos de
   outro átomo.
-- **Nenhuma segunda passada para relação de baixa confiança.** `confianca` fica
-  gravada em cada relação, mas nada lê esse número ainda — ao contrário do
-  `desempate-1`, que existe justamente para isso na resolução.
+- **Nenhuma segunda passada para relação de baixa confiança.** Desde a 5.1 o
+  número é lido — mas só para **descartar** `COMPLEMENTA` abaixo do limiar, e
+  não para mandar o par a uma segunda leitura como o `desempate-1` faz na
+  resolução. Nos outros três tipos, `confianca` continua sendo só auditoria.
 
 ---
 

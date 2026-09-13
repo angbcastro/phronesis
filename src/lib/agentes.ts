@@ -26,7 +26,11 @@ import {
 } from "./enriquecimento";
 import { INSTRUCOES as BASE_CALIBRACAO, PROMPT_VERSION_CALIBRACAO } from "./calibracao";
 import { INSTRUCOES as BASE_DUPLICATAS, PROMPT_VERSION_DUPLICATAS } from "./duplicatas";
-import { INSTRUCOES as BASE_CONFRONTO, PROMPT_VERSION_CONFRONTO } from "./confronto";
+import {
+  INSTRUCOES as BASE_CONFRONTO,
+  LIMIAR_COMPLEMENTA,
+  PROMPT_VERSION_CONFRONTO,
+} from "./confronto";
 import {
   DIMENSAO_EMBEDDING,
   modeloCalibracao,
@@ -91,9 +95,10 @@ export interface Agente {
   /**
    * O limiar da base do git, para os agentes que têm um (slice 4.11).
    *
-   * Hoje é só a resolução: abaixo dele a menção vai à segunda passada. Ausente
-   * em todos os outros, e é essa ausência que faz a tela não desenhar um campo
-   * morto.
+   * São dois, e eles medem coisas diferentes: na resolução, abaixo dele a
+   * menção vai à segunda passada; no confronto (5.1), abaixo dele a relação
+   * `COMPLEMENTA` é descartada em vez de gravada. Ausente em todos os outros,
+   * e é essa ausência que faz a tela não desenhar um campo morto.
    */
   limiarPadrao?: number;
 }
@@ -242,7 +247,7 @@ export const AGENTES: readonly Agente[] = [
     versao: PROMPT_VERSION_CONFRONTO,
     rotulo: "confronto",
     papel:
-      "compara um átomo com os mais antigos parecidos por vetor e decide se ATUALIZA, CONTRADIZ, CONFIRMA ou COMPLEMENTA — e grava sozinho",
+      "julga um lote de átomos contra os mais antigos parecidos por vetor, com as entidades de cada um à vista, e decide se ATUALIZA, CONTRADIZ, CONFIRMA ou COMPLEMENTA — e grava sozinho",
     quando: "periodico",
     gatilho: "cron próprio (`/api/cron/confronto`) e botão \"rodar agora\" em /confronto — nunca em tempo real",
     base: BASE_CONFRONTO,
@@ -250,7 +255,8 @@ export const AGENTES: readonly Agente[] = [
     variavel: "CONFRONTO_MODEL",
     modulo: "src/lib/confronto.ts",
     modeloEditavel: true,
-    envelope: ["relacoes"],
+    envelope: ["relacoes", "novo", "velho"],
+    limiarPadrao: LIMIAR_COMPLEMENTA,
   },
 ];
 

@@ -8,6 +8,37 @@ Contexto permanente está em `CLAUDE.md` (regras), `ARCHITECTURE.md` (como o
 sistema funciona hoje) e `Specs/slice-4.11.md` (o que a fatia atual tem que ser).
 Este arquivo só diz o que fazer a seguir.
 
+> **Atualizado em 13/09, mais tarde: a slice 5 foi medida, e a 5.1 saiu da
+> medição.** A migration 011 foi aprovada (build da Vercel, commit `bc0f0f1`) e
+> a varredura rodou sobre o grafo de produção: **58 átomos, 21 relações, todas
+> revisadas por mim uma a uma. Cinco reprovadas — e as cinco eram
+> `COMPLEMENTA`**; as seis que não eram (`ATUALIZA`, `CONFIRMA`, `CONTRADIZ`)
+> passaram inteiras. `Specs/slice-5.1.md` tem a tabela par a par.
+>
+> Dois consertos óbvios foram **medidos contra os dados e recusados**: subir
+> `PISO_CONFRONTO` (está inerte — o par menos parecido tinha 0,728 contra um
+> piso de 0,45, e subi-lo até cortar os erros levaria duas `CONTRADIZ` boas
+> junto) e um piso de confiança global (não separa: três reprovadas em 0,6, mas
+> três aprovadas em 0,6 também).
+>
+> **O que a 5.1 entregou:** o prompt `confronto-2` (portão da afirmação
+> compartilhada, proibição de mesma-pessoa/mesmo-dia/mesmo-tema, proibição de
+> presumir referente, proibição de generalizar, e `CONFIRMA` redefinido como
+> **corroboração** — era o que faltava no `94→57`); as **entidades de cada
+> átomo no prompt**, sem o `"eu"`, para barrar referente presumido; o **lote com
+> acervo numerado** (medido: o desenho antigo mandava o mesmo texto de candidato
+> 3,3× e gastava 39 chamadas por varredura, agora ~4); o **piso do
+> `COMPLEMENTA`** (0,7) como `limiar` editável em `/agentes`; e **"reprocessar
+> tudo"** em `/confronto`, que é como um prompt novo alcança o que já foi
+> julgado. **Sem migration** — o schema da 011 não mudou.
+>
+> **O próximo passo é meu, e é o mesmo de sempre: apertar "reprocessar tudo" e
+> reler.** O gabarito já existe — são os 21 pares que eu julguei. O que se
+> espera: as cinco reprovadas não voltam, `94→57` volta como `CONFIRMA`, e as
+> dezesseis aprovadas continuam lá (em especial `63→27` e `64→27`, que são o
+> que justifica `COMPLEMENTA` existir). Se as boas sumirem junto, o piso de 0,7
+> está alto — e o conserto é `/agentes`, não deploy.
+
 > **Atualizado em 13/09: a fatia D virou a slice 5, e foi construída —
 > "Confrontar", não o chat.** O pedido da sessão era a camada de chat/GraphRAG
 > (fatia D, §8.2). A entrevista de alinhamento (nove perguntas, em três rodadas)
