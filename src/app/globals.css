@@ -1462,20 +1462,22 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sessoes,
 .calibracao,
 .revisao { padding-top: 3.75rem; }
-
 /* ─────────────────────────── o painel dos agentes ───────────────────────────
-   Slice 4.7. Um desenho, e não uma lista: sete linhas não contam que a
-   resolução roda dentro da extração, que a regra aprovada volta para o prompt
-   do extrator, nem que existe um nó humano só no meio de tudo.
+   Slice 4.7, redesenhado. Um desenho, e não uma lista: doze linhas numa tabela
+   não contam que a resolução roda dentro da extração, que a regra aprovada
+   volta para o prompt do extrator, nem que existe um nó humano só no meio de
+   tudo.
 
-   Vertical de propósito. Este app vive no celular, e canvas horizontal de n8n
-   é confortável no monitor e inútil no telefone. Quando a grade não couber, ela
-   rola na horizontal em vez de esmagar as caixas — diagrama espremido não é
-   diagrama responsivo, é diagrama ilegível.
+   **Uma espinha, e não uma grade.** O desenho anterior era CSS Grid de sete
+   colunas com as setas em SVG medidas do DOM, e `min-width: 51rem` — rolava na
+   horizontal num app que vive no celular. As colunas não cresceram por clareza:
+   cresceram porque aresta que pulasse uma linha atravessava a caixa do meio, e
+   cada filho novo do `grafo` exigia uma coluna nova.
 
-   Quatro colunas porque o `grafo` tem três filhos e eles precisam caber na
-   mesma linha: aresta que pula uma linha atravessa a caixa do meio. A quarta é
-   por onde a calibração desce sem disputar espaço com eles. */
+   Agora é uma coluna só. Os passos descem, o elo entre eles é uma borda, e o
+   que era caixa lateral virou linha dentro do cartão: `.entra` acima, `.dentro`
+   no meio, `.volta` abaixo. Nada é medido, então nada aponta para o lugar
+   errado — e cabe em 320 px sem rolagem horizontal nenhuma. */
 .agentes {
   width: 100%;
   max-width: 44rem;
@@ -1483,100 +1485,167 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 2rem 1.25rem 4rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.75rem;
 }
-.agentes h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem; }
+.agentes h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.6rem; }
+.agentes header { display: flex; flex-direction: column; gap: 0.35rem; }
 .agentes header p { margin: 0; }
-.agentes .aguardando { color: var(--texto-fraco); font-size: 0.95rem; }
+.agentes .titulo-tela { font-size: 1rem; }
+.agentes .aguardando { color: var(--texto-fraco); font-size: 0.9rem; line-height: 1.5; }
 .agentes .rodape-fluxo { margin: 0; font-size: 0.85rem; color: var(--texto-fraco); line-height: 1.5; }
 
-.palco-fluxo { overflow-x: auto; overflow-y: hidden; margin: 0 -1.25rem; padding: 0 1.25rem; }
+/* ── as abas ──
+   Dois fluxos que não se tocam: o que entra no grafo e o que sai dele. Links de
+   verdade, cada um com a sua URL. */
+.abas { display: flex; gap: 0.35rem; margin: 0.15rem 0 0.4rem; flex-wrap: wrap; }
+.abas .aba {
+  font-size: 0.85rem;
+  color: var(--texto-fraco);
+  text-decoration: none;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--linha);
+  border-radius: 999px;
+  background: var(--fundo);
+}
+.abas .aba:hover { border-color: var(--texto-fraco); }
+.abas .aba.atual {
+  color: var(--acento);
+  border-color: var(--acento);
+  background: color-mix(in srgb, var(--acento) 8%, transparent);
+}
 
-/* As colunas laterais têm de sobrar espaço para a curva de realimentação passar
-   por fora — é o "parede" de tracar(). Sem esta folga ela sairia do palco. */
-.fluxo {
-  position: relative;
-  /* Sete colunas desde a slice 6 (o `chat` é o sexto filho do grafo, depois do
-     `confronto` na 5 ter levado de cinco para seis). A largura mínima cresce
-     junto para a caixa não encolher: o palco já rola na horizontal, e caixa
-     ilegível é pior que rolagem. */
-  min-width: 51rem;
+.agentes .secao { display: flex; flex-direction: column; gap: 0.3rem; }
+.agentes .secao h2 { font-size: 0.95rem; font-weight: 600; margin: 0; }
+
+/* ── a espinha ──
+   O elo entre dois passos é uma borda esquerda no `li`, e o cartão se descola
+   dela: é o traço de antes, sem nada para medir. */
+.espinha,
+.leque { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+
+.espinha { display: flex; flex-direction: column; }
+.espinha > li { position: relative; padding-left: 1.1rem; padding-bottom: 1.1rem; }
+.espinha > li::before {
+  content: "";
+  position: absolute;
+  left: 0.32rem;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--linha);
+}
+/* O primeiro não tem de onde vir, e o último não tem para onde ir. */
+.espinha > li:first-child::before { top: 1.1rem; }
+.espinha > li:last-child { padding-bottom: 0; }
+.espinha > li:last-child::before { bottom: auto; height: 1.1rem; }
+/* O ponto na altura do rótulo, que é onde o olho pousa. */
+.espinha > li::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.95rem;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: var(--fundo);
+  border: 1px solid var(--linha);
+}
+
+/* ── o leque ──
+   Lado a lado, e não enfileirados: os seis partem todos do grafo, e empilhá-los
+   diria que um espera o outro. */
+.leque {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  column-gap: 0.5rem;
-  row-gap: 2.4rem;
-  padding: 0.5rem 3rem 1rem;
-  justify-items: center;
-  align-items: stretch;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.75rem;
 }
 
-.fluxo .arestas { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
-.fluxo .arestas path {
-  fill: none;
-  stroke: var(--texto-fraco);
-  stroke-width: 1.25;
-  opacity: 0.5;
-}
-.fluxo .arestas marker path { fill: var(--texto-fraco); stroke: none; opacity: 1; }
-.fluxo .arestas text { fill: var(--texto-fraco); font-size: 0.62rem; opacity: 0.85; }
-/* Realimentação é o que este sistema tem de mais difícil de enxergar; ela ganha
-   traço próprio em vez de virar mais uma reta no meio do bolo. */
-.fluxo .arestas .volta path { stroke: var(--acento); stroke-dasharray: 3 3; opacity: 0.55; }
-.fluxo .arestas .volta text { fill: var(--acento); opacity: 0.75; }
-
-.fluxo .no {
-  position: relative;
-  z-index: 1;
-  width: 100%;
+/* ── o cartão ── */
+.passo { display: flex; flex-direction: column; gap: 0.3rem; }
+.passo .caixa {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  align-items: center;
-  text-align: center;
-  padding: 0.5rem 0.4rem;
+  align-items: flex-start;
+  gap: 0.2rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.7rem;
   border-radius: 10px;
   border: 1px solid var(--linha);
   background: var(--fundo);
   color: var(--texto);
   font: inherit;
 }
-.fluxo .no .rotulo { font-size: 0.86rem; display: inline-flex; align-items: center; gap: 0.3rem; }
-.fluxo .no .modelo {
-  font-size: 0.63rem;
-  color: var(--texto-fraco);
-  overflow-wrap: anywhere;
-  line-height: 1.25;
+.passo .rotulo {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.92rem;
 }
-.fluxo .no .nota { display: none; }
+.passo .modelo { font-size: 0.68rem; color: var(--texto-fraco); overflow-wrap: anywhere; }
+.passo .nota { font-size: 0.78rem; color: var(--texto-fraco); line-height: 1.45; }
 
 /* Dado não se clica: borda tracejada diz isso antes de qualquer tentativa. */
-.fluxo .no.dado {
-  border-style: dashed;
-  background: none;
-  color: var(--texto-fraco);
-  font-size: 0.82rem;
-}
+.passo.dado .caixa { border-style: dashed; background: none; color: var(--texto-fraco); }
 
 /* O único nó humano. Terracota, porque é a regra 5 desenhada: nada entra no
    grafo antes de passar por aqui. */
-.fluxo .no.eu {
+.passo.eu .caixa {
   border-color: var(--acento);
   color: var(--acento);
   background: color-mix(in srgb, var(--acento) 8%, transparent);
   letter-spacing: 0.02em;
 }
+.passo.eu .nota { color: var(--acento); opacity: 0.85; }
 
-.fluxo .no.agente { background: var(--fundo-alto); cursor: pointer; }
-.fluxo .no.agente:hover { border-color: var(--texto-fraco); }
-.fluxo .no.agente:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
-.fluxo .no.agente.editado { border-color: var(--acento); }
-.fluxo .no .marca {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--acento);
-  flex: none;
+.passo .caixa.agente { background: var(--fundo-alto); cursor: pointer; }
+.passo .caixa.agente:hover { border-color: var(--texto-fraco); }
+.passo .caixa.agente:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.passo .caixa.agente.editado { border-color: var(--acento); }
+.passo .marca { width: 5px; height: 5px; border-radius: 50%; background: var(--acento); flex: none; }
+
+/* ── o que entra, e o que volta ──
+   As duas linhas que substituíram setas: `←` o que chega de fora, `↩` o que é
+   devolvido a um passo de cima. A volta era a curva pontilhada mais difícil de
+   seguir do desenho antigo; em palavra ela diz para onde vai, o que a ponta da
+   curva só insinuava. */
+.passo .entra,
+.passo .volta {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--texto-fraco);
+  display: flex;
+  gap: 0.35rem;
 }
+.passo .entra b,
+.passo .volta b { font-weight: 600; color: var(--texto); }
+.passo .volta { color: var(--acento); }
+.passo .volta b { color: var(--acento); }
+.passo .seta { flex: none; opacity: 0.8; }
+
+/* ── o que roda dentro ──
+   A resolução é chamada de dentro da extração, e o desempate de dentro dela.
+   Aninhar é mais verdadeiro do que a fila de antes. */
+.passo .dentro {
+  margin-left: 0.9rem;
+  padding-left: 0.75rem;
+  border-left: 1px dashed var(--linha);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.passo .legenda-dentro {
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--texto-fraco);
+  letter-spacing: 0.02em;
+}
+.passo .dentro ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.passo.miudo .caixa { padding: 0.4rem 0.6rem; }
+.passo.miudo .rotulo { font-size: 0.85rem; }
+.passo.miudo .nota { font-size: 0.74rem; }
+
 
 /* O selo de quando. A diferença entre os três é o que o agente custa: um roda
    em toda sessão, outro só quando o caso aparece, outro só quando eu aperto.

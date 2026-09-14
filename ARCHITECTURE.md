@@ -162,9 +162,9 @@ primeiro toque. Verificado por medição, não por confiança: 21 correções re
 5 sessões, e um terço delas mostrou que o maior erro do pipeline não é o
 extrator, é o STT ouvindo nome próprio errado (§14).
 
-**E os agentes ganharam rosto** (seção 4.13). `/agentes` desenha o fluxo
-inteiro — STT, extração, resolução, calibração, perfil, duplicatas, embedding, e
-o único nó humano no meio deles —, e clicar numa caixa abre o prompt e o modelo
+**E os agentes ganharam rosto** (seção 4.13). `/agentes` desenha o fluxo em duas
+telas — o que entra no grafo (STT, extração, resolução, a revisão e a higiene) e
+o que sai dele (o chat) —, e clicar numa caixa abre o prompt e o modelo
 daquele agente, editáveis, valendo na próxima execução e **sem deploy**. O
 mecanismo é o da 4.6 generalizado: texto no R2, snapshot imutável por hash,
 sufixo no `prompt_version`. Sem override nenhum, todo agente sai byte a byte
@@ -2404,8 +2404,10 @@ aprovando regra ou não: olhar já conta.
 Doze pontos deste sistema falam com o Gateway — eram oito quando esta fatia
 nasceu. Até ela, saber o que cada um fazia exigia abrir cinco arquivos de
 `src/lib/`, e mudar qualquer coisa exigia um deploy. `/agentes` é onde eles
-passam a ter rosto: o fluxo desenhado, e cada caixa abrindo o prompt e o modelo
-que a comandam — e, na resolução e no confronto, o **limiar** (4.11, 5.1).
+passam a ter rosto: o fluxo desenhado em **duas telas** — `/agentes`, o que
+entra no grafo, e `/agentes/consulta`, o que sai dele —, e cada caixa abrindo o
+prompt e o modelo que a comandam, e na resolução e no confronto o **limiar**
+(4.11, 5.1).
 
 | Agente | Módulo | Quando | Modelo | Envelope que o parser exige |
 |---|---|---|---|---|
@@ -2521,42 +2523,85 @@ vez de guardar uma "edição" byte a byte idêntica ao git que faria o painel di
 
 #### O desenho, e por que ele em vez de uma lista
 
-Sete linhas numa tabela não dizem que a resolução roda **dentro** da extração,
+Doze linhas numa tabela não dizem que a resolução roda **dentro** da extração,
 que a regra que eu aprovo volta para o prompt do extrator, nem que existe
 exatamente **um** nó humano no meio de tudo — e é esse nó que a regra 5 protege.
-A lista descreve; o desenho explica. Por isso o nó da revisão é terracota e é o
-único que não é agente nem dado.
+A lista descreve; o desenho explica. Por isso o passo da revisão é terracota e é
+o único que não é agente nem dado.
 
-O fluxo é **dado** (`NOS` e `ARESTAS`, em `agentes.ts`), e não marcação no
-componente: sistema que muda tem de quebrar um teste, não só ficar feio numa
-tela. `tests/agentes.test.ts` cobra que toda aresta ligue nós que existem, que
-todo agente tenha caixa, que nenhum nó fique solto no desenho, e que o nó humano
-continue sendo um só.
+O fluxo é **dado** (`TELAS`, em `agentes.ts`), e não marcação no componente:
+sistema que muda tem de quebrar um teste, não só ficar feio numa tela.
 
-A grade é **vertical**, quatro colunas, e rola na horizontal quando não couber.
-Este app vive no celular: um canvas que se arrasta e se dá zoom é confortável no
-monitor e inútil no telefone, e diagrama espremido não é diagrama responsivo, é
-diagrama ilegível. **Nenhuma dependência entrou** — as caixas são uma grade CSS
-posicionada pelo `linha`/`coluna` do registro, e as setas são um `<svg>` por
-cima, medido do DOM com `ResizeObserver`. Mesma escolha do `SeletorEntidade`, que
-foi escrito à mão em vez de trazer um combobox de biblioteca.
+#### Duas telas, e uma espinha em cada
 
-**Quatro colunas, e não três, por causa de um invariante do roteador.** Uma
-aresta de ida é um cotovelo — desce, atravessa na altura do meio entre as duas
-linhas, desce —, então **aresta que pula uma linha atravessa a caixa que está
-entre elas**. O `grafo` tem três filhos (`duplicatas`, `perfil`, `embedding`) e
-eles têm de caber na mesma linha; a quarta coluna é por onde a calibração desce
-sem disputar espaço com eles. `tests/agentes.test.ts` cobra os dois lados: aresta
-de ida liga linhas vizinhas, e realimentação sempre sobe. Foi esse teste que
-pegou o desenho de três colunas, em que `grafo → perfil` cortava a caixa do
-`duplicatas`.
+O desenho nasceu como **um** diagrama de todos os agentes, e terminou a slice 6
+como uma grade CSS de **sete colunas** com as setas roteadas à mão em SVG,
+medidas do DOM com `getBoundingClientRect` + `ResizeObserver`, mais sete curvas
+pontilhadas de realimentação passando por fora da grade, e `min-width: 51rem`
+rolando na horizontal. Duas coisas estavam erradas nele, e as duas foram
+consertadas de uma vez.
 
-A realimentação é a exceção, e por isso tem traço próprio: curva pontilhada
-terracota, saindo pela lateral e subindo **por fora** da grade — é o que o
-`padding` horizontal do palco reserva. São as três voltas que fecham o sistema
-(a regra que volta ao extrator, o perfil e o vetor que voltam ao resolvedor) mais
-a proposta de fusão, e elas são justamente o que uma lista de oito linhas não
-conta.
+**Estava confuso, e a culpa era de um invariante geométrico.** Uma aresta de ida
+era um cotovelo — desce, atravessa na altura do meio, desce —, então aresta que
+pulasse uma linha atravessava a caixa que estivesse entre elas. Isso obrigava
+todos os filhos do `grafo` a caberem na **mesma** linha, e cada filho novo
+exigia uma coluna nova: quatro na 4.7, cinco na 4.12, seis na 5, sete na 6. O
+número de colunas passou a ser consequência da geometria, e não da clareza.
+
+**E misturava dois fluxos que não se tocam.** A faixa de leitura da slice 6 — o
+`chat`, o `titulo-chat` e a `conversa` — pendurava no mesmo nó `grafo`, na
+coluna 7, nas mesmas linhas dos agentes de higiene. Só que o chat **não escreve
+nada**: ele é o caminho de sair do grafo, desenhado por cima do caminho de
+entrar nele.
+
+Agora são duas telas, cada uma com URL própria e uma aba no topo:
+
+| rota | tela | o que mostra |
+|---|---|---|
+| `/agentes` | **o que entra** | a espinha `áudio → STT → transcrição → extração → proposta → revisão → grafo`, e abaixo dela o leque dos seis que partem do grafo já gravado |
+| `/agentes/consulta` | **o que sai** | `pergunta → chat → resposta → título → conversa` |
+
+Quatro agentes na espinha de ingestão (`stt`, `extracao` e os dois que rodam
+dentro dela), seis no leque, dois na consulta: os doze.
+
+**A espinha não tem geometria.** Uma coluna só, os passos descem, o elo entre
+eles é uma borda de CSS, e o cotovelo, o `<svg>`, o `<marker>`, o
+`ResizeObserver` e a função `tracar()` deixaram de existir — junto com o teste
+que media o caminho das setas em pixel. **Nenhuma dependência entrou**, pela
+mesma razão de sempre: um motor de pan/zoom seria pagar por um problema que
+este desenho não tem, e agora tem menos ainda.
+
+O que era caixa lateral virou campo do passo, e cada campo diz uma coisa:
+
+| campo | o que é | exemplo |
+|---|---|---|
+| `entradas` | o que chega de fora do caminho | o vocabulário no STT, o dossiê de candidatas na extração |
+| `dentro` | quem roda **dentro** do passo | `resolucao` e `desempate` dentro da `extracao` — que é onde eles de fato rodam (`resolverReferencias` é chamada de dentro de `extrairJanela`) |
+| `volta` | a realimentação, em palavra | "↩ volta para extração · a regra que eu aprovo entra no prompt" |
+
+A `volta` é a mudança que mais paga: a curva pontilhada era o traço mais difícil
+de seguir do desenho antigo, e uma frase de seis palavras diz o mesmo — inclusive
+para onde volta, que a ponta da curva só insinuava. São seis, uma por agente do
+leque.
+
+Aninhar a resolução dentro da extração, em vez de enfileirá-la, é mais
+**verdadeiro** que o desenho anterior, e não só mais curto. E o leque é grade
+que quebra, não fila: os seis partem todos do grafo, e empilhá-los diria que um
+espera o outro.
+
+`tests/agentes.test.ts` cobra o que sobrou de invariante, e um a mais que nasceu
+com a separação:
+
+1. todo agente do registro tem um cartão somando as duas telas, e todo cartão é
+   um agente registrado;
+2. nenhum id de passo se repete, dentro de uma tela ou entre elas;
+3. existe exatamente um passo humano, ele é a `revisao`, e ele está na ingestão;
+4. toda `volta` aponta para um passo que existe — inclusive os aninhados, que é
+   o caso de `embedding → resolucao` e `perfil → desempate`;
+5. **os fluxos não se misturam**: os agentes da consulta são exatamente `chat` e
+   `titulo-chat`, e nenhum deles aparece no caminho de gravar. É o pedido que
+   gerou esta mudança virado invariante — quem puser o chat de volta na ingestão
+   quebra um teste em vez de só deixar a tela confusa de novo.
 
 #### A varredura, que é o teste que mais vale
 
@@ -2913,9 +2958,11 @@ mesma decisão de `/entidades`), e a lista dos últimos átomos tocados com as
 relações que ganharam e um desfazer por linha. Uma tela de navegar relação por
 relação fica para quando o chat precisar mostrar isso como procedência.
 
-Décimo agente do registro (`src/lib/agentes.ts`); o fluxo desenhado em
-`/agentes` ganhou a sexta coluna — `confronto` é o quinto filho do `grafo`,
-depois do agente 4 ter levado de quatro para cinco na 4.12.
+Décimo agente do registro (`src/lib/agentes.ts`); no desenho de `/agentes` ele
+é um dos seis do leque que parte do grafo gravado. (Quando esta fatia nasceu, o
+desenho ainda era a grade de colunas, e o `confronto` custou a sexta delas; foi
+esse crescimento, repetido a cada agente novo, que levou o desenho à espinha de
+hoje — §4.13.)
 
 #### 4.15.1 O que a primeira revisão à mão mudou (slice 5.1)
 
@@ -3150,8 +3197,8 @@ rastro do (i) do mesmo jeito, então nada fica escondido.
 Uma ferramenta de escrita com confirmação — arquivar um átomo direto do chat —
 foi considerada e recusada. É a leitura mais direta da regra 5 do `CLAUDE.md`, e
 espalhar o lugar onde escrita acontece para mais uma tela não tinha pedido real
-por trás. No desenho de `/agentes`, `grafo → chat` é a única seta que sai do
-grafo sem nenhuma chance de voltar para ele.
+por trás. É o que a separação das duas telas de `/agentes` desenha: o chat é a
+tela inteira do que **sai** do grafo, e nela não há uma volta sequer.
 
 #### 4.16.4 A conversa: nó leve, mensagens no R2
 
@@ -4512,7 +4559,7 @@ sessão, e apagá-las seria desaprender (§14).
 | `GET /api/conversas` | a lista, ativas e arquivadas juntas, por `atualizada_em` desc | quem separa é a tela. **Sem `POST`**: conversa nasce da primeira pergunta, não de um botão — assim a lista nunca acumula conversa vazia |
 | `PATCH /api/conversas/:id` | `{arquivada: boolean}` — congela ou descongela | um booleano e não duas rotas: as duas direções são a mesma decisão |
 | `DELETE /api/conversas/:id` | apaga de vez — o objeto no R2 **e** o nó | a **única deleção de verdade** do sistema, e a exceção declarada à regra 6 (§4.16.5, migration 012). R2 antes do nó, sempre |
-| `GET /api/agentes` | os doze com o que está em vigor, mais o desenho do fluxo | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
+| `GET /api/agentes` | `{agentes, telas, atualizado_em}` — os doze com o que está em vigor, mais **as duas telas** do fluxo (`/agentes` e `/agentes/consulta` escolhem a sua por `fluxo`) | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
 | `POST /api/agentes/:id` | `{prompt?, modelo?}` — o que passa a valer | o **único** lugar que escreve configuração de agente; `null` revoga o campo e volta à base; recusa prompt que quebre o envelope e id de modelo fora do formato |
 | `GET /api/confronto` | quantos átomos esperam, e os últimos que a varredura tocou | só leitura; alimenta a tela `/confronto` |
 | `POST /api/confronto/rodar` | reivindica um átomo pendente e roda; se autoencadeia em `waitUntil` até a fila esvaziar | mesmo cookie repassado do elo de enriquecimento; sem distinção entre "começar" e "elo seguinte" — não há passo de escolher o que entra |
@@ -4595,7 +4642,8 @@ número não vai bater com a tela.
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo, buscável por nome e por grafia, filtrável por tipo e por "sem resumo", em ordem de mais falada. Cada linha é um nome e uma linha de meta; tocá-la abre a **ficha** num painel de tela cheia — tipo, renomear, canônica, resumo, grafias, os três campos de perfil, o enriquecer/desfazer e **fundir com…**, que funde duas entidades quaisquer à mão. O lote é modo: "enriquecer" acende os checkboxes e uma barra grudada no topo |
 | `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
-| `/agentes` | `Agentes` | o fluxo desenhado — os doze agentes, os dados entre eles e o único nó humano; clicar numa caixa abre o prompt, o modelo e (na resolução e no confronto) o limiar daquele agente |
+| `/agentes` | `Agentes` | **o que entra**: a espinha do áudio ao grafo — STT, extração (com resolução e desempate rodando dentro dela), a revisão e o leque dos seis que partem do grafo gravado. Clicar num agente abre o prompt, o modelo e (na resolução e no confronto) o limiar |
+| `/agentes/consulta` | `Agentes` | **o que sai**: pergunta, chat, resposta, título, conversa. Mesma gaveta de edição; nada nesta tela escreve no grafo |
 | `/confronto` | `Confronto` | quantos átomos esperam a varredura, o botão "rodar agora", e os últimos átomos tocados com as relações que ganharam e o desfazer por linha (slice 5) |
 | `/entrar` | página de login | pede o e-mail permitido |
 
@@ -4871,7 +4919,7 @@ Duas fontes, uma por natureza de tela:
 | | Fonte | Telas |
 |---|---|---|
 | ritual | **Nunito** | `/`, `/sessao/:id`, `/sessao/:id/revisar` |
-| gestão | **Inter** | `/sessao/:id/transcricao`, `/sessoes`, `/entidades`, `/calibracao`, `/agentes`, `/entrar` |
+| gestão | **Inter** | `/sessao/:id/transcricao`, `/sessoes`, `/entidades`, `/calibracao`, `/agentes`, `/agentes/consulta`, `/entrar` |
 
 Ritual é o que eu faço todo dia — falar, esperar processar, revisar. Gestão é
 manutenção, e a transcrição literal está com ela de propósito: é porta de
@@ -5181,7 +5229,8 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - `tests/agentes.test.ts` — a **varredura** (todo `generateText`/`transcribe`/
   `embed` de `src/` pertence a um agente do registro), o **no-op** (sem override,
   todo prompt sai byte a byte igual ao de antes da 4.7), o carimbo com os dois
-  sufixos, o guarda-corpo do envelope e a integridade do desenho do fluxo.
+  sufixos, o guarda-corpo do envelope e a integridade das duas telas do fluxo —
+  inclusive que os agentes da consulta não apareçam no caminho de gravar.
 - `tests/importacao.test.ts` — `transcreverBloco` busca o áudio na extensão que o
   manifest registrou, e continua caindo em `.webm` quando o campo não existe.
 - **O `fatiador` não entra em `pnpm test`**, e não vai entrar: ele é
