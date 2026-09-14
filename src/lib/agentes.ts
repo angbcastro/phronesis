@@ -280,7 +280,7 @@ export const AGENTES: readonly Agente[] = [
       "lê a minha pergunta, escolhe sozinho quais buscas fazer no grafo, encadeia até " +
       `${TETO_FERRAMENTAS} e escreve a resposta citando os átomos que usou`,
     quando: "sob_demanda",
-    gatilho: "a cada mensagem que eu mando na bolha de chat da tela inicial",
+    gatilho: "a cada mensagem que eu mando na barra de chat da tela inicial",
     base: BASE_CHAT,
     padrao: modeloChat,
     variavel: "CHAT_MODEL",

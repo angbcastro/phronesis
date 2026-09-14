@@ -1,18 +1,29 @@
 "use client";
 
 /**
- * A bolha, o painel, a lista — a tela do chat (slice 6).
+ * A barra, o painel, a lista — a tela do chat (slice 6).
  *
  * **Ela nasce da tela de gravar, e não de uma rota.** `/chat` ao lado de
  * Gravar/Revisar foi a primeira ideia levada à entrevista e caiu assim que
- * ficou claro que a integração era com a própria tela inicial: uma bolha
- * periférica e semitransparente, que expande para o centro enquanto o círculo
+ * ficou claro que a integração era com a própria tela inicial: a caixa fechada
+ * é periférica e semitransparente, e expande para o centro enquanto o círculo
  * de gravação minimiza e vai para o topo. Os dois ficam periféricos quando não
  * estão em foco, e nenhum dos dois some.
  *
- * **É o mesmo nó do DOM nos dois estados**, como o `BotaoGravar`: a bolha e o
+ * **Era uma bolha de balão no canto de baixo à direita, e virou uma barra de
+ * pesquisa no rodapé, centralizada, com `...` de convite.** Um ícone de balão
+ * periférico lê como símbolo de suporte; uma barra lê como lugar de perguntar,
+ * que é o que ela é. Ela **não** aceita texto: tocar nela abre o painel e o foco
+ * vai para o campo de dentro — um campo que não recebesse o que eu digitasse
+ * mentiria, e por isso o estado fechado é um botão com cara de campo, não um
+ * `<input>`.
+ *
+ * **É o mesmo nó do DOM nos dois estados**, como o `BotaoGravar`: a barra e o
  * painel são o mesmo `<section>`, e é isso que faz a expansão ser uma transição
- * em vez de um corte. O conteúdo troca por dentro; a caixa cresce.
+ * em vez de um corte. O conteúdo troca por dentro; a caixa cresce. Até a slice 6
+ * ser usada de verdade isso era só o que o comentário dizia — o componente
+ * voltava cedo com uma árvore diferente, e o `@keyframes` de entrada não tinha
+ * simétrico nenhum na saída.
  *
  * **Durante a gravação ela não existe** — quem decide isso é a `Gravacao`, no
  * mesmo ramo que já esconde a `Gestao` hoje. A tela de gravar é onde este
@@ -95,6 +106,15 @@ export function frasePasso(p: PassoDeFerramenta): string {
 export const TETO_ROTULO = 48;
 
 /**
+ * Quanto tempo o painel continua montado depois de eu fechar, em ms.
+ *
+ * **É o mesmo número da transição da caixa em `globals.css`** — os dois mudam
+ * juntos. Sem esta espera o conteúdo sumiria de uma vez enquanto a caixa ainda
+ * encolhe até a barra, e o que se veria fechando seria uma caixa vazia.
+ */
+export const DURACAO_CAIXA = 320;
+
+/**
  * O nome de uma conversa na lista.
  *
  * O título gerado por modelo vence sempre. O truncamento da primeira pergunta é
@@ -141,6 +161,8 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
   const [problema, setProblema] = useState<string | null>(null);
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
   const [rastroAberto, setRastroAberto] = useState<string | null>(null);
+  // O painel sobrevive ao fechar por `DURACAO_CAIXA` — ver a constante.
+  const [saindo, setSaindo] = useState(false);
 
   const parada = useRef<AbortController | null>(null);
   const fim = useRef<HTMLDivElement | null>(null);
@@ -148,6 +170,9 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
   // Nasce `true` para a primeira abertura escolher a conversa mais recente, e
   // só ela: depois disso, qual conversa está aberta é decisão minha.
   const primeiraAbertura = useRef(true);
+  // Sem isto, a montagem da página (fechada, e nunca aberta) contaria como um
+  // fechamento e o painel piscaria inteiro por 320 ms na tela de gravar.
+  const jaAbriu = useRef(false);
 
   const carregarMensagens = useCallback(async (id: string) => {
     setProblema(null);
@@ -164,6 +189,18 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
       setProblema("Não consegui abrir a conversa.");
     }
   }, []);
+
+  useEffect(() => {
+    if (aberto) {
+      jaAbriu.current = true;
+      setSaindo(false);
+      return;
+    }
+    if (!jaAbriu.current) return;
+    setSaindo(true);
+    const t = setTimeout(() => setSaindo(false), DURACAO_CAIXA);
+    return () => clearTimeout(t);
+  }, [aberto]);
 
   // A lista chega ao abrir, e não antes: a tela de gravar não consulta nada por
   // conta própria — mesma disciplina da sugestão de calibrar na `Gestao`.
@@ -364,192 +401,194 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
     [aberta],
   );
 
-  if (!aberto) {
-    return (
-      <section className="chat">
-        <button className="bolha" onClick={aoAbrir} aria-label="perguntar ao diário">
-          {/* SVG inline, como a marca e a engrenagem: nenhum pacote de ícone
-              entra por causa de um desenho só. */}
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 8.8 8.8 0 0 1-3.6-.77L3 21l1.9-5.1A8.4 8.4 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.5 8.5 0 0 1 21 11.5Z" />
-          </svg>
-        </button>
-      </section>
-    );
-  }
-
   const { ativas, arquivadas } = separarConversas(conversas);
   const primeiraPergunta = mensagens.find((m) => m.papel === "eu")?.texto;
 
   return (
-    <section className="chat aberto" aria-label="conversa sobre o diário">
-      <header>
-        {vista === "conversa" ? (
-          <button className="icone" onClick={() => setVista("lista")} aria-label="conversas">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M4 6h16M4 12h16M4 18h10" />
-            </svg>
-          </button>
-        ) : (
-          <button className="icone" onClick={() => setVista("conversa")} aria-label="voltar">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M15 5l-7 7 7 7" />
-            </svg>
-          </button>
-        )}
-
-        <h2>
-          {vista === "lista"
-            ? "conversas"
-            : aberta
-              ? rotuloDaConversa(aberta, primeiraPergunta)
-              : "nova conversa"}
-        </h2>
-
-        <button className="icone" onClick={nova} aria-label="nova conversa">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+    <section className={`chat ${aberto ? "aberto" : ""}`}>
+      {!aberto && (
+        <button className="barra" onClick={aoAbrir} aria-label="perguntar ao diário">
+          {/* Só três pontos, por pedido: a barra convida sem prometer assunto.
+              Um `<input>` aqui mentiria — ela abre o painel, não recebe texto. */}
+          <span className="dica" aria-hidden="true">
+            ...
+          </span>
         </button>
-        <button className="icone fechar" onClick={aoFechar} aria-label="fechar">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
-        </button>
-      </header>
+      )}
 
-      {vista === "lista" ? (
-        <div className="corpo lista-conversas">
-          {ativas.length === 0 && <p className="aguardando">nenhuma conversa ainda.</p>}
-          <ul>
-            {ativas.map((c) => (
-              <LinhaDaConversa
-                key={c.id}
-                conversa={c}
-                atual={c.id === aberta?.id}
-                aoAbrir={() => void abrirConversa(c)}
-                aoArquivar={() => void arquivar(c)}
-                aoApagar={() => void apagar(c)}
-              />
-            ))}
-          </ul>
-
-          {arquivadas.length > 0 && (
-            <>
-              <button
-                className="separador"
-                onClick={() => setMostrarArquivadas((v) => !v)}
-                aria-expanded={mostrarArquivadas}
-              >
-                arquivadas ({arquivadas.length})
+      {/* `saindo` mantém o painel montado enquanto a caixa encolhe de volta até a
+          barra; `inert` tira do caminho o que já não é mais alcançável. */}
+      {(aberto || saindo) && (
+        <div className="painel" aria-label="conversa sobre o diário" inert={!aberto}>
+          <header>
+            {vista === "conversa" ? (
+              <button className="icone" onClick={() => setVista("lista")} aria-label="conversas">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M4 6h16M4 12h16M4 18h10" />
+                </svg>
               </button>
-              {mostrarArquivadas && (
-                <ul>
-                  {arquivadas.map((c) => (
-                    <LinhaDaConversa
-                      key={c.id}
-                      conversa={c}
-                      atual={c.id === aberta?.id}
-                      aoAbrir={() => void abrirConversa(c)}
-                      aoArquivar={() => void arquivar(c)}
-                      aoApagar={() => void apagar(c)}
-                    />
-                  ))}
-                </ul>
+            ) : (
+              <button className="icone" onClick={() => setVista("conversa")} aria-label="voltar">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M15 5l-7 7 7 7" />
+                </svg>
+              </button>
+            )}
+
+            <h2>
+              {vista === "lista"
+                ? "conversas"
+                : aberta
+                  ? rotuloDaConversa(aberta, primeiraPergunta)
+                  : "nova conversa"}
+            </h2>
+
+            <button className="icone" onClick={nova} aria-label="nova conversa">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+            <button className="icone fechar" onClick={aoFechar} aria-label="fechar">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </header>
+
+          {vista === "lista" ? (
+            <div className="corpo lista-conversas">
+              {ativas.length === 0 && <p className="aguardando">nenhuma conversa ainda.</p>}
+              <ul>
+                {ativas.map((c) => (
+                  <LinhaDaConversa
+                    key={c.id}
+                    conversa={c}
+                    atual={c.id === aberta?.id}
+                    aoAbrir={() => void abrirConversa(c)}
+                    aoArquivar={() => void arquivar(c)}
+                    aoApagar={() => void apagar(c)}
+                  />
+                ))}
+              </ul>
+
+              {arquivadas.length > 0 && (
+                <>
+                  <button
+                    className="separador"
+                    onClick={() => setMostrarArquivadas((v) => !v)}
+                    aria-expanded={mostrarArquivadas}
+                  >
+                    arquivadas ({arquivadas.length})
+                  </button>
+                  {mostrarArquivadas && (
+                    <ul>
+                      {arquivadas.map((c) => (
+                        <LinhaDaConversa
+                          key={c.id}
+                          conversa={c}
+                          atual={c.id === aberta?.id}
+                          aoAbrir={() => void abrirConversa(c)}
+                          aoArquivar={() => void arquivar(c)}
+                          aoApagar={() => void apagar(c)}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="corpo mensagens">
+                {mensagens.length === 0 && !enviando && (
+                  <p className="aguardando">
+                    pergunte o que quiser sobre o que você já registrou.
+                  </p>
+                )}
+
+                {mensagens.map((m, i) => (
+                  <article key={`${m.criado_em}-${i}`} className={`fala ${m.papel}`}>
+                    <p>{m.texto}</p>
+                    {m.papel === "agente" && (m.rastro?.length ?? 0) > 0 && (
+                      <>
+                        <button
+                          className="porque"
+                          aria-label="de onde veio esta resposta"
+                          aria-expanded={rastroAberto === `${i}`}
+                          onClick={() => setRastroAberto((a) => (a === `${i}` ? null : `${i}`))}
+                        >
+                          i
+                        </button>
+                        {rastroAberto === `${i}` && <Rastro passos={m.rastro ?? []} />}
+                      </>
+                    )}
+                  </article>
+                ))}
+
+                {enviando && (
+                  <div className="progresso" role="status">
+                    {passos.map((p, i) => (
+                      <span key={i}>{frasePasso(p)}</span>
+                    ))}
+                    <span className="pensando">
+                      {passos.length === 0 ? "procurando…" : "escrevendo…"}
+                    </span>
+                  </div>
+                )}
+
+                <div ref={fim} />
+              </div>
+
+              {problema && <p className="aviso">{problema}</p>}
+
+              {aberta?.arquivada_em ? (
+                <p className="aviso">
+                  conversa arquivada — só leitura.{" "}
+                  <button className="ligacao" onClick={() => void arquivar(aberta)}>
+                    desarquivar
+                  </button>
+                </p>
+              ) : (
+                <form
+                  className="escrever"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void enviar();
+                  }}
+                >
+                  <textarea
+                    ref={campo}
+                    value={rascunho}
+                    rows={1}
+                    placeholder="pergunte alguma coisa"
+                    onChange={(e) => setRascunho(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Enter manda, Shift+Enter quebra linha — no telefone o
+                      // teclado manda, e é o gesto que todo mundo já tem no dedo.
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void enviar();
+                      }
+                    }}
+                  />
+                  {enviando ? (
+                    <button
+                      type="button"
+                      className="parar"
+                      onClick={() => parada.current?.abort()}
+                    >
+                      parar
+                    </button>
+                  ) : (
+                    <button type="submit" className="mandar" disabled={rascunho.trim() === ""}>
+                      ↑
+                    </button>
+                  )}
+                </form>
               )}
             </>
           )}
         </div>
-      ) : (
-        <>
-          <div className="corpo mensagens">
-            {mensagens.length === 0 && !enviando && (
-              <p className="aguardando">
-                pergunte o que quiser sobre o que você já registrou.
-              </p>
-            )}
-
-            {mensagens.map((m, i) => (
-              <article key={`${m.criado_em}-${i}`} className={`fala ${m.papel}`}>
-                <p>{m.texto}</p>
-                {m.papel === "agente" && (m.rastro?.length ?? 0) > 0 && (
-                  <>
-                    <button
-                      className="porque"
-                      aria-label="de onde veio esta resposta"
-                      aria-expanded={rastroAberto === `${i}`}
-                      onClick={() => setRastroAberto((a) => (a === `${i}` ? null : `${i}`))}
-                    >
-                      i
-                    </button>
-                    {rastroAberto === `${i}` && <Rastro passos={m.rastro ?? []} />}
-                  </>
-                )}
-              </article>
-            ))}
-
-            {enviando && (
-              <div className="progresso" role="status">
-                {passos.map((p, i) => (
-                  <span key={i}>{frasePasso(p)}</span>
-                ))}
-                <span className="pensando">
-                  {passos.length === 0 ? "procurando…" : "escrevendo…"}
-                </span>
-              </div>
-            )}
-
-            <div ref={fim} />
-          </div>
-
-          {problema && <p className="aviso">{problema}</p>}
-
-          {aberta?.arquivada_em ? (
-            <p className="aviso">
-              conversa arquivada — só leitura.{" "}
-              <button className="ligacao" onClick={() => void arquivar(aberta)}>
-                desarquivar
-              </button>
-            </p>
-          ) : (
-            <form
-              className="escrever"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void enviar();
-              }}
-            >
-              <textarea
-                ref={campo}
-                value={rascunho}
-                rows={1}
-                placeholder="pergunte alguma coisa"
-                onChange={(e) => setRascunho(e.target.value)}
-                onKeyDown={(e) => {
-                  // Enter manda, Shift+Enter quebra linha — no telefone o
-                  // teclado manda, e é o gesto que todo mundo já tem no dedo.
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void enviar();
-                  }
-                }}
-              />
-              {enviando ? (
-                <button
-                  type="button"
-                  className="parar"
-                  onClick={() => parada.current?.abort()}
-                >
-                  parar
-                </button>
-              ) : (
-                <button type="submit" className="mandar" disabled={rascunho.trim() === ""}>
-                  ↑
-                </button>
-              )}
-            </form>
-          )}
-        </>
       )}
     </section>
   );

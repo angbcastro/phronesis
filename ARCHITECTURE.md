@@ -221,8 +221,8 @@ até eu trocar o tipo à mão em `/entidades`.
 
 **E o grafo passou a responder** (seção 4.16). A fatia 6 é o chat que a decisão
 de produto da slice 5 já tinha escolhido no lugar da tela Perguntar minimalista
-de `Specs/visao.md` §6: uma bolha na tela inicial que expande para o centro, com
-memória de conversa e histórico entre visitas. Por dentro é um **agente com
+de `Specs/visao.md` §6: uma barra discreta no rodapé da tela inicial que expande
+para o centro, com memória de conversa e histórico entre visitas. Por dentro é um **agente com
 ferramentas**, e não um pipeline: o modelo decide quais buscas fazer e encadeia
 até oito antes de responder, porque "como eu estava depois que terminei com a
 Isinha" exige achar a data numa busca para filtrar por ela na seguinte. São duas
@@ -387,7 +387,7 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Sessoes (lista de sessões, o apagar de dois toques — e a cor
                     que diz o que falta revisar), Entidades (higiene do grafo),
                   Confronto (estado da varredura de relações, rodar e desfazer),
-                  Chat (a bolha, o painel, a lista de conversas, o progresso por
+                  Chat (a barra, o painel, a lista de conversas, o progresso por
                     passo e o (i) com o rastro — nasce dentro da `Gravacao`),
                   ServiceWorker (registra `sw.js`; não desenha nada)
 src/app/api/      42 rotas em nove famílias — sessão, entidade, calibração,
@@ -2417,7 +2417,7 @@ que a comandam — e, na resolução e no confronto, o **limiar** (4.11, 5.1).
 | `duplicatas-1` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
 | embedding (sem prompt) | `embedding.ts` | automático, depois de gravar | `EMBEDDING_MODEL` | — |
 | `confronto-2` | `confronto.ts` | periódico: cron próprio e sob demanda em `/confronto` (slice 5) | `CONFRONTO_MODEL` | `relacoes`, `novo`, `velho` |
-| `chat-1` | `chat.ts` | sob demanda, a cada mensagem na bolha de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo` |
+| `chat-2` | `chat.ts` | sob demanda, a cada mensagem na barra de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo` |
 | `titulo-chat-1` | `conversas.ts` | sob demanda, uma vez por conversa nova (slice 6) | `CHAT_TITULO_MODEL` | `titulo` |
 
 **O `chat` é o único cujo envelope não são chaves de JSON**, e a diferença é
@@ -3061,11 +3061,51 @@ buscar_atomos({ texto?, entidade?, tipo?: TipoAtomo[], desde?, ate? })
 ```
 
 Todos opcionais, todos combináveis. **Sem `texto`** é um `MATCH` filtrado,
-ordenado por `valido_em` desc, com teto de `TETO_ATOMOS = 12`. **Com `texto`** o
+ordenado por `valido_em` desc, com teto de `TETO_ATOMOS = 8`. **Com `texto`** o
 índice vetorial `atomo_embedding` (migration 006) entra e os demais filtros se
 somam como condição, ordenando por similaridade; `2 * score - 1` desfaz a
 normalização do índice de volta para cosseno, a mesma conta de `entidades.ts` e
-`confronto.ts`.
+`confronto.ts`. Acima de `PISO_BUSCA = 0,45`, e não de 0,30 — ver logo abaixo.
+
+##### O aperto de volume, depois da primeira pergunta vaga de verdade
+
+A fatia nasceu com três números que, juntos, entregavam o diário inteiro em vez
+de uma resposta: piso de 0,30, doze átomos por busca, e nenhuma memória entre as
+buscas de um mesmo turno. "Quais são minhas prioridades" cobrou os três de uma
+vez. O conserto foi de calibragem, sem capacidade nova — nenhuma terceira
+ferramenta, nenhum catálogo de entidades injetado:
+
+- **`PISO_BUSCA` 0,30 → 0,45.** O argumento original era que numa leitura o átomo
+  errado custa só uma linha que o modelo descarta. Custa mais: ele **enterra** o
+  acerto no meio de uma resposta longa. E 0,30 não cortava nada — a medida já
+  estava no repositório, em 4.15: numa varredura inteira de confronto o par de
+  átomos **menos** parecido dava 0,728, e o piso de 0,45 "nunca cortou nada". Os
+  átomos deste diário vivem alto no espaço de cosseno; contra uma pergunta
+  abstrata, 0,30 aprova o corpus e os primeiros colocados viram sorteio. 0,45
+  alinha com `PISO_CONFRONTO` e `PISO_VIZINHOS` — um número a menos para
+  calibrar;
+- **`TETO_ATOMOS` 12 → 8.** Doze cabiam no prompt e na tela do (i); a conta que
+  faltava era a outra — doze vezes o teto de oito chamadas são quase cem trechos
+  num contexto só;
+- **o mesmo átomo não volta inteiro duas vezes no mesmo turno.** As duas
+  ferramentas compartilham um conjunto de ids já mostrados; da segunda vez em
+  diante o que vai ao modelo é `[id X] já mostrado acima`. **Colapsar, e não
+  omitir:** um átomo que duas buscas alcançam é informação — sumir com ele faria
+  o modelo ler a segunda busca como mais pobre do que foi e buscar de novo, que
+  é justamente o que o teto de oito chamadas não tem para gastar. O conjunto é
+  montado **por tentativa**, dentro do fecho que `comEsperaDeLimite` repete, pelo
+  mesmo motivo que o rastro já era zerado ali: um conjunto sobrevivente
+  colapsaria, na tentativa boa, exatamente o átomo que só a tentativa perdida
+  mostrou — uma resposta citando "já mostrado acima" sem nada acima;
+- **o prompt virou `chat-2`.** Ele mandava alargar ("outra palavra, sem filtro de
+  tipo, período mais largo") e nunca mandava descartar. Agora alargar é só para a
+  busca que voltou **nada**; pergunta vaga se estreita com `desde` e o recorte
+  usado vai dito na resposta; e há um teto de trechos citados, com a instrução
+  explícita de que o normal é descartar a maior parte do que a busca trouxe.
+
+**O (i) não perdeu nada nisso.** `paraRastro` e `PassoDeFerramenta` continuam
+guardando todos os achados inteiros de todas as chamadas — o rastro completo é a
+promessa da fatia, e o corte é só do que volta ao prompt.
 
 Três detalhes que erram calado, e por isso estão fixados por teste:
 
@@ -4547,7 +4587,7 @@ número não vai bater com a tela.
 
 | Rota | Componente | O que mostra |
 |---|---|---|
-| `/` | `Gravacao` + `BotaoGravar` + `Gestao` + `Chat` | o círculo "Como foi seu dia?", uma engrenagem discreta na borda esquerda e a bolha do chat no canto de baixo — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo", e nem a engrenagem nem a bolha |
+| `/` | `Gravacao` + `BotaoGravar` + `Gestao` + `Chat` | o círculo "Como foi seu dia?", uma engrenagem discreta na borda esquerda e a barra do chat no rodapé, centralizada — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo", e nem a engrenagem nem a barra |
 | `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e abre a revisão sozinho |
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
@@ -4596,23 +4636,72 @@ substituiu: navegar para fora no meio de uma gravação a mataria.
 `Gestao.tsx` **não** ganhou um item de chat, e é deliberado: ao contrário da
 slice 5, o chat não é uma rota. Ele mora na própria tela inicial.
 
-#### A bolha do chat, e o círculo que minimiza (slice 6)
+#### A barra do chat, e o círculo que minimiza (slice 6)
 
 Uma rota própria e de destaque — `/chat`, ao lado de Gravar/Revisar — foi a
 primeira ideia levada à entrevista, e caiu assim que ficou claro que a
-integração era com a tela de gravar. O que existe é uma bolha:
+integração era com a tela de gravar. O que existe é uma barra:
 
 | estado da tela | o que aparece |
 |---|---|
-| **parado** | círculo ao centro + engrenagem + bolha do chat, pequena e semitransparente, no canto de baixo à direita |
-| **chat aberto** | o painel toma o centro; o círculo encolhe (`--circulo: 84px`), sobe para o topo e fica semitransparente — periférico, como a bolha era |
-| **gravando** | só círculo, timer, ponto de salvo e "parar". A bolha **some inteira**, como a engrenagem |
+| **parado** | círculo ao centro + engrenagem + a barra do chat, discreta, centralizada no rodapé, com `...` de convite |
+| **chat aberto** | o painel toma o centro; o círculo encolhe, sobe para o topo e fica semitransparente — periférico, como a barra era |
+| **gravando** | só círculo, timer, ponto de salvo e "parar". A barra **some inteira**, como a engrenagem |
 
-A bolha e o painel são o **mesmo elemento** — uma `<section class="chat">` que
+**Era uma bolha de balão no canto de baixo à direita.** Ela caiu no primeiro uso
+de verdade: um ícone de balão periférico lê como símbolo de suporte, não como
+lugar de perguntar. A barra **não** aceita texto — tocar nela abre o painel e o
+foco vai para o campo de dentro. Um `<input>` no estado fechado que não
+recebesse o que eu digitasse mentiria, então o que está ali é um botão com cara
+de campo.
+
+A barra e o painel são o **mesmo elemento** — uma `<section class="chat">` que
 cresce —, pela mesma razão que o `BotaoGravar` é o mesmo nó do DOM parado e
 gravando: sem isso não há o que transicionar, só um corte.
 
-**Manter a bolha visível durante a gravação foi recusado.** Nem a `Gestao`, a
+##### As duas animações, e por que a primeira versão não era uma
+
+Até o primeiro uso isso era só o que o documento dizia. Na prática o componente
+voltava cedo com uma árvore diferente, e o que existia era um `@keyframes` de
+entrada — **sem simétrico nenhum na saída**. Fechar era um corte, e a bola
+minimizando era um pulo. Duas causas, as duas mecânicas:
+
+- **a caixa** tinha a animação em `@keyframes`, que não tem volta, e a transição
+  de opacidade do círculo morava **dentro** da regra `.tela.com-chat` — some
+  junto com a classe, e o retorno é instantâneo por construção;
+- **a bola** mudava `--circulo` de `min(72vw, 264px)` para `84px` e virava
+  `justify-content` de `center` para `flex-start`. Propriedade personalizada não
+  registrada **não interpola**, e `justify-content`, `gap` e `padding` não
+  interpolam nunca.
+
+O que existe agora, e vale nos dois sentidos porque mora nas regras **base**:
+
+- **a caixa** transiciona geometria — os quatro `inset`, `max-width`, o raio e a
+  opacidade. É por isso que a barra fechada declara um `top` numérico
+  (`calc(100dvh - recuo - 44px)`) em vez de `auto`, que não interpolaria; e é por
+  isso que fundo, borda e opacidade vivem na `.chat` e não nos filhos. Barra e
+  painel ficam os dois `position: absolute; inset: 0`, para que nenhum deles
+  estique a caixa durante a troca;
+- **a bola** se move por `transform: translateY(calc(3.75rem - 50dvh))
+  scale(0.32)`. O `0,32` reproduz os 84px de antes em qualquer largura (o CSS não
+  divide comprimento por comprimento, e `min(72vw, 264px)` dá 259–264px em
+  aparelho real); o `50dvh` é exato e não estimado, porque a `.tela` é
+  `min-height: 100dvh` com padding vertical simétrico, `justify-content: center`,
+  e o `.palco` é o único filho em fluxo. Com raio de ~42px a borda de baixo para
+  em ~6,4rem, acima do `top: 8.5rem` do painel — que é o que faz os dois
+  conviverem sem um cobrir o outro. O `.palco` fica em `z-index: 6` **sempre**:
+  indo e voltando a bola atravessa a faixa do painel (`z-index: 5`), e um
+  `z-index` que sumisse com a classe esconderia metade do caminho de volta.
+
+Dois efeitos colaterais do "sem corte" que são decisão, não descuido: o rótulo
+"Como foi seu dia?" sai por `color: transparent` (a cor interpola; `font-size: 0`
+era mais um corte) e continua no DOM como nome acessível do botão; e o `.brilho`
+**continua respirando** minimizado — desligar a animação cortava a escala dela no
+meio, e a 32% de tamanho a respiração não se vê. Do lado do React, o painel
+sobrevive ao fechar por `DURACAO_CAIXA` (320 ms, o mesmo número da transição),
+`inert` enquanto sai; sem isso a caixa encolheria vazia.
+
+**Manter a barra visível durante a gravação foi recusado.** Nem a `Gestao`, a
 única porta de saída que já existia, tem esse privilégio — e a tela de gravar é
 onde este projeto historicamente corta, não adiciona (ver o comentário sobre o
 chip de recuperação removido em `Gravacao.tsx`).
@@ -4628,7 +4717,7 @@ fecha o painel quando não há nada em curso.
 Dentro do painel: a lista de conversas (ativas, com as arquivadas atrás de um
 separador que conta quantas são), o botão de nova conversa, a conversa aberta
 com as mensagens, o campo de texto, e o "parar" no lugar do enviar enquanto o
-agente trabalha. Abrir a bolha pela primeira vez numa visita abre **a conversa
+agente trabalha. Abrir a barra pela primeira vez numa visita abre **a conversa
 mais recente ativa** — é o que faz "toco de novo e continuo de onde parei" ser
 verdade; depois disso, qual conversa está aberta é decisão minha.
 
@@ -5851,10 +5940,18 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   próxima abertura da conversa. O grafo e o R2 continuam certos — quem mente por
   um instante é a tela.
 - **`buscar_atomos` sem `texto` devolve os mais recentes, sem dizer que cortou**
-  (slice 6). O teto é `TETO_ATOMOS = 12`, e o modelo não recebe a contagem total:
-  uma pergunta sobre um mês inteiro com trinta átomos vê doze e não sabe disso. O
-  sinal que existe é indireto — doze resultados redondos —, e o conserto honesto
-  seria devolver o total junto, que não foi feito nesta fatia.
+  (slice 6). O teto é `TETO_ATOMOS = 8`, e o modelo não recebe a contagem total:
+  uma pergunta sobre um mês inteiro com trinta átomos vê oito e não sabe disso. O
+  sinal que existe é indireto — oito resultados redondos —, e o conserto honesto
+  seria devolver o total junto, que não foi feito nesta fatia. O aperto de volume
+  de 4.16.2 **agravou** este limite de propósito: doze viravam oito, e a troca
+  aceita foi ver menos por busca em vez de afogar a resposta.
+- **O piso de 0,45 e o teto de 8 não foram medidos contra gabarito** (slice 6, e
+  não podiam ser: `CLAUDE.md` diz que quem julga extração aqui sou eu, na tela).
+  O que existe é uma medida emprestada — os 0,728 da varredura de confronto, em
+  4.15 — e uma pergunta real que ficou ruim. Se 0,45 passar a cortar átomo que
+  eu queria, o número que diz isso é a `similaridade` que o (i) já mostra em
+  cada achado.
 
 ---
 

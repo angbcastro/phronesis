@@ -23,11 +23,13 @@
  * superior esquerdo é da `Marca`, e continua sendo só dela. Ela sai do caminho
  * do olho, que vai direto ao círculo.
  *
- * **A bolha do chat entrou na slice 6, e ela não fura nenhuma dessas regras.**
+ * **A barra do chat entrou na slice 6, e ela não fura nenhuma dessas regras.**
  * Ela mora no mesmo ramo de "parado" que a `Gestao`: durante a gravação, some
  * inteira. Aberta, ela expande para o centro e o círculo minimiza e vai para o
  * topo — os dois ficam periféricos quando não estão em foco, e nenhum dos dois
- * desaparece.
+ * desaparece. Era uma bolha de balão no canto de baixo à direita; virou uma
+ * barra discreta e centralizada no rodapé, que é o que se lê como "pergunte"
+ * em vez de "fale com o suporte".
  *
  * **Com o chat aberto, o primeiro toque no círculo não grava.** Ele restaura o
  * círculo ao centro e fecha o chat; só o segundo toque começa a gravar. Um
@@ -175,7 +177,7 @@ export function Gravacao() {
           {/* Porta de serviço única, discreta de propósito: a tela de gravar é
               onde eu passo o tempo, e nada aqui pode virar cobrança. */}
           <Gestao />
-          {/* Mesma condição, e não uma segunda: a bolha some durante a gravação
+          {/* Mesma condição, e não uma segunda: a barra some durante a gravação
               pelo mesmo motivo que a engrenagem some. */}
           <Chat
             aberto={chatAberto}

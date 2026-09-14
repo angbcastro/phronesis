@@ -408,6 +408,86 @@ describe("o texto que a ferramenta devolve", () => {
   });
 });
 
+/**
+ * O que a primeira pergunta vaga de verdade ("quais são minhas prioridades")
+ * cobrou: doze átomos por busca vezes oito buscas encadeadas, e o mesmo átomo
+ * voltando inteiro em cada busca que o alcança. O modelo lê contexto recuperado
+ * como relevante por construção, e respondeu com o diário inteiro.
+ *
+ * Colapsar e não omitir é a parte que erraria calado nos dois sentidos: omitir
+ * faria o modelo ler a segunda busca como mais pobre do que foi e buscar de
+ * novo; e um conjunto que sobrevivesse a uma tentativa perdida faria a resposta
+ * citar "já mostrado acima" sem nada acima.
+ */
+describe("o mesmo átomo não volta inteiro duas vezes", () => {
+  it("a segunda vez é o id e a lembrança, e a primeira continua inteira", () => {
+    const vistos = new Set<string>();
+    const primeira = respostaDaBusca({ achados: [atomo({ id: "a1" })] }, vistos);
+    const segunda = respostaDaBusca({ achados: [atomo({ id: "a1" })] }, vistos);
+
+    expect(primeira).toContain("terminei com a Isinha ontem");
+    expect(segunda).toBe("[id a1] já mostrado acima");
+  });
+
+  it("a memória atravessa as duas ferramentas", () => {
+    const vistos = new Set<string>();
+    respostaDaBusca({ achados: [atomo({ id: "a1" })] }, vistos);
+    const historico = respostaDoHistorico(
+      {
+        achados: [atomo({ id: "a1" }), atomo({ id: "a2", texto: "voltei a falar com ela" })],
+        elos: [{ de: "a2", para: "a1", tipo: "ATUALIZA", motivo: "mudou", confianca: 0.8 }],
+      },
+      vistos,
+    );
+
+    expect(historico).toContain("[id a1] já mostrado acima");
+    expect(historico).toContain("voltei a falar com ela");
+    // A cadeia continua legível: colapsar o texto não apaga a relação.
+    expect(historico).toContain("a2 ATUALIZA a1 — mudou");
+  });
+
+  it("sem conjunto nenhum, nada colapsa", () => {
+    const texto = respostaDaBusca({ achados: [atomo({ id: "a1" }), atomo({ id: "a1" })] });
+    expect(texto).not.toContain("já mostrado acima");
+  });
+
+  it("o (i) continua com tudo — quem corta é só o que volta ao modelo", async () => {
+    consulta.mockResolvedValue([
+      { id: "a1", texto: "terminei com a Isinha", tipo: "FATO", valido_em: "2026-07-02", sobre: [], cita: [] },
+    ] as never);
+    const passos: PassoDeFerramenta[] = [];
+    const f = ferramentas((p) => passos.push(p), new Set<string>());
+
+    const primeira = await f.buscar_atomos.execute!({ texto: "isinha" } as never, {} as never);
+    const segunda = await f.buscar_atomos.execute!({ texto: "término" } as never, {} as never);
+
+    expect(String(primeira)).toContain("terminei com a Isinha");
+    expect(String(segunda)).toBe("[id a1] já mostrado acima");
+    // O rastro completo é a promessa da spec: os dois passos guardam o achado.
+    expect(passos).toHaveLength(2);
+    expect(passos[1].achados[0].texto).toBe("terminei com a Isinha");
+  });
+
+  it("a memória morre com a resposta: outra pergunta vê o átomo inteiro de novo", async () => {
+    consulta.mockResolvedValue([
+      { id: "a1", texto: "terminei com a Isinha", tipo: "FATO", valido_em: "2026-07-02", sobre: [], cita: [] },
+    ] as never);
+    const devolvido: string[] = [];
+    chamar.mockImplementation((async (opcoes: {
+      tools: Record<string, { execute: (a: unknown, b: unknown) => Promise<unknown> }>;
+    }) => {
+      devolvido.push(String(await opcoes.tools.buscar_atomos.execute({ texto: "isinha" }, {})));
+      return respostaDoModelo("pronto");
+    }) as never);
+
+    await responder([{ papel: "eu", texto: "x", criado_em: "" }]);
+    await responder([{ papel: "eu", texto: "y", criado_em: "" }]);
+
+    expect(devolvido).toHaveLength(2);
+    for (const texto of devolvido) expect(texto).toContain("terminei com a Isinha");
+  });
+});
+
 describe("as ferramentas prontas para o SDK", () => {
   /**
    * Ferramenta que estoura derruba o loop inteiro e a pergunta fica sem

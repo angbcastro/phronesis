@@ -73,11 +73,22 @@ button { font: inherit; color: inherit; cursor: pointer; }
    assim nada aqui depende de altura fixa, e o canvas herda a medida do palco. */
 .palco {
   position: relative;
+  /* Acima da caixa do chat (5) e abaixo da marca, da engrenagem e da gaveta
+     (20+). Na regra base, e não só com o chat aberto: indo e voltando a bola
+     atravessa a faixa do painel, e um `z-index` que some junto com a classe
+     esconderia metade do caminho de volta atrás dele. */
+  z-index: 6;
   width: 100%;
   display: grid;
   place-items: center;
   /* Folga vertical para o halo respirar sem ser cortado pelo overflow. */
   padding: 1.5rem 0;
+  /* Aqui, e não em `.tela.com-chat .palco`: transição declarada só no estado de
+     destino some junto com a classe, e o caminho de volta vira um corte. Ver o
+     bloco do círculo minimizado, no fim do arquivo. */
+  transition:
+    transform 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 250ms ease;
 }
 .palco > * { grid-area: 1 / 1; }
 
@@ -138,7 +149,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-weight: 500;
   line-height: 1.35;
   padding: 1.5rem;
-  transition: transform 120ms ease, opacity 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    transform 120ms ease,
+    color 200ms ease,
+    opacity 400ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .botao-gravar:active { transform: scale(0.97); }
 
@@ -1461,73 +1475,133 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 
 /* ─────────────────────────── o chat (slice 6) ───────────────────────────
-   A bolha e o painel são o mesmo elemento: uma `<section class="chat">` que
+   A barra e o painel são o mesmo elemento: uma `<section class="chat">` que
    cresce. É a mesma ideia do `BotaoGravar` — não trocar de árvore entre dois
    estados é o que permite a transição existir em vez de um corte.
 
-   Fechada, ela é periférica e semitransparente: fica no canto de baixo à
-   direita, longe do círculo, e não compete com ele. Aberta, ela toma o centro
-   e o círculo é que minimiza (ver `.tela.com-chat`, mais abaixo).
+   Fechada, ela é periférica e semitransparente: uma barra discreta no rodapé,
+   centralizada, com `...` de convite. Era uma bolha de balão no canto de baixo
+   à direita, e o balão lia como símbolo de suporte em vez de lugar de
+   perguntar. Aberta, ela toma o centro e o círculo é que minimiza (ver
+   `.tela.com-chat`, mais abaixo).
+
+   **A transição é de geometria, e ela mora aqui, na regra base.** Um
+   `@keyframes` de entrada, que era o que existia, não tem simétrico: fechar
+   virava um corte. Os quatro `inset`, o `max-width` e o raio interpolam, então
+   a mesma declaração serve para os dois sentidos — e é por isso que a barra
+   fechada declara um `top` numérico em vez de `auto`, que não interpolaria.
+
+   Fundo, borda e opacidade ficam na `.chat` e não nos filhos: é a caixa que
+   muda de tamanho, e são eles que a fazem parecer a mesma caixa o tempo todo.
 
    Ela nunca é montada durante a gravação — quem decide isso é a `Gravacao`, no
    mesmo ramo que já esconde a `Gestao`. Aqui não há regra de visibilidade
    nenhuma, de propósito: a tela de gravar não pode depender de CSS para não
    mostrar o que não deve existir. */
 .chat {
+  --recuo-lateral: max(0.75rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  --recuo-baixo: max(1.25rem, env(safe-area-inset-bottom));
+  --altura-barra: 44px;
+
   position: fixed;
   z-index: 5;
-  right: max(1.25rem, env(safe-area-inset-right));
-  bottom: max(1.25rem, env(safe-area-inset-bottom));
-}
-
-.bolha {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: 1px solid var(--linha);
-  background: var(--fundo-alto);
-  display: grid;
-  place-items: center;
-  opacity: 0.45;
-  transition: opacity 250ms ease, transform 120ms ease;
-}
-.bolha svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: var(--texto-fraco);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.bolha:hover { opacity: 1; }
-.bolha:hover svg { stroke: var(--texto); }
-.bolha:active { transform: scale(0.92); }
-.bolha:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
-
-/* Aberta, a caixa deixa de morar no canto: ela é o centro da tela, com o
-   círculo minimizado por cima dela e a engrenagem por baixo. O `top` começa
-   abaixo do círculo minimizado — os dois convivem, nenhum cobre o outro. */
-.chat.aberto {
-  right: max(0.75rem, env(safe-area-inset-right));
-  bottom: max(0.75rem, env(safe-area-inset-bottom));
-  left: max(0.75rem, env(safe-area-inset-left));
-  top: 8.5rem;
-  max-width: 34rem;
+  left: var(--recuo-lateral);
+  right: var(--recuo-lateral);
+  bottom: var(--recuo-baixo);
+  top: calc(100dvh - var(--recuo-baixo) - var(--altura-barra));
+  max-width: 22rem;
   margin: 0 auto;
+
+  background: var(--fundo-alto);
+  border: 1px solid var(--linha);
+  border-radius: 999px;
+  overflow: hidden;
+  opacity: 0.45;
+
+  transition:
+    top 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    bottom 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    left 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    right 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    max-width 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-radius 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 250ms ease;
+}
+.chat:hover { opacity: 1; }
+.chat:focus-within { opacity: 1; }
+
+/* Os dois conteúdos ocupam a caixa inteira, e nenhum deles decide o tamanho
+   dela: durante a troca os dois estão montados ao mesmo tempo, e um deles em
+   fluxo esticaria a caixa no meio da transição. */
+.chat > .barra,
+.chat > .painel {
+  position: absolute;
+  inset: 0;
+}
+
+/* A barra: um botão com cara de campo. Não é `<input>` de propósito — ela abre
+   o painel e o foco vai para o campo de dentro; um campo que não recebesse o
+   que eu digitasse mentiria. */
+.barra {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--texto-fraco);
+  animation: surgir-conteudo 200ms ease both;
+}
+.barra .dica {
+  font-size: 1rem;
+  letter-spacing: 0.15em;
+  line-height: 1;
+  /* Os três pontos assentam no meio da linha em vez de na base: sem isto a
+     barra parece ter mais folga em cima do que embaixo. */
+  transform: translateY(-0.15em);
+}
+.barra:hover { color: var(--texto); }
+.barra:focus-visible { outline: 2px solid var(--acento); outline-offset: -3px; }
+
+/* O painel: a coluna que era a própria `.chat.aberto` antes de a caixa passar a
+   ser só a caixa. Ele entra com um atraso curto — a caixa cresce primeiro, e o
+   conteúdo aparece já no tamanho certo em vez de esticado junto. */
+.painel {
   display: flex;
   flex-direction: column;
-  background: var(--fundo-alto);
-  border: 1px solid var(--linha);
-  border-radius: var(--raio);
-  overflow: hidden;
-  transform-origin: bottom right;
-  animation: abrir-chat 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: surgir-conteudo 180ms ease 90ms both;
+}
+/* Saindo: o painel continua montado por 320 ms (ver `DURACAO_CAIXA` em
+   `Chat.tsx`) para a caixa não encolher vazia. `inert` já o tirou do caminho do
+   teclado; aqui ele só apaga. */
+.chat:not(.aberto) > .painel {
+  animation: sumir-conteudo 140ms ease both;
+  pointer-events: none;
 }
 
-@keyframes abrir-chat {
-  from { opacity: 0; transform: scale(0.9) translateY(12px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+@keyframes surgir-conteudo {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes sumir-conteudo {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+
+/* Aberta, a caixa deixa de morar no rodapé: ela é o centro da tela, com o
+   círculo minimizado por cima dela e a engrenagem por baixo. O `top` começa
+   abaixo do círculo minimizado — os dois convivem, nenhum cobre o outro.
+
+   Só o que **muda** mora aqui; o resto (fundo, borda, os quatro `inset`, a
+   transição) já está na regra base, e é o que faz esta declaração ser o destino
+   de uma animação em vez de uma segunda caixa. */
+.chat.aberto {
+  top: 8.5rem;
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  max-width: 34rem;
+  border-radius: var(--raio);
+  opacity: 1;
 }
 
 .chat.aberto header {
@@ -1759,22 +1833,54 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* Com o chat aberto o círculo não sai da tela: ele encolhe e sobe. Continua
    sendo o mesmo elemento, no mesmo lugar da pilha — o que muda é a medida e a
-   presença. O primeiro toque nele fecha o chat; o segundo grava. */
-.tela.com-chat {
-  --circulo: 84px;
-  justify-content: flex-start;
-  gap: 0.75rem;
-  padding-top: 1.5rem;
+   presença. O primeiro toque nele fecha o chat; o segundo grava.
+
+   **Ele se move por `transform`, e não por layout.** A primeira versão trocava
+   `--circulo` de `min(72vw, 264px)` para `84px` e virava `justify-content` de
+   `center` para `flex-start`: propriedade personalizada não registrada não
+   interpola, e `justify-content`, `gap` e `padding` não interpolam nunca — a
+   bola não subia, ela pulava. `translateY` e `scale` interpolam de graça, rodam
+   no compositor e, o que mais importa aqui, valem nos **dois** sentidos.
+
+   Por isso a transição está na regra base do `.palco` e não nesta: declarada
+   aqui dentro, ela desapareceria junto com a classe e a volta seria instantânea
+   — que era exatamente o defeito que se via ao fechar o chat.
+
+   Os dois números:
+
+   `scale(0.32)` reproduz os 84px de antes em qualquer largura. `--circulo` é
+   `min(72vw, 264px)`, ou seja 259–264px em qualquer aparelho real, e 32% disso
+   dá 83–84px. Um fator vale aqui porque o CSS não divide comprimento por
+   comprimento.
+
+   `translateY(calc(3.75rem - 50dvh))` põe o centro da bola a 3,75rem do topo.
+   O ponto de partida é 50dvh exato, e não estimado: a `.tela` é `min-height:
+   100dvh` com padding vertical simétrico e `justify-content: center`, e o
+   `.palco` é o único filho em fluxo. Com raio de ~42px, a borda de baixo para
+   em ~6,4rem — acima do `top: 8.5rem` do painel, que é o que faz os dois
+   conviverem sem um cobrir o outro. */
+.tela.com-chat .palco {
+  transform: translateY(calc(3.75rem - 50dvh)) scale(0.32);
+  opacity: 0.45;
 }
-.tela.com-chat .palco { padding: 0.25rem 0; opacity: 0.45; transition: opacity 250ms ease; }
 .tela.com-chat .palco:hover { opacity: 0.8; }
-/* O rótulo não cabe em 84px, e encolhê-lo daria um texto ilegível fingindo que
-   cabe. Ele continua no DOM — é o nome acessível do botão —, só não é pintado. */
-.tela.com-chat .botao-gravar { font-size: 0; padding: 0; }
-.tela.com-chat .brilho { animation: none; box-shadow: 0 0 12px var(--glow); }
+/* O rótulo não cabe na bola minimizada, e encolhê-lo daria um texto ilegível
+   fingindo que cabe. Ele continua no DOM — é o nome acessível do botão —, só
+   não é pintado. `color: transparent` e não `font-size: 0`: a cor interpola, o
+   tamanho de fonte aqui seria mais um corte. */
+.tela.com-chat .botao-gravar { color: transparent; }
 .tela.com-chat .engrenagem { opacity: 0.25; }
 
+/* O `.brilho` continua respirando. Desligar a animação era um corte no meio da
+   escala dela — e a 32% de tamanho a respiração não se vê. */
+
 @media (prefers-reduced-motion: reduce) {
-  .chat.aberto { animation-duration: 1ms; }
+  .chat { transition-duration: 1ms; }
+  .chat > .barra,
+  .chat > .painel {
+    animation-duration: 1ms;
+    animation-delay: 0s;
+  }
+  .palco { transition-duration: 1ms; }
   .chat .progresso .pensando { animation: none; opacity: 0.75; }
 }

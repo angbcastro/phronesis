@@ -64,7 +64,7 @@ import {
 } from "./tipos";
 
 /** Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7). */
-export const PROMPT_VERSION_CHAT = "chat-1";
+export const PROMPT_VERSION_CHAT = "chat-2";
 
 export class ChatError extends Error {
   constructor(message: string) {
@@ -86,8 +86,17 @@ export class ChatError extends Error {
  */
 export const TETO_FERRAMENTAS = 8;
 
-/** Quantos átomos uma busca devolve. Doze cabem no prompt e na tela do (i). */
-export const TETO_ATOMOS = 12;
+/**
+ * Quantos átomos uma busca devolve.
+ *
+ * **Oito, e eram doze.** Doze cabiam no prompt e na tela do (i) — a conta que
+ * sobrou de fora é a outra: doze vezes o teto de oito chamadas são quase cem
+ * trechos num contexto só, e a primeira pergunta vaga de verdade ("quais são
+ * minhas prioridades") devolveu exatamente isso, uma resposta que listava o
+ * diário inteiro. Oito cabem numa resposta que se lê sem rolar, e o orçamento de
+ * chamadas encadeadas continua o mesmo.
+ */
+export const TETO_ATOMOS = 8;
 
 /**
  * Quantos vizinhos o índice vetorial traz antes dos filtros cortarem.
@@ -101,13 +110,23 @@ export const K_BUSCA = 48;
 /**
  * O piso de similaridade da busca por texto.
  *
- * Mais baixo que o `PISO_CONFRONTO` (0,45) e que os pisos da resolução, e é de
- * propósito: lá o custo de um candidato ruim é uma relação errada gravada
- * sozinha no grafo; aqui é uma linha a mais que o modelo lê e descarta, com a
- * pergunta inteira à vista. Numa leitura, perder o átomo certo custa mais que
- * carregar um errado.
+ * **Era 0,30, e 0,30 não cortava nada.** O argumento original era que numa
+ * leitura o átomo errado custa só uma linha que o modelo descarta — e a
+ * primeira pergunta vaga de verdade mostrou que não: linha errada não é
+ * descartada, ela **enterra** o acerto no meio de uma resposta longa, e com um
+ * ranking quase plano os primeiros colocados viram sorteio.
+ *
+ * Quase plano por medida, e a medida já estava no repositório: `confronto.ts`
+ * registra que neste diário o par de átomos **menos** parecido de uma varredura
+ * inteira dava 0,728, e que o piso de 0,45 "nunca cortou nada". Os átomos daqui
+ * vivem alto no espaço de cosseno; contra uma pergunta abstrata, 0,30 aprova o
+ * corpus.
+ *
+ * 0,45 alinha com `PISO_CONFRONTO` e `PISO_VIZINHOS` — um número a menos para
+ * calibrar. Quem diz que ainda está frouxo é a `similaridade` que o (i) já
+ * mostra em cada achado.
  */
-export const PISO_BUSCA = 0.3;
+export const PISO_BUSCA = 0.45;
 
 /**
  * Quantos degraus `historico_do_atomo` anda a partir do átomo dado.
@@ -143,13 +162,15 @@ buscar_atomos — procura trechos registrados. Todos os parâmetros são opciona
   desde/ate  datas AAAA-MM-DD.
 historico_do_atomo — dado o id de um trecho, devolve a cadeia de trechos ligados a ele no tempo: o que o atualizou, o que o contradisse, o que o confirmou, o que o complementou. É o que responde "como isso mudou".
 
-COMO TRABALHAR
+COMO BUSCAR
 Busque antes de responder. Você não sabe nada sobre esta pessoa que não tenha vindo de uma busca.
 Encadeie quando a pergunta pedir. "Como eu estava depois que terminei com a Isinha" são duas buscas: primeiro achar quando foi o término, depois buscar o período seguinte. Uma data que você não tem, você procura — não estima.
-Uma busca vazia é resposta. Se voltou nada, tente outro caminho (outra palavra, sem filtro de tipo, período mais largo) antes de desistir; e se continuar vazio, diga que não encontrou.
-Pare quando tiver o suficiente. Buscar mais do que precisa é lento e não melhora a resposta.
+Pergunta vaga se estreita, não se varre. "Minhas prioridades", "como eu estou", "no que eu ando mexendo" são perguntas sobre agora: ponha um desde nas últimas semanas e escolha os tipos que cabem, em vez de varrer o diário inteiro. Diga na resposta qual recorte você usou, para eu poder pedir outro.
+Alargar é só para o vazio. Se a busca voltou NADA, tente outro caminho — outra palavra, sem filtro de tipo, período mais largo. Se ela voltou pouco, pouco é a resposta: alargar aí só traz assunto de outro lugar.
+Pare quando tiver o suficiente. Buscar mais do que precisa é lento e enche a resposta de material que não responde nada.
 
 COMO RESPONDER
+Nem tudo que a busca trouxe entra na resposta. A busca é um filtro grosso: ela devolve o que se parece com o que você pediu, não o que responde à pergunta. O normal é descartar a maior parte do que voltou. Cite no máximo cinco trechos; se sobrou coisa boa de fora, diga que há mais e ofereça continuar, em vez de listar tudo.
 Você é um bibliotecário atento, não um coach. Devolve o que está registrado; não dá conselho que ninguém pediu, não anima, não interpreta sentimento além do que o texto diz.
 Responda em português, na segunda pessoa ("você"), em prosa curta. Sem lista com marcador quando duas frases bastam.
 Cite as datas. "Em 12 de agosto você escreveu que..." vale mais que "você já disse que...".
@@ -440,14 +461,34 @@ export function linhaDeAtomo(a: AtomoAchado): string {
  * `historico_do_atomo` em seguida. Um envelope JSON gastaria tokens em chaves
  * que ninguém usa.
  */
-export function respostaDaBusca(r: ResultadoDeBusca): string {
-  if (r.achados.length === 0) return r.aviso ?? "nenhum trecho encontrado.";
-  return r.achados.map(linhaDeAtomo).join("\n");
+/**
+ * Uma linha de átomo, ou a lembrança dela — se `vistos` disser que o modelo já
+ * a leu neste turno.
+ *
+ * **Colapsar, e não omitir.** Um átomo que duas buscas alcançam é informação: a
+ * segunda busca *de fato* o achou, e sumir com ele faria o modelo ler a segunda
+ * como mais pobre do que foi — e buscar de novo, que é justamente o que o teto
+ * de oito chamadas não tem para gastar. O que sai é só o texto, que ele já leu
+ * inteiro alguns milhares de tokens acima.
+ *
+ * Sem `vistos` nada colapsa: é o caminho de quem chama a função para conferir
+ * uma busca isolada.
+ */
+function umaVezSo(a: AtomoAchado, vistos?: Set<string>): string {
+  if (!vistos) return linhaDeAtomo(a);
+  if (vistos.has(a.id)) return `[id ${a.id}] já mostrado acima`;
+  vistos.add(a.id);
+  return linhaDeAtomo(a);
 }
 
-export function respostaDoHistorico(r: ResultadoDeHistorico): string {
+export function respostaDaBusca(r: ResultadoDeBusca, vistos?: Set<string>): string {
   if (r.achados.length === 0) return r.aviso ?? "nenhum trecho encontrado.";
-  const trechos = r.achados.map(linhaDeAtomo).join("\n");
+  return r.achados.map((a) => umaVezSo(a, vistos)).join("\n");
+}
+
+export function respostaDoHistorico(r: ResultadoDeHistorico, vistos?: Set<string>): string {
+  if (r.achados.length === 0) return r.aviso ?? "nenhum trecho encontrado.";
+  const trechos = r.achados.map((a) => umaVezSo(a, vistos)).join("\n");
   const elos =
     r.elos.length === 0
       ? (r.aviso ?? "sem relação registrada entre eles.")
@@ -535,8 +576,16 @@ export interface Resposta {
  * a pergunta fica sem resposta; ferramenta que devolve "não consegui" deixa o
  * modelo tentar outro caminho — que é o que uma pessoa faria. O erro vai para o
  * rastro do (i) do mesmo jeito, então nada fica escondido.
+ *
+ * **`vistos` é a memória do turno**, e ela é de quem monta as ferramentas, não
+ * de dentro delas: o conjunto atravessa as duas (um átomo que a busca já
+ * mostrou não volta inteiro no histórico, e vice-versa) e morre junto com a
+ * tentativa. Quem o cria é `responder`, pelo mesmo motivo que zera o rastro.
  */
-export function ferramentas(aoPasso?: (p: PassoDeFerramenta) => void) {
+export function ferramentas(
+  aoPasso?: (p: PassoDeFerramenta) => void,
+  vistos?: Set<string>,
+) {
   const anunciar = (p: PassoDeFerramenta) => {
     try {
       aoPasso?.(p);
@@ -561,7 +610,7 @@ export function ferramentas(aoPasso?: (p: PassoDeFerramenta) => void) {
             achados: r.achados.map(paraRastro),
             ...(r.aviso ? { erro: r.aviso } : {}),
           });
-          return respostaDaBusca(r);
+          return respostaDaBusca(r, vistos);
         } catch (e) {
           const erro = e instanceof Error ? e.message : String(e);
           console.error("[chat] buscar_atomos falhou:", e);
@@ -586,7 +635,7 @@ export function ferramentas(aoPasso?: (p: PassoDeFerramenta) => void) {
             elos: r.elos,
             ...(r.aviso ? { erro: r.aviso } : {}),
           });
-          return respostaDoHistorico(r);
+          return respostaDoHistorico(r, vistos);
         } catch (e) {
           const erro = e instanceof Error ? e.message : String(e);
           console.error("[chat] historico_do_atomo falhou:", e);
@@ -642,29 +691,42 @@ export async function responder(
   // `comEsperaDeLimite` repetir a chamada inteira por rate limit, as
   // ferramentas rodam de novo e o `aoPasso` anunciaria os dois conjuntos.
   const rastro: PassoDeFerramenta[] = [];
-  const ferr = ferramentas((p) => {
-    rastro.push(p);
-    aoPasso?.(p);
-  });
+
+  /**
+   * As ferramentas de **uma tentativa** — rastro zerado e memória de vistos
+   * nova.
+   *
+   * Montar por tentativa, e não uma vez fora do laço, é pelo mesmo motivo que o
+   * `rastro.length = 0` já existia aqui: `comEsperaDeLimite` repete a chamada
+   * inteira por rate limit, e um conjunto de vistos sobrevivente colapsaria, na
+   * tentativa boa, exatamente o átomo que só a tentativa perdida mostrou — uma
+   * resposta que cita "já mostrado acima" sem nada acima.
+   */
+  const ferramentasDaTentativa = () => {
+    rastro.length = 0;
+    return ferramentas((p) => {
+      rastro.push(p);
+      aoPasso?.(p);
+    }, new Set<string>());
+  };
 
   const comum = {
     model: meu.modelo, // string de propósito: id em string sai pelo Gateway (regra 8)
     system,
-    tools: ferr,
     temperature: 0,
     maxRetries: 0,
     ...(sinal ? { abortSignal: sinal } : {}),
   };
 
-  const r = await comEsperaDeLimite(`chat ${meu.modelo}`, () => {
-    rastro.length = 0;
-    return generateText({
+  const r = await comEsperaDeLimite(`chat ${meu.modelo}`, () =>
+    generateText({
       ...comum,
+      tools: ferramentasDaTentativa(),
       messages,
       maxOutputTokens: MAX_TOKENS_SAIDA,
       stopWhen: ({ steps }) => chamadasFeitas(steps) >= TETO_FERRAMENTAS,
-    });
-  });
+    }),
+  );
 
   let texto = textoDaResposta(r).trim();
   let ultima: { response?: { modelId?: string } } = r;
@@ -678,6 +740,11 @@ export async function responder(
     const sintese = await comEsperaDeLimite(`chat síntese ${meu.modelo}`, () =>
       generateText({
         ...comum,
+        // As definições ainda são necessárias para o SDK reler os resultados de
+        // ferramenta que já estão no histórico — mas estas nunca rodam
+        // (`toolChoice: "none"`), e por isso não zeram o rastro nem ganham
+        // memória de vistos.
+        tools: ferramentas(),
         messages: [...messages, ...r.responseMessages],
         toolChoice: "none",
         maxOutputTokens: MAX_TOKENS_SAIDA * FATOR_DE_FOLGA,
