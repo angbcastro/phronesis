@@ -385,7 +385,8 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                     lugares da revisão),
                   Leitura (a transcrição literal — porta de serviço),
                   Sessoes (lista de sessões, o apagar de dois toques — e a cor
-                    que diz o que falta revisar), Entidades (higiene do grafo),
+                    que diz o que falta revisar), Entidades (higiene do grafo: a
+                    lista buscável, a ficha em painel e a fusão à mão),
                   Confronto (estado da varredura de relações, rodar e desfazer),
                   Chat (a barra, o painel, a lista de conversas, o progresso por
                     passo e o (i) com o rastro — nasce dentro da `Gravacao`),
@@ -4592,7 +4593,7 @@ número não vai bater com a tela.
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
-| `/entidades` | `Entidades` | o que está no grafo; fundir duplicata, renomear, marcar a ficha oficial — e a **ficha** de cada uma: resumo, grafias e os três campos de perfil. Desde a 4.12: checkbox por linha, "selecionar todas", o botão que enfileira o lote, o estado da fila em cada linha e o desfazer |
+| `/entidades` | `Entidades` | o que está no grafo, buscável por nome e por grafia, filtrável por tipo e por "sem resumo", em ordem de mais falada. Cada linha é um nome e uma linha de meta; tocá-la abre a **ficha** num painel de tela cheia — tipo, renomear, canônica, resumo, grafias, os três campos de perfil, o enriquecer/desfazer e **fundir com…**, que funde duas entidades quaisquer à mão. O lote é modo: "enriquecer" acende os checkboxes e uma barra grudada no topo |
 | `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
 | `/agentes` | `Agentes` | o fluxo desenhado — os doze agentes, os dados entre eles e o único nó humano; clicar numa caixa abre o prompt, o modelo e (na resolução e no confronto) o limiar daquele agente |
 | `/confronto` | `Confronto` | quantos átomos esperam a varredura, o botão "rodar agora", e os últimos átomos tocados com as relações que ganharam e o desfazer por linha (slice 5) |
@@ -4901,14 +4902,72 @@ acrescentar na fronteira de segurança, e nenhum salto de layout. O stack do
 sistema, que era a fonte do `body`, virou `--sistema` e é o fallback das duas.
 
 `/entidades` é a única janela para dentro do grafo — até ela existir, saber o
-que tinha lá dentro exigia rodar Cypher por fora. Cada linha traz um `select` de
-tipo (editável), um botão de renomear e um botão **perfil**, que abre os três
-campos da migration 005; no topo, um campo para semear um nome novo. Procurar
-duplicatas e rascunhar um perfil são botões, não coisas que acontecem ao abrir: a
-camada de string é de graça, a que julga e a que escreve são chamadas de modelo,
-e manutenção que cobra sozinha vira cobrança.
+que tinha lá dentro exigia rodar Cypher por fora. Procurar duplicatas e rascunhar
+um perfil são botões, não coisas que acontecem ao abrir: a camada de string é de
+graça, a que julga e a que escreve são chamadas de modelo, e manutenção que cobra
+sozinha vira cobrança.
 Ela não é painel da revisão de propósito — a revisão só vê as entidades da
 sessão atual, e o orçamento dela é 60 s (visão §8).
+
+#### A linha, a ficha e a fusão à mão
+
+Cada linha carregava **nove controles**: a caixa do lote, o nome, a estrela de
+canônica, uma meta de até seis fatos, o `select` de tipo, renomear, canônica e
+ficha — num `flex` sem `wrap`. A ficha abria como acordeão dentro da própria
+linha, empurrando a lista para baixo. Num aparelho de 390 px, que é onde este app
+vive, nada disso se lê nem se acerta com o dedo. O que existe agora:
+
+| Peça | Como é | Por quê |
+|---|---|---|
+| **a linha** | um nome (com a estrela) e uma linha de meta — átomos, sessões, "sem resumo" e o selo da fila. A linha inteira é o botão | um alvo só, grande, e nenhuma decisão a tomar antes de tocar |
+| **a ficha** | painel `position: fixed` entrando pela **direita**, tela cheia no celular (`min(100vw, 34rem)`), fechando no `←`, no véu e no `Esc` | é o detalhe do que eu acabei de tocar, não navegação — mesma razão e mesmo lado do `.editor-agente` |
+| **o topo** | busca, filtro de tipo e "sem resumo" | a lista vem inteira do grafo, e sem busca achar uma entidade é rolar |
+| **o lote** | "enriquecer" é um **modo**: só nele existem checkboxes, e a barra de "selecionar todas" fica `sticky` | os checkboxes eram permanentes, e uma coluna deles em toda linha cobra uma decisão que eu quase nunca tomo |
+| **fundir** | `fundir com…` dentro da ficha: escolher, comparar lado a lado, escolher quem sobrevive | a rota sempre aceitou qualquer par; era a tela que só sabia propor o que a distância de string tinha aproximado |
+
+**A busca é a de `src/lib/catalogo.ts`, e não uma segunda.** `peneirar()` chama
+`montarCatalogo` + `buscar` e depois reencontra o objeto inteiro por
+`nome_normalizado` — o catálogo carrega só o subconjunto que a revisão usa.
+Escrever um `filter` por nome aqui criaria uma segunda regra de busca para
+divergir da primeira, e perderia o que aquela tem de específico: ela acha por
+trecho no meio da palavra e **atravessa alias**, que é o que faz digitar a grafia
+antiga cair na vencedora da fusão.
+
+**Sem termo a ordem é a de mais falada** (átomos decrescente, desempate pelo
+nome), e não a que a rota devolve — `canonico DESC, sessoes DESC, nome` é boa
+para desempate de agente e ruim para o olho. **Com termo, quem manda é a
+relevância** de `porRelevancia` (prefixo antes de trecho no meio): reordenar por
+volume ali jogaria o casamento quase exato para o meio da lista.
+
+**A barra do lote gruda em `top: calc(3.25rem + env(safe-area-inset-top))`, e não
+em `0`.** A `.marca` é `fixed` em `0.6rem` com 40 px de altura; uma barra
+encostada no topo passaria por baixo dela e esconderia o caminho de volta atrás
+do controle do lote. E "selecionar todas" marca **o que está na lista agora**, não
+o grafo inteiro: com um filtro ligado, marcar o que não está à vista é surpresa,
+e o que sai daí é uma conta de modelo.
+
+**A fusão à mão custa três passos de propósito.** Fundir não tem desfazer
+(`src/lib/fusao.ts`), então a tela escolhe com quem, compara as duas lado a lado
+— nome, tipo, átomos, sessões, perfil e resumo — e só então pergunta quem
+sobrevive. A comparação diz em texto as duas coisas que não se adivinham da tela:
+que isto é irreversível, e que **o resumo e o perfil da perdedora não são
+copiados** — só as arestas `:SOBRE`, `:MENCIONA` e `:PERFILA` migram. Sem isso eu
+escolho o vencedor errado e perco a ficha boa sem saber que perdi. Depois de
+fundir, o painel **reaponta para a vencedora**: a perdedora sai da listagem no
+mesmo instante (`status='fundida'`), e uma ficha aberta num nó que sumiu mentiria
+até eu fechá-la.
+
+**A ficha é a terceira gaveta desta forma** — `.gaveta` (gestão, pela esquerda),
+`.editor-agente` (agentes, pela direita) e `.ficha`. As três repetem a mesma
+geometria, a mesma curva de 220 ms, o mesmo `env(safe-area-inset-*)` e o mesmo
+`.veu` (esse já é compartilhado). **Consolidá-las numa `.gaveta-lateral` é dívida
+conhecida**, e não foi feita aqui porque mexeria em `Gestao.tsx` e em
+`Agentes.tsx`, fora do escopo desta mudança.
+
+O painel fica **montado sempre**, com a classe `.aberta` ligando e desligando, e
+o React segura o conteúdo por `DURACAO_FICHA_MS` (220 ms, o mesmo número da
+transição) depois de fechar. Desmontar junto com a classe esvaziaria a caixa no
+meio do caminho de volta — é o mesmo erro que o `.chat` cometeu e consertou.
 
 **A volta ao início é a marca, no canto superior esquerdo.** `Marca` mora no
 layout raiz — nenhuma tela nova nasce sem caminho de volta — e é ela que decide
@@ -5088,12 +5147,14 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 13. Verificação
 
-- `pnpm test` — **55 arquivos, 1094 testes**, sem credencial e sem rede. A lista
+- `pnpm test` — **56 arquivos, 1115 testes**, sem credencial e sem rede. A lista
   abaixo comenta os que valem uma explicação; a cobertura inteira se lê em
   `tests/`. Os que não têm bullet próprio cobrem a lógica pura da slice 1
   (chaves, manifest, estados, offsets, vocabulário, backoff, retry de rede,
   migrate) e, das fatias seguintes, a escrita no grafo e as telas:
-  `atomos`, `confirmar`, `entidades`, `entidades-grafo`, `revisao`,
+  `atomos`, `confirmar`, `entidades`, `entidades-grafo`, `entidades-tela`
+  (o que a lista mostra e em que ordem, e que a própria entidade nunca aparece
+  entre as candidatas a fundir com ela mesma), `revisao`,
   `calibracao-tela`, `catalogo`, `texto`, `transcricao`, `modelos`, `extracao`
   (o parser, o envelope e a normalização de tipo — **não** a qualidade da
   extração, que é o bullet mais abaixo) e `pipeline-extracao`.
@@ -5284,6 +5345,24 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
+- **A busca de `/entidades` é no cliente, sobre a lista inteira.**
+  `GET /api/entidades` não tem `LIMIT` e nunca teve; `peneirar()` filtra em
+  memória o que a rota já mandou. É de graça e instantâneo enquanto o grafo
+  couber numa resposta — e o dia em que não couber, a saída é a mesma que §8 já
+  registra para o catálogo: um índice full-text no Neo4j, e a busca passa a ser
+  uma rota. O sinal de que chegou a hora é a própria tela demorando a abrir.
+- **`.quando` era uma classe global com dois significados** — o selo do painel
+  de agentes (0,6 rem, caixa baixa, borda pílula) e o nome da sessão e da
+  entidade. `.lista-sessoes .quando` tinha especificidade maior mas não
+  redeclarava nenhuma das três propriedades, então todo nome próprio de
+  `/sessoes` e `/entidades` saía a 0,6 rem dentro de uma pílula. **Resolvido**:
+  a regra do selo passou a ser `.agentes .quando, .editor-agente .quando`, e
+  `.voltar` — que era global com `margin-top: 2rem` e ia vazar para o `←` da
+  ficha — virou `.leitura .voltar, .revisao .voltar` na mesma passada. O limite
+  que fica é o de fundo: `globals.css` é uma folha global sem escopo por
+  componente, as duas colisões achadas foram achadas **lendo**, e nada impede a
+  próxima além de escopar por hábito. Um teste não pega isto: o que mede
+  cascata é o navegador.
 - **Bloco vazio por defeito do provedor é indistinguível de silêncio** (§5.4).
   Desde 09/09 um bloco sem transcrição vira bloco vazio em vez de derrubar a
   sessão, e um tropeço do STT que devolva nada passaria por pausa. O único sinal

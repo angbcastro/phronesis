@@ -27,6 +27,31 @@
  *             na segunda passada, para os candidatos de uma menção em dúvida.
  *             `fizemos juntos` continua sendo o mais forte dos três
  *
+ * ## A forma da tela, e por que ela mudou
+ *
+ * Era uma lista em que **cada linha carregava nove controles** — caixa do lote,
+ * nome, estrela, uma meta de até seis fatos, o `select` de tipo, renomear,
+ * canônica e ficha — num `flex` sem `wrap`, e a ficha abria como acordeão
+ * empurrando a lista para baixo. Num aparelho de 390 px, que é onde este app
+ * vive, nada disso se acerta com o dedo. Hoje:
+ *
+ * - **a linha é um nome e uma linha de meta**, e a linha inteira é o alvo;
+ * - **a ficha é um painel de tela cheia**, entrando pela direita como o editor
+ *   do painel de agentes — não é navegação, é o detalhe do que eu acabei de
+ *   tocar. Fecha no `←`, no véu e no `Esc`, e o foco volta para a linha;
+ * - **buscar, filtrar por tipo e esconder quem já tem resumo** ficam no topo. A
+ *   busca é a mesma de `catalogo.ts` — acha por trecho e atravessa alias —, e
+ *   sem termo a ordem é a de **mais falada**, não a alfabética;
+ * - **fundir deixou de depender do agente.** A busca de duplicatas continua
+ *   existindo, mas agora qualquer duas entidades se fundem à mão, de dentro da
+ *   ficha: escolher com quem, comparar as duas lado a lado, e só então dizer
+ *   quem sobrevive. A rota sempre aceitou qualquer par; era a tela que só sabia
+ *   propor o que a distância de string tinha aproximado;
+ * - **o lote virou modo.** Sem apertar "enriquecer" não há checkbox nenhum na
+ *   tela; com ele, a barra de "selecionar todas" fica **grudada no topo**
+ *   enquanto eu rolo, que é o que faz marcar vinte entidades não terminar numa
+ *   subida de volta até o começo da lista.
+ *
  * **Não é painel da revisão**, de propósito: a revisão só enxerga as entidades
  * da sessão atual, e o orçamento dela é 60 s — "revisão longa" é uma das formas
  * de morte da visão §8. Manutenção é trabalho de outro momento, e que eu faço
@@ -37,17 +62,17 @@
  * que escreve são chamadas de modelo.
  *
  * **Desde a 4.12 esta tela dispara o lote, e ele grava sem eu aprovar campo a
- * campo** — checkbox por linha, "selecionar todas", e o botão que enfileira. É a
- * única coisa daqui que escreve conteúdo sem o meu toque em cada campo, e é
- * decisão declarada (`ARCHITECTURE.md` §4.9): o atrito de aprovar campo por
- * campo é o que deixou as fichas vazias. O contrapeso é que **eu leio a ficha
- * aqui mesmo, depois**, e que o desfazer está a um toque.
+ * campo** — é a única coisa daqui que escreve conteúdo sem o meu toque em cada
+ * campo, e é decisão declarada (`ARCHITECTURE.md` §4.9): o atrito de aprovar
+ * campo por campo é o que deixou as fichas vazias. O contrapeso é que **eu leio
+ * a ficha aqui mesmo, depois**, e que o desfazer está a um toque.
  *
  * O estado da fila mora **na linha de cada entidade**, e em nenhum outro lugar:
  * a fatia recusou notificação fora do app. Enquanto houver fila, a tela relê
  * sozinha; fechar a aba não interrompe nada, só para de mostrar.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { apelidoQueCasa, buscar, montarCatalogo } from "@/lib/catalogo";
 import { ehPronome, normalizarNome } from "@/lib/texto";
 import {
   CAMPOS_PERFIL,
@@ -57,10 +82,16 @@ import {
 } from "@/lib/tipos";
 import type { CampoPerfil, Enriquecimento, Perfil, TipoEntidade } from "@/lib/tipos";
 
-interface Entidade {
+export interface Entidade {
   id: string;
   nome: string;
   nome_normalizado: string;
+  /**
+   * A grafia própria e as já fundidas nela. A rota sempre devolveu o campo; a
+   * tela não o declarava, e é ele que faz a busca daqui atravessar alias sem
+   * uma segunda implementação de `catalogo.ts`.
+   */
+  chaves: string[];
   tipo: TipoEntidade;
   sessoes: number;
   atomos: number;
@@ -108,6 +139,12 @@ const PERFIL_VAZIO: Perfil = { contexto: "", pode_ajudar_com: "", fizemos_juntos
 /** O mesmo do corredor: rápido o bastante para parecer vivo, e barato. */
 const INTERVALO_FILA_MS = 4000;
 
+/** O mesmo número da transição do painel no CSS. Ver `fechar()`. */
+const DURACAO_FICHA_MS = 220;
+
+/** Quantas candidatas a fusão a lista mostra. O mesmo teto do `SeletorEntidade`. */
+const TETO_CANDIDATAS = 12;
+
 /** Só a data. A hora não muda o que eu faço, e a linha já é longa. */
 const dia = (iso: string) => (iso === "" ? "" : iso.slice(0, 10).split("-").reverse().join("/"));
 
@@ -119,7 +156,7 @@ const dia = (iso: string) => (iso === "" ? "" : iso.slice(0, 10).split("-").reve
  * `null` (nunca enriquecida) não vira selo nenhum: é o estado de quase todo o
  * grafo, e um selo em toda linha não informa nada.
  */
-function selo(e: Enriquecimento): string {
+export function selo(e: Enriquecimento): string {
   if (e.estado === "na_fila") return " · na fila";
   if (e.estado === "rodando") return " · enriquecendo…";
   if (e.estado === "falhou") return ` · falhou: ${e.motivo || "sem motivo registrado"}`;
@@ -131,6 +168,67 @@ function selo(e: Enriquecimento): string {
   return "";
 }
 
+export interface Peneira {
+  termo: string;
+  tipo: TipoEntidade | "todas";
+  semResumo: boolean;
+}
+
+/**
+ * O que a lista mostra: busca, filtro de tipo, "só as sem resumo", e a ordem.
+ *
+ * O casamento é o de `catalogo.ts` — `buscar` acha por trecho no meio da
+ * palavra e atravessa alias, que é o único jeito de "Rapha" achar a entidade
+ * que hoje se chama "Raffael". Reimplementar isso aqui criaria uma segunda
+ * regra de busca para divergir da primeira; o que esta função faz por cima é
+ * reencontrar o objeto inteiro (o catálogo carrega só o subconjunto que a
+ * revisão usa) e decidir a ordem.
+ *
+ * **Sem termo, a ordem é a de mais falada.** A rota devolve canônico primeiro,
+ * depois sessões — boa para desempate de agente, ruim para eu procurar com o
+ * olho: o que eu quero ver em cima é o que eu mais falo. **Com termo, quem
+ * manda é a relevância** de `porRelevancia` (prefixo antes de trecho no meio);
+ * reordenar por volume ali jogaria o casamento exato para o meio da lista.
+ */
+export function peneirar(lista: Entidade[], { termo, tipo, semResumo }: Peneira): Entidade[] {
+  const porChave = new Map(lista.map((e) => [e.nome_normalizado, e]));
+  const achadas = buscar(montarCatalogo(lista), termo, tipo)
+    .map((c) => porChave.get(c.nome_normalizado))
+    .filter((e): e is Entidade => e !== undefined);
+
+  const restantes = semResumo ? achadas.filter((e) => e.resumo === "") : achadas;
+
+  return normalizarNome(termo) === ""
+    ? [...restantes].sort((a, b) => b.atomos - a.atomos || a.nome.localeCompare(b.nome))
+    : restantes;
+}
+
+/**
+ * Com quem esta entidade pode ser fundida.
+ *
+ * A própria sai da lista antes da busca, e não depois: `fundir` recusa a
+ * auto-fusão no servidor (`fusao.ts`), mas oferecer na tela um botão que só
+ * existe para dar erro é pior que não oferecer.
+ */
+export function candidatasParaFundir(
+  lista: Entidade[],
+  alvo: Entidade,
+  termo: string,
+): Entidade[] {
+  const outras = lista.filter((e) => e.nome_normalizado !== alvo.nome_normalizado);
+  const porChave = new Map(outras.map((e) => [e.nome_normalizado, e]));
+  return buscar(montarCatalogo(outras), termo, "todas")
+    .map((c) => porChave.get(c.nome_normalizado))
+    .filter((e): e is Entidade => e !== undefined)
+    .slice(0, TETO_CANDIDATAS);
+}
+
+/** Os três passos da fusão à mão. `alvo` nulo é o passo de escolher com quem. */
+interface Fusao {
+  termo: string;
+  alvo: string | null;
+}
+
 export function Entidades() {
   const [entidades, setEntidades] = useState<Entidade[] | null>(null);
   const [pares, setPares] = useState<Par[] | null>(null);
@@ -139,17 +237,47 @@ export function Entidades() {
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
   const [rascunho, setRascunho] = useState("");
+
+  /** O topo da lista: o que eu vejo, e em que ordem. */
+  const [termo, setTermo] = useState("");
+  const [tipoFiltro, setTipoFiltro] = useState<TipoEntidade | "todas">("todas");
+  const [semResumo, setSemResumo] = useState(false);
+
+  /** Semear um nome: o formulário só aparece quando eu peço. */
+  const [criando, setCriando] = useState(false);
   const [nomeNovo, setNomeNovo] = useState("");
   const [tipoNovo, setTipoNovo] = useState<TipoEntidade>("Pessoa");
-  const [perfilAberto, setPerfilAberto] = useState<string | null>(null);
+
+  /**
+   * A ficha: quem ela mostra (`foco`) e se está na tela (`aberta`).
+   *
+   * São dois estados e não um porque o painel precisa **sobreviver ao fechar**
+   * pelos 220 ms da transição — desmontar junto com a classe esvaziaria a caixa
+   * no meio do caminho de volta, que é o corte que o `.chat` já aprendeu a não
+   * fazer.
+   */
+  const [foco, setFoco] = useState<string | null>(null);
+  const [aberta, setAberta] = useState(false);
+
+  /** O modo do lote. Sem ele, nenhuma caixa de seleção existe na tela. */
+  const [selecionando, setSelecionando] = useState(false);
+  const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
+
   /** O que está no textarea, por `chave|campo`. Ausente = o que veio do grafo. */
   const [textos, setTextos] = useState<Record<string, string>>({});
   /** O que o agente 3 propôs, por `chave|campo`. Nunca entra por cima do atual. */
   const [propostas, setPropostas] = useState<Record<string, Rascunho>>({});
   /** A grafia que estou digitando para acrescentar, por chave de entidade. */
   const [grafiaNova, setGrafiaNova] = useState<Record<string, string>>({});
-  /** As chaves marcadas para o lote. Vazio = nada a enriquecer. */
-  const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
+  /** A fusão à mão em curso, se houver. */
+  const [fusao, setFusao] = useState<Fusao | null>(null);
+
+  const idBusca = useId();
+  const idFusao = useId();
+  const idFicha = useId();
+  const painel = useRef<HTMLElement | null>(null);
+  /** A linha que abriu a ficha — é para ela que o foco volta ao fechar. */
+  const linhaTocada = useRef<HTMLButtonElement | null>(null);
 
   const carregar = useCallback(async () => {
     // `?perfil=1`: esta é a tela que edita os três campos. A revisão não pede,
@@ -187,6 +315,68 @@ export function Entidades() {
     return () => clearInterval(t);
   }, [andando, carregar]);
 
+  const todas = entidades ?? [];
+  const mostradas = useMemo(
+    () => peneirar(todas, { termo, tipo: tipoFiltro, semResumo }),
+    [todas, termo, tipoFiltro, semResumo],
+  );
+
+  const emFoco = foco === null ? null : (todas.find((e) => e.nome_normalizado === foco) ?? null);
+  const alvoDaFusao =
+    fusao?.alvo == null ? null : (todas.find((e) => e.nome_normalizado === fusao.alvo) ?? null);
+  const candidatas = useMemo(
+    () => (emFoco && fusao ? candidatasParaFundir(todas, emFoco, fusao.termo) : []),
+    [todas, emFoco, fusao],
+  );
+
+  function abrir(chave: string, botao: HTMLButtonElement) {
+    linhaTocada.current = botao;
+    setFoco(chave);
+    setAberta(true);
+    // A fusão e o renomear de uma ficha anterior não atravessam para a próxima.
+    setFusao(null);
+    setEditando(null);
+  }
+
+  /** O painel sobrevive ao fechar pela duração da transição — ver `foco`. */
+  const fechar = useCallback(() => {
+    setAberta(false);
+    setFusao(null);
+    setEditando(null);
+    setTimeout(() => setFoco(null), DURACAO_FICHA_MS);
+  }, []);
+
+  /**
+   * `Esc` desfaz uma coisa por vez: primeiro a fusão em curso, depois a ficha.
+   * Fechar o painel inteiro por causa de uma busca de fusão aberta perderia o
+   * lugar onde eu estava.
+   */
+  useEffect(() => {
+    if (!aberta) return;
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (fusao !== null) setFusao(null);
+      else fechar();
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [aberta, fusao, fechar]);
+
+  /**
+   * O foco entra no painel ao abrir e volta para a linha ao fechar — mesma
+   * forma da gaveta da gestão. Sem isto, quem navega por teclado abre a ficha e
+   * continua com o cursor atrás dela.
+   */
+  const tocado = useRef(false);
+  useEffect(() => {
+    if (!tocado.current) {
+      tocado.current = true;
+      return;
+    }
+    if (aberta) painel.current?.querySelector<HTMLElement>("button, a, input")?.focus();
+    else linhaTocada.current?.focus();
+  }, [aberta]);
+
   async function procurar() {
     setProcurando(true);
     setFalha(null);
@@ -199,7 +389,14 @@ export function Entidades() {
     setPares(((await r.json()) as { pares: Par[] }).pares);
   }
 
-  /** Fundir é irreversível: a perdedora vira alias e não há como desfazer. */
+  /**
+   * Fundir é irreversível: a perdedora vira alias e não há como desfazer.
+   *
+   * O mesmo caminho serve aos dois disparos — o par que o agente propôs e a
+   * fusão à mão de dentro da ficha —, porque a rota sempre aceitou qualquer
+   * par: as travas dela são existência, chaves diferentes, e nenhuma das duas
+   * já fundida.
+   */
   async function fundir(vencedora: string, perdedora: string) {
     setOcupado(`${vencedora}|${perdedora}`);
     setFalha(null);
@@ -214,6 +411,11 @@ export function Entidades() {
       return;
     }
     setPares((ps) => (ps ?? []).filter((p) => !(p.a === perdedora || p.b === perdedora)));
+    setFusao(null);
+    // O painel **reaponta para a vencedora**. A perdedora deixou de aparecer na
+    // listagem no mesmo instante, e uma ficha aberta num nó que sumiu mentiria
+    // até eu fechá-la.
+    setFoco((f) => (f === perdedora ? vencedora : f));
     void carregar();
   }
 
@@ -266,6 +468,7 @@ export function Entidades() {
       return;
     }
     setNomeNovo("");
+    setCriando(false);
     void carregar();
   }
 
@@ -446,10 +649,16 @@ export function Entidades() {
       setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
       return;
     }
-    // A seleção sai do caminho: o que interessa a partir daqui é o selo de cada
-    // linha, e uma lista marcada por cima disso só atrapalharia a leitura.
-    setMarcadas(new Set());
+    // A seleção sai do caminho, e o modo junto: o que interessa a partir daqui
+    // é o selo de cada linha, e uma lista marcada por cima disso só atrapalharia
+    // a leitura.
+    sairDaSelecao();
     void carregar();
+  }
+
+  function sairDaSelecao() {
+    setSelecionando(false);
+    setMarcadas(new Set());
   }
 
   /** O agente 3 propõe; nada é gravado até eu apertar salvar. */
@@ -471,90 +680,176 @@ export function Entidades() {
     setPropostas((p) => ({ ...p, [id]: proposto }));
   }
 
+  /** Uma coluna da comparação de fusão. As duas são idênticas de propósito. */
+  function lado(e: Entidade, contra: Entidade) {
+    const escritos = CAMPOS_PERFIL.filter((c) => (e.perfil ?? PERFIL_VAZIO)[c] !== "").length;
+    return (
+      <div className="lado" key={e.id}>
+        <h4>{e.nome}</h4>
+        <span className="meta">
+          {ROTULO_TIPO_ENTIDADE[e.tipo]} · {e.atomos} átomo(s) · {e.sessoes} sessão(ões)
+          {escritos > 0 && ` · perfil ${escritos}/3`}
+        </span>
+        <p className={e.resumo === "" ? "resumo vazio" : "resumo"}>
+          {e.resumo === "" ? "sem resumo" : e.resumo}
+        </p>
+        <button
+          className="reextrair"
+          disabled={ocupado === `${e.nome_normalizado}|${contra.nome_normalizado}`}
+          onClick={() => void fundir(e.nome_normalizado, contra.nome_normalizado)}
+        >
+          manter esta
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <main className="sessoes">
+    <main className="sessoes tela-entidades">
       <header>
         <h1>entidades</h1>
-        <p className="aguardando">
+        <p>
           {entidades ? `${entidades.length} no grafo` : "…"} — o que já entrou, onde se conserta
-          o que entrou torto, e o perfil que diz de quem eu estou falando
+          o que entrou torto, e a ficha que diz de quem eu estou falando
         </p>
       </header>
 
       {falha && <p className="aviso">{falha}</p>}
 
-      <div className="acoes-sessao criar-entidade">
+      {/* O topo: achar. A busca é a de `catalogo.ts` — atravessa alias, então
+          digitar a grafia antiga acha a vencedora da fusão. */}
+      <div className="barra-entidades">
         <input
-          className="campo-nome"
-          placeholder="nome que eu ainda vou falar"
-          value={nomeNovo}
-          onChange={(ev) => setNomeNovo(ev.target.value)}
-          onKeyDown={(ev) => ev.key === "Enter" && void criar()}
+          id={idBusca}
+          className="campo-nome busca"
+          type="search"
+          placeholder="buscar por nome ou grafia"
+          aria-label="buscar entidade"
+          value={termo}
+          onChange={(ev) => setTermo(ev.target.value)}
         />
         <select
-          className="campo-nome"
-          value={tipoNovo}
-          onChange={(ev) => setTipoNovo(ev.target.value as TipoEntidade)}
+          className="campo-nome tipo"
+          aria-label="filtrar por tipo"
+          value={tipoFiltro}
+          onChange={(ev) => setTipoFiltro(ev.target.value as TipoEntidade | "todas")}
         >
+          <option value="todas">todas</option>
           {TIPOS_ENTIDADE.map((t) => (
             <option key={t} value={t}>
               {ROTULO_TIPO_ENTIDADE[t]}
             </option>
           ))}
         </select>
+        <label className="alternador">
+          <input
+            type="checkbox"
+            checked={semResumo}
+            onChange={(ev) => setSemResumo(ev.target.checked)}
+          />
+          <span>sem resumo</span>
+        </label>
+      </div>
+
+      {/* Manutenção: semear um nome, procurar duplicatas, entrar no lote. */}
+      <div className="barra-manutencao">
         <button
-          className="reextrair"
-          disabled={ocupado === "criar" || nomeNovo.trim() === ""}
-          onClick={() => void criar()}
+          className={criando ? "reextrair armado" : "reextrair"}
+          aria-expanded={criando}
+          onClick={() => setCriando((c) => !c)}
         >
-          criar
+          + nova
         </button>
         <button className="reextrair" onClick={() => void procurar()} disabled={procurando}>
           {procurando ? "olhando…" : "procurar duplicatas"}
         </button>
-      </div>
-
-      {/* O lote. Mesmo padrão do "procurar duplicatas" — eu escolho quando pagar
-          e sobre quem —, e a contagem aparece ANTES de disparar, porque é a
-          única coisa que a tela sabe dizer sobre o tamanho da conta (§14). */}
-      <div className="acoes-sessao criar-entidade">
-        <label className="marca-todas">
-          <input
-            type="checkbox"
-            checked={marcadas.size > 0 && marcadas.size === (entidades ?? []).length}
-            // Meio marcado quando é parte: sem isso, marcar duas de dez faria a
-            // caixa do topo parecer "nenhuma".
-            ref={(el) => {
-              if (el) el.indeterminate = marcadas.size > 0 && marcadas.size < (entidades ?? []).length;
-            }}
-            onChange={(ev) =>
-              setMarcadas(
-                ev.target.checked
-                  ? new Set((entidades ?? []).map((e) => e.nome_normalizado))
-                  : new Set(),
-              )
-            }
-          />
-          <span>selecionar todas</span>
-        </label>
+        {/* O lote é modo: sem apertar aqui, nenhuma caixa de seleção existe na
+            tela. Elas eram permanentes, e uma coluna de checkbox em toda linha
+            cobra uma decisão que eu quase nunca vou tomar. */}
         <button
-          className="reextrair"
-          disabled={ocupado === "lote" || marcadas.size === 0}
-          title="o agente lê TODOS os átomos de cada uma e escreve a ficha inteira — e grava, sem eu aprovar campo a campo"
-          onClick={() => void enriquecerMarcadas()}
+          className={selecionando ? "reextrair armado" : "reextrair"}
+          aria-pressed={selecionando}
+          onClick={() => (selecionando ? sairDaSelecao() : setSelecionando(true))}
         >
-          {ocupado === "lote"
-            ? "enfileirando…"
-            : `enriquecer ${marcadas.size === 0 ? "" : `${marcadas.size} `}marcada(s)`}
+          enriquecer
         </button>
-        {andando && (
-          <span className="meta">a fila está andando — pode fechar a aba</span>
-        )}
+        {andando && <span className="conta">a fila está andando — pode fechar a aba</span>}
       </div>
 
-      {pares?.length === 0 && (
-        <p className="aguardando">nenhuma duplicata — o grafo está limpo.</p>
+      {criando && (
+        <div className="acoes-sessao criar-entidade">
+          <input
+            className="campo-nome"
+            placeholder="nome que eu ainda vou falar"
+            autoFocus
+            value={nomeNovo}
+            onChange={(ev) => setNomeNovo(ev.target.value)}
+            onKeyDown={(ev) => ev.key === "Enter" && void criar()}
+          />
+          <select
+            className="campo-nome tipo"
+            aria-label="tipo da entidade nova"
+            value={tipoNovo}
+            onChange={(ev) => setTipoNovo(ev.target.value as TipoEntidade)}
+          >
+            {TIPOS_ENTIDADE.map((t) => (
+              <option key={t} value={t}>
+                {ROTULO_TIPO_ENTIDADE[t]}
+              </option>
+            ))}
+          </select>
+          <button
+            className="reextrair"
+            disabled={ocupado === "criar" || nomeNovo.trim() === ""}
+            onClick={() => void criar()}
+          >
+            criar
+          </button>
+        </div>
       )}
+
+      {/* A barra do lote **gruda** no topo: marcar vinte entidades é percorrer a
+          lista inteira, e o botão que dispara não pode ficar lá em cima. A
+          contagem aparece ANTES de disparar, porque é a única coisa que a tela
+          sabe dizer sobre o tamanho da conta (§14). */}
+      {selecionando && (
+        <div className="barra-selecao">
+          <label className="marca-todas">
+            <input
+              type="checkbox"
+              checked={marcadas.size > 0 && marcadas.size === mostradas.length}
+              // Meio marcado quando é parte: sem isso, marcar duas de dez faria
+              // a caixa do topo parecer "nenhuma".
+              ref={(el) => {
+                if (el) el.indeterminate = marcadas.size > 0 && marcadas.size < mostradas.length;
+              }}
+              onChange={(ev) =>
+                setMarcadas(
+                  ev.target.checked ? new Set(mostradas.map((e) => e.nome_normalizado)) : new Set(),
+                )
+              }
+            />
+            {/* "todas" é o que está na lista agora, e não o grafo inteiro: com
+                um filtro ligado, marcar o que não está à vista é surpresa. */}
+            <span>selecionar todas</span>
+          </label>
+          <button
+            className="reextrair"
+            disabled={ocupado === "lote" || marcadas.size === 0}
+            title="o agente lê TODOS os átomos de cada uma e escreve a ficha inteira — e grava, sem eu aprovar campo a campo"
+            onClick={() => void enriquecerMarcadas()}
+          >
+            {ocupado === "lote"
+              ? "enfileirando…"
+              : `enriquecer ${marcadas.size === 0 ? "" : `${marcadas.size} `}marcada(s)`}
+          </button>
+          <button className="reextrair" onClick={sairDaSelecao}>
+            cancelar
+          </button>
+        </div>
+      )}
+
+      {pares?.length === 0 && <p className="aguardando">nenhuma duplicata — o grafo está limpo.</p>}
 
       {(pares ?? []).map((p) => {
         const chave = `${p.a}|${p.b}`;
@@ -595,214 +890,214 @@ export function Entidades() {
         );
       })}
 
-      <ul className="lista-sessoes">
-        {(entidades ?? []).map((e) => {
-          const perfil = e.perfil ?? PERFIL_VAZIO;
-          const escritos = CAMPOS_PERFIL.filter((c) => perfil[c] !== "").length;
-          const aberto = perfilAberto === e.nome_normalizado;
+      {/* A lista: um nome e uma linha de meta. Os sete controles que moravam
+          aqui estão todos dentro da ficha. */}
+      <ul className="lista-entidades">
+        {mostradas.map((e) => (
+          <li key={e.id} className={foco === e.nome_normalizado && aberta ? "aberta" : undefined}>
+            {selecionando && (
+              <input
+                type="checkbox"
+                className="marca-lote"
+                aria-label={`marcar ${e.nome} para enriquecer`}
+                checked={marcadas.has(e.nome_normalizado)}
+                onChange={(ev) =>
+                  setMarcadas((m) => {
+                    const proximo = new Set(m);
+                    if (ev.target.checked) proximo.add(e.nome_normalizado);
+                    else proximo.delete(e.nome_normalizado);
+                    return proximo;
+                  })
+                }
+              />
+            )}
+            <button
+              className="abre-ficha"
+              aria-expanded={foco === e.nome_normalizado && aberta}
+              aria-controls={idFicha}
+              onClick={(ev) => abrir(e.nome_normalizado, ev.currentTarget)}
+            >
+              <span className="nome">
+                {e.nome}
+                {/* A ficha oficial se vê na linha, sem abrir nada — é o que
+                    "destacar" quer dizer aqui. */}
+                {e.canonico && (
+                  <span className="canonica" title="ficha oficial desta entidade">
+                    ★
+                  </span>
+                )}
+              </span>
+              <span className="meta">
+                {e.atomos} átomo(s) · {e.sessoes} sessão(ões)
+                {e.resumo === "" && " · sem resumo"}
+                {selo(e.enriquecimento)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
 
-          return (
-            <li key={e.id} className={aberto ? "com-perfil aberta" : "com-perfil"}>
-              <div className="linha-entidade">
-                <input
-                  type="checkbox"
-                  className="marca-lote"
-                  aria-label={`marcar ${e.nome} para enriquecer`}
-                  checked={marcadas.has(e.nome_normalizado)}
-                  onChange={(ev) =>
-                    setMarcadas((m) => {
-                      const proximo = new Set(m);
-                      if (ev.target.checked) proximo.add(e.nome_normalizado);
-                      else proximo.delete(e.nome_normalizado);
-                      return proximo;
-                    })
-                  }
-                />
-                <span className="quando">
-                  <span>
-                    {e.nome}
-                    {/* A ficha oficial se vê na linha, sem abrir nada — é o que
-                        "destacar" quer dizer aqui. */}
-                    {e.canonico && (
-                      <span className="canonica" title="ficha oficial desta entidade">
-                        ★
-                      </span>
-                    )}
-                  </span>
-                  <span className="meta">
-                    {/* O tipo saiu daqui: agora ele é o select ao lado, editável. */}
-                    {e.atomos} átomo(s) · {e.sessoes} sessão(ões)
-                    {e.atomos === 0 && " · ainda não falada"}
-                    {e.aliases.length > 0 && ` · também: ${e.aliases.join(", ")}`}
-                    {e.resumo === "" ? " · sem resumo" : " · com resumo"}
-                    {escritos > 0 && ` · perfil ${escritos}/3`}
-                    {selo(e.enriquecimento)}
-                  </span>
-                </span>
+      {entidades?.length === 0 && (
+        <p className="aguardando">
+          nada no grafo ainda — entidade nasce quando eu confirmo uma revisão.
+        </p>
+      )}
 
-                {editando === e.nome_normalizado ? (
-                  <span className="acoes-sessao">
-                    <input
-                      className="campo-nome"
-                      value={rascunho}
-                      autoFocus
-                      onChange={(ev) => setRascunho(ev.target.value)}
-                      onKeyDown={(ev) => {
-                        if (ev.key === "Enter") void salvarNome(e.nome_normalizado);
-                        if (ev.key === "Escape") setEditando(null);
-                      }}
-                    />
-                    <button
-                      className="reextrair"
-                      disabled={ocupado === e.nome_normalizado}
-                      onClick={() => void salvarNome(e.nome_normalizado)}
-                    >
-                      salvar
-                    </button>
-                  </span>
-                ) : (
-                  <div className="acoes-sessao">
-                    <select
-                      className="campo-nome tipo"
-                      value={e.tipo}
-                      disabled={ocupado === e.nome_normalizado}
-                      aria-label={`tipo de ${e.nome}`}
-                      onChange={(ev) =>
-                        void trocarTipo(e.nome_normalizado, ev.target.value as TipoEntidade)
-                      }
-                    >
-                      {TIPOS_ENTIDADE.map((t) => (
-                        <option key={t} value={t}>
-                          {ROTULO_TIPO_ENTIDADE[t]}
-                        </option>
-                      ))}
-                    </select>
+      {entidades !== null && entidades.length > 0 && mostradas.length === 0 && (
+        <p className="aguardando">nada com esse recorte.</p>
+      )}
+
+      {/* O véu fecha ao toque e escurece a lista atrás — a ficha é modal de
+          fato, como a gaveta da gestão. */}
+      <div className={`veu${aberta ? " aberto" : ""}`} onClick={fechar} />
+
+      {/* Fica montada sempre: desmontar junto com a classe esvaziaria a caixa no
+          meio do caminho de volta, e a transição viraria um corte. */}
+      <aside
+        ref={painel}
+        id={idFicha}
+        className={`ficha${aberta ? " aberta" : ""}`}
+        aria-label={emFoco ? `ficha de ${emFoco.nome}` : "ficha"}
+        aria-hidden={!aberta}
+      >
+        {emFoco &&
+          (() => {
+            const chave = emFoco.nome_normalizado;
+            const perfil = emFoco.perfil ?? PERFIL_VAZIO;
+            const idResumo = `${chave}|resumo`;
+            const valorResumo = textos[idResumo] ?? emFoco.resumo;
+
+            return (
+              <>
+                <header>
+                  <button className="voltar" aria-label="fechar a ficha" onClick={fechar}>
+                    ←
+                  </button>
+                  <h2>{emFoco.nome}</h2>
+                  <button
+                    className={emFoco.canonico ? "reextrair canonico" : "reextrair"}
+                    disabled={ocupado === `${chave}|canonico`}
+                    aria-pressed={emFoco.canonico}
+                    title="marcar esta como a ficha oficial desta entidade"
+                    onClick={() => void alternarCanonico(chave, !emFoco.canonico)}
+                  >
+                    {emFoco.canonico ? "★ canônica" : "☆ canônica"}
+                  </button>
+                </header>
+
+                <p className="aguardando">
+                  é isto que o agente lê para saber de quem eu estou falando quando dois nomes
+                  soam igual
+                </p>
+
+                {/* O tipo e o nome. Os dois moravam na linha da lista, e é aqui
+                    que eles deixam de disputar espaço com o nome. */}
+                <div className="identidade">
+                  <select
+                    className="campo-nome tipo"
+                    value={emFoco.tipo}
+                    disabled={ocupado === chave}
+                    aria-label={`tipo de ${emFoco.nome}`}
+                    onChange={(ev) => void trocarTipo(chave, ev.target.value as TipoEntidade)}
+                  >
+                    {TIPOS_ENTIDADE.map((t) => (
+                      <option key={t} value={t}>
+                        {ROTULO_TIPO_ENTIDADE[t]}
+                      </option>
+                    ))}
+                  </select>
+                  {editando === chave ? (
+                    <>
+                      <input
+                        className="campo-nome"
+                        aria-label={`novo nome de ${emFoco.nome}`}
+                        value={rascunho}
+                        autoFocus
+                        onChange={(ev) => setRascunho(ev.target.value)}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter") void salvarNome(chave);
+                          if (ev.key === "Escape") setEditando(null);
+                        }}
+                      />
+                      <button
+                        className="reextrair"
+                        disabled={ocupado === chave}
+                        onClick={() => void salvarNome(chave)}
+                      >
+                        salvar
+                      </button>
+                    </>
+                  ) : (
                     <button
                       className="reextrair"
                       onClick={() => {
-                        setEditando(e.nome_normalizado);
-                        setRascunho(e.nome);
+                        setEditando(chave);
+                        setRascunho(emFoco.nome);
                       }}
                     >
                       renomear
                     </button>
-                    <button
-                      className={e.canonico ? "reextrair canonico" : "reextrair"}
-                      disabled={ocupado === `${e.nome_normalizado}|canonico`}
-                      aria-pressed={e.canonico}
-                      title="marcar esta como a ficha oficial desta entidade"
-                      onClick={() => void alternarCanonico(e.nome_normalizado, !e.canonico)}
-                    >
-                      {e.canonico ? "★ canônica" : "☆ canônica"}
-                    </button>
-                    <button
-                      className="reextrair"
-                      aria-expanded={aberto}
-                      onClick={() => setPerfilAberto(aberto ? null : e.nome_normalizado)}
-                    >
-                      {aberto ? "fechar ficha" : "ficha"}
-                    </button>
-                  </div>
-                )}
-              </div>
+                  )}
+                  <span className="conta">
+                    {emFoco.atomos} átomo(s) · {emFoco.sessoes} sessão(ões)
+                  </span>
+                </div>
 
-              {aberto && (
-                <div className="perfil">
-                  <p className="aguardando">
-                    é isto que o agente lê para saber de quem eu estou falando quando dois nomes
-                    soam igual
-                  </p>
-
-                  {/* O lote, e o que o desfaz. Ficam no topo da ficha porque
-                      escrevem os quatro campos abaixo de uma vez só — e porque
-                      o desfazer tem de estar à vista de quem acabou de ver a
-                      ficha mudar sem ter aprovado nada. */}
-                  <div className="acoes-sessao lote">
-                    <button
-                      className="reextrair"
-                      disabled={ocupado === `${e.nome_normalizado}|enriquecer`}
-                      title="o agente lê TODOS os átomos que falam dela e escreve a ficha inteira — e grava, sem eu aprovar campo a campo"
-                      onClick={() => void enriquecerUma(e.nome_normalizado)}
-                    >
-                      {ocupado === `${e.nome_normalizado}|enriquecer`
-                        ? "escrevendo…"
-                        : "enriquecer esta"}
-                    </button>
-                    {e.enriquecimento.tem_anterior && (
+                {/* O resumo vem primeiro porque é o que os dois agentes leem
+                    por padrão. Os três campos abaixo dele só entram na segunda
+                    passada, quando a primeira leitura não resolveu. */}
+                <div className="secao">
+                  <div className="campo-perfil">
+                    <label htmlFor={idResumo}>
+                      resumo{" "}
+                      <span className="meta">
+                        quem é, e sobretudo o que a distingue de outra parecida — é isto que vai
+                        no prompt dos dois agentes
+                      </span>
+                    </label>
+                    <textarea
+                      id={idResumo}
+                      rows={3}
+                      maxLength={TETO_RESUMO}
+                      value={valorResumo}
+                      placeholder="—"
+                      onChange={(ev) => setTextos((t) => ({ ...t, [idResumo]: ev.target.value }))}
+                    />
+                    <div className="acoes-sessao">
+                      <span className="meta">
+                        {valorResumo.length}/{TETO_RESUMO}
+                      </span>
                       <button
                         className="reextrair"
-                        disabled={ocupado === `${e.nome_normalizado}|desfazer`}
-                        title="volta os quatro campos para a geração anterior — outro toque traz de volta"
-                        onClick={() => void desfazer(e.nome_normalizado)}
+                        disabled={ocupado === idResumo || valorResumo === emFoco.resumo}
+                        onClick={() => void salvarResumo(chave, valorResumo)}
                       >
-                        {ocupado === `${e.nome_normalizado}|desfazer` ? "voltando…" : "desfazer"}
+                        salvar
                       </button>
-                    )}
+                    </div>
                   </div>
+                </div>
 
-                  {/* O resumo vem primeiro porque é o que os dois agentes leem
-                      por padrão. Os três campos abaixo dele só entram na segunda
-                      passada, quando a primeira leitura não resolveu. */}
-                  {(() => {
-                    const id = `${e.nome_normalizado}|resumo`;
-                    const valor = textos[id] ?? e.resumo;
-                    const mexido = valor !== e.resumo;
-
-                    return (
-                      <div className="campo-perfil" key="resumo">
-                        <label htmlFor={id}>
-                          resumo{" "}
-                          <span className="meta">
-                            quem é, e sobretudo o que a distingue de outra parecida — é isto que
-                            vai no prompt dos dois agentes
-                          </span>
-                        </label>
-                        <textarea
-                          id={id}
-                          rows={3}
-                          maxLength={TETO_RESUMO}
-                          value={valor}
-                          placeholder="—"
-                          onChange={(ev) => setTextos((t) => ({ ...t, [id]: ev.target.value }))}
-                        />
-                        <div className="acoes-sessao">
-                          <span className="meta">
-                            {valor.length}/{TETO_RESUMO}
-                          </span>
-                          <button
-                            className="reextrair"
-                            disabled={ocupado === id || !mexido}
-                            onClick={() => void salvarResumo(e.nome_normalizado, valor)}
-                          >
-                            salvar
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* As grafias. Acrescentar à mão é o único jeito de ensinar
-                      uma antes de o STT errar pela primeira vez. */}
+                {/* As grafias. Acrescentar à mão é o único jeito de ensinar uma
+                    antes de o STT errar pela primeira vez. */}
+                <div className="secao">
                   <div className="campo-perfil grafias">
-                    <label htmlFor={`grafia-${e.nome_normalizado}`}>
+                    <label htmlFor={`grafia-${chave}`}>
                       grafias{" "}
                       <span className="meta">
                         como esta entidade já foi falada ou escrita — o que o STT costuma errar
                       </span>
                     </label>
-                    {e.aliases.length > 0 && (
+                    {emFoco.aliases.length > 0 && (
                       <ul className="lista-grafias">
-                        {e.aliases.map((a) => (
+                        {emFoco.aliases.map((a) => (
                           <li key={a}>
                             <span>{a}</span>
                             <button
                               type="button"
-                              className="fraco"
                               aria-label={`tirar a grafia ${a}`}
-                              disabled={ocupado === `${e.nome_normalizado}|grafia|${a}`}
-                              onClick={() =>
-                                void mexerNaGrafia(e.nome_normalizado, a, "remover")
-                              }
+                              disabled={ocupado === `${chave}|grafia|${a}`}
+                              onClick={() => void mexerNaGrafia(chave, a, "remover")}
                             >
                               ×
                             </button>
@@ -812,42 +1107,35 @@ export function Entidades() {
                     )}
                     <div className="acoes-sessao">
                       <input
-                        id={`grafia-${e.nome_normalizado}`}
+                        id={`grafia-${chave}`}
                         className="campo-nome"
                         placeholder="grafia que o STT ainda vai errar"
-                        value={grafiaNova[e.nome_normalizado] ?? ""}
+                        value={grafiaNova[chave] ?? ""}
                         onChange={(ev) =>
-                          setGrafiaNova((g) => ({
-                            ...g,
-                            [e.nome_normalizado]: ev.target.value,
-                          }))
+                          setGrafiaNova((g) => ({ ...g, [chave]: ev.target.value }))
                         }
                         onKeyDown={(ev) => {
                           if (ev.key !== "Enter") return;
-                          const g = (grafiaNova[e.nome_normalizado] ?? "").trim();
-                          if (g !== "") {
-                            void mexerNaGrafia(e.nome_normalizado, g, "acrescentar");
-                          }
+                          const g = (grafiaNova[chave] ?? "").trim();
+                          if (g !== "") void mexerNaGrafia(chave, g, "acrescentar");
                         }}
                       />
                       <button
                         className="reextrair"
-                        disabled={(grafiaNova[e.nome_normalizado] ?? "").trim() === ""}
+                        disabled={(grafiaNova[chave] ?? "").trim() === ""}
                         onClick={() =>
-                          void mexerNaGrafia(
-                            e.nome_normalizado,
-                            (grafiaNova[e.nome_normalizado] ?? "").trim(),
-                            "acrescentar",
-                          )
+                          void mexerNaGrafia(chave, (grafiaNova[chave] ?? "").trim(), "acrescentar")
                         }
                       >
                         acrescentar
                       </button>
                     </div>
                   </div>
+                </div>
 
+                <div className="secao">
                   {CAMPOS_PERFIL.map((campo) => {
-                    const id = `${e.nome_normalizado}|${campo}`;
+                    const id = `${chave}|${campo}`;
                     const valor = textos[id] ?? perfil[campo];
                     const proposta = propostas[id];
                     const mexido = valor !== perfil[campo];
@@ -865,15 +1153,13 @@ export function Entidades() {
                           rows={2}
                           value={valor}
                           placeholder="—"
-                          onChange={(ev) =>
-                            setTextos((t) => ({ ...t, [id]: ev.target.value }))
-                          }
+                          onChange={(ev) => setTextos((t) => ({ ...t, [id]: ev.target.value }))}
                         />
                         <div className="acoes-sessao">
                           <button
                             className="reextrair"
                             disabled={ocupado === id || !mexido}
-                            onClick={() => void salvarPerfil(e.nome_normalizado, campo, valor)}
+                            onClick={() => void salvarPerfil(chave, campo, valor)}
                           >
                             salvar
                           </button>
@@ -881,7 +1167,7 @@ export function Entidades() {
                             className="reextrair"
                             disabled={ocupado === id}
                             title="o agente propõe a partir dos átomos que marcaram este campo; nada é gravado"
-                            onClick={() => void pedirRascunho(e.nome_normalizado, campo)}
+                            onClick={() => void pedirRascunho(chave, campo)}
                           >
                             {ocupado === id ? "pensando…" : "rascunhar"}
                           </button>
@@ -898,9 +1184,7 @@ export function Entidades() {
                             <div className="acoes-sessao">
                               <button
                                 className="reextrair"
-                                onClick={() =>
-                                  setTextos((t) => ({ ...t, [id]: proposta.texto }))
-                                }
+                                onClick={() => setTextos((t) => ({ ...t, [id]: proposta.texto }))}
                               >
                                 usar este texto
                               </button>
@@ -922,18 +1206,131 @@ export function Entidades() {
                     );
                   })}
                 </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
 
-      {entidades?.length === 0 && (
-        <p className="aguardando">
-          nada no grafo ainda — entidade nasce quando eu confirmo uma revisão.
-        </p>
-      )}
+                {/* O agente 4, e o que o desfaz. O desfazer tem de estar à vista
+                    de quem acabou de ver a ficha mudar sem ter aprovado nada. */}
+                <div className="secao">
+                  <p className="aguardando">
+                    o agente lê TODOS os átomos que falam dela e escreve a ficha inteira — e
+                    grava, sem eu aprovar campo a campo
+                  </p>
+                  <div className="acoes-sessao">
+                    <button
+                      className="reextrair"
+                      disabled={ocupado === `${chave}|enriquecer`}
+                      onClick={() => void enriquecerUma(chave)}
+                    >
+                      {ocupado === `${chave}|enriquecer` ? "escrevendo…" : "enriquecer esta"}
+                    </button>
+                    {emFoco.enriquecimento.tem_anterior && (
+                      <button
+                        className="reextrair"
+                        disabled={ocupado === `${chave}|desfazer`}
+                        title="volta os quatro campos para a geração anterior — outro toque traz de volta"
+                        onClick={() => void desfazer(chave)}
+                      >
+                        {ocupado === `${chave}|desfazer` ? "voltando…" : "desfazer"}
+                      </button>
+                    )}
+                  </div>
+                </div>
 
+                {/* Fundir fica por último: é a única coisa desta tela que não
+                    tem volta. */}
+                <div className="secao fusao">
+                  {fusao === null ? (
+                    <>
+                      <p className="aguardando">
+                        duas grafias da mesma pessoa viram uma só — a perdedora fica como grafia
+                        da vencedora
+                      </p>
+                      <div className="acoes-sessao">
+                        <button
+                          className="reextrair"
+                          onClick={() => setFusao({ termo: "", alvo: null })}
+                        >
+                          fundir com…
+                        </button>
+                      </div>
+                    </>
+                  ) : alvoDaFusao === null ? (
+                    <>
+                      <label htmlFor={idFusao}>
+                        fundir com{" "}
+                        <span className="meta">qual outra entidade é a mesma coisa que esta</span>
+                      </label>
+                      <input
+                        id={idFusao}
+                        className="campo-nome busca"
+                        type="search"
+                        autoFocus
+                        placeholder="buscar no grafo"
+                        value={fusao.termo}
+                        onChange={(ev) => setFusao({ termo: ev.target.value, alvo: null })}
+                      />
+                      {candidatas.length === 0 ? (
+                        <p className="aguardando">nada com esse nome no grafo.</p>
+                      ) : (
+                        <ul className="candidatas">
+                          {candidatas.map((c) => {
+                            const apelido = apelidoQueCasa(c, fusao.termo);
+                            return (
+                              <li key={c.id}>
+                                <button
+                                  onClick={() =>
+                                    setFusao({ termo: fusao.termo, alvo: c.nome_normalizado })
+                                  }
+                                >
+                                  <span>
+                                    {c.nome}
+                                    {apelido && <em> — por “{apelido}”</em>}
+                                  </span>
+                                  <span className="meta">
+                                    {ROTULO_TIPO_ENTIDADE[c.tipo]} · {c.atomos} átomo(s) ·{" "}
+                                    {c.sessoes} sessão(ões)
+                                  </span>
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                      <div className="acoes-sessao">
+                        <button className="reextrair" onClick={() => setFusao(null)}>
+                          cancelar
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* As duas coisas que a fusão faz e que não se adivinham
+                          da tela. Sem elas eu escolho o vencedor errado e perco
+                          a ficha boa sem saber que perdi. */}
+                      <p className="aviso-fusao">
+                        <strong>Isto não tem desfazer.</strong> A perdedora vira grafia da
+                        vencedora e os átomos dela migram — mas o resumo e o perfil dela{" "}
+                        <strong>não são copiados</strong>. Escolher a vencedora é escolher qual
+                        ficha sobrevive.
+                      </p>
+                      <div className="comparacao">
+                        {lado(emFoco, alvoDaFusao)}
+                        {lado(alvoDaFusao, emFoco)}
+                      </div>
+                      <div className="acoes-sessao">
+                        <button
+                          className="reextrair"
+                          onClick={() => setFusao({ termo: fusao.termo, alvo: null })}
+                        >
+                          voltar
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            );
+          })()}
+      </aside>
     </main>
   );
 }

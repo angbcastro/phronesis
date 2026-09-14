@@ -272,7 +272,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .leitura .aguardando { color: var(--texto-fraco); font-size: 0.95rem; }
 
-.voltar {
+/* O "voltar" da transcrição (que vai para `/sessoes`) e o "depois" do rodapé da
+   revisão — os dois únicos que não duplicam a marca. Escopado pela mesma razão
+   que `.quando`: `margin-top: 2rem` numa classe de nome tão comum vaza para o
+   primeiro botão de voltar que alguém escrever em outra tela. */
+.leitura .voltar,
+.revisao .voltar {
   display: inline-block;
   margin-top: 2rem;
   color: var(--texto-fraco);
@@ -650,16 +655,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .par p { margin: 0; }
 
-/* Semear uma entidade antes de falar o nome, e a busca de duplicatas. */
-/* O lote fica separado do resto da ficha por uma linha: ele escreve os quatro
-   campos abaixo de uma vez, e o desfazer é o contrapeso disso. */
-.perfil .lote {
-  flex-wrap: wrap;
-  padding-bottom: 0.6rem;
-  margin-bottom: 0.2rem;
-  border-bottom: 1px solid var(--linha);
-}
-
+/* Semear uma entidade antes de falar o nome. Só aparece quando eu aperto
+   "+ nova": ele ocupava três controles do topo em toda visita, e semear um nome
+   é o que eu faço uma vez por mês. */
 .criar-entidade { margin: 0.6rem 0 0.2rem; flex-wrap: wrap; }
 .criar-entidade .campo-nome { width: 12rem; }
 
@@ -759,18 +757,108 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* O que este átomo vai acrescentar ao perfil de alguém, se eu confirmar. */
 .meta.perfila { display: block; margin-top: 0.25rem; opacity: 0.9; }
 
-/* A linha de uma entidade abre para baixo quando o perfil está aberto. */
-.lista-sessoes li.com-perfil {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.5rem;
-}
-.linha-entidade {
+/* ── /entidades: o topo, a lista e a barra do lote ──
+
+   A linha era um `flex` de nove coisas sem `wrap`: caixa do lote, nome, a
+   estrela, uma meta de até seis fatos, o `select` de tipo, renomear, canônica e
+   ficha. Num aparelho de 390 px — que é onde este app vive — isso não se lê nem
+   se acerta com o dedo. Agora a linha é **um nome e uma linha de meta**, e os
+   sete controles foram todos para dentro da ficha. */
+
+/* Buscar, filtrar por tipo, e ver só as fichas vazias. Sem breakpoint: não há
+   nenhum `@media` de largura neste arquivo, e não é esta tela que estreia o
+   primeiro. O que adapta é `flex-wrap` e uma busca que come a sobra. */
+.barra-entidades {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.4rem;
+  flex-wrap: wrap;
 }
-.lista-sessoes li.aberta { background: color-mix(in srgb, var(--fundo-alto) 60%, transparent); }
+.barra-entidades .busca {
+  flex: 1 1 9rem;
+  width: auto;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+}
+.alternador {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--texto-fraco);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.alternador input { width: 1.05rem; height: 1.05rem; margin: 0; accent-color: var(--acento); }
+
+/* Semear um nome, procurar duplicatas, entrar no modo de seleção. Manutenção é
+   trabalho de outro momento — o que eu venho ver aqui é a ficha —, então ela é
+   uma linha de três botões, e o formulário de criar só aparece quando eu peço. */
+.barra-manutencao { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+
+/* A barra do lote **gruda** no topo enquanto eu rolo: marcar vinte entidades é
+   percorrer a lista inteira, e um "enriquecer" que só existe lá em cima obriga
+   a subir de volta para disparar o que eu acabei de marcar.
+
+   O `top` não é zero. A `.marca` é `fixed` em `0.6rem` com 40 px de altura, e
+   uma barra encostada no topo passaria por baixo dela — o caminho de volta
+   ficaria escondido atrás do controle do lote. */
+.barra-selecao {
+  position: sticky;
+  top: calc(3.25rem + env(safe-area-inset-top));
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
+  background: var(--fundo);
+  border-bottom: 1px solid var(--linha);
+}
+/* A contagem discreta, nos três lugares em que ela aparece. Escopada de
+   propósito: classe curta em folha global foi exatamente o que aconteceu com
+   `.quando`, mais acima. */
+.barra-selecao .conta,
+.barra-manutencao .conta,
+.ficha .conta { font-size: 0.8rem; color: var(--texto-fraco); }
+
+.lista-entidades {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.lista-entidades li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-bottom: 1px solid var(--linha);
+}
+.lista-entidades li.aberta { background: color-mix(in srgb, var(--fundo-alto) 60%, transparent); }
+
+/* A linha inteira é o botão que abre a ficha: alvo grande, um só, e nenhuma
+   decisão a tomar antes de tocar. */
+.abre-ficha {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  padding: 0.65rem 0.25rem;
+}
+.abre-ficha .nome { font-size: 0.95rem; overflow-wrap: anywhere; }
+.abre-ficha .meta { font-size: 0.8rem; color: var(--texto-fraco); }
+.abre-ficha:hover .nome { text-decoration: underline; }
+.abre-ficha:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
+
+.tela-entidades header p,
+.tela-entidades .aguardando { margin: 0; font-size: 0.85rem; color: var(--texto-fraco); }
 
 /* A caixa do lote fica à esquerda da linha, e o alvo de toque é maior que ela:
    este é um app de celular, e caixa de 13 px não se acerta com o dedo. */
@@ -791,14 +879,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
   cursor: pointer;
 }
 .marca-todas input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--acento); }
-
-.perfil {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  padding: 0.2rem 0 0.6rem;
-}
-.perfil > .aguardando { margin: 0; font-size: 0.8rem; color: var(--texto-fraco); }
 
 .campo-perfil { display: flex; flex-direction: column; gap: 0.3rem; }
 .campo-perfil label { font-size: 0.85rem; }
@@ -864,6 +944,170 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .proposta-perfil p { margin: 0; font-size: 0.9rem; line-height: 1.4; }
 .proposta-perfil .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+
+/* ── a ficha, em painel de tela cheia ──
+
+   Era um acordeão dentro da linha: a ficha inteira — resumo, grafias, os três
+   campos, o lote e o desfazer — empurrava a lista para baixo, e ler um campo
+   custava rolar por cima de tudo que veio antes. Agora ela é um painel que
+   entra pela direita, como o editor do painel de agentes e pela mesma razão:
+   não é navegação, é o detalhe do que eu acabei de tocar.
+
+   **Terceira gaveta desta forma** (`.gaveta` da gestão, `.editor-agente`, e
+   esta), e a duplicação é conhecida: consolidar as três numa `.gaveta-lateral`
+   mexeria em `Gestao.tsx` e em `Agentes.tsx`, fora desta fatia. Está registrado
+   em `ARCHITECTURE.md` §11. O `.veu` já é compartilhado pelas outras duas, e
+   esta usa o mesmo. */
+.ficha {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 30;
+  height: 100dvh;
+  /* Tela cheia no celular; num monitor ela para em 34 rem, que é a largura da
+     própria lista — texto de ficha não melhora esticado. */
+  width: min(100vw, 34rem);
+  overflow-y: auto;
+  /* Rolar até o fim da ficha não pode continuar rolando a lista atrás dela. */
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: calc(1rem + env(safe-area-inset-top)) 1.1rem
+    calc(2rem + env(safe-area-inset-bottom))
+    calc(1.1rem + env(safe-area-inset-right));
+  background: var(--fundo-alto);
+  border-left: 1px solid var(--linha);
+  transform: translateX(100%);
+  visibility: hidden;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), visibility 220ms;
+}
+.ficha.aberta { transform: translateX(0); visibility: visible; }
+
+.ficha header { display: flex; align-items: center; gap: 0.4rem; }
+.ficha h2 {
+  margin: 0;
+  min-width: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+/* 40 px como o alvo da marca, e pela mesma razão: este é um app de celular. */
+.ficha .voltar {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  margin-left: -0.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  color: var(--texto-fraco);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.ficha .voltar:hover { color: var(--texto); }
+.ficha .voltar:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; }
+
+.ficha .identidade { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.ficha .secao {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--linha);
+}
+/* O painel é `--fundo-alto`; os campos descem para `--fundo` para continuarem
+   parecendo campo, que é o contraste que eles já têm na lista. */
+.ficha .campo-nome { background: var(--fundo); }
+
+/* ── fundir à mão ──
+
+   Fundir nunca existiu fora dos pares que `/api/entidades/duplicatas` propõe, e
+   aquela camada só aproxima grafias parecidas: duas grafias que a distância de
+   string não alcança não tinham como ser unidas sem Cypher por fora.
+
+   São três passos de propósito, porque **isto não tem desfazer** (`fusao.ts`):
+   escolher com quem, comparar as duas lado a lado, e só então dizer quem
+   sobrevive. */
+.fusao { display: flex; flex-direction: column; gap: 0.5rem; }
+/* O mesmo rótulo do `.campo-perfil`: o nome do campo, e a dica em cinza. */
+.fusao label { font-size: 0.85rem; }
+.fusao label .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+.fusao .candidatas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.fusao .candidatas button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+  color: inherit;
+}
+.fusao .candidatas button:hover { background: color-mix(in srgb, var(--texto) 8%, transparent); }
+.fusao .candidatas button:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
+.fusao .candidatas .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+.fusao .candidatas em { font-style: normal; color: var(--texto-fraco); }
+/* A busca da fusão ocupa a largura da ficha: `.campo-nome` nasce com 9 rem, que
+   é medida de campo ao lado de um botão, não de campo sozinho numa seção. */
+.fusao .busca { width: 100%; flex: none; }
+
+/* Lado a lado, e não empilhadas: a decisão é uma comparação, e comparação que
+   exige rolar entre os dois lados não é comparação. */
+.comparacao { display: flex; gap: 0.5rem; }
+.comparacao .lado {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: var(--fundo);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  padding: 0.6rem;
+}
+.comparacao .lado h4 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.comparacao .lado .meta { font-size: 0.76rem; color: var(--texto-fraco); }
+.comparacao .lado .resumo { margin: 0; font-size: 0.8rem; line-height: 1.4; }
+.comparacao .lado .resumo.vazio { color: var(--texto-fraco); font-style: italic; }
+.comparacao .lado .reextrair { margin-top: auto; text-align: center; }
+
+/* Terracota e não vermelho: este sistema não tem cor de perigo, e o acento já
+   quer dizer "isto muda o grafo". Mesma barra da proposta do agente 3. */
+.aviso-fusao {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--texto-fraco);
+  border-left: 2px solid var(--acento);
+  padding-left: 0.7rem;
+}
+
+/* Quem pediu menos movimento recebe a ficha sem deslize — ela aparece. Mesma
+   forma da gaveta da gestão. */
+@media (prefers-reduced-motion: reduce) {
+  .ficha { transition: visibility 1ms; transform: translateX(0); }
+  .ficha:not(.aberta) { transform: translateX(100%); }
+}
 
 /* ---- marca: o canto superior esquerdo, e a volta ao início ---- */
 
@@ -1335,8 +1579,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 
 /* O selo de quando. A diferença entre os três é o que o agente custa: um roda
-   em toda sessão, outro só quando o caso aparece, outro só quando eu aperto. */
-.quando {
+   em toda sessão, outro só quando o caso aparece, outro só quando eu aperto.
+
+   **Escopado, e era global.** `.lista-sessoes .quando` é o nome da sessão e o
+   da entidade — nome próprio, tamanho de texto —, e tem especificidade maior
+   que esta regra. Só que ele não redeclara `font-size`, `text-transform` nem a
+   borda, então os três vazavam para cá: cada nome saía a 0,6 rem, em caixa
+   baixa, dentro de uma pílula. Dois significados no mesmo nome de classe, em
+   folha global, é colisão esperando a hora. */
+.agentes .quando,
+.editor-agente .quando {
   font-size: 0.6rem;
   letter-spacing: 0.04em;
   text-transform: lowercase;
@@ -1345,8 +1597,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: 999px;
   padding: 0.05rem 0.4rem;
 }
-.quando.automatico { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
-.quando.condicional { color: var(--acento); border-color: color-mix(in srgb, var(--acento) 40%, transparent); }
+.agentes .quando.automatico,
+.editor-agente .quando.automatico { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.agentes .quando.condicional,
+.editor-agente .quando.condicional { color: var(--acento); border-color: color-mix(in srgb, var(--acento) 40%, transparent); }
 
 /* ── a gaveta de edição ──
    Mesma forma do menu de gestão, pelo lado oposto: ela não é navegação, é o
