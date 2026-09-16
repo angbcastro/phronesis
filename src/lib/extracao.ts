@@ -44,7 +44,6 @@ import { criarLocalizador } from "./offsets";
 import { carimbo, efetivo } from "./overrides";
 import type { Dossie } from "./recuperacao";
 import { sobreDe } from "./referencias";
-import { hashDeRegras, regras } from "./regras";
 import { resolverReferencias } from "./resolucao";
 import type { Atribuicoes } from "./resolucao";
 import { normalizarNome } from "./texto";
@@ -280,35 +279,13 @@ Transcrição:
 `;
 
 /**
- * O bloco das regras aprovadas, ou string vazia.
- *
- * `blocoDeRegras([]) === ""` não é detalhe: é o que faz esta fatia inteira ser
- * um **no-op** até a primeira aprovação. Sem regra, o prompt sai byte a byte
- * igual ao de antes dela, e as substrings que `tests/extracao.test.ts` trava
- * continuam onde estavam.
- */
-export function blocoDeRegras(lista: readonly Regra[]): string {
-  if (lista.length === 0) return "";
-
-  const linhas = lista.map((r) => {
-    const alvo = r.substitui?.trim();
-    return `- ${r.texto.trim()}${alvo ? ` (isto substitui a seção ${alvo})` : ""}`;
-  });
-
-  return `AJUSTES QUE EU PEDI
-Vieram da minha revisão de sessões reais e valem sobre tudo o que está acima. Onde um ajuste contradisser uma seção anterior, o ajuste vence.
-${linhas.join("\n")}
-
-`;
-}
-
-/**
  * O bloco do dossiê, ou string vazia (slice 4.9; a apresentação mudou na 4.11).
  *
  * **Dossiê vazio devolve `""`, e aí a chamada sai byte a byte igual à da 4.8.**
  * Grafo vazio, primeira sessão da vida do sistema, Gateway fora: tudo como
- * antes. É o mesmo no-op que `blocoDeRegras([]) === ""` garante desde a 4.6, e
- * é o que permite esta fatia inteira ser reversível olhando uma linha.
+ * antes. É a disciplina que todo bloco injetado neste prompt segue — bloco
+ * vazio devolve `""` —, e é o que permite cada fatia que mexe aqui ser
+ * reversível olhando uma linha.
  *
  * Ele declara a chave nova **de dentro de si** — o precedente é o `estende` da
  * 4.8: quem pede um campo é quem explica o campo, e sem o bloco não há campo
@@ -429,44 +406,31 @@ O JSON ganha então uma terceira chave:
 }
 
 /**
- * Os cabeçalhos de seção do prompt base, lidos do próprio texto.
- *
- * Existem para o `calibracao-1` poder dizer **qual** seção uma regra nova
- * contradiz. Derivados por leitura, e não escritos numa constante ao lado:
- * uma lista copiada à mão desatualiza no dia em que alguém renomear uma seção,
- * e desatualizaria em silêncio.
- */
-export function secoesDoPrompt(): string[] {
-  return INSTRUCOES_BASE.split("\n").filter((l) =>
-    /^[A-ZÁÂÃÀÉÊÍÓÔÕÚÇ][A-ZÁÂÃÀÉÊÍÓÔÕÚÇ ]{3,}$/.test(l),
-  );
-}
-
-/**
  * O prompt sem a transcrição: é ele que o painel de agentes mostra e edita, e é
  * dele que sai o hash do carimbo. `INSTRUCOES_BASE + FORMATO` **nesta ordem** é
- * o texto de origem; o bloco de regras não entra aqui porque ele tem dono
- * próprio (`/calibracao`) e hash próprio.
+ * o texto de origem — e, desde a slice 7, o texto que o `redacao-1` emenda
+ * quando eu aprovo uma calibração.
  */
 export const BASE = INSTRUCOES_BASE + FORMATO;
 
 /**
- * O cabeçalho antes do qual o bloco de regras entra.
+ * O cabeçalho antes do qual os blocos de uma chamada entram.
  *
  * Enquanto as duas metades eram duas constantes, o ponto de inserção era a
  * emenda entre elas. Com o prompt editável inteiro (slice 4.7) ele passa a ser
  * um cabeçalho procurado no texto — e continua sendo exatamente o mesmo ponto:
  * depois de tudo o que instrui, antes do que descreve o envelope de saída.
- * Regra enfiada depois do FORMATO seria lida como parte do exemplo de JSON.
+ * Bloco enfiado depois do FORMATO seria lido como parte do exemplo de JSON —
+ * e é a mesma razão pela qual `aplicarEdicoes` põe seção nova antes dele.
  */
 const CABECALHO_FORMATO = "FORMATO\n";
 
 /**
- * A base com as regras aprovadas no lugar certo.
+ * O bloco entra no lugar certo, ou no fim se o cabeçalho não estiver lá.
  *
- * Se eu renomear o cabeçalho ao editar o prompt, as regras vão para o fim, antes
+ * Se eu renomear o cabeçalho ao editar o prompt, o bloco vai para o fim, antes
  * da transcrição — pior lugar, e ainda assim o comportamento certo: o prompt que
- * eu escrevi é o que manda, e uma regra aprovada não pode simplesmente sumir
+ * eu escrevi é o que manda, e o dossiê da janela não pode simplesmente sumir
  * porque o cabeçalho mudou de nome.
  */
 export function inserirAntesDoFormato(base: string, bloco: string): string {
@@ -476,45 +440,43 @@ export function inserirAntesDoFormato(base: string, bloco: string): string {
   return i === -1 ? base + bloco : base.slice(0, i) + bloco + base.slice(i);
 }
 
-export const comRegras = (base: string, lista: readonly Regra[]): string =>
-  inserirAntesDoFormato(base, blocoDeRegras(lista));
-
 /**
- * O prompt de uma chamada: base + regras aprovadas + o dossiê + o bloco da
- * janela + o texto. Os três blocos injetados entram no **mesmo** ponto, na ordem
- * em que aparecem aqui — regra primeiro, porque ela vale sobre tudo; o dossiê
- * depois, porque ele é material; e a janela por último, porque ela é sobre esta
- * chamada e mais nenhuma.
+ * O prompt de uma chamada: base + o dossiê + o bloco da janela + o texto. Os
+ * dois blocos injetados entram no **mesmo** ponto, na ordem em que aparecem
+ * aqui — o dossiê primeiro, porque ele é material; a janela depois, porque ela
+ * é sobre esta chamada e mais nenhuma.
+ *
+ * **Eram três até a slice 7**, e o primeiro era o das regras aprovadas. Ele
+ * saiu porque a correção deixou de virar apêndice e passou a virar emenda no
+ * corpo do prompt (`redacao.ts`): o que a 4.6 colava aqui a cada chamada agora
+ * está escrito dentro do texto que `efetivo("extracao", …)` devolve.
  *
  * Sem `contexto` e sem dossiê, sai byte a byte igual ao de antes da slice 4.8.
  */
 export const montarPrompt = (
   texto: string,
-  lista: readonly Regra[] = [],
   base: string = BASE,
   contexto?: ContextoDeJanela,
   dossie: Dossie = [],
 ): string =>
   inserirAntesDoFormato(
-    inserirAntesDoFormato(comRegras(base, lista), blocoDasCandidatas(dossie)),
+    inserirAntesDoFormato(base, blocoDasCandidatas(dossie)),
     blocoDaJanela(contexto),
   ) + texto.trim();
 
 /**
  * A versão que vai carimbada no átomo (regra 7).
  *
- * O sufixo sai das regras **usadas nesta chamada**, não do arquivo: se o R2
- * falhar, entram zero regras e a versão é a base. A procedência é verdadeira
- * nos dois caminhos, que é o ponto — carimbar `+a3f91c7d` numa extração que
- * rodou sem regra nenhuma seria mentira gravada no grafo para sempre.
+ * Um sufixo só desde a slice 7 (`extracao-9+p1b2c3d4`), e não mais dois: o que
+ * a 4.6 carimbava com `+a<hash>` era o apêndice de regras, que deixou de
+ * existir. Carimbo de átomo antigo com os dois sufixos continua resolvendo —
+ * os dois snapshots são imutáveis e os dois leitores continuam de pé.
  */
 export function versaoDoPrompt(
-  lista: readonly Regra[],
-  /** O hash do prompt editado no painel (slice 4.7), ou `null` se é a base. */
+  /** O hash do prompt em vigor (slice 4.7), ou `null` se é a base do git. */
   hashPrompt: string | null = null,
 ): string {
-  const base = carimbo(PROMPT_VERSION, hashPrompt);
-  return lista.length === 0 ? base : `${base}+${hashDeRegras(lista)}`;
+  return carimbo(PROMPT_VERSION, hashPrompt);
 }
 
 /**
@@ -975,8 +937,8 @@ export interface OpcoesDeJanela {
   ate?: number;
   /**
    * Quem o grafo acha que esta janela cita (slice 4.9). Vazio ou ausente faz a
-   * chamada sair **byte a byte igual à da 4.8** — é o mesmo no-op que
-   * `blocoDeRegras([]) === ""` garante desde a 4.6.
+   * chamada sair **byte a byte igual à da 4.8** — bloco vazio devolve `""`, e é
+   * o que torna toda fatia que injeta texto aqui reversível olhando uma linha.
    */
   dossie?: Dossie;
   /**
@@ -1035,19 +997,16 @@ export async function extrairJanela(
     };
   }
 
-  // As regras aprovadas, ou lista vazia se ainda não há nenhuma — e também se
-  // o R2 falhar. A extração nunca deixa de acontecer por causa disto: sem
-  // regra, o prompt sai byte a byte igual ao de antes da slice 4.6.
-  const aprovadas = await regras();
-
-  // O que eu editei no painel de agentes, ou a base do git — e também a base se
-  // o R2 falhar, pela mesma razão das regras (slice 4.7). `modeloExtracao()`
-  // continua sendo quem valida o id e lê `EXTRACAO_MODEL`: o painel só
-  // acrescenta uma camada acima dela.
+  // O prompt em vigor, ou a base do git — e também a base se o R2 falhar.
+  // A extração nunca deixa de acontecer por causa disto: sem override, o prompt
+  // sai byte a byte igual ao do git. Desde a slice 7 esta é a **única** fonte
+  // que não é o git: a emenda que a calibração aprova é gravada aqui dentro, em
+  // vez de virar um apêndice colado a cada chamada. `modeloExtracao()` continua
+  // sendo quem valida o id e lê `EXTRACAO_MODEL`.
   const meu = await efetivo("extracao", { prompt: BASE, modelo: modeloExtracao() });
   const modelo = meu.modelo;
 
-  const versao = versaoDoPrompt(aprovadas, meu.hash);
+  const versao = versaoDoPrompt(meu.hash);
 
   const anteriores = jaPropostos.map((a) => ({
     tipo: a.tipo,
@@ -1055,7 +1014,7 @@ export async function extrairJanela(
     sobre: sobreDe(a).entidade,
   }));
   const contexto: ContextoDeJanela = { jaPropostos: anteriores, ...faixaDaJanela(janela), unica };
-  const prompt = montarPrompt(janela.texto, aprovadas, meu.prompt, contexto, dossie);
+  const prompt = montarPrompt(janela.texto, meu.prompt, contexto, dossie);
 
   async function chamar(teto: number) {
     try {

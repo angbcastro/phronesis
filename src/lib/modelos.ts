@@ -141,12 +141,24 @@ export function modeloEnriquecimento(): string {
 }
 
 /**
- * Modelo que lê as minhas correções e rascunha uma regra nova para o prompt de
- * extração (slice 4.6, agente 4). Mesma regra dos outros: padrão é o da
+ * Modelo que lê as minhas correções de um agente e enxerga o padrão nelas
+ * (slice 4.6, generalizado na 7). Mesma regra dos outros: padrão é o da
  * extração, e `CALIBRACAO_MODEL` separa sem tocar em código.
  */
 export function modeloCalibracao(): string {
   return validarIdDeModelo(process.env.CALIBRACAO_MODEL || modeloExtracao());
+}
+
+/**
+ * Modelo que transforma um padrão confirmado em emenda ao prompt do agente
+ * (slice 7).
+ *
+ * Padrão é o **da calibração**, e não o da extração: os dois passos leem prompt
+ * e escrevem prosa curta e disciplinada, e quem troca um costuma querer trocar
+ * o outro junto. `REDACAO_MODEL` separa quando não for o caso.
+ */
+export function modeloRedacao(): string {
+  return validarIdDeModelo(process.env.REDACAO_MODEL || modeloCalibracao());
 }
 
 /**

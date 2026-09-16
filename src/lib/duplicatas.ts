@@ -26,7 +26,7 @@ import { normalizar } from "./texto";
 import type { EntidadeDoGrafo } from "./entidades";
 
 /** Muda sempre que o prompt mudar — mesma disciplina da extração (regra 7). */
-export const PROMPT_VERSION_DUPLICATAS = "duplicatas-1";
+export const PROMPT_VERSION_DUPLICATAS = "duplicatas-2";
 
 export class DuplicatasError extends Error {
   constructor(message: string) {
@@ -139,12 +139,16 @@ export function parecidas(
 
 export const INSTRUCOES = `Você recebe pares de nomes que aparecem num diário pessoal, com o contexto em que cada um foi usado. Para cada par, diga se são a MESMA entidade escrita de dois jeitos, ou duas entidades diferentes.
 
-Responda SIM apenas quando for grafia diferente da mesma coisa: "Exxmed" e "Exx Med", "Rodozanco" e "Rodozanko", um apelido e o nome de quem o contexto mostra ser a mesma pessoa.
+QUANDO É SIM
+Grafia diferente da mesma coisa: "Exxmed" e "Exx Med", "Rodozanco" e "Rodozanko", um apelido e o nome de quem o contexto mostra ser a mesma pessoa.
 
-Responda NÃO quando forem coisas diferentes que por acaso se parecem: "Marina" e "Mariana" são duas pessoas, "Pedro" e "Pedra" idem. Nome parecido é o caso comum num diário, não a exceção.
+QUANDO É NÃO
+Coisas diferentes que por acaso se parecem: "Marina" e "Mariana" são duas pessoas, "Pedro" e "Pedra" idem. Nome parecido é o caso comum num diário, não a exceção.
 
-Na dúvida, responda NÃO. Fundir duas coisas diferentes é irreversível; deixar duas passando é só um item a mais na lista.
+NA DÚVIDA
+Responda NÃO. Fundir duas coisas diferentes é irreversível; deixar duas passando é só um item a mais na lista.
 
+FORMATO
 Devolva SÓ um array JSON, sem texto em volta:
 [{"a":"<chave a>","b":"<chave b>","mesma":true|false,"explicacao":"<uma frase curta>"}]`;
 

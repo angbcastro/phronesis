@@ -25,6 +25,7 @@ import {
   PROMPT_VERSION_ENRIQUECIMENTO,
 } from "./enriquecimento";
 import { INSTRUCOES as BASE_CALIBRACAO, PROMPT_VERSION_CALIBRACAO } from "./calibracao";
+import { INSTRUCOES as BASE_REDACAO, PROMPT_VERSION_REDACAO } from "./redacao";
 import { INSTRUCOES as BASE_DUPLICATAS, PROMPT_VERSION_DUPLICATAS } from "./duplicatas";
 import {
   INSTRUCOES as BASE_CONFRONTO,
@@ -47,6 +48,7 @@ import {
   modeloEnriquecimento,
   modeloExtracao,
   modeloPerfil,
+  modeloRedacao,
   modeloResolucao,
   modeloStt,
   modeloTituloChat,
@@ -177,15 +179,34 @@ export const AGENTES: readonly Agente[] = [
     id: "calibracao",
     versao: PROMPT_VERSION_CALIBRACAO,
     rotulo: "calibração",
-    papel: "lê as minhas correções e rascunha regra nova para o prompt da extração",
+    papel:
+      "lê as minhas correções de UM agente e diz que padrão elas revelam — a pauta que eu confirmo antes de qualquer emenda",
     quando: "sob_demanda",
-    gatilho: "botão em /calibracao",
+    gatilho: "botão em /calibracao, por agente",
     base: BASE_CALIBRACAO,
     padrao: modeloCalibracao,
     variavel: "CALIBRACAO_MODEL",
     modulo: "src/lib/calibracao.ts",
     modeloEditavel: true,
-    envelope: ["regras", "cita"],
+    envelope: ["padroes", "cita"],
+  },
+  {
+    id: "redacao",
+    versao: PROMPT_VERSION_REDACAO,
+    rotulo: "redação",
+    papel:
+      "pega um padrão que eu confirmei e escreve a emenda ao prompt do agente — seção por seção, nunca o texto inteiro",
+    quando: "sob_demanda",
+    gatilho: "segundo passo em /calibracao, depois de eu confirmar a pauta",
+    base: BASE_REDACAO,
+    padrao: modeloRedacao,
+    variavel: "REDACAO_MODEL",
+    modulo: "src/lib/redacao.ts",
+    modeloEditavel: true,
+    // `edicoes` e `secao` são o que o parser lê; `padrao` é o que amarra a
+    // emenda ao que eu confirmei. Prompt que perca qualquer um dos três produz
+    // uma emenda que o servidor recusa inteira.
+    envelope: ["edicoes", "secao", "padrao"],
   },
   {
     id: "perfil",
@@ -519,7 +540,16 @@ export const TELAS: readonly Tela[] = [
             entradas: [
               { rotulo: "correções", nota: "o que a proposta dizia contra o que eu aprovei" },
             ],
-            volta: { para: "extracao", rotulo: "a regra que eu aprovo entra no prompt" },
+            dentro: [
+              {
+                id: "redacao",
+                rotulo: "redação",
+                tipo: "agente",
+                agente: "redacao",
+                nota: "escreve a emenda, seção por seção, depois de eu confirmar a pauta",
+              },
+            ],
+            volta: { para: "extracao", rotulo: "a emenda que eu aprovo entra no prompt" },
           },
         ],
       },

@@ -97,8 +97,8 @@ describe("o índice, lido e gravado por etag", () => {
   it("índice que ainda não existe nasce vazio, sem estourar", async () => {
     const i = await carregarIndice();
     expect(i.correcoes).toEqual([]);
-    expect(i.regras_correntes).toBeNull();
-    expect(i.visitado_em).toBeNull();
+    expect(i.padroes).toEqual([]);
+    expect(i.visitado_em).toEqual({});
   });
 
   it("a primeira escrita usa If-None-Match, para não atropelar quem chegou junto", async () => {

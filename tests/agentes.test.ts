@@ -40,13 +40,12 @@ import {
   FORMATO,
   INSTRUCOES_BASE,
   PROMPT_VERSION,
-  comRegras,
   montarPrompt,
   versaoDoPrompt,
 } from "@/lib/extracao";
 import { carimbo, configAgentes, resolver } from "@/lib/overrides";
 import { getJson } from "@/lib/r2";
-import { hashDeRegras, hashDeTexto } from "@/lib/regras";
+import { hashDeTexto } from "@/lib/regras";
 import { AGENTE_IDS, ehAgenteId } from "@/lib/tipos";
 import type { ConfigAgentes, Regra } from "@/lib/tipos";
 
@@ -127,13 +126,9 @@ describe("sem override, nada muda", () => {
     expect(montarPrompt("olá")).toBe(INSTRUCOES_BASE + FORMATO + "olá");
   });
 
-  it("comRegras sem regra devolve a base intocada", () => {
-    expect(comRegras(BASE, [])).toBe(BASE);
-  });
-
   it("a versão sai sem sufixo nenhum", () => {
-    expect(versaoDoPrompt([])).toBe(PROMPT_VERSION);
-    expect(versaoDoPrompt([], null)).toBe("extracao-9");
+    expect(versaoDoPrompt()).toBe(PROMPT_VERSION);
+    expect(versaoDoPrompt(null)).toBe("extracao-9");
   });
 
   it("resolver devolve a base e o modelo padrão, sem ir ao R2 pelo texto", async () => {
@@ -143,30 +138,26 @@ describe("sem override, nada muda", () => {
   });
 });
 
-// ──────────────────── 3. o bloco de regras continua no lugar ────────────────────
+// ──────────────── 3. o apêndice de regras saiu, e nada ficou no lugar ────────────────
 
-describe("as regras aprovadas continuam entrando antes do FORMATO", () => {
-  const r = regra("Nunca corte a conclusão do átomo.");
+describe("o prompt tem duas fontes, e não três (slice 7)", () => {
+  it("montarPrompt não aceita mais uma lista de regras entre o texto e a base", () => {
+    // A assinatura é a prova: o segundo parâmetro passou a ser a base, e o
+    // apêndice deixou de existir. Um `montarPrompt(texto, regras, base)` de
+    // antes da 7 quebraria aqui em vez de colar regra onde não vai mais.
+    expect(montarPrompt("x", BASE)).toBe(BASE + "x");
+  });
 
-  it("a emenda é a mesma de quando eram duas constantes", () => {
-    // O contrato exato da 4.6: base, bloco, FORMATO — nesta ordem.
-    expect(comRegras(BASE, [r])).toBe(
-      INSTRUCOES_BASE + comRegras(BASE, [r]).slice(INSTRUCOES_BASE.length),
+  it("a emenda entra no corpo do prompt, e é o override que a carrega", async () => {
+    // O que a 4.6 colava a cada chamada agora está dentro do texto que
+    // `efetivo` devolve — e por isso o carimbo tem um sufixo só.
+    const editado = BASE.replace(
+      "QUANTOS",
+      ["QUANTOS", "Nunca corte a conclusão do átomo."].join("\n"),
     );
-    const p = montarPrompt("x", [r]);
-    expect(p.indexOf(r.texto)).toBeGreaterThan(p.indexOf("NÃO COMENTE A TRANSCRIÇÃO"));
-    expect(p.indexOf(r.texto)).toBeLessThan(p.indexOf("FORMATO\nResponda somente com JSON"));
-  });
-
-  it("num prompt editado que perdeu o cabeçalho, a regra vai para o fim e não some", () => {
-    const editado = "Faça o que eu mando e devolva atomos e entidades.";
-    const saida = comRegras(editado, [r]);
-    expect(saida.startsWith(editado)).toBe(true);
-    expect(saida).toContain(r.texto);
-  });
-
-  it("a versão com regra é a de antes: sufixo sem prefixo", () => {
-    expect(versaoDoPrompt([r])).toBe(`extracao-9+${hashDeRegras([r])}`);
+    const e = await resolver("extracao", { prompt: editado, modelo: "m" }, semOverride);
+    expect(e.prompt).toContain("Nunca corte a conclusão do átomo.");
+    expect(montarPrompt("x", e.prompt)).toContain("Nunca corte a conclusão do átomo.");
   });
 });
 
@@ -178,9 +169,12 @@ describe("o carimbo diz por qual chave o hash resolve", () => {
     expect(carimbo("resolucao-2", "a1b2c3d4")).toBe("resolucao-2+pa1b2c3d4");
   });
 
-  it("prompt editado e regra aprovada carregam os dois sufixos, nesta ordem", () => {
-    const r = regra("Junte o que é o mesmo assunto.");
-    expect(versaoDoPrompt([r], "a1b2c3d4")).toBe(`extracao-9+pa1b2c3d4+${hashDeRegras([r])}`);
+  it("desde a slice 7 o carimbo tem um sufixo só: o do prompt em vigor", () => {
+    // A 4.6 podia carimbar `extracao-9+pa1b2c3d4+a3f91c7d` — dois hashes, dois
+    // objetos. O segundo era o apêndice de regras, que deixou de existir.
+    // Carimbo antigo com os dois continua resolvendo: os dois snapshots são
+    // imutáveis e `versaoDeRegras` continua de pé para ler o segundo.
+    expect(versaoDoPrompt("a1b2c3d4")).toBe("extracao-9+pa1b2c3d4");
   });
 
   it("o hash sai do conteúdo: mesmo texto, mesmo hash; texto de volta, carimbo de volta", () => {
@@ -254,7 +248,7 @@ describe("com override", () => {
     );
     expect(e.prompt).toBe(BASE);
     expect(e.hash).toBeNull();
-    expect(versaoDoPrompt([], e.hash)).toBe("extracao-9");
+    expect(versaoDoPrompt(e.hash)).toBe("extracao-9");
   });
 
   it("o modelo editado vence a variável de ambiente", async () => {
@@ -450,6 +444,6 @@ describe("R2 fora do ar não derruba agente nenhum", () => {
 
     const e = await resolver("extracao", { prompt: BASE, modelo: "zai/glm-5.3-flash" }, cfg);
     expect(e.prompt).toBe(BASE);
-    expect(versaoDoPrompt([], e.hash)).toBe("extracao-9");
+    expect(versaoDoPrompt(e.hash)).toBe("extracao-9");
   });
 });

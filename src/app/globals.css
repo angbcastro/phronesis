@@ -1458,6 +1458,85 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .abrir-refugo:hover { color: var(--texto); border-color: var(--texto-fraco); }
 
+/* ───────────────── a porta da calibração, e a emenda (slice 7) ─────────────────
+   A tela deixou de ser uma só quando o laço deixou de ser da extração: a porta
+   lista os agentes com material parado, e cada um tem a sua página. Parede de
+   correções de cinco agentes misturados seria separar com o olho toda vez — o
+   que `/agentes` já tinha aprendido a não fazer. */
+.linha-agente {
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: inherit;
+}
+.linha-agente .nome { font-size: 1rem; }
+.linha-agente .meta { font-size: 0.82rem; color: var(--texto-fraco); line-height: 1.45; }
+.linha-agente:hover .nome { color: var(--acento); }
+
+.calibracao .voltar {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 1.1rem;
+  color: var(--texto-fraco);
+  align-self: flex-start;
+  margin-bottom: 0.4rem;
+}
+.calibracao .voltar:hover { color: var(--texto); }
+.calibracao .voltar:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; }
+
+/* O que muda no prompt. Empilhado sempre, e sem cor apontando o quê: corpo de
+   seção nunca cabe numa linha, e cor que decide o que mudou é a tela afirmando
+   uma leitura que eu não pedi — a mesma regra que a 4.6 fixou para a correção. */
+.emenda { display: flex; flex-direction: column; gap: 0.75rem; }
+.emenda h2 { font-size: 0.95rem; font-weight: 600; margin: 0; }
+.emenda > p { margin: 0; }
+
+.edicao {
+  border: 1px solid var(--acento);
+  border-radius: var(--raio);
+  background: var(--fundo-alto);
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.edicao .cabecalho {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--texto-fraco);
+}
+/* O selo aqui é o nome da seção: é o endereço da emenda, e o que eu confiro. */
+.edicao .selo {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--acento);
+  color: var(--acento);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+}
+.edicao .par-longo { display: flex; flex-direction: column; gap: 0.6rem; }
+.edicao .par-longo .lado { display: flex; flex-direction: column; gap: 0.2rem; }
+.edicao .par-longo .rotulo { font-size: 0.72rem; color: var(--texto-fraco); }
+.edicao .par-longo p {
+  margin: 0;
+  line-height: 1.55;
+  font-size: 0.92rem;
+  white-space: pre-wrap;
+  border-left: 2px solid var(--linha);
+  padding-left: 0.6rem;
+}
+/* O que ela passa a dizer é o que vale: a borda é a única marca de direção. */
+.edicao .par-longo .lado:last-child p { border-left-color: var(--acento); }
+
 /* Espaço para ela nas telas que ela cobre. `.leitura` já abre com 3.5rem. */
 .sessoes,
 .calibracao,

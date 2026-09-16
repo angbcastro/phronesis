@@ -460,7 +460,7 @@ describe("o bloco da janela", () => {
 
   it("sem contexto, o prompt sai igual ao de sempre", () => {
     const contexto = { de_s: 0, ate_s: 900, unica: true, jaPropostos: [] };
-    expect(montarPrompt("bla", [], undefined, contexto)).toBe(montarPrompt("bla"));
+    expect(montarPrompt("bla", undefined, contexto)).toBe(montarPrompt("bla"));
   });
 
   it("diz de que minutos a janela é, e que a fala continua depois", () => {
@@ -497,8 +497,8 @@ describe("o bloco da janela", () => {
     expect(b).not.toContain("estende");
   });
 
-  it("o bloco entra antes do FORMATO, junto com as regras aprovadas", () => {
-    const p = montarPrompt("bla", [], undefined, {
+  it("o bloco entra antes do FORMATO", () => {
+    const p = montarPrompt("bla", undefined, {
       de_s: 120,
       ate_s: 240,
       unica: false,
@@ -528,7 +528,7 @@ describe("o bloco das candidatas (slice 4.9)", () => {
 
   it("dossiê vazio devolve vazio — e o prompt sai byte a byte igual ao da 4.8", () => {
     expect(blocoDasCandidatas([])).toBe("");
-    expect(montarPrompt("bla", [], undefined, undefined, [])).toBe(montarPrompt("bla"));
+    expect(montarPrompt("bla", undefined, undefined, [])).toBe(montarPrompt("bla"));
   });
 
   /**
@@ -575,15 +575,17 @@ describe("o bloco das candidatas (slice 4.9)", () => {
     expect(blocoDasCandidatas(dossie)).toMatch(/SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA continuam/);
   });
 
-  it("entra depois das regras e antes da janela, tudo antes do FORMATO", () => {
+  it("entra antes da janela, e as duas antes do FORMATO", () => {
+    // Eram três blocos até a slice 7, e o primeiro era o das regras aprovadas.
+    // Ele saiu porque a correção deixou de virar apêndice e passou a virar
+    // emenda no corpo do prompt — a ordem dos dois que ficaram é a mesma.
     const p = montarPrompt(
       "bla",
-      [{ id: "r1", texto: "regra aprovada", cita: [], aprovada_em: "2026-09-06" }],
       undefined,
       { de_s: 120, ate_s: 240, unica: false, jaPropostos: [] },
       dossie,
     );
-    expect(p.indexOf("AJUSTES QUE EU PEDI")).toBeLessThan(p.indexOf("QUEM O DIÁRIO JÁ CONHECE"));
+    expect(p).not.toContain("AJUSTES QUE EU PEDI");
     expect(p.indexOf("QUEM O DIÁRIO JÁ CONHECE")).toBeLessThan(p.indexOf("ESTA JANELA"));
     expect(p.indexOf("ESTA JANELA")).toBeLessThan(p.indexOf("\nFORMATO\n"));
   });

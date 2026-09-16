@@ -539,13 +539,17 @@ export const TIPOS_CORRECAO = [
 export type TipoCorrecao = (typeof TIPOS_CORRECAO)[number];
 
 /**
- * Quem produziu o que não presta. **Captura os três, calibra um de cada vez** —
- * esta fatia consome só `extracao`; `resolucao` e `grafo` acumulam etiquetados
- * até a fatia que os calibrar.
+ * Quem produziu o que não presta.
+ *
+ * **Era um enum de três valores até a slice 7**, e é a mudança que abre o laço:
+ * agora é o `AgenteId` do registro, mais `"grafo"`, que não é agente nenhum —
+ * é higiene de grafia minha, e continua existindo porque um renome precisa de
+ * um lugar para ser etiquetado sem culpar um modelo que não errou.
+ *
+ * O que está gravado no R2 hoje migra sozinho: `"extracao"` e `"resolucao"` já
+ * são `AgenteId`, e `"grafo"` continua sendo ele mesmo. Nenhuma conversão.
  */
-export const AGENTES_CORRECAO = ["extracao", "resolucao", "grafo"] as const;
-
-export type AgenteCorrecao = (typeof AGENTES_CORRECAO)[number];
+export type AgenteCorrecao = AgenteId | "grafo";
 
 /**
  * Um campo do átomo que eu toquei na tela. A chave existir **é** o gesto — o
@@ -636,10 +640,23 @@ export interface Correcao {
 export interface IndiceCalibracao {
   /** Mais novas primeiro, teto de `TETO_CORRECOES`. */
   correcoes: Correcao[];
-  /** Hash da versão de regras em vigor; `null` = nenhuma aprovada. */
-  regras_correntes: string | null;
-  /** Última vez que `/calibracao` carregou de fato. */
-  visitado_em: string | null;
+  /**
+   * Os padrões vivos: rascunhados, confirmados por mim, ou já aplicados
+   * (slice 7). Vivem no índice, e não na tela, para sobreviverem a eu fechar a
+   * aba entre confirmar o padrão e aprovar a redação — que são dois passos e
+   * duas chamadas de modelo.
+   */
+  padroes: Padrao[];
+  /**
+   * Última vez que `/calibracao` carregou de fato, **por agente** (slice 7).
+   *
+   * Era um só até a 7, e com o laço aberto para todos isso passou a ser erro:
+   * abrir a tela de um agente zerava o relógio da sugestão de todos os outros.
+   *
+   * Índice gravado antes da 7 traz uma string aqui; quem lê aceita as duas
+   * formas e trata a string como "visitei tudo naquele dia".
+   */
+  visitado_em: Partial<Record<AgenteId, string>> | string | null;
   atualizado_em: string;
 }
 
@@ -651,30 +668,56 @@ export interface IndiceCalibracao {
 export const TETO_CORRECOES = 500;
 
 /**
- * Uma regra aprovada por mim, que entra no prompt de extração a partir da
- * próxima sessão.
+ * Um padrão que o `calibracao-2` enxergou nas minhas correções (slice 7).
  *
- * `id` é atribuído no rascunho e nunca muda: é ele que define "sobreviveu à
- * minha edição". `cita` é do `calibracao-1` e imutável na tela — eu edito o
- * texto da regra, não a lista do que a motivou.
+ * **É a `Regra` da 4.6 com outro destino.** A forma é a mesma, e de propósito:
+ * `id` atribuído no rascunho e nunca editável — é ele que define "sobreviveu à
+ * minha edição" —, `texto` o único campo que a tela deixa mexer, `cita` do
+ * agente e imutável porque é a procedência do que o motivou.
+ *
+ * O que mudou é o que acontece depois. A regra virava apêndice colado antes do
+ * `FORMATO`, para sempre; o padrão vira **a pauta de uma emenda**: eu confirmo
+ * que ele faz sentido, o `redacao-1` decide onde no corpo do prompt aquilo
+ * entra, e o padrão se aposenta com `aplicado_em` preenchido.
+ */
+export interface Padrao {
+  id: string;
+  /** De quem é o prompt que este padrão vai emendar. */
+  agente: AgenteId;
+  /** O único campo que a tela deixa eu editar. */
+  texto: string;
+  /** `Correcao.id[]` — o que motivou este padrão. Nunca menos de dois. */
+  cita: string[];
+  /** Qual seção do prompt corrente ele contradiz, quando for o caso. */
+  substitui?: string;
+  criado_em: string;
+  /** `null` = rascunhado e ainda não confirmado por mim. */
+  confirmado_em: string | null;
+  /** O `p<hash>` do prompt que o incorporou; `null` = ainda é pauta. */
+  aplicado_em: string | null;
+}
+
+/**
+ * Uma regra aprovada na 4.6. **Nada mais a escreve desde a slice 7** — ela
+ * sobrevive porque `calibracao/regras-<hash>.json` é imutável e um átomo
+ * carimbado `extracao-9+a3f91c7d` tem de continuar resolvendo para o texto que
+ * o produziu.
  */
 export interface Regra {
   id: string;
-  /** O único campo que a tela deixa eu editar. */
   texto: string;
-  /** `Correcao.id[]` — o que motivou esta regra. */
   cita: string[];
-  /** Qual seção do prompt base ela contradiz, quando for o caso. */
   substitui?: string;
   aprovada_em: string;
 }
 
 /**
- * `calibracao/regras-<hash>.json` — **imutável para sempre**.
+ * `calibracao/regras-<hash>.json` — **imutável para sempre**, e desde a slice 7
+ * só de leitura: nada mais grava um destes.
  *
- * Existe porque `prompt_version` passa a carregar um sufixo (`extracao-6+a3f91c7d`)
- * e um hash tem que resolver para um texto: sem o snapshot, aquele carimbo
- * apontaria para uma versão de prompt que não está versionada em lugar nenhum.
+ * Existe porque `prompt_version` carrega um sufixo (`extracao-9+a3f91c7d`) e um
+ * hash tem que resolver para um texto: sem o snapshot, aquele carimbo apontaria
+ * para uma versão de prompt que não está versionada em lugar nenhum.
  */
 export interface VersaoDeRegras {
   hash: string;
@@ -685,10 +728,51 @@ export interface VersaoDeRegras {
 }
 
 /**
- * Teto de regras no prompt. **É a curadoria**, não um limite técnico: prompt
- * sem limite é exatamente como esta fatia estragaria a extração que já presta.
+ * Quantos padrões um rascunho pode propor. **É a curadoria**, não um limite
+ * técnico: mais que isto não é rascunho, é reescrita do prompt.
  */
-export const MAX_REGRAS = 12;
+export const MAX_PADROES_POR_RODADA = 2;
+
+/**
+ * Quantas seções uma emenda pode tocar numa rodada (slice 7).
+ *
+ * A amarra que define "incremental". Mais que duas seções mexidas de uma vez e
+ * o que eu estou lendo não é mais uma emenda que dá para conferir — é um prompt
+ * novo com cara de diff.
+ */
+export const MAX_SECOES_POR_EMENDA = 2;
+
+/**
+ * O que o `redacao-1` pode fazer com uma seção. **Não existe `apagar`**, e a
+ * ausência é a amarra: apagar uma seção inteira do prompt é decisão minha, no
+ * editor de `/agentes`, olhando o texto — não efeito colateral de um padrão que
+ * eu confirmei em três segundos.
+ */
+export const OPERACOES_EDICAO = ["reescrever", "acrescentar", "criar"] as const;
+
+export type OperacaoEdicao = (typeof OPERACOES_EDICAO)[number];
+
+/**
+ * Uma emenda a uma seção do prompt (slice 7).
+ *
+ * **O redator devolve isto, e nunca o prompt inteiro.** É o que torna
+ * "incremental" uma garantia em vez de um pedido: seção que ele não nomeia
+ * nunca sai do servidor, então volta byte a byte por construção. Um prompt
+ * inteiro de volta exigiria confiar num diff para descobrir o que mudou — e
+ * confiar que o que parece igual é igual.
+ */
+export interface Edicao {
+  /** O cabeçalho da seção, exatamente como ele aparece no prompt corrente. */
+  secao: string;
+  operacao: OperacaoEdicao;
+  /**
+   * O corpo da seção **sem o cabeçalho**: em `reescrever` e `criar` ele
+   * substitui o corpo inteiro, em `acrescentar` ele entra no fim do que já há.
+   */
+  texto: string;
+  /** O `Padrao.id` confirmado que motiva esta edição. */
+  padrao: string;
+}
 
 // ───────────────────────── slice 4.7: os agentes ─────────────────────────
 
@@ -716,6 +800,7 @@ export const AGENTE_IDS = [
   "perfil",
   "enriquecimento",
   "calibracao",
+  "redacao",
   "duplicatas",
   "embedding",
   "confronto",
@@ -727,6 +812,16 @@ export type AgenteId = (typeof AGENTE_IDS)[number];
 
 export const ehAgenteId = (v: unknown): v is AgenteId =>
   typeof v === "string" && (AGENTE_IDS as readonly string[]).includes(v);
+
+/**
+ * O mesmo, para a etiqueta de uma `Correcao` — que aceita um valor a mais.
+ *
+ * Mora aqui, e não junto da `Correcao` lá em cima, por ordem de avaliação:
+ * `AGENTE_IDS` é uma `const` declarada nesta seção, e uma função que a lê tem
+ * de ser declarada depois dela. O tipo pode ficar lá porque tipo não é valor.
+ */
+export const ehAgenteCorrecao = (v: unknown): v is AgenteCorrecao =>
+  v === "grafo" || ehAgenteId(v);
 
 /**
  * Quando cada agente roda. É selo na tela, e a diferença importa para ler o

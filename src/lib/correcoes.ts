@@ -26,9 +26,10 @@
  */
 import { mencoesDe, sobreDe } from "./referencias";
 import { ehPronome, normalizarNome } from "./texto";
-import { CAMPOS_GESTO, GESTOS_VAZIOS, TETO_CORRECOES } from "./tipos";
+import { AGENTE_IDS, CAMPOS_GESTO, ehAgenteId, GESTOS_VAZIOS, TETO_CORRECOES } from "./tipos";
 import type {
   AgenteCorrecao,
+  AgenteId,
   AtomoProposto,
   CampoGesto,
   Correcao,
@@ -420,10 +421,39 @@ export function apurarCorrecoes(entrada: EntradaApuracao): Correcao[] {
 
 export const indiceVazio = (agora: string): IndiceCalibracao => ({
   correcoes: [],
-  regras_correntes: null,
-  visitado_em: null,
+  padroes: [],
+  visitado_em: {},
   atualizado_em: agora,
 });
+
+/**
+ * O índice como o resto do código pode confiar que ele é.
+ *
+ * **O objeto no R2 é mais velho que o tipo, e vai ser sempre.** O da 4.6 não tem
+ * `padroes` — o campo nasceu na 7 —, e ler `o?.valor` cru entregava um objeto
+ * com `padroes: undefined` que estourava no primeiro `.filter` de quem o
+ * recebesse. `GET /api/calibracao` devolveria 500 para quem já tivesse corrigido
+ * qualquer coisa, e continuaria devolvendo: `marcarVisita` e `confirmarPadroes`
+ * quebram na mesma linha.
+ *
+ * Campo a campo, e não um `{...vazio, ...bruto}`: espalhar por cima devolve o
+ * `undefined` do objeto velho para o campo que o molde tinha preenchido, que é
+ * o bug que isto existe para não ter.
+ *
+ * `visitado_em` passa **como está**, string inclusive: quem lê (`visitaDe`)
+ * conhece as três formas, e normalizá-la aqui jogaria fora o que ela dizia.
+ */
+export function normalizarIndice(bruto: unknown, agora: string): IndiceCalibracao {
+  if (!bruto || typeof bruto !== "object") return indiceVazio(agora);
+  const i = bruto as Partial<IndiceCalibracao>;
+
+  return {
+    correcoes: Array.isArray(i.correcoes) ? i.correcoes : [],
+    padroes: Array.isArray(i.padroes) ? i.padroes : [],
+    visitado_em: i.visitado_em ?? null,
+    atualizado_em: typeof i.atualizado_em === "string" ? i.atualizado_em : agora,
+  };
+}
 
 /**
  * Corta no teto removendo **fechadas** antes de **abertas**, da mais velha para
@@ -492,37 +522,107 @@ const diasEntre = (iso: string, agora: number): number => {
 };
 
 /**
- * Está na hora de calibrar?
+ * Quando eu olhei este agente pela última vez.
+ *
+ * `visitado_em` era uma string só até a slice 7, e índice gravado antes dela
+ * ainda traz uma. A string é lida como "visitei tudo naquele dia", que é o que
+ * ela de fato queria dizer quando a tela era uma só — e é a leitura
+ * conservadora: ela adia a sugestão, nunca a antecipa.
+ */
+export function visitaDe(indice: IndiceCalibracao, agente: AgenteId): string | null {
+  const v = indice.visitado_em;
+  if (v === null || v === undefined) return null;
+  return typeof v === "string" ? v : (v[agente] ?? null);
+}
+
+/**
+ * A visita de um agente, sem tocar na dos outros.
+ *
+ * **A string do índice pré-7 vale para todos, e a primeira escrita tem de
+ * carregá-la.** Colapsá-la para `{}` antes de gravar a chave nova apagaria a
+ * visita de todo mundo que não fosse o agente que eu acabei de abrir — e aí
+ * abrir a tela de um **antecipa** a sugestão dos outros, que é exatamente o
+ * oposto do que a leitura conservadora de `visitaDe` promete. O caso é real e
+ * silencioso: a string estava segurando a sugestão, e o primeiro toque a soltava.
+ */
+export function marcarVisitaDe(
+  indice: IndiceCalibracao,
+  agente: AgenteId,
+  agora: string,
+): IndiceCalibracao {
+  const v = indice.visitado_em;
+  const atual: Partial<Record<AgenteId, string>> =
+    typeof v === "string" ? Object.fromEntries(AGENTE_IDS.map((id) => [id, v])) : (v ?? {});
+
+  return { ...indice, visitado_em: { ...atual, [agente]: agora }, atualizado_em: agora };
+}
+
+/**
+ * Está na hora de calibrar **este agente**?
  *
  * **Binário, nunca numérico.** A gaveta da `Gestao` mostra a linha ou não
  * mostra — nunca "3 semanas e 12 correções", e nunca no ícone da engrenagem em
  * `/`. Um número ali viraria cobrança na tela cujo trabalho é não cobrar nada.
  *
- * A contagem parte de `visitado_em` — a última vez que `/calibracao` carregou
- * de fato — ou, se eu nunca visitei, da correção em aberto mais antiga. **Sem
- * correção em aberto nunca sugere**, não importa o tempo passado: não há o que
- * calibrar, e sugerir seria mandar eu olhar uma tela que não tem novidade.
+ * A contagem parte da visita àquele agente, ou, se eu nunca o visitei, da
+ * correção em aberto dele mais antiga. **Sem correção em aberto nunca sugere**.
+ *
+ * **O recorte por agente é da slice 7, e conserta um defeito da 4.6**: lá a
+ * conta era sobre todas as correções em aberto, mas a tela só sabia rascunhar
+ * a partir das de `extracao` — uma sessão que só produzisse correção de
+ * `resolucao` acendia "tem o que olhar" e levava a uma tela sem o que fazer.
  */
 export function sugerirCalibracao(
   indice: IndiceCalibracao,
+  agente: AgenteId,
   agora: number = Date.now(),
 ): boolean {
-  const abertas = indice.correcoes.filter((c) => c.incorporada_em === null);
+  const abertas = paraCalibrar(indice, agente);
   if (abertas.length === 0) return false;
 
   const maisAntiga = abertas.reduce((velha, c) => (c.em < velha.em ? c : velha));
-  const referencia = indice.visitado_em ?? maisAntiga.em;
+  const referencia = visitaDe(indice, agente) ?? maisAntiga.em;
 
   return diasEntre(referencia, agora) >= INTERVALO_SUGESTAO_DIAS;
 }
 
 /**
- * As correções que o `calibracao-1` deve ler: **em aberto e do extrator**.
+ * Algum agente tem o que olhar — é o que a gaveta pergunta.
  *
- * O recorte por agente é o que a spec chama de "captura os três, calibra um de
- * cada vez". `resolucao` e `grafo` continuam acumulando etiquetados, para a
- * fatia que os calibrar — mandá-los ao agente da extração só produziria regra
- * de extração para erro que não é dela.
+ * Uma passada para descobrir **quem** tem correção em aberto, e só então a
+ * conta de tempo para esses. Perguntar aos treze ids varreria as 500 correções
+ * treze vezes, e dez dessas varreduras são garantidamente vazias: `apurarCorrecoes`
+ * só etiqueta um punhado de agentes. É a consulta que a gaveta faz toda vez que
+ * abre, na tela que não pode custar nada.
  */
-export const paraCalibrar = (indice: IndiceCalibracao): Correcao[] =>
-  indice.correcoes.filter((c) => c.incorporada_em === null && c.agente === "extracao");
+export function sugerirAlgum(indice: IndiceCalibracao, agora: number = Date.now()): boolean {
+  const comAberta = new Set<AgenteCorrecao>();
+  for (const c of indice.correcoes) {
+    if (c.incorporada_em === null) comAberta.add(c.agente);
+  }
+  return [...comAberta].some((id) => ehAgenteId(id) && sugerirCalibracao(indice, id, agora));
+}
+
+/**
+ * As correções que o `calibracao-2` deve ler: **em aberto e daquele agente**.
+ *
+ * O parâmetro é a slice 7 inteira, num lugar só. Até ela isto era uma constante
+ * `"extracao"` cravada, e era o que mantinha `resolucao` e `grafo` acumulando
+ * etiquetados sem consumidor desde a 4.6.
+ *
+ * `grafo` continua sem consumidor, e agora por um motivo e não por omissão: ele
+ * não é agente nenhum, não tem prompt, e não há o que emendar — renome de
+ * grafia se conserta no vocabulário do STT, que é a slice 7.2.
+ */
+export const paraCalibrar = (indice: IndiceCalibracao, agente: AgenteId): Correcao[] =>
+  indice.correcoes.filter((c) => c.incorporada_em === null && c.agente === agente);
+
+/** Quantas correções em aberto cada agente tem — é o índice da tela. */
+export function abertasPorAgente(indice: IndiceCalibracao): Partial<Record<AgenteCorrecao, number>> {
+  const conta: Partial<Record<AgenteCorrecao, number>> = {};
+  for (const c of indice.correcoes) {
+    if (c.incorporada_em !== null) continue;
+    conta[c.agente] = (conta[c.agente] ?? 0) + 1;
+  }
+  return conta;
+}
