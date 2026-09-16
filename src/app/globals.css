@@ -78,6 +78,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
      atravessa a faixa do painel, e um `z-index` que some junto com a classe
      esconderia metade do caminho de volta atrás dele. */
   z-index: 6;
+  /* O nome que a View Transition usa para morfar a bola em vez de trocá-la —
+     ver o bloco no fim do arquivo. Elemento sem nome entra na foto da `root` e
+     atravessa a tela por cross-fade, que é o corte que se quer evitar. */
+  view-transition-name: circulo;
   width: 100%;
   display: grid;
   place-items: center;
@@ -86,9 +90,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   /* Aqui, e não em `.tela.com-chat .palco`: transição declarada só no estado de
      destino some junto com a classe, e o caminho de volta vira um corte. Ver o
      bloco do círculo minimizado, no fim do arquivo. */
+  /* 20% mais devagar que os 320/250ms de antes — só a troca de modo (parado
+     ↔ com-chat) fica mais lenta; ondas, selo, respiração e feedback de toque
+     não mudam. */
   transition:
-    transform 320ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 250ms ease;
+    transform 384ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 300ms ease;
 }
 .palco > * { grid-area: 1 / 1; }
 
@@ -131,9 +138,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* Com o círculo maior, a respiração acompanhou: 20% mais rápida (4,5 s → 3,75 s)
    e 20% mais ampla, tanto na escala quanto no raio do halo. */
+/* A área do pulso ficou 30% menor no fundo e 30% maior no topo — em área, não
+   em escala: `scale` é fator linear, e área cresce com o quadrado dele. De
+   1,0/1,036² (halo) para 0,7×/1,3× a mesma área dá scale(0,837)/scale(1,181)
+   — raiz quadrada de cada lado. RPM (3,75s) e o halo (24px→42px de
+   box-shadow) ficam como estavam, por pedido: só o tamanho do disco muda.
+   scale(0,837) não se vê: abaixo de scale(1) o disco já é menor que o botão e
+   desaparece atrás dele, do jeito que `.brilho` já descreve — o pulso todo
+   se lê no crescimento até scale(1,181), bem mais largo que o 1,036 de antes. */
 @keyframes respirar {
-  from { transform: scale(1);     box-shadow: 0 0 24px var(--glow); }
-  to   { transform: scale(1.036); box-shadow: 0 0 42px var(--glow); }
+  from { transform: scale(0.837); box-shadow: 0 0 24px var(--glow); }
+  to   { transform: scale(1.181); box-shadow: 0 0 42px var(--glow); }
 }
 
 .botao-gravar {
@@ -1907,6 +1922,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
   position: fixed;
   z-index: 5;
+  view-transition-name: caixa-chat;
   left: var(--recuo-lateral);
   right: var(--recuo-lateral);
   bottom: var(--recuo-baixo);
@@ -1920,14 +1936,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
   overflow: hidden;
   opacity: 0.45;
 
+  /* Mesma razão do `.palco`: 20% mais devagar (320→384ms, 250→300ms), e o
+     mesmo fator nos dois para a caixa continuar parecendo um corpo só
+     enquanto muda de forma. */
   transition:
-    top 320ms cubic-bezier(0.16, 1, 0.3, 1),
-    bottom 320ms cubic-bezier(0.16, 1, 0.3, 1),
-    left 320ms cubic-bezier(0.16, 1, 0.3, 1),
-    right 320ms cubic-bezier(0.16, 1, 0.3, 1),
-    max-width 320ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-radius 320ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 250ms ease;
+    top 384ms cubic-bezier(0.16, 1, 0.3, 1),
+    bottom 384ms cubic-bezier(0.16, 1, 0.3, 1),
+    left 384ms cubic-bezier(0.16, 1, 0.3, 1),
+    right 384ms cubic-bezier(0.16, 1, 0.3, 1),
+    max-width 384ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-radius 384ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 300ms ease;
 }
 .chat:hover { opacity: 1; }
 .chat:focus-within { opacity: 1; }
@@ -1973,7 +1992,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   flex-direction: column;
   animation: surgir-conteudo 180ms ease 90ms both;
 }
-/* Saindo: o painel continua montado por 320 ms (ver `DURACAO_CAIXA` em
+/* Saindo: o painel continua montado por 384 ms (ver `DURACAO_CAIXA` em
    `Chat.tsx`) para a caixa não encolher vazia. `inert` já o tirou do caminho do
    teclado; aqui ele só apaga. */
 .chat:not(.aberto) > .painel {
@@ -2275,6 +2294,56 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* O `.brilho` continua respirando. Desligar a animação era um corte no meio da
    escala dela — e a 32% de tamanho a respiração não se vê. */
+
+/* ---- a troca de modo, quando o navegador tem View Transition ---- */
+
+/* Tudo acima deste ponto continua valendo: é o caminho de quem não tem a API e
+   o de quem pediu menos movimento (`src/client/transicao.ts` decide, em JS).
+   Onde a API existe, ela fotografa o antes e o depois e morfa a bola e a caixa
+   do ponto inicial ao de destino numa linha do tempo só — em vez de a caixa
+   interpolar seis propriedades de layout com uma lista rolável dentro.
+
+   Os destinos, porém, continuam sendo os de sempre: a View Transition não
+   inventa estado nenhum, ela só interpola até o que o CSS já declara. */
+
+/* Durante a transição quem anima é o pseudo-elemento, não o elemento. Mas o
+   `::view-transition-new` é ao vivo: a transição de baixo rodaria **dentro** da
+   foto, somando ao movimento do grupo e dobrando o percurso. */
+:root:active-view-transition .palco,
+:root:active-view-transition .chat { transition: none; }
+
+/* A mesma duração e a mesma curva para os dois: é o que faz a bola e a caixa
+   lerem como um gesto só, e não como dois movimentos que começam juntos por
+   coincidência de número. 20% mais devagar que antes (320→384ms), o mesmo
+   fator do caminho de CSS logo acima — os dois caminhos da mesma troca de
+   modo precisam ler no mesmo ritmo. */
+::view-transition-group(circulo),
+::view-transition-group(caixa-chat) {
+  animation-duration: 384ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* O `z-index: 6` do `.palco` **não** vem junto na foto: no overlay a ordem é a
+   ordem do DOM, e a bola passaria por trás do painel na metade do caminho —
+   exatamente o defeito que o comentário do `.palco` descreve lá em cima. */
+::view-transition-group(circulo)    { z-index: 2; }
+::view-transition-group(caixa-chat) { z-index: 1; }
+
+/* Sem isto as duas fotos da caixa são esticadas até o tamanho do grupo, e os
+   `...` da barra viram um borrão largo do tamanho do painel. `cover` recorta em
+   vez de deformar: o painel encolhendo perde borda, que se lê muito melhor do
+   que um painel espremido. */
+::view-transition-old(caixa-chat),
+::view-transition-new(caixa-chat) {
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+/* A foto velha sai antes do fim: metade do caminho com os dois conteúdos
+   sobrepostos deixa o meio da viagem turvo. Mesmo fator 1,2 dos outros três
+   números desta troca de modo (180→216ms). */
+::view-transition-old(caixa-chat) { animation-duration: 216ms; }
 
 @media (prefers-reduced-motion: reduce) {
   .chat { transition-duration: 1ms; }

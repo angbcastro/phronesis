@@ -42,6 +42,7 @@ import { useRouter } from "next/navigation";
 import { Gravador, suportado } from "@/client/gravador";
 import { acordar, enfileirar, observarFila, type EstadoFila } from "@/client/fila";
 import { guardarSessaoAtual, limparSessaoAtual } from "@/client/deposito";
+import { comTransicao } from "@/client/transicao";
 import { BotaoGravar } from "./BotaoGravar";
 import { Chat } from "./Chat";
 import { Gestao } from "./Gestao";
@@ -138,16 +139,26 @@ export function Gravacao() {
   const salvo = fila.pendentes === 0 && fila.ultimo_salvo_em !== null;
 
   /**
+   * A troca de modo passa toda por aqui. Dentro de uma View Transition a bola e
+   * a caixa do chat viajam juntas do ponto inicial ao de destino — ver
+   * `src/client/transicao.ts`. Um ponto só, e não três, porque as três trocas
+   * (a barra, o `Esc` e o toque no círculo) são o mesmo gesto.
+   */
+  const trocarChat = useCallback((aberto: boolean) => {
+    comTransicao(() => setChatAberto(aberto));
+  }, []);
+
+  /**
    * O toque no círculo, com o chat aberto, é "volta pro centro" — não "grava".
    * Gravar continua sendo o segundo toque, no círculo já central e inteiro.
    */
   const tocarNoCirculo = useCallback(() => {
     if (chatAberto) {
-      setChatAberto(false);
+      trocarChat(false);
       return;
     }
     void comecar();
-  }, [chatAberto, comecar]);
+  }, [chatAberto, comecar, trocarChat]);
 
   return (
     <main className={`tela ${gravando ? "gravando" : ""} ${chatAberto ? "com-chat" : ""}`}>
@@ -181,8 +192,8 @@ export function Gravacao() {
               pelo mesmo motivo que a engrenagem some. */}
           <Chat
             aberto={chatAberto}
-            aoAbrir={() => setChatAberto(true)}
-            aoFechar={() => setChatAberto(false)}
+            aoAbrir={() => trocarChat(true)}
+            aoFechar={() => trocarChat(false)}
           />
         </>
       )}

@@ -35,6 +35,7 @@
  * no meio de um caractere, uma conversa sem título, um passo sem parâmetro.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usaTransicao } from "@/client/transicao";
 import type { Conversa, Mensagem, PassoDeFerramenta } from "@/lib/tipos";
 
 interface Props {
@@ -111,8 +112,13 @@ export const TETO_ROTULO = 48;
  * **É o mesmo número da transição da caixa em `globals.css`** — os dois mudam
  * juntos. Sem esta espera o conteúdo sumiria de uma vez enquanto a caixa ainda
  * encolhe até a barra, e o que se veria fechando seria uma caixa vazia.
+ *
+ * **Isto é do caminho sem View Transition.** Com ela, a foto do antes já mostra
+ * o painel inteiro pelo tempo todo da volta, e segurar o painel montado por
+ * mais 384 ms o põe dentro da foto do **depois**, por cima da barra — dois
+ * conteúdos empilhados justo no quadro que tem de estar limpo.
  */
-export const DURACAO_CAIXA = 320;
+export const DURACAO_CAIXA = 384;
 
 /**
  * O nome de uma conversa na lista.
@@ -171,7 +177,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
   // só ela: depois disso, qual conversa está aberta é decisão minha.
   const primeiraAbertura = useRef(true);
   // Sem isto, a montagem da página (fechada, e nunca aberta) contaria como um
-  // fechamento e o painel piscaria inteiro por 320 ms na tela de gravar.
+  // fechamento e o painel piscaria inteiro por 384 ms na tela de gravar.
   const jaAbriu = useRef(false);
 
   const carregarMensagens = useCallback(async (id: string) => {
@@ -196,7 +202,10 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
       setSaindo(false);
       return;
     }
-    if (!jaAbriu.current) return;
+    // `usaTransicao()` dentro do efeito, e não no corpo do componente: no
+    // servidor não há `document`, e ler isso na renderização divergiria da
+    // hidratação.
+    if (!jaAbriu.current || usaTransicao()) return;
     setSaindo(true);
     const t = setTimeout(() => setSaindo(false), DURACAO_CAIXA);
     return () => clearTimeout(t);

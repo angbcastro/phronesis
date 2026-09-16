@@ -386,6 +386,9 @@ src/client/       navegador
                   antigo, do arquivo inteiro, continua valendo
   deposito.ts     IndexedDB: blocos pendentes + sessão em andamento
   fila.ts         upload serial com retry, observável pela UI
+  transicao.ts    a troca de modo da tela de gravar dentro de uma View
+                  Transition; `flushSync` e `prefers-reduced-motion` num lugar
+                  só — ver §11
 
 src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Gravacao (a tela de gravar), BotaoGravar (o círculo, o halo,
@@ -4878,8 +4881,56 @@ Dois efeitos colaterais do "sem corte" que são decisão, não descuido: o rótu
 era mais um corte) e continua no DOM como nome acessível do botão; e o `.brilho`
 **continua respirando** minimizado — desligar a animação cortava a escala dela no
 meio, e a 32% de tamanho a respiração não se vê. Do lado do React, o painel
-sobrevive ao fechar por `DURACAO_CAIXA` (320 ms, o mesmo número da transição),
-`inert` enquanto sai; sem isso a caixa encolheria vazia.
+sobrevive ao fechar por `DURACAO_CAIXA` (384 ms, o mesmo número da transição),
+`inert` enquanto sai; sem isso a caixa encolheria vazia — mas só neste caminho,
+pela razão que a seção seguinte explica.
+
+##### A View Transition, e por que a de CSS continua aí
+
+A transição acima é correta e simétrica, e ainda assim não era fluida. A caixa ia
+do rodapé ao centro interpolando seis propriedades de **layout** — os quatro
+`inset`, o `max-width` e o raio —, recalculadas a cada quadro, com uma lista
+rolável dentro; e a bola e a caixa começavam juntas por coincidência de número
+(320 ms cada), não por construção.
+
+**Os números abaixo são 384 ms e 216 ms — 20% mais devagar que os 320 ms e
+180 ms da primeira versão, a meu pedido.** O fator é o mesmo nos dois caminhos
+da troca de modo (View Transition e o fallback de CSS) e em `DURACAO_CAIXA`:
+os três precisam continuar lendo como um gesto só.
+
+Onde o navegador tem a **View Transitions API**, a troca de `chatAberto` passa por
+`src/client/transicao.ts`: o navegador fotografa o antes e o depois e morfa os
+dois elementos nomeados — `circulo` no `.palco`, `caixa-chat` no `.chat` — do
+ponto inicial ao de destino, no compositor, com uma linha do tempo só. Os dois
+caminhos coexistem de propósito: **a View Transition não inventa estado nenhum**,
+ela interpola até o que o CSS já declara, então `.tela.com-chat .palco` e
+`.chat.aberto` continuam sendo os destinos, e a transição de geometria continua
+sendo o percurso de quem não tem a API.
+
+Quatro coisas que custam caro quando esquecidas, e que estão escritas no código:
+
+- **`flushSync`** dentro do callback de `startViewTransition`. A foto do "depois"
+  é tirada quando o callback termina; com o batch normal do React o DOM ainda não
+  mudou nessa hora, as duas fotos saem iguais, nada anima, e a tela pula para o
+  estado novo depois — um corte pior que o que havia antes;
+- **`prefers-reduced-motion` é decidido em JS**, e não no CSS. Quem pediu menos
+  movimento não entra na View Transition: volta ao caminho antigo inteiro, onde o
+  `@media` do `globals.css` já resolve com `1ms`;
+- **o `z-index: 6` do `.palco` não vem junto na foto.** No overlay da transição a
+  ordem é a ordem do DOM, e a bola passaria por trás do painel na metade do
+  caminho — o mesmo defeito que o `z-index` na regra base já tinha resolvido no
+  caminho de CSS. Daí `::view-transition-group(circulo) { z-index: 2 }`;
+- **a cauda de `DURACAO_CAIXA` sai do caminho.** Com View Transition a foto do
+  antes já mostra o painel inteiro durante a volta toda; segurar o painel montado
+  por mais 384 ms o põe dentro da foto do **depois**, por cima da barra. O efeito
+  de `Chat.tsx` pula a cauda quando `usaTransicao()` é verdade — e a chamada mora
+  dentro do efeito, porque no servidor não há `document` e ler isso na
+  renderização divergiria da hidratação.
+
+Dois ajustes que são de olho, não de cálculo: as fotos da caixa levam
+`object-fit: cover` (sem isso os `...` da barra são esticados até o tamanho do
+painel e viram um borrão), e a foto velha sai em 216 ms em vez de 384 ms, para o
+meio da viagem não ficar turvo com os dois conteúdos sobrepostos.
 
 **Manter a barra visível durante a gravação foi recusado.** Nem a `Gestao`, a
 única porta de saída que já existia, tem esse privilégio — e a tela de gravar é
@@ -4943,7 +4994,7 @@ gravando, o timer, o "salvo" e o "parar".
 O palco é um grid de uma célula com tudo empilhado (`.palco > * { grid-area: 1/1 }`):
 
 - **o halo** (`.brilho`) é um disco terracota atrás do botão, do mesmo tamanho:
-  parado ele some por baixo, e ao respirar (escala 1 → 1,036 e raio 24 px →
+  parado ele some por baixo, e ao respirar (escala 0,837 → 1,181 e raio 24 px →
   42 px, 3,75 s `ease-in-out alternate`) aparece só a borda. O círculo cresce
   como peça só, com o texto parado no meio. O `background` dele não é
   decoração: sombra externa recorta a própria border-box, e sem fundo o anel
@@ -4967,6 +5018,16 @@ aparelho de 320 px é ele quem impede o círculo de encostar nas bordas; crescê
 junto poria o círculo em 82% da largura da tela. Com `min(72vw, 264px)`, aparelho
 normal ganha os 20% e aparelho estreito continua protegido — lá o círculo
 simplesmente não cresce.
+
+**A área do pulso mudou de novo depois, sem mexer em RPM nem em halo.** O
+pedido foi 30% menor no fundo e 30% maior no topo, em **área** — e área cresce
+com o quadrado da escala, não linear com ela. De 1,0/1,036² para 0,7×/1,3× a
+mesma área dá scale(0,837) e scale(1,181), tirando a raiz quadrada de cada
+lado. `3,75 s` e o `box-shadow` (24 px → 42 px) continuam os mesmos, por pedido
+explícito. Um efeito colateral que não é bug: como o disco tem exatamente o
+tamanho do botão e fica atrás dele, tudo `scale` ≤ 1 já é invisível — encolher
+o fundo do pulso não muda nada que se veja. O pulso inteiro está no
+crescimento até 1,181, bem mais largo que o 1,036 de antes.
 
 Efeito colateral a conhecer: as ondas nascem na borda do círculo e correm até a
 borda da tela (`percurso = largura / 2 - raio`), então **o círculo maior encurta
