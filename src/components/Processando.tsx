@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { acordar, aguardarFilaVazia } from "@/client/fila";
+import { marcarFilaVazia } from "@/client/medidas";
 import { terminouDeProcessar } from "@/lib/estados";
 import type { StatusSessao } from "@/lib/tipos";
 
@@ -77,6 +78,11 @@ export function Processando({ id }: { id: string }) {
 
       acordar();
       await aguardarFilaVazia();
+
+      // A segunda das três marcas do cliente (slice 8), mandada junto com a
+      // primeira: é aqui que as duas existem, e é o último ponto antes de o
+      // servidor assumir. Sem `await` — o `/finalizar` não espera por medida.
+      void marcarFilaVazia(id);
 
       const guardada = sessionStorage.getItem(`duracao:${id}`);
       await fetch(`/api/sessoes/${id}/finalizar`, {

@@ -16,8 +16,18 @@ importado entra pela mesma porta), 4.11 (a entidade se apresenta, e o agente 2
 mede a própria dúvida), 4.12 (a ficha se escreve sozinha), 5 (confrontar:
 relações entre átomos ao longo do tempo), 5.1 (o confronto calibrado pela
 primeira revisão à mão), 6 (o chat: perguntar ao grafo em texto livre), 7 (o
-laço de retroalimentação deixa de ser da extração) e 8.1 (as quatro emendas)
-construídas.**
+laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas) e a
+**primeira metade da 8** — a medida — construídas.**
+
+**A slice 8 sobe em duas partes, e a ordem não é detalhe.** A primeira é só o
+cronômetro (§4.17): três objetos no R2, as três marcas do cliente, a
+instrumentação nos passos que já existem e o resumo mensal na batida diária.
+Nenhum conserto de desempenho vai junto — se instrumento e conserto subissem no
+mesmo deploy, não se saberia o que melhorou, e a fatia inteira existe para saber.
+O que fecha a primeira metade é **uma sessão real gravada**, com o
+`medidas.json` dela lido: é ele a linha de base contra a qual a segunda metade
+será julgada. Quem fecha a fatia sou eu — a medida existe para dizer *onde*
+mexer, não para declarar que ficou bom.
 
 **A 7 é a fatia que muda o que "calibrar" quer dizer.** Até ela o sistema tinha
 **um** laço fechado — correção na revisão → `calibracao/indice.json` →
@@ -277,10 +287,11 @@ slice 5 entrega.
                                                         └──────────────────────┘
 ```
 
-O cron diário (§10) é a única coisa que entra sem eu abrir o app, e faz duas
-coisas com uma consulta: grava o dump do grafo no R2, e mantém a instância Aura
-Free acordada — ela é pausada após 72 h de silêncio, e pausada o hostname nem
-resolve.
+O cron diário (§10) é a única coisa que entra sem eu abrir o app. Duas coisas
+saem de uma consulta só: o dump do grafo no R2, e manter a instância Aura Free
+acordada — ela é pausada após 72 h de silêncio, e pausada o hostname nem resolve.
+A terceira é R2 puro e não toca o grafo: fechar o resumo mensal das medidas
+(§4.17), engolindo a própria falha para não custar as outras duas.
 
 Três planos de dado, cada um com uma responsabilidade única:
 
@@ -350,6 +361,8 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   entidades.ts    catálogo do grafo, a apresentação que os dois agentes leem, a
                   visão agregada da revisão; e o vetor da entidade: refresh por
                   hash e as duas consultas de vizinhança
+  medidas.ts      o relógio do sistema sobre si mesmo: o contexto que recolhe
+                  passo, chamada e falha, os três objetos do R2 e o resumo do mês
   correcoes.ts    o diff entre o que a proposta dizia e o que eu aprovei:
                   apuração, chaves e a fusão no índice — puro, sem rede
   calibracao.ts   onde as correções vivem (correcoes.json por sessão e o índice
@@ -389,6 +402,8 @@ src/client/       navegador
                   antigo, do arquivo inteiro, continua valendo
   deposito.ts     IndexedDB: blocos pendentes + sessão em andamento
   fila.ts         upload serial com retry, observável pela UI
+  medidas.ts      as três marcas que só o navegador sabe dar — parar, fila
+                  vazia, revisão aberta. `sessionStorage` amarra as três
   transicao.ts    a troca de modo da tela de gravar dentro de uma View
                   Transition; `flushSync` e `prefers-reduced-motion` num lugar
                   só — ver §11
@@ -412,9 +427,9 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Chat (a barra, o painel, a lista de conversas, o progresso por
                     passo e o (i) com o rastro — nasce dentro da `Gravacao`),
                   ServiceWorker (registra `sw.js`; não desenha nada)
-src/app/api/      42 rotas em nove famílias — sessão, entidade, calibração,
-                  agentes, átomos, confronto, chat/conversas, as 2 de auth e a
-                  do cron (seção 10)
+src/app/api/      44 rotas em dez famílias — sessão, entidade, calibração,
+                  agentes, átomos, confronto, chat/conversas, medidas, as 2 de
+                  auth e a do cron (seção 10)
 src/middleware.ts porta única: sem credencial válida nada responde — cookie de
                   sessão, ou o header do cron sob /api/cron/
 public/           manifest.webmanifest, icone.svg, os 4 PNG (192/512, cada um
@@ -3445,6 +3460,113 @@ por `waitUntil` e por retomada; aqui quem dispara sou eu apertando enviar, e
 duas perguntas iguais seguidas são duas perguntas, não uma repetida.
 
 
+### 4.17 O sistema se cronometra (slice 8)
+
+**O tempo entre o toque em parar e a revisão abrir deixou de ser impressão.** Até
+esta fatia a previsão era "de um a dois minutos para segundos" e previsão não é
+medição: nada nunca foi cronometrado desde que a 4.8 desconcentrou a extração. A
+única sessão longa real que se olhou (`mtqoeoqh3e3724514q1f`, 1044 s) mediu token
+e `finishReason`, nunca relógio — e o sistema saiu do `localhost`, roda no
+telefone, e o telefone é onde eu espero olhando a tela.
+
+**Três objetos, e o que impede o registro de inchar é a forma, não a disciplina:**
+
+| Objeto | O que é | O que o mantém pequeno |
+|---|---|---|
+| `sessoes/<id>/medidas.json` | o detalhe de uma sessão | passos e agentes **agregados** (`{n, ms, pior_ms}`), não lista de eventos; falhas com teto de 20; morre com a sessão |
+| `medidas/indice.json` | uma linha por sessão, os números de manchete | teto de 400 linhas, podado como as correções; **sem texto livre** |
+| `medidas/<AAAA-MM>.json` | o resumo do mês — n, mediana, pior caso, por passo | doze objetos por ano, e nada mais cresce |
+
+**Por que não o log da Vercel:** ele expira, e o que esta fatia quer é dizer,
+daqui a três fatias, se alguma coisa regrediu. **Por que não o Neo4j:** série
+temporal quer índice por data, e a cota de índice do Aura Free já está no teto
+pelos dois índices vetoriais da 006 (§14). **Por que R2 com índice:** `r2.ts` não
+tem `LIST` — é exatamente por isso que `calibracao/indice.json` existe, e o mesmo
+molde serve aqui.
+
+**O que entra:** tempo por passo, falha (o que quebrou e por quê) e custo
+(chamadas por agente, e tokens quando o Gateway devolve). **O que não entra:**
+campo sem pergunta atrás. Cada número gravado responde a uma pergunta que eu de
+fato faço — "onde foi o tempo", "isso piorou desde a emenda", "quantas janelas
+ficaram para trás". Log de depuração genérico é o que apodrece. **Texto livre de
+erro fica no objeto da sessão**, que é limitado e some com ela; o índice guarda
+código e contagem, e é ali que esse tipo de registro sempre incha.
+
+**Apagar a sessão não apaga a linha do índice.** `chaveMedidas` entra em
+`chavesDaSessao` e `medidas/indice.json` não, exatamente como a correção já
+sobrevive ao átomo (§9). A série não ganha buraco quando eu apago uma sessão de
+teste, e sessão de teste que foi mal não some para melhorar a média sozinha.
+
+**O número é do toque em parar até a revisão abrir**, e inclui a rede de
+propósito: é o tempo que eu espero olhando o telefone, não o que o servidor gosta
+de contar. Isso obriga o cliente a marcar três instantes que o servidor não tem
+como saber, e ele marca em `src/client/medidas.ts`:
+
+| Marca | Onde nasce | Quando |
+|---|---|---|
+| `parou` | `Gravacao.parar()` / `Importacao` | o toque em "parar", ou o arquivo aceito — o último gesto meu antes da espera |
+| `fila_vazia` | `Processando` | `aguardarFilaVazia()` voltou e o `/finalizar` vai sair |
+| `revisou` | `Revisao` | a proposta montou na tela. É o fim da espera |
+
+`parou` **não vai à rede** quando acontece: ele fica no `sessionStorage` e sobe
+junto com `fila_vazia`, num pedido só. Mandá-lo no instante do toque seria mandar
+no pior momento possível — é o mesmo em que a fila acorda, a sessão fecha e a
+navegação acontece.
+
+**Os três vêm do mesmo relógio**, o do navegador, e é entre eles que a subtração
+acontece. Os passos do servidor são gravados como **duração**, nunca como
+carimbo, justamente para que "instante do servidor menos instante do cliente" não
+seja uma conta possível.
+
+**A marca da revisão só vale se aquela aba passou pelo corredor.** É o
+`sessionStorage` que amarra as três, e é ele a guarda: abrir pela lista a revisão
+de uma sessão de três semanas atrás não inventa uma espera de três semanas.
+
+**Como a instrumentação chega aos passos sem atravessar quinze assinaturas.**
+`comMedicao` abre um `AsyncLocalStorage` no `waitUntil` que começa o trabalho, e
+`medir`/`medirAgente`/`registrarFalha` escrevem no coletor daquele contexto —
+`stt.ts`, `extracao.ts`, `resolucao.ts`, `desempate.ts`, `embedding.ts`,
+`pipeline.ts`. **Fora de um contexto as três são transparentes**: chamam a função
+e devolvem o resultado, sem tocar em rede nenhuma. É isso que faz o `pnpm test`
+continuar exercitando `finalizarSessao` direto sem gravar medida, e o chat, o
+confronto e o enriquecimento não pagarem por um registro que não é deles.
+
+**Uma invocação escreve uma vez.** O contexto é aberto em três `waitUntil` —
+`/chunks/:i/pronto`, `/finalizar` e `/extrair` —, e só os dois últimos passam
+`fecha: true`: o `/pronto` roda trinta vezes por sessão, e trinta idas ao índice
+seriam pagar trinta vezes por uma linha que ainda vai mudar. Chamado dentro de um
+contexto que já existe, `comMedicao` vira `medir` — o `/finalizar` que emenda na
+extração não abre um segundo registro.
+
+Os passos são lista fechada (`PASSOS_MEDIDOS`), e de propósito: com uma lista, um
+passo novo no pipeline que ninguém instrumentar é uma linha que **falta** e se
+vê, em vez de um campo livre que cada chamador inventa à sua maneira.
+
+**A chamada de modelo é contada por dentro da espera de rate limit**, e não por
+fora: tentativa recusada por 429 também é ida ao Gateway e custa igual. Contar só
+a que deu certo esconderia exatamente a rajada que esta fatia foi medir. Os
+tokens entram quando o Gateway os devolve e ficam **ausentes** quando não —
+ausência é informação, zero seria mentira.
+
+**Nada aqui pode derrubar o pipeline.** Uma falha ao gravar a medida vira uma
+linha `[medidas]` no log e nada mais, e o erro do trabalho sobe inteiro com a
+medida do que já tinha rodado gravada junto.
+
+**Sem tela nesta fatia.** Quando eu quiser olhar, eu peço: `GET /api/medidas` dá
+o índice, `?mes=AAAA-MM` o resumo do mês, e `GET /api/sessoes/:id/medidas` o
+detalhe daquela sessão. As rotas existem porque sem `LIST` no R2 a série só seria
+alcançável pelo console do Cloudflare — não porque haja o que desenhar. Se a
+leitura virar hábito, a tela vira item da pauta (8.4).
+
+**O resumo mensal sai na batida diária**, depois do backup e engolindo a própria
+falha: o que não pode faltar naquela batida é o dump e a consulta que mantém a
+Aura acordada. Enquanto as linhas de um mês estiverem no índice, o resumo dele é
+reescrito todo dia e fica mais completo; quando a poda começar a comê-lo, o
+resumo já gravado tem mais sessões que o índice mostra e **não** é reescrito. É
+essa guarda, e não a ordem de execução, que faz o detalhe de março sumir e a linha
+de março ficar.
+
+
 ## 5. Estados da sessão
 
 ```
@@ -3589,9 +3711,10 @@ com prefixo:
 | `[atomos] N átomo(s) gravados sem vetor;` | `gravarAtomos` | o confirmar gravou e o embedding falhou — `POST /api/atomos/embutir` alcança depois (§4.10) |
 | `[overrides] <id>: o hash <h> não resolve texto nenhum, usando a base` | `resolver` | um prompt editado sumiu do R2; o agente cai na base **e** carimba a base (§4.13) |
 | `[overrides] não consegui ler o prompt <agente>+<hash>:` | `promptPorHash` | o mesmo, um nível abaixo — o R2 recusou a leitura |
+| `[medidas] sessão <id>: não consegui gravar a medida:` | `comMedicao` | o cronômetro tropeçou; a sessão segue inteira, e é só a medida daquela invocação que se perde (§4.17) |
 
-Os três últimos não são falha de sessão: a sessão segue, e o que se perde é
-material de calibração, um vetor ou um prompt editado. Estão aqui porque esta é
+Os quatro últimos não são falha de sessão: a sessão segue, e o que se perde é
+material de calibração, um vetor, um prompt editado ou uma medida. Estão aqui porque esta é
 a tabela que responde "onde aparece o motivo", e um log que ninguém sabe que
 existe não é diferente de log nenhum.
 
@@ -4619,6 +4742,7 @@ sessoes/<id>/parcial.json       a proposta enquanto cresce: { janelas: [{n, de, 
 sessoes/<id>/extracao.json      proposta: átomos ancorados, referências resolvidas (com o `porque` da camada 3b), marcas de perfil, entidades agregadas, procedência dos dois agentes
 sessoes/<id>/extracao-anterior.json  a proposta que o `forcar` substituiu — só a última, para eu comparar
 sessoes/<id>/correcoes.json     o que eu corrigi naquela revisão — fotografia do momento da confirmação, escrita uma vez só
+sessoes/<id>/medidas.json       quanto aquela sessão levou (slice 8): { cliente: {parou, fila_vazia, revisou}, passos: {<passo>: {n, ms, pior_ms}}, agentes: {<id>: {n, ms, entrada?, saida?}}, falhas }
 conversas/<id>/mensagens.json   a conversa inteira (slice 6): { conversa_id, mensagens: [{papel, texto, criado_em, rastro?, modelo?, prompt_version?}] }
 calibracao/indice.json          a mesa de trabalho: as correções acumuladas de todas as sessões (teto de 500),
                                 os padrões vivos e a visita de cada agente
@@ -4626,6 +4750,9 @@ calibracao/regras-<hash>.json   uma composição de regras aprovada na 4.6 — i
                                 nada mais escreve um, e um átomo carimbado `+a<hash>` ainda resolve por ela
 config/agentes.json             o que eu editei de cada agente: hash do prompt e modelo (slice 4.7)
 config/prompt-<agente>-<hash>.json  um prompt editado — imutável para sempre; é o que o sufixo `+p<hash>` resolve
+medidas/indice.json             uma linha por sessão: espera, fila, servidor, blocos, tempo por passo,
+                                chamadas, tokens e os códigos de falha (teto de 400, sem texto livre)
+medidas/<AAAA-MM>.json          o mês fechado: n, mediana, pior caso, por passo — escrito na batida diária
 backup/grafo-<dia>.json         o dump diário do grafo: { gerado_em, nos, arestas } — sem `embedding`
 _smoke/                         objetos temporários do `pnpm smoke`, apagados no fim
 ```
@@ -4651,11 +4778,12 @@ chave → nó é o dossiê, com o catálogo da hora. `semantico: false` marca o 
 cuja camada de vetor não trouxe nada, e é o que o catch-up do `/finalizar` refaz
 uma vez (§4.14).
 
-`calibracao/`, `config/` e `conversas/` ficam **fora** do prefixo `sessoes/` de
-propósito: nem o índice de correções, nem a configuração dos agentes, nem uma
-conversa são de sessão nenhuma. E são três prefixos e não um porque são três
-coisas: `calibracao/` é material que o sistema acumulou sozinho, `config/` é o
-que eu escrevi, e `conversas/` é o que eu perguntei.
+`calibracao/`, `config/`, `conversas/` e `medidas/` ficam **fora** do prefixo
+`sessoes/` de propósito: nem o índice de correções, nem a configuração dos
+agentes, nem uma conversa, nem a série de medidas são de sessão nenhuma. E são
+quatro prefixos e não um porque são quatro coisas: `calibracao/` é material que o
+sistema acumulou sozinho, `config/` é o que eu escrevi, `conversas/` é o que eu
+perguntei, e `medidas/` é o relógio do sistema sobre si mesmo (§4.17).
 
 `conversas/<id>/mensagens.json` é o gêmeo de `transcricao.json` na outra ponta do
 sistema: no Neo4j vai só a chave (regra 2), e o conteúdo — incluindo o rastro de
@@ -4684,15 +4812,17 @@ está — procurar sempre em `.webm` mataria toda sessão importada.
 **Apagar uma sessão enumera daqui, e não de um `LIST`** (slice 4.10). `r2.ts` não
 tem `LIST` — nunca teve, e é por isso que `calibracao/indice.json` existe —, então
 `chavesDaSessao(manifest)` monta as chaves a partir do manifest: três por bloco
-(áudio na extensão registrada, transcrição, candidatas) mais as seis fixas. Mora
+(áudio na extensão registrada, transcrição, candidatas) mais as **sete** fixas
+(`medidas.json` entrou na slice 8). Mora
 em `chaves.ts` pela mesma razão que todo o resto: um lugar só monta chave, e uma
 segunda cópia do layout numa rota envelheceria calada na primeira chave nova.
 
 **O manifest é o último a ser apagado**, e a ordem é do próprio `chavesDaSessao`:
 ele é quem sabe quais blocos existem, e apagá-lo primeiro deixaria trinta e cinco
-objetos inalcançáveis para sempre. `calibracao/indice.json` **não** entra na
-lista: as correções daquela sessão são material de calibração, não dado de
-sessão, e apagá-las seria desaprender (§14).
+objetos inalcançáveis para sempre. `calibracao/indice.json` e `medidas/indice.json` **não** entram
+na lista: as correções daquela sessão são material de calibração, não dado de
+sessão, e apagá-las seria desaprender (§14); a linha de medida é a série, e
+sessão de teste que foi mal não pode sumir para melhorar a média (§4.17).
 
 ## 10. Rotas
 
@@ -4707,6 +4837,9 @@ sessão, e apagá-las seria desaprender (§14).
 | `DELETE /api/sessoes/:id` | apaga os objetos da sessão no R2 e marca `descartada_em` | **409 se ainda está processando**; o grafo fica intacto (regra 6) — ver abaixo |
 | `POST /api/sessoes/:id/extrair` | dispara extração **e resolução** de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` refaz as duas e sobrescreve |
 | `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5; `anterior` vem como cabeçalho, e a lista antiga só com `?anterior=1` |
+| `POST /api/sessoes/:id/medidas` | as marcas que só o navegador sabe dar: `parou`, `fila_vazia`, `revisou` | epoch em ms, e toda marca reescreve a linha do índice; corpo sem marca plausível não grava nada (§4.17) |
+| `GET /api/sessoes/:id/medidas` | o detalhe medido daquela sessão | não há tela: é por aqui que "o objeto é lido sob demanda" acontece |
+| `GET /api/medidas` | o índice; com `?mes=AAAA-MM`, o resumo daquele mês | só leitura; existe porque `r2.ts` não tem `LIST` |
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
 | `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo, com `:PERFILA`, e apura as correções em `waitUntil` | `ja_confirmada` na segunda; procedência relida do R2, não do corpo; `gestos` é **opcional** e corpo sem ele confirma igual |
 | `GET /api/calibracao` | sem `?agente`, o mapa: quanto material parado cada agente tem. Com `?agente`, as correções dele, a pauta viva e as seções do prompt em vigor | marca `visitado_em` **daquele agente** em `waitUntil` — best-effort, e só se o índice já existe |
@@ -4743,7 +4876,7 @@ sessão, e apagá-las seria desaprender (§14).
 | `POST /api/confronto/reprocessar` | apaga **todas** as relações de confronto e devolve o grafo inteiro à fila (5.1) | é como um prompt novo alcança o que já foi julgado. Não roda a fila — a tela chama `rodar` em seguida; destrutivo e sem desfazer, por isso dois toques na tela |
 | `POST /api/auth/link` | pede o magic link, e o Resend entrega | resposta idêntica nos três caminhos em produção — e-mail errado, entregue, falhou (§7). Fora de produção o link volta no corpo |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
-| `GET /api/cron/diario` | o dump do grafo para o R2, e a consulta que mantém a Aura acordada | **não abre com cookie**: entra pelo header `Authorization: Bearer $CRON_SECRET`, conferido no middleware e só sob `/api/cron/` (§7). Uma vez por dia — é o que o Hobby dá, e é o que uma janela de 72 h pede |
+| `GET /api/cron/diario` | o dump do grafo para o R2, a consulta que mantém a Aura acordada, e o resumo mensal das medidas | **não abre com cookie**: entra pelo header `Authorization: Bearer $CRON_SECRET`, conferido no middleware e só sob `/api/cron/` (§7). Uma vez por dia — é o que o Hobby dá, e é o que uma janela de 72 h pede |
 | `GET /api/cron/confronto` | a batida diária do confronto — processa a fila em loop até esvaziar ou o orçamento de tempo acabar | mesma credencial de cron; horário próprio, separado do `/cron/diario` (`vercel.json`) |
 
 Todas com `runtime = "nodejs"`. `GET /api/sessoes`, `POST /api/sessoes`,
@@ -4770,10 +4903,11 @@ rate limit sem prazo** que a fila usa (§4.9): uma espera de 75 s estouraria um
 teto de 60 e mataria o elo no meio do sono. `LEASE_MS` é o mesmo número, e é por
 isso: passado ele, a função que reivindicou está morta com certeza.
 
-`dynamic = "force-dynamic"` em dez rotas, todas de leitura de estado:
+`dynamic = "force-dynamic"` em doze rotas, todas de leitura de estado:
 `GET /api/sessoes`, `GET /api/sessoes/:id`, `GET /api/sessoes/:id/extracao`,
 `GET /api/entidades`, `GET /api/calibracao`, `GET /api/calibracao/sugestao`,
-`GET /api/confronto`, `GET /api/conversas`, e as duas de `/api/chat`.
+`GET /api/confronto`, `GET /api/conversas`, as duas de `/api/chat` e as duas de
+medidas (`/api/medidas` e `/api/sessoes/:id/medidas`).
 
 O 300 s do `/chat` é o mais justificado da tabela, e o único que não é sobre
 `waitUntil`: uma pergunta composta paga até oito idas ao Gateway antes da
@@ -5660,6 +5794,28 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
+- **O número da medida inclui a rede** (8, §4.17), então duas sessões não são
+  estritamente comparáveis: o mesmo pipeline num 4G ruim e num Wi-Fi bom dá
+  números diferentes. É o preço deliberado de medir o que eu sinto em vez do que
+  é estável — e o detalhe por passo é o que separa "a rede estava ruim" de "a
+  resolução ficou lenta".
+- **A medida é mais um objeto por sessão a manter em dia** (8). Se um passo novo
+  entrar no pipeline e ninguém instrumentar, o registro passa a mentir por
+  omissão — a mesma doença do documento desatualizado, agora em JSON. A defesa é
+  `PASSOS_MEDIDOS` ser lista fechada: um passo que falta é uma linha que falta e
+  se vê, não um campo livre que cada chamador inventa. Não há teste que pegue
+  isto; o que pega é olhar o objeto depois de uma sessão real.
+- **A medida confia no relógio do navegador.** As três marcas vêm de
+  `Date.now()` do telefone, e um ajuste de NTP no meio da espera aparece como
+  número errado. A guarda é mínima e declarada: marca fora de ordem vira `null`
+  em vez de número negativo, e epoch implausível é descartado na rota. Num
+  sistema de um usuário isso basta; o que não dá para fazer é misturar esse
+  relógio com o do servidor, e nada no código mistura.
+- **Uma invocação que morre perde a medida dela.** A escrita acontece no fim do
+  `waitUntil`, uma vez, e um `waitUntil` que estoura o `maxDuration` não grava
+  nada daquele pedaço. A alternativa — gravar a cada passo — custaria uma ida ao
+  R2 por bloco para proteger justamente o caso em que o registro importa menos,
+  porque a sessão também falhou.
 - **A tela de entidades ficou meio a meio** (8.1). Marcar canônica remenda só
   aquela entidade no estado local; as outras dez (fundir, tipo, criar, renomear,
   perfil, resumo, aliases, enriquecer uma, enriquecer as marcadas, desfazer)

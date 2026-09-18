@@ -18,6 +18,7 @@
  */
 import { experimental_transcribe as transcribe, NoTranscriptGeneratedError } from "ai";
 import { comEsperaDeLimite, ehLimiteDeTaxa } from "./limite";
+import { medirAgente } from "./medidas";
 import { garantirGateway, modeloStt, opcoesDeVocabulario } from "./modelos";
 import { efetivo } from "./overrides";
 import { vocabulario } from "./vocabulario";
@@ -125,19 +126,24 @@ export async function transcrever(
   try {
     resultado = await comEsperaDeLimite(
       `stt ${modelo}`,
+      // A contagem fica **dentro** da espera de limite, e não fora: cada
+      // tentativa é uma ida ao Gateway e custa igual. Contar só a que deu certo
+      // esconderia exatamente a rajada que a slice 8 foi medir (`medidas.ts`).
       () =>
-        // `model` é string de propósito: id em string sai pelo Gateway. Objeto
-        // de provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
-        transcribe({
-          model: modelo,
-          audio: new Uint8Array(audio),
-          // O nome da opção é por provedor, não fixo — ver `opcoesDeVocabulario`.
-          providerOptions: opcoesDeVocabulario(modelo, termos),
-          // A espera longa daqui é a única camada de retry: as três tentativas
-          // rápidas do SDK contra um 429 não destravam nada e ainda alimentam o
-          // limite que estão esperando (`limite.ts`).
-          maxRetries: 0,
-        }),
+        medirAgente("stt", () =>
+          // `model` é string de propósito: id em string sai pelo Gateway. Objeto
+          // de provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
+          transcribe({
+            model: modelo,
+            audio: new Uint8Array(audio),
+            // O nome da opção é por provedor, não fixo — ver `opcoesDeVocabulario`.
+            providerOptions: opcoesDeVocabulario(modelo, termos),
+            // A espera longa daqui é a única camada de retry: as três tentativas
+            // rápidas do SDK contra um 429 não destravam nada e ainda alimentam o
+            // limite que estão esperando (`limite.ts`).
+            maxRetries: 0,
+          }),
+        ),
       { ate },
     );
   } catch (e) {

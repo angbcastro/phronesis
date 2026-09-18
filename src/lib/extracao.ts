@@ -29,6 +29,7 @@
  * (regra 5).
  */
 import { generateText } from "ai";
+import { medirAgente } from "./medidas";
 import { agregarCandidatas, apresentarEntidade, listarEntidades } from "./entidades";
 import { comEsperaDeLimite, ehLimiteDeTaxa } from "./limite";
 import {
@@ -1024,19 +1025,24 @@ export async function extrairJanela(
       // `waitUntil` com o resto do `finalizar`.
       return await comEsperaDeLimite(
         `extracao ${modelo}`,
+        // A contagem vai **dentro** da espera: cada tentativa é uma ida ao
+        // Gateway e custa igual, e é essa conta — quantas chamadas por sessão —
+        // que a slice 8 foi medir (`medidas.ts`).
         () =>
-          // `model` é string de propósito: id em string sai pelo Gateway. Objeto
-          // de provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
-          generateText({
-            model: modelo,
-            prompt,
-            temperature: 0,
-            maxOutputTokens: teto,
-            // A espera longa daqui é a única camada de retry (`limite.ts`): as
-            // três tentativas rápidas que o SDK faz sozinho contra um 429 não
-            // destravam nada e ainda alimentam o limite que estão esperando.
-            maxRetries: 0,
-          }),
+          medirAgente("extracao", () =>
+            // `model` é string de propósito: id em string sai pelo Gateway. Objeto
+            // de provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
+            generateText({
+              model: modelo,
+              prompt,
+              temperature: 0,
+              maxOutputTokens: teto,
+              // A espera longa daqui é a única camada de retry (`limite.ts`): as
+              // três tentativas rápidas que o SDK faz sozinho contra um 429 não
+              // destravam nada e ainda alimentam o limite que estão esperando.
+              maxRetries: 0,
+            }),
+          ),
         { ate },
       );
     } catch (e) {

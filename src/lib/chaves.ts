@@ -11,7 +11,10 @@
  *   sessoes/<id>/extracao.json
  *   sessoes/<id>/extracao-anterior.json
  *   sessoes/<id>/correcoes.json
+ *   sessoes/<id>/medidas.json
  *   conversas/<id>/mensagens.json
+ *   medidas/indice.json
+ *   medidas/<AAAA-MM>.json
  *   calibracao/indice.json
  *   calibracao/regras-<hash>.json
  *   config/agentes.json
@@ -75,6 +78,43 @@ export const chaveExtracaoAnterior = (id: string) =>
  * recalibração — que é exatamente quando ela mais vale.
  */
 export const chaveCorrecoes = (id: string) => `${prefixoSessao(id)}/correcoes.json`;
+
+/**
+ * Quanto aquela sessão levou, passo a passo (slice 8).
+ *
+ * **Tamanho máximo conhecido**: os passos e os agentes são agregados, não uma
+ * lista de eventos, e as falhas têm teto. É por isso que ele pode morrer com a
+ * sessão sem doer — entra em `chavesDaSessao` — enquanto a linha dele no índice
+ * fica para sempre.
+ */
+export const chaveMedidas = (id: string) => `${prefixoSessao(id)}/medidas.json`;
+
+/**
+ * O índice das medidas: uma linha por sessão, com os números de manchete.
+ *
+ * Existe pelo mesmo motivo que `calibracao/indice.json`: `r2.ts` não tem `LIST`,
+ * e sem um objeto que reúna as linhas cada medida seria alcançável só por quem
+ * já soubesse o id da sessão. Fora do prefixo `sessoes/` de propósito — **a
+ * linha sobrevive a apagar a sessão**, que é a decisão desta fatia.
+ *
+ * **Por que não o Neo4j:** série temporal quer índice por data, e a cota de
+ * índice do Aura Free já está no teto pelos dois índices vetoriais da 006 (§14).
+ * **Por que não o log da Vercel:** ele expira, e o que esta fatia quer é dizer,
+ * daqui a três fatias, se alguma coisa regrediu.
+ */
+export const chaveIndiceMedidas = () => `medidas/indice.json`;
+
+/**
+ * O resumo de um mês, escrito pela batida diária **antes** da poda do índice.
+ *
+ * `AAAA-MM`, e não o dia do mês como o backup: aqui a chave que se repete seria
+ * exatamente o errado — o que se quer é que março de 2027 não apague março de
+ * 2026. Doze objetos por ano é barato; a série é o produto desta fatia.
+ */
+export const chaveResumoMensal = (mes: string) => {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) throw new Error(`Mês inválido: ${mes}`);
+  return `medidas/${mes}.json`;
+};
 
 /**
  * A mesa de trabalho da calibração: o acumulado de todas as sessões.
@@ -193,9 +233,10 @@ export const chaveChunkCandidatas = (id: string, i: number) =>
  * 404, e `remover` trata 404 como sucesso. Perguntar antes custaria um HEAD por
  * chave para economizar um DELETE por chave.
  *
- * O que **não** entra, de propósito: `calibracao/indice.json`. As correções
- * desta sessão são material de calibração, não dado de sessão, e apagá-las
- * seria desaprender.
+ * O que **não** entra, de propósito: `calibracao/indice.json` e
+ * `medidas/indice.json`. As correções desta sessão são material de calibração,
+ * não dado de sessão, e apagá-las seria desaprender; a linha de medida é a
+ * série, e sessão de teste que foi mal não pode sumir para melhorar a média.
  */
 export function chavesDaSessao(m: Manifest): string[] {
   const id = m.sessao_id;
@@ -213,6 +254,10 @@ export function chavesDaSessao(m: Manifest): string[] {
     chaveExtracao(id),
     chaveExtracaoAnterior(id),
     chaveCorrecoes(id),
+    // O detalhe da medida morre com a sessão; a linha dela em `medidas/indice.json`
+    // **não** entra nesta lista, pelo mesmo motivo que `calibracao/indice.json`
+    // não entra: apagar uma sessão de teste não pode abrir buraco na série.
+    chaveMedidas(id),
     chaveManifest(id), // por último, sempre — ver o docstring
   ];
 }

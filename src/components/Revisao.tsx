@@ -33,6 +33,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { marcarRevisaoAberta } from "@/client/medidas";
 import { SeletorEntidade } from "@/components/SeletorEntidade";
 import { CATALOGO_VAZIO, montarCatalogo, resolver } from "@/lib/catalogo";
 import { mencoesDe, sobreDe } from "@/lib/referencias";
@@ -447,7 +448,16 @@ export function Revisao({ id }: { id: string }) {
         if (!r.ok) throw new Error(((await r.json()) as { erro?: string }).erro ?? `erro ${r.status}`);
         return (await r.json()) as Proposta;
       })
-      .then((d) => vivo && setProposta(d))
+      .then((d) => {
+        if (!vivo) return;
+        setProposta(d);
+        // A terceira marca, e o fim da espera que a slice 8 mede: a proposta
+        // está na tela. **Depois** do `setProposta`, e não antes — o que se
+        // mede é a revisão montada, não a resposta chegando. Só vale se esta
+        // aba passou pelo corredor; abrir uma revisão velha pela lista não
+        // inventa espera nenhuma (`client/medidas.ts`).
+        void marcarRevisaoAberta(id);
+      })
       .catch((e: Error) => vivo && setFalha(e.message));
     return () => {
       vivo = false;

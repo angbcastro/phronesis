@@ -24,6 +24,7 @@
  */
 import { createHash } from "node:crypto";
 import { embed, embedMany } from "ai";
+import { medirAgente } from "./medidas";
 import { DIMENSAO_EMBEDDING, garantirGateway, modeloEmbedding } from "./modelos";
 import { CAMPOS_PERFIL } from "./tipos";
 import type { Perfil, TipoEntidade } from "./tipos";
@@ -62,7 +63,7 @@ export async function embutir(texto: string): Promise<Vetor> {
   const modelo = modeloEmbedding();
   try {
     // String de propósito: id em string sai pelo Gateway (regra 8).
-    const r = await embed({ model: modelo, value: texto });
+    const r = await medirAgente("embedding", () => embed({ model: modelo, value: texto }));
     return { embedding: conferirDimensao(r.embedding), modelo };
   } catch (e) {
     throw new EmbeddingError(e instanceof Error ? e.message : String(e));
@@ -84,7 +85,9 @@ export async function embutirVarios(textos: readonly string[]): Promise<Vetor[]>
   for (let i = 0; i < textos.length; i += TAMANHO_DO_LOTE) {
     const lote = textos.slice(i, i + TAMANHO_DO_LOTE);
     try {
-      const r = await embedMany({ model: modelo, values: [...lote] });
+      const r = await medirAgente("embedding", () =>
+        embedMany({ model: modelo, values: [...lote] }),
+      );
       for (const embedding of r.embeddings) {
         saida.push({ embedding: conferirDimensao(embedding), modelo });
       }

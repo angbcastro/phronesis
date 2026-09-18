@@ -3,6 +3,7 @@ import { waitUntil } from "@vercel/functions";
 import { EXT_GRAVACAO, extensaoAceita } from "@/lib/audio";
 import { chaveChunkAudio } from "@/lib/chaves";
 import { atualizarManifest, registrarChunk } from "@/lib/manifest";
+import { comMedicao } from "@/lib/medidas";
 import { existe } from "@/lib/r2";
 import { avancarJanelas, transcreverBloco } from "@/lib/pipeline";
 import { recuperarCandidatas } from "@/lib/recuperacao";
@@ -79,18 +80,29 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; i:
   // `candidatas_NNN.json` o dossiê fica menor, e dossiê vazio faz o extrator se
   // comportar exatamente como na 4.8. É a mesma precedência do vetor — nada no
   // caminho da busca impede uma gravação.
+  //
+  // O cronômetro (slice 8) embrulha os três: eles são uma invocação, e é por
+  // invocação que a medida é gravada. **Sem `fecha`** — esta rota roda trinta
+  // vezes por sessão, e trinta idas ao índice seriam pagar trinta vezes por uma
+  // linha que ainda vai mudar. `caminho` sai da extensão do bloco: `.webm` é o
+  // que o navegador grava, e qualquer outra coisa veio de arquivo importado.
   waitUntil(
-    transcreverBloco(id, i)
-      .then(() =>
-        recuperarCandidatas(id, i).catch((e) => {
-          console.error(`[candidatas] sessão ${id} bloco ${i}:`, e);
-          return null;
-        }),
-      )
-      .then(() => avancarJanelas(id))
-      .catch((e) => {
-        console.error(`[stt] sessão ${id} bloco ${i} falhou:`, e);
-      }),
+    comMedicao(
+      id,
+      "pronto",
+      () =>
+        transcreverBloco(id, i)
+          .then(() =>
+            recuperarCandidatas(id, i).catch((e) => {
+              console.error(`[candidatas] sessão ${id} bloco ${i}:`, e);
+              return null;
+            }),
+          )
+          .then(() => avancarJanelas(id)),
+      { caminho: ext === EXT_GRAVACAO ? "gravacao" : "importacao" },
+    ).catch((e) => {
+      console.error(`[stt] sessão ${id} bloco ${i} falhou:`, e);
+    }),
   );
 
   return NextResponse.json({ ok: true, chunks_total: manifest.chunks.length });

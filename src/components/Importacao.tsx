@@ -33,6 +33,7 @@ import { useRouter } from "next/navigation";
 import { atrasoBackoff } from "@/lib/backoff";
 import { EXTENSOES_ACEITAS, formatoDeArquivo, motivoRecusa } from "@/lib/audio";
 import { fatiarArquivo } from "@/client/fatiador";
+import { marcarParada } from "@/client/medidas";
 
 type Fase = "parado" | "lendo" | "subindo" | "fechando";
 
@@ -193,6 +194,11 @@ export function Importacao() {
         // Dois finalizar concorrentes seriam inofensivos — a rota é idempotente
         // — mas duas responsabilidades iguais em lugares diferentes divergem.
         setFase("fechando");
+        // O equivalente do "parar" neste caminho é o arquivo aceito — o último
+        // gesto meu antes de a espera começar (slice 8). Ele é marcado só agora
+        // porque o id da sessão não existia antes; `parou` carrega o instante em
+        // que eu escolhi o arquivo, não este.
+        marcarParada(id, "importacao");
         if (Number.isFinite(duracao_s)) {
           sessionStorage.setItem(`duracao:${id}`, String(Math.round(duracao_s)));
         }

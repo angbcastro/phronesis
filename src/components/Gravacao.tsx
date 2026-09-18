@@ -42,6 +42,7 @@ import { useRouter } from "next/navigation";
 import { Gravador, suportado } from "@/client/gravador";
 import { acordar, enfileirar, observarFila, type EstadoFila } from "@/client/fila";
 import { guardarSessaoAtual, limparSessaoAtual } from "@/client/deposito";
+import { marcarParada } from "@/client/medidas";
 import { comTransicao } from "@/client/transicao";
 import { BotaoGravar } from "./BotaoGravar";
 import { Chat } from "./Chat";
@@ -120,6 +121,11 @@ export function Gravacao() {
     const g = gravador.current;
     const id = sessaoId.current;
     const duracao = g?.duracaoS() ?? segundos;
+
+    // **A primeira linha depois do toque**, antes de parar o gravador e de
+    // qualquer rede: é daqui que o número da slice 8 conta. Só `sessionStorage`
+    // — mandar agora seria mandar no pior instante possível (`client/medidas.ts`).
+    if (id) marcarParada(id, "gravacao");
 
     await g?.parar();
     gravador.current = null;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
+import { comMedicao } from "@/lib/medidas";
 import { extrairSessao } from "@/lib/pipeline";
 import { buscarSessao } from "@/lib/sessoes";
 import { podeReextrair } from "@/lib/estados";
@@ -46,8 +47,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ status: "confirmada", ja_confirmada: true });
   }
 
+  // Medida também aqui, e `fecha`: calibrar o prompt contra uma sessão gravada
+  // é exatamente quando eu quero saber quanto a extração custou desta vez. As
+  // marcas do cliente não existem neste caminho, então a linha sai com
+  // `espera_ms` nulo — ela conta o servidor, não a minha espera.
   waitUntil(
-    extrairSessao(id, { forcar }).catch((e) => {
+    comMedicao(id, "extrair", () => extrairSessao(id, { forcar }), { fecha: true }).catch((e) => {
       console.error(`[extrair] sessão ${id} falhou:`, e);
     }),
   );

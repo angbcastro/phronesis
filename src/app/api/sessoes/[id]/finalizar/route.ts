@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
+import { comMedicao } from "@/lib/medidas";
 import { finalizarSessao } from "@/lib/pipeline";
 import { atualizarSessao, buscarSessao } from "@/lib/sessoes";
 import { erro, parametros } from "@/lib/rotas";
@@ -43,8 +44,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     "erro",
   ]);
 
+  // O cronômetro abre aqui, e não dentro de `finalizarSessao`: é este
+  // `waitUntil` que é uma invocação inteira, e uma invocação escreve a medida
+  // uma vez (`medidas.ts`). `fecha` porque é o fim do trabalho do servidor — é
+  // onde a linha do índice nasce, e o navegador a completa depois com a marca
+  // da revisão aberta.
   waitUntil(
-    finalizarSessao(id).catch((e) => {
+    comMedicao(id, "finalizar", () => finalizarSessao(id), { fecha: true }).catch((e) => {
       console.error(`[finalizar] sessão ${id} falhou:`, e);
       // Menos `confirmada`, que é terminal: uma sessão já no grafo não vira
       // falha porque um objeto do R2 sumiu. Mesma guarda das três escritas de

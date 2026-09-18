@@ -1181,3 +1181,229 @@ export interface MensagensDaConversa {
   conversa_id: string;
   mensagens: Mensagem[];
 }
+
+// ───────── Slice 8: o sistema se cronometra ─────────
+
+/**
+ * Os passos que o servidor cronometra, e nada além deles.
+ *
+ * Lista fechada de propósito. O que impede o registro de inchar não é
+ * disciplina, é a forma: com uma lista, um passo novo no pipeline que ninguém
+ * instrumentar é uma linha que **falta** e se vê, em vez de um campo livre que
+ * cada chamador inventa à sua maneira.
+ *
+ *   stt           a transcrição de um bloco (n = blocos)
+ *   candidatas    a busca do grafo por bloco — o RAG da 4.9
+ *   catalogo      `listarEntidades()`: o Cypher com quatro OPTIONAL MATCH
+ *   janela        uma janela fechando: extração + resolução + desempate
+ *   espera_blocos o laço que espera os blocos pendentes, no `/finalizar`
+ *   concatenar    offsets absolutos e `transcricao.json`
+ *   proposta      montar `extracao.json` a partir do acumulado
+ *   finalizar     o `waitUntil` inteiro do `/finalizar`, de ponta a ponta
+ *   pronto        o `waitUntil` inteiro do `/chunks/:i/pronto`
+ *   extrair       o `waitUntil` inteiro do `/extrair` (re-extração à mão)
+ */
+export const PASSOS_MEDIDOS = [
+  "stt",
+  "candidatas",
+  "catalogo",
+  "janela",
+  "espera_blocos",
+  "concatenar",
+  "proposta",
+  "finalizar",
+  "pronto",
+  "extrair",
+] as const;
+
+export type PassoMedido = (typeof PASSOS_MEDIDOS)[number];
+
+export const ehPassoMedido = (v: unknown): v is PassoMedido =>
+  typeof v === "string" && (PASSOS_MEDIDOS as readonly string[]).includes(v);
+
+/**
+ * Quanto um passo custou, somado. **Agregado, não uma lista de eventos** — é o
+ * que dá ao objeto da sessão um tamanho máximo conhecido: dez passos, trinta
+ * blocos, e o JSON não cresce com nenhum dos dois.
+ *
+ * `pior_ms` existe porque a soma esconde o caso ruim: trinta blocos de STT que
+ * somam 60 s podem ser trinta de 2 s ou vinte e nove de 1 s e um de 31 s, e os
+ * dois pedem consertos diferentes.
+ */
+export interface CustoDoPasso {
+  n: number;
+  ms: number;
+  pior_ms: number;
+}
+
+/** Quanto um agente custou nesta sessão. Tokens só quando o Gateway os devolve. */
+export interface CustoDoAgente {
+  n: number;
+  ms: number;
+  entrada?: number;
+  saida?: number;
+}
+
+/**
+ * Uma falha, como o objeto da sessão a guarda.
+ *
+ * `codigo` é o que vai ao índice; `motivo` é texto livre e **fica só aqui**,
+ * onde o tamanho é limitado e o objeto morre com a sessão. É exatamente onde
+ * esse tipo de registro incha.
+ */
+export interface FalhaMedida {
+  passo: PassoMedido;
+  codigo: CodigoDeFalha;
+  motivo: string;
+  em: string;
+}
+
+/**
+ * Por que uma coisa falhou, em vocabulário fechado — o que o índice guarda.
+ *
+ * As três primeiras são as classes de falha que o §5 já nomeia; `janela_presa`
+ * é o penhasco da 4.8 (uma janela que não fechou), e `vazio` é o provedor que
+ * não devolveu texto nenhum.
+ */
+export const CODIGOS_DE_FALHA = [
+  "limite",
+  "rede",
+  "servico",
+  "janela_presa",
+  "vazio",
+  "orcamento",
+  "outro",
+] as const;
+
+export type CodigoDeFalha = (typeof CODIGOS_DE_FALHA)[number];
+
+/**
+ * As três marcas que só o navegador sabe dar, em epoch ms **do relógio dele**.
+ *
+ * O número desta fatia é `revisou - parou`: do toque em parar até a revisão
+ * abrir. Ele inclui a rede de propósito — é o tempo que eu espero olhando o
+ * telefone, não o que o servidor gosta de contar.
+ *
+ * Os três instantes vêm do mesmo relógio, então a subtração é honesta. **Nunca
+ * se subtrai marca de cliente de instante de servidor**: os passos do servidor
+ * são gravados como duração, nunca como carimbo, justamente para essa conta não
+ * ser possível.
+ */
+export interface MarcasDoCliente {
+  /** O toque em "parar" — ou, na importação, o arquivo aceito. */
+  parou?: number;
+  /** A fila de upload esvaziou e o `/finalizar` vai sair. */
+  fila_vazia?: number;
+  /** A revisão montou a proposta na tela. É o fim da espera. */
+  revisou?: number;
+}
+
+/** Por onde o áudio entrou. Os dois caminhos compartilham o pipeline. */
+export const CAMINHOS_DE_ENTRADA = ["gravacao", "importacao"] as const;
+
+export type CaminhoDeEntrada = (typeof CAMINHOS_DE_ENTRADA)[number];
+
+export const ehCaminhoDeEntrada = (v: unknown): v is CaminhoDeEntrada =>
+  typeof v === "string" && (CAMINHOS_DE_ENTRADA as readonly string[]).includes(v);
+
+/**
+ * `sessoes/<id>/medidas.json` — o detalhe de uma sessão.
+ *
+ * Morre com a sessão: entra em `chavesDaSessao`, e apagar a sessão o apaga. O
+ * que sobrevive é a linha dela no índice — de propósito, como a correção já
+ * sobrevive ao átomo. A série não pode ganhar buraco quando eu apago uma sessão
+ * de teste, e sessão de teste que foi mal não some para melhorar a média.
+ */
+export interface MedidasDaSessao {
+  sessao_id: string;
+  criado_em: string;
+  atualizado_em: string;
+  caminho: CaminhoDeEntrada;
+  cliente: MarcasDoCliente;
+  passos: Partial<Record<PassoMedido, CustoDoPasso>>;
+  agentes: Partial<Record<AgenteId, CustoDoAgente>>;
+  falhas: FalhaMedida[];
+}
+
+/** Texto livre de falha não pode crescer sem teto nem dentro do objeto da sessão. */
+export const TETO_FALHAS_POR_SESSAO = 20;
+export const TETO_MOTIVO = 300;
+
+/**
+ * Uma linha do `medidas/indice.json` — os números de manchete de uma sessão.
+ *
+ * **Sem texto livre.** O que vem para cá é código e contagem; o motivo fica no
+ * objeto da sessão, que é limitado e some com ela.
+ *
+ * Todo campo aqui responde a uma pergunta que eu de fato faço: "onde foi o
+ * tempo" (`espera_ms`, `fila_ms`, `servidor_ms`), "isso piorou desde a emenda"
+ * (a série inteira), "quantas janelas ficaram para trás" (`codigos`). Campo sem
+ * pergunta atrás é o que apodrece.
+ */
+export interface LinhaDeMedida {
+  sessao_id: string;
+  em: string;
+  caminho: CaminhoDeEntrada;
+  /** Quanto eu falei, em segundos — sem isso os números não se comparam. */
+  duracao_s: number | null;
+  /** Do toque em parar à revisão aberta. **O número da fatia.** */
+  espera_ms: number | null;
+  /** Parar → fila vazia: o último bloco subindo. */
+  fila_ms: number | null;
+  /** Fila vazia → revisão aberta: tudo que é do servidor. */
+  servidor_ms: number | null;
+  blocos: number;
+  /**
+   * Quanto cada passo do servidor custou, somado, em ms. É a resposta a "onde
+   * foi o tempo" sem precisar do objeto da sessão — que morre com ela — e é o
+   * que alimenta o "por passo" do resumo mensal. O `pior_ms` de cada passo fica
+   * só no detalhe: no índice ele seria um campo sem pergunta atrás.
+   */
+  passos: Partial<Record<PassoMedido, number>>;
+  /** Chamadas de modelo, somadas — a conta de "quatro chamadas para entregar uma". */
+  chamadas: number;
+  tokens: number | null;
+  falhas: number;
+  codigos: CodigoDeFalha[];
+}
+
+/** `medidas/indice.json` — uma linha por sessão, podado por teto. */
+export interface IndiceDeMedidas {
+  linhas: LinhaDeMedida[];
+  atualizado_em: string;
+}
+
+/**
+ * Quantas linhas o índice guarda.
+ *
+ * A uma sessão por dia, é mais de um ano de série — e o que sai daqui já está
+ * no resumo do mês, que é para sempre. Mais alto que isto seria guardar duas
+ * vezes a mesma coisa.
+ */
+export const TETO_LINHAS_MEDIDA = 400;
+
+/** Os três números que resumem uma distribuição pequena. */
+export interface Resumo {
+  n: number;
+  mediana: number;
+  pior: number;
+}
+
+/**
+ * `medidas/<AAAA-MM>.json` — o mês inteiro em um objeto, para sempre.
+ *
+ * Escrito pela batida diária **antes** da poda: o detalhe de março some, a linha
+ * de março fica. Doze objetos por ano.
+ */
+export interface ResumoMensal {
+  mes: string;
+  gerado_em: string;
+  n: number;
+  espera_ms: Resumo | null;
+  fila_ms: Resumo | null;
+  servidor_ms: Resumo | null;
+  chamadas: Resumo | null;
+  passos: Partial<Record<PassoMedido, Resumo>>;
+  falhas: number;
+  codigos: Partial<Record<CodigoDeFalha, number>>;
+}

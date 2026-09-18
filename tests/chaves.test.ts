@@ -109,6 +109,7 @@ describe("as chaves de uma sessão inteira — o que o apagar percorre", () => {
         "sessoes/abc123xy/extracao.json",
         "sessoes/abc123xy/extracao-anterior.json",
         "sessoes/abc123xy/correcoes.json",
+        "sessoes/abc123xy/medidas.json",
         "sessoes/abc123xy/manifest.json",
       ]),
     );
@@ -129,8 +130,20 @@ describe("as chaves de uma sessão inteira — o que o apagar percorre", () => {
     expect(chavesDaSessao(manifest([{ i: 0 }])).join(" ")).not.toContain("calibracao/");
   });
 
-  it("uma sessão de 17 min fatiada dá 35 blocos e 111 objetos", () => {
+  /**
+   * O detalhe da medida morre com a sessão; a **linha** dela não (slice 8). É a
+   * mesma decisão da correção, pelo motivo oposto e complementar: a série não
+   * pode ganhar buraco quando eu apago uma sessão de teste, e sessão de teste
+   * que foi mal não pode sumir para melhorar a média sozinha.
+   */
+  it("apaga o detalhe da medida e não o índice dela", () => {
+    const chaves = chavesDaSessao(manifest([{ i: 0 }]));
+    expect(chaves).toContain("sessoes/abc123xy/medidas.json");
+    expect(chaves.join(" ")).not.toContain("medidas/indice.json");
+  });
+
+  it("uma sessão de 17 min fatiada dá 35 blocos e 112 objetos", () => {
     const trinta = Array.from({ length: 35 }, (_, i) => ({ i, ext: "wav" }));
-    expect(chavesDaSessao(manifest(trinta))).toHaveLength(35 * 3 + 6);
+    expect(chavesDaSessao(manifest(trinta))).toHaveLength(35 * 3 + 7);
   });
 });

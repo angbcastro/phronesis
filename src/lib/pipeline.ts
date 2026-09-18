@@ -45,6 +45,7 @@ import {
   tudoTranscrito,
 } from "./manifest";
 import { ehLimiteDeTaxa } from "./limite";
+import { medir, registrarFalha } from "./medidas";
 import { ConflitoR2Error, getBytes, getJson, putJson } from "./r2";
 import { atualizarSessao, buscarSessao } from "./sessoes";
 import { temTranscricao } from "./estados";
@@ -91,7 +92,12 @@ export async function transcreverBloco(
   const audio = await getBytes(key);
   if (!audio) throw new Error(`Bloco ${i} da sessão ${sessao_id} não está no R2 (${key})`);
 
-  const { texto, palavras, modelo, granularidade } = await transcrever(audio, { ate });
+  // O passo `stt` é o trabalho de **um bloco**, e a volta pelo objeto pronto
+  // acima fica de fora de propósito: ela não custa STT nenhum, e contá-la
+  // faria a média por bloco cair sozinha a cada retry (`medidas.ts`).
+  const { texto, palavras, modelo, granularidade } = await medir("stt", () =>
+    transcrever(audio, { ate }),
+  );
 
   // O bloco vazio é legítimo (silêncio, `stt.ts`) e por isso não interrompe
   // nada — mas é também com o que um tropeço do provedor se pareceria, e aí
@@ -99,6 +105,10 @@ export async function transcreverBloco(
   // hipótese: sessão com texto faltando se confere aqui, contra o áudio.
   if (texto.trim() === "") {
     console.warn(`[pipeline] sessão ${sessao_id} bloco ${i}: STT não ouviu fala — bloco vazio`);
+    // Registrado como falha de código `vazio`, e não como erro: o bloco mudo é
+    // legítimo (§5.4). O que a linha responde é "esta sessão teve buraco?", que
+    // é a pergunta que o log sozinho só responde a quem foi procurar.
+    registrarFalha("stt", `bloco ${i} sem fala`, "vazio");
   }
 
   const bloco: TranscricaoBloco = { i, texto, palavras, modelo, granularidade };
@@ -165,6 +175,7 @@ export async function avancarJanelas(
   for (const j of lista) {
     if (ate !== undefined && Date.now() >= ate) {
       console.error(`[janela] sessão ${sessao_id}: sem orçamento para a janela ${j.n}`);
+      registrarFalha("janela", `sem orçamento para a janela ${j.n}`, "orcamento");
       return;
     }
 
@@ -184,16 +195,18 @@ export async function avancarJanelas(
       // desta fatia, e uma janela que não consegue lê-lo falha e é retentada,
       // como sempre foi. O que degrada em silêncio é a busca **dentro** dele
       // (`candidatasDaJanela`), não a leitura.
-      const catalogo = await listarEntidades();
+      const catalogo = await medir("catalogo", () => listarEntidades());
       const dossie = await montarDossie(sessao_id, j, parcial.atomos, catalogo, fechando);
 
-      const r = await extrairJanela(trecho, {
-        jaPropostos: parcial.atomos,
-        unica,
-        ate,
-        dossie,
-        catalogo,
-      });
+      const r = await medir("janela", () =>
+        extrairJanela(trecho, {
+          jaPropostos: parcial.atomos,
+          unica,
+          ate,
+          dossie,
+          catalogo,
+        }),
+      );
 
       await atualizarParcial(sessao_id, (p) => aplicarJanela(p, j, r, new Date()));
       console.log(
@@ -203,6 +216,7 @@ export async function avancarJanelas(
       );
     } catch (e) {
       const motivo = e instanceof Error ? e.message : String(e);
+      registrarFalha("janela", e);
       // A marca da falha é o que faz a próxima passada retentar esta janela em
       // vez de esperar o lease vencer. Se nem ela conseguir gravar, o lease
       // ainda cobre — por isso a falha aqui não pode derrubar o log de baixo.
@@ -233,10 +247,12 @@ async function montarDossie(
 ): Promise<Dossie> {
   try {
     return dossieDaJanela({
-      blocos: await candidatasDaJanela(sessao_id, indicesDa(j), {
-        catalogo,
-        refazerDegradado: fechando,
-      }),
+      blocos: await medir("candidatas", () =>
+        candidatasDaJanela(sessao_id, indicesDa(j), {
+          catalogo,
+          refazerDegradado: fechando,
+        }),
+      ),
       jaAtribuidas: entidadesJaAtribuidas(jaPropostos),
       catalogo,
     });
@@ -300,26 +316,32 @@ export async function finalizarSessao(sessao_id: string): Promise<{
   let m = await carregarManifest(sessao_id);
   let limitado = false;
 
-  while (!tudoTranscrito(m) && Date.now() < limite) {
-    for (const c of pendentes(m)) {
-      // Dentro do laço, não só na volta: com o rate limit, um único bloco pode
-      // segurar dezenas de segundos, e uma rodada de dez blocos pendentes
-      // passaria muito do prazo antes de alguém reconferir o relógio.
-      if (Date.now() >= limite) break;
-      try {
-        await transcreverBloco(sessao_id, c.i, { ate: limite });
-      } catch (e) {
-        // Outro worker pode estar no mesmo bloco; a próxima volta relê o
-        // manifest. Mas o motivo vai para o log: a tela só sabe dizer que
-        // falhou, e sem esta linha a falha fica indiagnosticável depois.
-        limitado = limitado || ehLimiteDeTaxa(e);
-        console.error(`[pipeline] sessão ${sessao_id} bloco ${c.i} não transcreveu:`, e);
+  // O passo `espera_blocos` é o corredor inteiro, inclusive o que ele passa
+  // dormindo: ele responde "quanto do meu tempo foi esperar bloco pendente?",
+  // que é a pergunta que decide se o conserto é a fila do cliente ou o STT.
+  await medir("espera_blocos", async () => {
+    while (!tudoTranscrito(m) && Date.now() < limite) {
+      for (const c of pendentes(m)) {
+        // Dentro do laço, não só na volta: com o rate limit, um único bloco pode
+        // segurar dezenas de segundos, e uma rodada de dez blocos pendentes
+        // passaria muito do prazo antes de alguém reconferir o relógio.
+        if (Date.now() >= limite) break;
+        try {
+          await transcreverBloco(sessao_id, c.i, { ate: limite });
+        } catch (e) {
+          // Outro worker pode estar no mesmo bloco; a próxima volta relê o
+          // manifest. Mas o motivo vai para o log: a tela só sabe dizer que
+          // falhou, e sem esta linha a falha fica indiagnosticável depois.
+          limitado = limitado || ehLimiteDeTaxa(e);
+          registrarFalha("espera_blocos", e);
+          console.error(`[pipeline] sessão ${sessao_id} bloco ${c.i} não transcreveu:`, e);
+        }
       }
+      m = await carregarManifest(sessao_id);
+      if (tudoTranscrito(m)) break;
+      await new Promise((r) => setTimeout(r, INTERVALO_ESPERA_MS));
     }
-    m = await carregarManifest(sessao_id);
-    if (tudoTranscrito(m)) break;
-    await new Promise((r) => setTimeout(r, INTERVALO_ESPERA_MS));
-  }
+  });
 
   if (!tudoTranscrito(m)) {
     const faltando = pendentes(m).map((c) => c.i);
@@ -331,15 +353,23 @@ export async function finalizarSessao(sessao_id: string): Promise<{
           : "") +
         `O motivo de cada um está nas linhas [pipeline] acima. Áudio intacto no R2.`,
     );
+    registrarFalha(
+      "espera_blocos",
+      `desistiu com ${faltando.length} bloco(s) faltando: ${faltando.join(", ")}`,
+      limitado ? "limite" : "servico",
+    );
     // Áudio intacto, retry manual.
     await atualizarSessao(sessao_id, { status: "erro" }, DE_ONDE_SE_CAI_EM_ERRO);
     return { status: "erro", faltando };
   }
 
-  const blocos = await blocosProntos(sessao_id, m.chunks.map((c) => c.i));
-  const transcricao = concatenar(sessao_id, blocos);
+  const transcricao = await medir("concatenar", async () => {
+    const blocos = await blocosProntos(sessao_id, m.chunks.map((c) => c.i));
+    const t = concatenar(sessao_id, blocos);
+    await putJson(chaveTranscricao(sessao_id), t);
+    return t;
+  });
 
-  await putJson(chaveTranscricao(sessao_id), transcricao);
   await atualizarManifest(sessao_id, (mm) => (mm.finalizado ? mm : { ...mm, finalizado: true }));
   await atualizarSessao(sessao_id, {
     status: "transcrito",
@@ -402,7 +432,9 @@ export async function extrairSessao(
       ate: Date.now() + ORCAMENTO_JANELAS_MS,
     });
 
-    const extracao = await propostaDaSessao(sessao_id, transcricao.valor);
+    const extracao = await medir("proposta", () =>
+      propostaDaSessao(sessao_id, transcricao.valor),
+    );
 
     // A que está lá agora, lida antes de o PUT passar por cima dela. Só no
     // forçado: no caminho automático não existe proposta anterior nenhuma.
@@ -430,6 +462,7 @@ export async function extrairSessao(
     }
     // A tela só sabe dizer que falhou; sem esta linha o motivo se perde.
     console.error(`[extracao] sessão ${sessao_id} falhou:`, e);
+    registrarFalha("proposta", e);
     // Transcrição intacta, retry manual.
     await atualizarSessao(sessao_id, { status: "erro" }, DE_ONDE_SE_CAI_EM_ERRO);
     return { status: "erro" };

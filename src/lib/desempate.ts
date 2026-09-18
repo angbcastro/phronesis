@@ -35,6 +35,7 @@
  * quem grava é o confirmar, depois da revisão (regra 5).
  */
 import { generateText } from "ai";
+import { medirAgente } from "./medidas";
 import type { EntidadeDoGrafo } from "./entidades";
 import { comEsperaDeLimite } from "./limite";
 import {
@@ -204,15 +205,17 @@ export async function desempatar(
       comEsperaDeLimite(
         `desempate ${meu.modelo}`,
         () =>
-          generateText({
-            // String de propósito: id em string sai pelo Gateway (regra 8).
-            model: meu.modelo,
-            prompt,
-            temperature: 0,
-            maxOutputTokens: teto,
-            // A espera longa daqui é a única camada de retry, como na resolução.
-            maxRetries: 0,
-          }),
+          medirAgente("desempate", () =>
+            generateText({
+              // String de propósito: id em string sai pelo Gateway (regra 8).
+              model: meu.modelo,
+              prompt,
+              temperature: 0,
+              maxOutputTokens: teto,
+              // A espera longa daqui é a única camada de retry, como na resolução.
+              maxRetries: 0,
+            }),
+          ),
         { ate },
       );
 

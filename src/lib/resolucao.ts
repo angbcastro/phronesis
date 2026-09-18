@@ -37,6 +37,7 @@
  * atribuições; quem grava é o confirmar, depois da revisão (regra 5).
  */
 import { generateText } from "ai";
+import { medirAgente } from "./medidas";
 import { desempatar, NOVA as NOVA_DESEMPATE } from "./desempate";
 import { proximidade } from "./duplicatas";
 import { acharPorChave, apresentarEntidade, candidatosSemanticos } from "./entidades";
@@ -928,18 +929,22 @@ export async function resolverReferencias(
       const chamar = (teto: number) =>
         comEsperaDeLimite(
           `resolucao ${modeloDaChamada}`,
+          // Dentro da espera, e não fora: tentativa recusada por limite também
+          // é ida ao Gateway, e é a conta de chamadas que a slice 8 mede.
           () =>
-            generateText({
-              // String de propósito: id em string sai pelo Gateway (regra 8).
-              model: modeloDaChamada,
-              prompt,
-              temperature: 0,
-              maxOutputTokens: teto,
-              // A espera longa daqui é a única camada de retry: as três
-              // tentativas rápidas do SDK contra um 429 não destravam nada e
-              // ainda alimentam o limite que estão esperando (`limite.ts`).
-              maxRetries: 0,
-            }),
+            medirAgente("resolucao", () =>
+              generateText({
+                // String de propósito: id em string sai pelo Gateway (regra 8).
+                model: modeloDaChamada,
+                prompt,
+                temperature: 0,
+                maxOutputTokens: teto,
+                // A espera longa daqui é a única camada de retry: as três
+                // tentativas rápidas do SDK contra um 429 não destravam nada e
+                // ainda alimentam o limite que estão esperando (`limite.ts`).
+                maxRetries: 0,
+              }),
+            ),
           { ate },
         );
 
