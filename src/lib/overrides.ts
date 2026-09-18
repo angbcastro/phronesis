@@ -5,9 +5,14 @@
  * **Decalcado de `regras.ts`, e pelas mesmas razões**, que estão escritas lá por
  * extenso: R2 porque serverless não tem disco gravável nem compartilhado;
  * snapshot imutável por hash porque `prompt_version` carrega o hash e um átomo
- * de três meses atrás precisa resolver o texto que o produziu; **sem cache**
- * porque cache por instância faria "salvei, vale na próxima" ser falso de um
- * jeito que ninguém vê.
+ * de três meses atrás precisa resolver o texto que o produziu; **sem cache de
+ * instância** porque ele faria "salvei, vale na próxima" ser falso de um jeito
+ * que ninguém vê — função serverless quente guarda estado de módulo entre
+ * requisições, e o prompt velho continuaria valendo depois de eu salvar o novo.
+ *
+ * **Desde a slice 8 há cache por invocação, e ele não fura essa decisão**: a
+ * próxima invocação começa com o mapa vazio e lê de novo (`invocacao.ts`). O que
+ * ele elimina é a repetição dentro do mesmo trabalho — ver `configAgentes`.
  *
  * **Nunca propaga erro na leitura.** R2 fora do ar não pode impedir uma sessão
  * de ser transcrita ou extraída: sem override, o agente sai byte a byte igual ao
@@ -21,6 +26,7 @@
  * tempo de execução, que é a pior forma de descobrir o problema.
  */
 import { chaveAgentes, chavePromptAgente } from "./chaves";
+import { umaVezPorInvocacao } from "./invocacao";
 import { ConflitoR2Error, getJson, putJson } from "./r2";
 import { hashDeTexto } from "./regras";
 import type { AgenteId, ConfigAgentes, OverrideDeAgente, VersaoDePrompt } from "./tipos";
@@ -28,23 +34,34 @@ import type { AgenteId, ConfigAgentes, OverrideDeAgente, VersaoDePrompt } from "
 const VAZIA: ConfigAgentes = { overrides: {}, atualizado_em: "" };
 
 /**
- * O índice inteiro, ou vazio. **Uma leitura por chamada de agente**, e o preço
- * está declarado: uma por sessão na extração e na resolução, uma por bloco no
- * STT — trinta numa sessão gravada de 15 min. É o mesmo preço que `regras()` já
- * paga, e é o preço de a promessa ser verdadeira em vez de quase.
+ * O índice inteiro, ou vazio. **Uma leitura por invocação** desde a slice 8.
+ *
+ * Era uma por chamada de agente, com o preço declarado: uma na extração, uma na
+ * resolução, uma por bloco no STT — trinta numa sessão gravada de 15 min. O que
+ * fez o preço deixar de ser aceitável foi o desempate (4.11), que roda em
+ * `Promise.all`: N menções abaixo do limiar viravam **N GETs simultâneos do
+ * mesmo objeto**, dentro do `waitUntil` que a fatia 8 está tentando encurtar.
+ *
+ * O cache é do escopo da invocação, não da instância (`invocacao.ts`), e é essa
+ * diferença que preserva a promessa do cabeçalho: salvar no painel vale na
+ * próxima sessão, porque a próxima invocação lê de novo. Fora de um contexto de
+ * invocação — toda rota que não é do pipeline — nada é guardado, e a função se
+ * comporta exatamente como antes.
  */
 export async function configAgentes(): Promise<ConfigAgentes> {
-  try {
-    const o = await getJson<ConfigAgentes>(chaveAgentes());
-    const v = o?.valor;
-    if (!v || typeof v !== "object" || typeof v.overrides !== "object" || v.overrides === null) {
+  return umaVezPorInvocacao("config/agentes", async () => {
+    try {
+      const o = await getJson<ConfigAgentes>(chaveAgentes());
+      const v = o?.valor;
+      if (!v || typeof v !== "object" || typeof v.overrides !== "object" || v.overrides === null) {
+        return VAZIA;
+      }
+      return v;
+    } catch (e) {
+      console.error("[overrides] não consegui ler a configuração, seguindo com a base:", e);
       return VAZIA;
     }
-    return v;
-  } catch (e) {
-    console.error("[overrides] não consegui ler a configuração, seguindo com a base:", e);
-    return VAZIA;
-  }
+  });
 }
 
 /** O mesmo, com o etag — só o caminho de escrita precisa dele. */

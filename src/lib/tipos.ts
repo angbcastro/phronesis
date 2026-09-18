@@ -36,6 +36,20 @@ export interface ChunkManifest {
    * é o que mantém legível todo manifest escrito antes da importação.
    */
   ext?: string;
+  /**
+   * Quando alguém reivindicou a transcrição deste bloco (slice 8).
+   *
+   * É a trava que impede o `waitUntil` de `/chunks/:i/pronto` e o laço de espera
+   * de `finalizarSessao` de mandarem o **mesmo** bloco ao STT e pagarem duas
+   * vezes por ele — o `/finalizar` chega segundos depois do último `/pronto`, e
+   * até aqui a única guarda era a existência de `chunk_NNN.json`, que só existe
+   * **depois** de a transcrição voltar.
+   *
+   * Ausente = livre. Vence sozinho por `LEASE_BLOCO_MS`, como a janela: o
+   * `waitUntil` que reivindicou pode ter morrido, e sem prazo o bloco ficaria
+   * travado para sempre.
+   */
+  transcrevendo_em?: string;
 }
 
 /** sessoes/<id>/manifest.json */
@@ -896,6 +910,27 @@ export interface VersaoDePrompt {
  * pânico, e é por isso que ele existe.
  */
 export const JANELA_BLOCOS = 4;
+
+/**
+ * Quanto vale a reivindicação de um bloco (slice 8).
+ *
+ * Mesmo número e mesmo raciocínio do `LEASE_MS` da janela: não é o tempo que um
+ * bloco leva — é o tempo depois do qual vale mais arriscar pagar o STT duas
+ * vezes do que deixar o bloco travado. Um bloco que tropeça no rate limit fica
+ * legitimamente preso em `comEsperaDeLimite` por até ~110 s (`limite.ts`), e um
+ * lease mais curto que isso liberaria o bloco exatamente enquanto alguém ainda
+ * está trabalhando nele.
+ *
+ * O `waitUntil` que reivindicou pode ter morrido, e aí o laço de
+ * `finalizarSessao` — que tem `ESPERA_MAX_MS` de 150 s — espera o lease vencer
+ * antes de tentar. É a troca declarada: recuperação mais lenta no caso raro em
+ * troca de não pagar o STT duas vezes no caso comum, que é o `/finalizar`
+ * chegando segundos depois do último `/pronto`.
+ *
+ * Mora aqui, e não em `manifest.ts`, pelo mesmo motivo que `JANELA_BLOCOS`: este
+ * é o módulo sem import nenhum.
+ */
+export const LEASE_BLOCO_MS = 120_000;
 
 /**
  * De quantos átomos uma sessão de 15 min deve render — o par que o prompt base

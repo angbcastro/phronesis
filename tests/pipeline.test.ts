@@ -48,6 +48,10 @@ vi.mock("@/lib/manifest", () => ({
   extensaoDoChunk: vi.fn(() => "webm"),
   atualizarManifest: vi.fn(async () => manifesto),
   marcarTranscrito: vi.fn((m) => m),
+  soltarBloco: vi.fn((m) => m),
+  // O bloco é sempre meu neste arquivo: o que ele mede é a falha do STT, não a
+  // disputa entre dois workers (essa está em `tests/manifest.test.ts`).
+  reivindicarTranscricao: vi.fn(async () => true),
   pendentes: vi.fn((m) => m.chunks.filter((c: { transcrito: boolean }) => !c.transcrito)),
   tudoTranscrito: vi.fn(() => false),
 }));

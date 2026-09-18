@@ -6,8 +6,9 @@
 import { EXT_GRAVACAO } from "./audio";
 import { chaveManifest } from "./chaves";
 import { atualizarJson } from "./etag";
-import type { ChunkManifest, Manifest } from "./tipos";
 import { getJson } from "./r2";
+import { LEASE_BLOCO_MS } from "./tipos";
+import type { ChunkManifest, Manifest } from "./tipos";
 
 // ---------- puro ----------
 
@@ -56,7 +57,55 @@ export function extensaoDoChunk(m: Manifest, i: number): string {
 
 export function marcarTranscrito(m: Manifest, i: number): Manifest {
   if (!m.chunks.some((c) => c.i === i && !c.transcrito)) return m;
-  return { ...m, chunks: m.chunks.map((c) => (c.i === i ? { ...c, transcrito: true } : c)) };
+  return {
+    ...m,
+    // O lease sai junto: bloco transcrito não precisa mais de dono, e deixá-lo
+    // para trás faria o manifest carregar uma reivindicação eterna de um
+    // trabalho que acabou.
+    chunks: m.chunks.map((c) =>
+      c.i === i ? { ...semLease(c), transcrito: true } : c,
+    ),
+  };
+}
+
+const semLease = ({ transcrevendo_em: _, ...c }: ChunkManifest): ChunkManifest => c;
+
+/**
+ * Reivindica a transcrição de um bloco, se ela estiver livre (slice 8).
+ *
+ * Puro de propósito, como `reivindicar` da janela: quem grava é
+ * `atualizarManifestSe`, e o mutador dele é reaplicado a cada conflito de etag.
+ * Uma decisão tomada fora dele decidiria sobre um manifest que já não existe.
+ *
+ * `null` quer dizer "não é minha": o bloco já está transcrito, ou outro worker
+ * o pegou há menos de `LEASE_BLOCO_MS`. A conta com `em` corrompido dá `NaN`, e
+ * `NaN` é falso em qualquer comparação — escrito assim, o erro cai para o lado
+ * de reivindicar de novo, que custa uma chamada, e não para o lado de travar o
+ * bloco, que custa a sessão.
+ */
+export function reivindicarBloco(m: Manifest, i: number, agora: Date): Manifest | null {
+  const atual = m.chunks.find((c) => c.i === i);
+  if (!atual || atual.transcrito) return null;
+  if (
+    atual.transcrevendo_em !== undefined &&
+    agora.getTime() - Date.parse(atual.transcrevendo_em) < LEASE_BLOCO_MS
+  ) {
+    return null;
+  }
+
+  return {
+    ...m,
+    chunks: m.chunks.map((c) =>
+      c.i === i ? { ...c, transcrevendo_em: agora.toISOString() } : c,
+    ),
+  };
+}
+
+/** Solta a reivindicação de um bloco que falhou — o próximo não espera o lease. */
+export function soltarBloco(m: Manifest, i: number): Manifest {
+  const atual = m.chunks.find((c) => c.i === i);
+  if (!atual || atual.transcrevendo_em === undefined) return m;
+  return { ...m, chunks: m.chunks.map((c) => (c.i === i ? semLease(c) : c)) };
 }
 
 export const pendentes = (m: Manifest): ChunkManifest[] => m.chunks.filter((c) => !c.transcrito);
@@ -100,4 +149,34 @@ export async function atualizarManifest(
     { ...ESPERA_MANIFEST, rotulo: `o manifest de ${sessao_id}` },
   );
   return valor;
+}
+
+/**
+ * O mesmo, dizendo **de quem foi a escrita** (slice 8).
+ *
+ * `false` quer dizer "outro worker chegou primeiro", e é o que faz
+ * `reivindicarBloco` ser uma trava de verdade em vez de uma esperança. Mesma
+ * forma de `reivindicarJanela` (`janela.ts`), pelo mesmo motivo.
+ */
+export async function atualizarManifestSe(
+  sessao_id: string,
+  mutador: (m: Manifest) => Manifest | null,
+): Promise<{ manifest: Manifest; mudou: boolean }> {
+  const { valor, mudou } = await atualizarJson<Manifest>(
+    chaveManifest(sessao_id),
+    (cru) => cru ?? manifestVazio(sessao_id),
+    mutador,
+    { ...ESPERA_MANIFEST, rotulo: `o manifest de ${sessao_id}` },
+  );
+  return { manifest: valor, mudou };
+}
+
+/** `true` = o bloco é meu e ninguém mais está nele. Ver `reivindicarBloco`. */
+export async function reivindicarTranscricao(
+  sessao_id: string,
+  i: number,
+  agora: Date = new Date(),
+): Promise<boolean> {
+  const { mudou } = await atualizarManifestSe(sessao_id, (m) => reivindicarBloco(m, i, agora));
+  return mudou;
 }

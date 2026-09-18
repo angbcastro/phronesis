@@ -16,18 +16,19 @@ importado entra pela mesma porta), 4.11 (a entidade se apresenta, e o agente 2
 mede a própria dúvida), 4.12 (a ficha se escreve sozinha), 5 (confrontar:
 relações entre átomos ao longo do tempo), 5.1 (o confronto calibrado pela
 primeira revisão à mão), 6 (o chat: perguntar ao grafo em texto livre), 7 (o
-laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas) e a
-**primeira metade da 8** — a medida — construídas.**
+laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas) e 8
+(o sistema se cronometra, e encolhe o que mede) construídas.**
 
 **A slice 8 sobe em duas partes, e a ordem não é detalhe.** A primeira é só o
 cronômetro (§4.17): três objetos no R2, as três marcas do cliente, a
 instrumentação nos passos que já existem e o resumo mensal na batida diária.
 Nenhum conserto de desempenho vai junto — se instrumento e conserto subissem no
 mesmo deploy, não se saberia o que melhorou, e a fatia inteira existe para saber.
-O que fecha a primeira metade é **uma sessão real gravada**, com o
-`medidas.json` dela lido: é ele a linha de base contra a qual a segunda metade
-será julgada. Quem fecha a fatia sou eu — a medida existe para dizer *onde*
-mexer, não para declarar que ficou bom.
+A segunda são os seis consertos e o penhasco virando erro (§4.18). Entre as duas
+vai **uma sessão real gravada**, com o `medidas.json` dela lido: é ele a linha de
+base contra a qual a segunda metade é julgada, e **nada disso foi medido ainda**.
+Quem fecha a fatia sou eu — a medida existe para dizer *onde* mexer, não para
+declarar que ficou bom.
 
 **A 7 é a fatia que muda o que "calibrar" quer dizer.** Até ela o sistema tinha
 **um** laço fechado — correção na revisão → `calibracao/indice.json` →
@@ -363,6 +364,8 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   hash e as duas consultas de vizinhança
   medidas.ts      o relógio do sistema sobre si mesmo: o contexto que recolhe
                   passo, chamada e falha, os três objetos do R2 e o resumo do mês
+  invocacao.ts    cache do tempo de UMA invocação — a mesma pergunta, uma ida
+                  só; morre com o `waitUntil`, e por isso não é cache de instância
   correcoes.ts    o diff entre o que a proposta dizia e o que eu aprovei:
                   apuração, chaves e a fusão no índice — puro, sem rede
   calibracao.ts   onde as correções vivem (correcoes.json por sessão e o índice
@@ -624,9 +627,11 @@ Três consequências que valem estar escritas:
   juntos**, e o volume do pensamento não encolhe com a entrada do jeito que o
   JSON encolhe. Encolher a janela não protege nada; o que protege está no §4.6.
 - **O caminho de uma janela só continua existindo, e é o mesmo código.** Arquivo
-  importado (um bloco), gravação de menos de dois minutos, e o fallback de
-  quando alguma janela não fecha: todos passam por uma janela que se declara a
-  sessão inteira, com o prompt saindo byte a byte igual ao de antes da 4.8.
+  importado que o navegador não fatiou, e gravação de menos de dois minutos:
+  passam por uma janela que se declara a sessão inteira, com o prompt saindo byte
+  a byte igual ao de antes da 4.8. **O terceiro caso saiu na slice 8**: janela que
+  não fecha já não cai no passe único — a sessão vai para `erro` e espera eu
+  mandar re-extrair (§4.18).
 
 ### 4.2 Porta única de modelo (Vercel AI Gateway)
 
@@ -1007,9 +1012,10 @@ do prompt (§4.12): o que a 4.6 colava a cada chamada agora está escrito dentro
 texto que `efetivo("extracao", …)` devolve.
 
 **`blocoDaJanela` devolve string vazia quando a janela é a sessão inteira e o
-acumulado está vazio.** Não é detalhe: é o que faz o arquivo importado, a
-gravação de menos de dois minutos e o fallback de passe único continuarem
-recebendo exatamente o prompt de antes desta fatia.
+acumulado está vazio.** Não é detalhe: é o que faz o arquivo importado e a
+gravação de menos de dois minutos continuarem recebendo exatamente o prompt de
+antes desta fatia. (O terceiro caso era o fallback de passe único, que a slice 8
+removeu — §4.18.)
 
 #### `estende`: o que substitui a passada de costura
 
@@ -3567,6 +3573,68 @@ essa guarda, e não a ordem de execução, que faz o detalhe de março sumir e a
 de março ficar.
 
 
+### 4.18 Os seis consertos, e o penhasco (slice 8)
+
+A segunda metade da fatia. Ela sobe **depois** de a medida ter rodado numa sessão
+real, e a ordem não é cerimônia: com instrumento e conserto no mesmo deploy não
+haveria como saber o que melhorou.
+
+**Primeiro o que elimina trabalho, depois o que paraleliza.**
+
+| # | O que era | O que é |
+|---|---|---|
+| 1 | o STT do último bloco podia ser pago **duas vezes** | o bloco ganha lease no manifest (`transcrevendo_em`), espelhando `reivindicarJanela` |
+| 2 | `listarEntidades()` rodava **duas vezes por finalização** | um retrato só, passado às janelas e à montagem da proposta (`catalogoUmaVez`) |
+| 3 | `configAgentes()` era um GET por chamada de agente | cache **por invocação** (`invocacao.ts`), que não fura "salvei, vale na próxima" |
+| 4 | ~3,5 s de polling puro entre "acabou" e "abriu" | 1 s → 400 ms no laço dos blocos, 500 → 150 ms na fila, 2 s → 750 ms na tela |
+| 5 | o RAG da janela percorria os 4 blocos em série | `Promise.all`, com o `catch` **por bloco** para um não levar os outros |
+| 5 | a fila do cliente subia um bloco por vez | três frentes, que só importam no instante do `parar` |
+| 6 | toda falha esperava a escada de 20 s e 60 s | só o 429; o resto tenta de novo em segundos (§5.3) |
+
+**O lease do bloco fecha uma janela que a trava antiga não cobria.** A existência
+de `chunk_NNN.json` só vale **depois** de o STT voltar; entre o pedido e a
+resposta havia dezenas de segundos em que o `waitUntil` de `/chunks/:i/pronto` e
+o laço de espera de `finalizarSessao` podiam mandar o mesmo áudio, e o
+`/finalizar` chega segundos depois do último `/pronto`. Agora quem não reivindica
+recebe `null` — que **não é falha**: é a resposta certa, e o laço relê o manifest
+na volta seguinte e vê o bloco pronto. Bloco que falha **solta** o lease antes de
+subir o erro, para o próximo não esperar dois minutos por um trabalho que já
+acabou; e `marcarTranscrito` também o solta, porque bloco pronto não tem dono.
+
+**O cache por invocação não revoga a decisão de `overrides.ts`, lê-a com mais
+precisão.** O que aquele comentário proíbe é cache **de instância**: função
+serverless quente guarda estado de módulo entre requisições, e ele serviria o
+prompt velho depois de eu ter salvo o novo. O de invocação morre com o
+`waitUntil` — a próxima lê de novo —, e o que ele elimina é a repetição dentro do
+mesmo trabalho. O caso que o tornou necessário é o desempate (4.11), que roda em
+`Promise.all`: N menções abaixo do limiar viravam N GETs simultâneos do mesmo
+objeto. Só os três `waitUntil` do pipeline abrem o escopo; nenhuma rota que
+escreve e relê no mesmo pedido abre.
+
+**O penhasco vira erro.** Até aqui, se **qualquer** janela não estivesse `pronta`
+na finalização, `propostaDaSessao` descartava tudo que a 4.8 acumulou e rodava
+`extrair()` sobre a sessão inteira num passe só — **em silêncio**, sem nada na
+tela que distinguisse uma proposta montada de oito janelas de uma tirada num
+passe de 17 minutos. É o caminho de 1–2 min que a 4.8 existe para eliminar, e eu
+o pagava sem saber. Agora a sessão vai para `erro` com o motivo no log
+(`JanelaPresaError`) e espera eu mandar re-extrair.
+
+**E o gatilho mais comum dele nem era defeito.** Ele disparava sempre que um
+lease de 120 s ainda estava segurado por um `waitUntil` anterior no instante em
+que o `/finalizar` rodava — que é a condição **normal**, não a excepcional.
+`avancarJanelas` deixou de desistir nesse caso: fechando a sessão, ela **espera**
+quem está na janela (`esperarQuemEstaNela`, 700 ms entre conferências), e só
+assume quando o lease vence de fato. As três saídas são `pronta` (ele fechou),
+`minha` (o lease venceu e eu assumi) e `desistiu` (acabou o orçamento) — e só a
+última vira erro. Durante a gravação nada mudou: quem encontra a janela ocupada
+para, e não pula, porque a janela `n` precisa do acumulado da `n-1`.
+
+**A troca está declarada:** uma sessão que antes entregaria nove átomos por passe
+único passa a parar e pedir re-extração. É a troca que eu quis — prefiro saber.
+Áudio, transcrição e acumulado continuam todos no R2, e o retry é
+`POST /api/sessoes/:id/extrair`, o mesmo botão de sempre.
+
+
 ## 5. Estados da sessão
 
 ```
@@ -3702,7 +3770,10 @@ com prefixo:
 | `[grafias] sessão <id>: N grafia(s) viraram alias` | `/confirmar` | a grafia que eu falei virou alias do nó que eu confirmei (§4.14) |
 | `[janela] sessão <id> janela <n> falhou:` | `avancarJanelas` | a janela não fechou; ela fica `falhou` no `parcial.json` e é retentada na passada seguinte |
 | `[janela] sessão <id>: sem orçamento para a janela <n>` | `avancarJanelas` | o prazo do `finalizar` acabou antes de a janela do fim rodar |
-| `[janela] sessão <id>: janela(s) N não fecharam…` | `propostaDaSessao` | a proposta caiu no passe único sobre a sessão inteira — o fallback da 4.8 |
+| `[janela] sessão <id>: janela(s) N não fecharam…` | `propostaDaSessao` | a sessão vai para `erro` e espera eu mandar re-extrair. Era o fallback de passe único até a slice 8 (§4.18) |
+| `[janela] sessão <id> janela <n>: outro worker está nela, esperando` | `esperarQuemEstaNela` | o `/finalizar` encontrou um lease vivo e está esperando quem está na janela — condição normal, não defeito |
+| `[janela] sessão <id>: janela <n> presa até o fim do orçamento` | `esperarQuemEstaNela` | esperou e o lease não soltou; é daqui que a sessão cai em `erro` |
+| `[stt] sessão <id> bloco <i>: já tem dono, deixando com ele` | `transcreverBloco` | a trava do bloco funcionou e o STT **não** foi pago duas vezes (§4.18) |
 | `[extracao] sessão <id> falhou:` | `extrairSessao` | o modelo estourou, ou a resposta não era JSON válido |
 | `[extracao] sessão <id>: sem transcricao.json…` | `extrairSessao` | pediram extração de uma sessão sem transcrição gravada |
 | `[finalizar] sessão <id> falhou:` | rota `/finalizar` | `finalizarSessao` estourou uma exceção |
@@ -3713,10 +3784,13 @@ com prefixo:
 | `[overrides] não consegui ler o prompt <agente>+<hash>:` | `promptPorHash` | o mesmo, um nível abaixo — o R2 recusou a leitura |
 | `[medidas] sessão <id>: não consegui gravar a medida:` | `comMedicao` | o cronômetro tropeçou; a sessão segue inteira, e é só a medida daquela invocação que se perde (§4.17) |
 
-Os quatro últimos não são falha de sessão: a sessão segue, e o que se perde é
-material de calibração, um vetor, um prompt editado ou uma medida. Estão aqui porque esta é
-a tabela que responde "onde aparece o motivo", e um log que ninguém sabe que
-existe não é diferente de log nenhum.
+Os cinco últimos não são falha de sessão: a sessão segue, e o que se perde é
+material de calibração, um vetor, um prompt editado ou uma medida. Estão aqui
+porque esta é a tabela que responde "onde aparece o motivo", e um log que ninguém
+sabe que existe não é diferente de log nenhum. As três linhas de `[janela]` e a
+de `[stt]` sobre o dono do bloco também não são falha: elas dizem que uma trava
+**funcionou**, e é por elas que se distingue "o sistema esperou" de "o sistema
+travou".
 
 O laço de espera engolia o erro do bloco em `catch {}` — a falha ia para `erro`
 sem uma linha sequer, e depois do fato não havia o que investigar.
@@ -3811,6 +3885,26 @@ cima: a medição mostrou ~75 s de janela, e esperar menos que o medido é o jei
 de a espera não servir para nada. São duas e não cinco porque o teto de cima é o
 `maxDuration` de 300 s da rota, e a extração ainda roda depois.
 
+**Aquele limite era do free tier, e desde a compra de créditos ele não
+reapareceu.** A medição de 02/09 é real e o desenho que ela produziu continua
+certo — mas o que ela mediu foi uma **conta gratuita**, não o modelo nem o
+Gateway. A consequência é de projeto, e ela é a segunda metade da slice 8:
+**paralelismo deixou de ser risco e virou escolha.** Num sistema de um usuário,
+requisição à toa não é custo. A escada longa fica porque custa zero enquanto o
+limite não volta, e porque conta gratuita é um estado ao qual se pode voltar.
+
+**Duas escadas desde a slice 8, e a diferença é o diagnóstico.** O módulo nasceu
+de uma medição só e tratava tudo que não fosse 429 como definitivo — um 502 do
+Gateway, um socket que morreu no meio, um `overloaded` do provedor derrubavam a
+janela na primeira tentativa. Isso ficou caro pelo lado oposto quando o penhasco
+virou erro (§4.18): falha boba de rede passou a custar a sessão. `ehTransitorio`
+reconhece as três formas — código de rede dentro do `cause`, status 5xx ou 408, e
+o `overloaded` que vem no corpo —, e elas levam `ESPERAS_TRANSITORIA_MS`, de 1 s
+e 3 s. Os **contadores são separados**: um blip de rede no começo não gasta a
+paciência que o 429 vai precisar depois. Fora das duas listas nada é repetido —
+modelo inexistente, prompt que estoura o contexto e JSON inválido falham igual na
+segunda vez.
+
 Quem chama dentro de um prazo passa o seu (`ate`): `finalizarSessao` tem 150 s
 para os blocos que faltam, e a janela do fim tem os 120 s de
 `ORCAMENTO_JANELAS_MS`. Uma espera que não caiba nesse orçamento é pior que não
@@ -3887,7 +3981,8 @@ com cada fatia, e hoje são estas:
 
 | Trava | Onde | Efeito |
 |---|---|---|
-| `chunk_NNN.json` existir | `pipeline.transcreverBloco` | não rechama o STT nem sobrescreve resultado pronto |
+| `chunk_NNN.json` existir | `pipeline.transcreverBloco` | não rechama o STT nem sobrescreve resultado pronto — mas só **depois** de a transcrição voltar |
+| lease `transcrevendo_em` com prazo (`LEASE_BLOCO_MS`, 120 s) | `manifest.reivindicarBloco` | fecha a janela que a trava de cima não cobre: entre o pedido e a resposta do STT, dois workers mandavam o mesmo áudio (slice 8, §4.18) |
 | janela `pronta` no `parcial.json` | `janela.reivindicar` | janela fechada não é reextraída nem repaga, por mais vezes que `/pronto` chame |
 | lease `em_curso` com prazo (`LEASE_MS`, 120 s) | `janela.reivindicar` | dois `waitUntil` não extraem a mesma janela; worker morto libera a janela em vez de travá-la |
 | `If-Match` + laço de retry no `parcial.json` | `janela.atualizarParcial` | duas janelas concorrentes se somam em vez de se sobrescrever |
@@ -5609,9 +5704,10 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - `tests/pipeline-janela.test.ts` — o gatilho: quatro blocos fecham a janela sem
   ninguém pedir, a janela seguinte recebe o que a anterior propôs, janela pronta
   não é reextraída, janela que falha deixa rastro e **não** deixa a seguinte
-  passar na frente, e o fallback — janela que não fecha cai no passe único e a
-  sessão não morre. Mais o dossiê da 4.9: a janela recebe o nó que o bloco cita,
-  as candidatas ficam gravadas e as chaves vistas ficam no parcial.
+  passar na frente, e o penhasco — janela que não fecha manda a sessão para `erro`
+  em vez de cair no passe único (slice 8, §4.18). Mais o dossiê da 4.9: a janela
+  recebe o nó que o bloco cita, as candidatas ficam gravadas e as chaves vistas
+  ficam no parcial.
 - `tests/recuperacao.test.ts` — o RAG por bloco (4.14) sem rede nenhuma: que
   "giam" alcança "Giampaolo Lepore" pela camada `prefixo`, que grafo vazio devolve
   dossiê vazio (e aí a extração sai como na 4.8), que o arquivo do bloco é a
@@ -5794,6 +5890,20 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
+- **O penhasco virando erro troca uma proposta ruim por nenhuma proposta** (8,
+  §4.18). Uma sessão que antes entregaria nove átomos por um passe único sobre a
+  transcrição inteira passa a parar e pedir re-extração. É a troca deliberada:
+  aquele passe custava 1–2 min **em silêncio**, e eu o pagava sem saber. O que
+  reduz a frequência é a espera pelo lease vivo, que era o gatilho mais comum — o
+  que sobra é janela genuinamente presa, que é defeito.
+- **O lease do bloco troca recuperação rápida por não pagar duas vezes** (8,
+  §4.18). Se o `waitUntil` que reivindicou um bloco morrer, o laço de
+  `finalizarSessao` espera os 120 s do lease antes de tentar — e ele só tem 150 s
+  de orçamento. Antes ele retranscrevia na hora, pagando o STT duas vezes no caso
+  comum para recuperar depressa no caso raro. A troca foi feita de olho aberto, e
+  o sinal de que ela doeu seria `espera_blocos` alto com `stt` baixo no
+  `medidas.json` — que é exatamente o que a primeira metade da fatia existe para
+  mostrar.
 - **O número da medida inclui a rede** (8, §4.17), então duas sessões não são
   estritamente comparáveis: o mesmo pipeline num 4G ruim e num Wi-Fi bom dá
   números diferentes. É o preço deliberado de medir o que eu sinto em vez do que
@@ -6169,10 +6279,11 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   baixo. Mais um motivo para a primeira sessão longa ser a medição que importa.
 - **A janela do fim tem 120 s (`ORCAMENTO_JANELAS_MS`) para fechar**, dentro do
   `maxDuration` de 300 s de `/finalizar`, dos quais até 150 s podem ter ido nos
-  blocos pendentes. Estourado o orçamento, a proposta cai no passe único — que
-  então roda com pouco tempo sobrando. É o caso ruim de um caso já raro (as
-  janelas anteriores já fecharam durante a gravação), e o retry continua sendo
-  chamar `/finalizar` de novo.
+  blocos pendentes. Estourado o orçamento, a sessão vai para `erro` desde a slice
+  8 — antes ela caía no passe único, que então rodava com pouco tempo sobrando e
+  em silêncio. Continua sendo o caso ruim de um caso já raro (as janelas
+  anteriores já fecharam durante a gravação), e o retry continua sendo chamar
+  `/finalizar` — ou `/extrair` — de novo.
 - **O `estende` é a única coisa que segura o volume da lista, e ele é uma
   instrução de prompt** (slice 4.8). Sem passada de costura no fim, a janela que
   ignorar "não repita, estenda" produz um segundo átomo sobre o mesmo assunto —

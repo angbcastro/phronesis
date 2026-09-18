@@ -5,8 +5,11 @@ import {
   marcarTranscrito,
   pendentes,
   registrarChunk,
+  reivindicarBloco,
+  soltarBloco,
   tudoTranscrito,
 } from "@/lib/manifest";
+import { LEASE_BLOCO_MS } from "@/lib/tipos";
 
 const entrada = (i: number, bytes = 90_000) => ({ i, bytes, subido_em: "2026-08-23T20:00:00.000Z" });
 
@@ -83,5 +86,76 @@ describe("extensão do bloco no manifest", () => {
 
   it("manifest antigo, sem o campo, continua legível", () => {
     expect(extensaoDoChunk({ sessao_id: "s1", chunks: [], finalizado: false }, 0)).toBe("webm");
+  });
+});
+
+/**
+ * A trava do bloco (slice 8).
+ *
+ * A existência de `chunk_NNN.json` só vale **depois** de o STT voltar, e entre o
+ * pedido e a resposta havia uma janela de dezenas de segundos em que dois
+ * workers podiam mandar o mesmo áudio: o `waitUntil` de `/chunks/:i/pronto` e o
+ * laço de espera de `finalizarSessao`, que chega segundos depois do último
+ * `/pronto`. O que se paga nessa janela é uma transcrição em dobro.
+ */
+describe("reivindicação de um bloco", () => {
+  const agora = new Date("2026-09-17T21:00:00.000Z");
+  const depois = (ms: number) => new Date(agora.getTime() + ms);
+
+  it("bloco livre é reivindicado, e o manifest passa a dizer quem está nele", () => {
+    const m = reivindicarBloco(comChunks(0), 0, agora);
+    expect(m?.chunks[0].transcrevendo_em).toBe(agora.toISOString());
+  });
+
+  it("bloco com dono recente não é reivindicado — é aqui que se para de pagar em dobro", () => {
+    const comDono = reivindicarBloco(comChunks(0), 0, agora)!;
+    expect(reivindicarBloco(comDono, 0, depois(1000))).toBeNull();
+  });
+
+  it("lease vencido volta a ser reivindicável: o waitUntil que o pegou pode ter morrido", () => {
+    const comDono = reivindicarBloco(comChunks(0), 0, agora)!;
+    expect(reivindicarBloco(comDono, 0, depois(LEASE_BLOCO_MS + 1))).not.toBeNull();
+  });
+
+  it("bloco já transcrito nunca é reivindicado", () => {
+    expect(reivindicarBloco(marcarTranscrito(comChunks(0), 0), 0, agora)).toBeNull();
+  });
+
+  it("bloco que não está no manifest não é reivindicado", () => {
+    expect(reivindicarBloco(comChunks(0), 7, agora)).toBeNull();
+  });
+
+  /**
+   * Escrito assim, `em` corrompido cai para o lado de reivindicar de novo:
+   * bloco transcrito duas vezes custa uma chamada, bloco travado para sempre
+   * custa a sessão. Mesmo raciocínio de `janela.reivindicar`.
+   */
+  it("carimbo corrompido não trava o bloco para sempre", () => {
+    const m = comChunks(0);
+    m.chunks[0] = { ...m.chunks[0], transcrevendo_em: "não é data" };
+    expect(reivindicarBloco(m, 0, agora)).not.toBeNull();
+  });
+
+  it("transcrever solta o lease — bloco pronto não precisa de dono", () => {
+    const comDono = reivindicarBloco(comChunks(0), 0, agora)!;
+    expect(marcarTranscrito(comDono, 0).chunks[0].transcrevendo_em).toBeUndefined();
+  });
+
+  it("soltar devolve o bloco na hora, sem esperar o lease vencer", () => {
+    const comDono = reivindicarBloco(comChunks(0), 0, agora)!;
+    const solto = soltarBloco(comDono, 0);
+
+    expect(solto.chunks[0].transcrevendo_em).toBeUndefined();
+    expect(reivindicarBloco(solto, 0, depois(1000))).not.toBeNull();
+  });
+
+  it("soltar um bloco sem dono não mexe no manifest", () => {
+    const m = comChunks(0);
+    expect(soltarBloco(m, 0)).toBe(m);
+  });
+
+  it("reivindicar um bloco não mexe nos outros", () => {
+    const m = reivindicarBloco(comChunks(0, 1), 0, agora)!;
+    expect(m.chunks[1].transcrevendo_em).toBeUndefined();
   });
 });

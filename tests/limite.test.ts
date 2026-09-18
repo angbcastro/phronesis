@@ -11,8 +11,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   comEsperaDeLimite,
   ehLimiteDeTaxa,
+  ehTransitorio,
   esperaDoLimite,
+  esperaTransitoria,
   ESPERAS_MS,
+  ESPERAS_TRANSITORIA_MS,
   TENTATIVAS,
 } from "@/lib/limite";
 
@@ -122,6 +125,83 @@ describe("esperar o limite passar", () => {
     const ate = Date.now() + 1_000;
 
     await expect(comEsperaDeLimite("stt", fn, { ...semDormir, ate })).rejects.toThrow();
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * A segunda escada (slice 8).
+ *
+ * As esperas longas nasceram de **uma** medição — o 429 do free tier, 02/09 —, e
+ * o módulo tratava todo o resto como definitivo. Isso ficou caro pelo lado
+ * oposto quando o penhasco virou erro: um 502 do Gateway ou um socket que morreu
+ * no meio passam sozinhos em segundos, e derrubar a janela por eles passou a
+ * custar a sessão inteira.
+ */
+describe("a falha que passa sozinha", () => {
+  const semDormir = { dormir: async () => {} };
+
+  it("reconhece 5xx, 408, socket caído e provedor sobrecarregado", () => {
+    expect(ehTransitorio({ statusCode: 503 })).toBe(true);
+    expect(ehTransitorio({ statusCode: 408 })).toBe(true);
+    expect(ehTransitorio({ type: "overloaded_error" })).toBe(true);
+    expect(ehTransitorio(new Error("the model is overloaded, try again"))).toBe(true);
+
+    const rede = new TypeError("fetch failed");
+    (rede as { cause?: unknown }).cause = { code: "ECONNRESET" };
+    expect(ehTransitorio(rede)).toBe(true);
+  });
+
+  it("não reconhece o que falha igual na segunda vez", () => {
+    expect(ehTransitorio(new Error("Missing or empty model identifier"))).toBe(false);
+    expect(ehTransitorio({ statusCode: 400 })).toBe(false);
+    expect(ehTransitorio(null)).toBe(false);
+  });
+
+  it("espera segundos, não dezenas de segundos", async () => {
+    const fn = vi.fn().mockRejectedValueOnce({ statusCode: 502 }).mockResolvedValue("extraído");
+    const dormiu: number[] = [];
+
+    await expect(
+      comEsperaDeLimite("extracao", fn, { dormir: async (ms) => void dormiu.push(ms) }),
+    ).resolves.toBe("extraído");
+
+    expect(dormiu).toHaveLength(1);
+    expect(dormiu[0]).toBeLessThan(ESPERAS_TRANSITORIA_MS[0] * 2);
+    expect(esperaTransitoria(0, 0)).toBe(ESPERAS_TRANSITORIA_MS[0]);
+  });
+
+  it("desiste depois do teto curto, sem gastar a paciência do 429", async () => {
+    const fn = vi.fn().mockRejectedValue({ statusCode: 502 });
+
+    await expect(comEsperaDeLimite("extracao", fn, semDormir)).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(fn).toHaveBeenCalledTimes(ESPERAS_TRANSITORIA_MS.length + 1);
+  });
+
+  /**
+   * Os contadores são separados de propósito: um blip de rede no começo não
+   * pode gastar as tentativas que o limite de taxa vai precisar depois.
+   */
+  it("um blip de rede não consome as tentativas do rate limit", async () => {
+    const fn = vi
+      .fn()
+      .mockRejectedValueOnce({ statusCode: 502 })
+      .mockRejectedValueOnce(limiteDoGateway())
+      .mockRejectedValueOnce(limiteDoGateway())
+      .mockResolvedValue("transcrito");
+
+    await expect(comEsperaDeLimite("stt", fn, semDormir)).resolves.toBe("transcrito");
+    expect(fn).toHaveBeenCalledTimes(4);
+  });
+
+  it("o prazo de quem chamou vale para as duas escadas", async () => {
+    const fn = vi.fn().mockRejectedValue({ statusCode: 502 });
+
+    await expect(
+      comEsperaDeLimite("extracao", fn, { ...semDormir, ate: Date.now() - 1 }),
+    ).rejects.toMatchObject({ statusCode: 502 });
     expect(fn).toHaveBeenCalledTimes(1);
   });
 });

@@ -24,7 +24,16 @@ interface Estado {
   completa: boolean;
 }
 
-const INTERVALO_POLL_MS = 2000;
+/**
+ * De quanto em quanto tempo a tela pergunta em que passo a sessão está.
+ *
+ * Eram 2 s, e é o último dos três pollings do caminho (§4.17) — e o mais caro
+ * dos três em espera percebida: a proposta pode ficar pronta logo depois de uma
+ * pergunta, e aí a revisão só abre quase dois segundos depois de existir. 750 ms
+ * é uma requisição a cada três quartos de segundo numa tela que dura dezenas de
+ * segundos, num sistema de um usuário — e corta a metade dessa espera morta.
+ */
+const INTERVALO_POLL_MS = 750;
 
 /**
  * A sessão precisa que alguém chame `/finalizar` para andar?

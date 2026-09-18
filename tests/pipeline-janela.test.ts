@@ -35,6 +35,8 @@ vi.mock("@/lib/manifest", () => ({
   atualizarManifest: vi.fn(async (_id: string, m: unknown) => m),
   extensaoDoChunk: vi.fn(() => "webm"),
   marcarTranscrito: vi.fn((m) => m),
+  soltarBloco: vi.fn((m) => m),
+  reivindicarTranscricao: vi.fn(async () => true),
   pendentes: vi.fn(() => []),
   tudoTranscrito: vi.fn(() => true),
 }));
@@ -348,26 +350,26 @@ describe("a proposta final", () => {
     expect((opcoes as { unica: boolean }).unica).toBe(true);
   });
 
-  it("janela que não fechou cai no passe único — a sessão não morre por isso", async () => {
+  /**
+   * O penhasco, e o que a slice 8 fez com ele.
+   *
+   * Até a 8, janela que não fechasse fazia a sessão inteira sair num passe só —
+   * o caminho de 1–2 min que a 4.8 existe para eliminar —, e **em silêncio**:
+   * nada na tela distinguia uma proposta montada de oito janelas de uma tirada
+   * num passe de 17 minutos. Agora a sessão vai para `erro` com o motivo e
+   * espera eu mandar re-extrair. A troca está declarada: uma proposta ruim vira
+   * nenhuma proposta, e eu prefiro saber.
+   */
+  it("janela que não fechou manda a sessão para erro, e não para o passe único", async () => {
     vi.mocked(extrairJanela).mockRejectedValue(new Error("o modelo sumiu"));
-    vi.mocked(extrair).mockResolvedValue({
-      sessao_id: "s1",
-      atomos: [],
-      entidades: [],
-      descartados: [],
-      prompt_version: "extracao-7",
-      modelo: "zai/glm-5.3-flash",
-      prompt_version_resolucao: null,
-      modelo_resolucao: null,
-      granularidade: "palavra",
-      criado_em: "2026-09-05T12:00:00.000Z",
-    } as never);
 
     const r = await extrairSessao("s1");
 
-    expect(extrair).toHaveBeenCalledTimes(1);
-    expect(r.status).toBe("em_revisao");
+    expect(extrair).not.toHaveBeenCalled();
+    expect(r.status).toBe("erro");
     expect(erros.join("\n")).toContain("não fecharam");
+    // O motivo de cada janela continua no parcial, que é de onde o retry parte.
+    expect(parcial()?.janelas.some((j) => j.estado === "falhou")).toBe(true);
   });
 
   it("forçar zera o acumulado e refaz as janelas — calibra o que roda de verdade", async () => {

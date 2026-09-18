@@ -421,25 +421,36 @@ export async function candidatasDoBloco(
 /**
  * As candidatas dos blocos de uma janela, com o catch-up do que faltar.
  *
+ * **Os quatro blocos em paralelo desde a slice 8.** Eram um `for` com `await`, e
+ * cada volta paga um GET no R2 e, quando o bloco ainda não foi consultado, um
+ * `embedMany` mais duas consultas vetoriais. Os blocos não dependem uns dos
+ * outros e nada no código exigia a ordem — ela era só o jeito mais fácil de
+ * escrever o laço, e custava a soma de quatro idas à rede na janela do fim, que
+ * é exatamente onde eu estou esperando olhando a tela.
+ *
+ * A ordem da **saída** continua sendo a dos índices: `Promise.all` preserva a
+ * posição, e o dossiê é montado sobre ela.
+ *
  * **Falhar aqui nunca derruba a janela.** Bloco sem candidatas só faz o dossiê
  * ficar menor, e dossiê vazio faz o extrator se comportar exatamente como na
- * 4.8 — a mesma precedência do vetor (§4.10). O sinal é a linha `[candidatas]`
- * no log.
+ * 4.8 — a mesma precedência do vetor (§4.10). Por isso cada bloco tem o seu
+ * `catch`, e não o laço: um bloco que estoura não pode levar os outros três
+ * junto, que é o que um `Promise.all` sem isso faria.
  */
 export async function candidatasDaJanela(
   sessao_id: string,
   indices: readonly number[],
   opcoes: { catalogo?: readonly EntidadeDoGrafo[]; refazerDegradado?: boolean } = {},
 ): Promise<Candidata[][]> {
-  const saida: Candidata[][] = [];
-
-  for (const i of indices) {
-    try {
-      const r = await recuperarCandidatas(sessao_id, i, opcoes);
-      if (r) saida.push(r.candidatas);
-    } catch (e) {
-      console.error(`[candidatas] sessão ${sessao_id} bloco ${i}:`, e);
-    }
-  }
-  return saida;
+  const lidos = await Promise.all(
+    indices.map(async (i) => {
+      try {
+        return await recuperarCandidatas(sessao_id, i, opcoes);
+      } catch (e) {
+        console.error(`[candidatas] sessão ${sessao_id} bloco ${i}:`, e);
+        return null;
+      }
+    }),
+  );
+  return lidos.flatMap((r) => (r ? [r.candidatas] : []));
 }

@@ -36,6 +36,9 @@ vi.mock("@/lib/manifest", async () => {
     ...real,
     carregarManifest: vi.fn(async () => manifesto),
     atualizarManifest: vi.fn(async () => manifesto),
+    // O bloco é meu: o que este arquivo mede é a extensão, não a disputa entre
+    // dois workers pelo mesmo bloco (`tests/manifest.test.ts`).
+    reivindicarTranscricao: vi.fn(async () => true),
   };
 });
 

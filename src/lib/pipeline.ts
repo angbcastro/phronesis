@@ -30,6 +30,7 @@ import {
   estadoDaJanela,
   indicesDa,
   janelasDe,
+  LEASE_MS,
   marcarFalha,
   montarExtracao,
   reivindicarJanela,
@@ -42,6 +43,8 @@ import {
   extensaoDoChunk,
   marcarTranscrito,
   pendentes,
+  reivindicarTranscricao,
+  soltarBloco,
   tudoTranscrito,
 } from "./manifest";
 import { ehLimiteDeTaxa } from "./limite";
@@ -63,8 +66,18 @@ import type {
 /**
  * Transcreve um bloco e grava `chunk_NNN.json`.
  *
- * A existência desse objeto é a chave de idempotência: se ele já está lá,
- * não chama o STT de novo nem sobrescreve o resultado pronto (aceite 9).
+ * **Duas travas, e elas cobrem momentos diferentes** (regra 4). A existência de
+ * `chunk_NNN.json` é a de sempre: bloco pronto não é retranscrito nem
+ * sobrescrito. Ela só vale **depois** de o STT voltar, e entre o pedido e a
+ * resposta havia uma janela de dezenas de segundos em que dois workers podiam
+ * mandar o mesmo áudio — o `waitUntil` de `/chunks/:i/pronto` e o laço de espera
+ * de `finalizarSessao`, que chega segundos depois do último `/pronto`. A segunda
+ * trava, da slice 8, fecha essa janela: `transcrevendo_em` no manifest,
+ * espelhando `reivindicarJanela`.
+ *
+ * **`null` = outro worker está neste bloco.** Não é falha: é a resposta certa, e
+ * quem chama simplesmente segue — o laço de `finalizarSessao` relê o manifest na
+ * volta seguinte e vê o bloco já transcrito.
  *
  * `ate` é o prazo de quem chama: `transcrever` espera o rate limit do Gateway
  * passar (`limite.ts`), e dentro do laço de `finalizarSessao` essa espera tem
@@ -75,7 +88,7 @@ export async function transcreverBloco(
   sessao_id: string,
   i: number,
   { ate }: { ate?: number } = {},
-): Promise<TranscricaoBloco> {
+): Promise<TranscricaoBloco | null> {
   const keyTranscricao = chaveChunkTranscricao(sessao_id, i);
 
   const pronto = await getJson<TranscricaoBloco>(keyTranscricao);
@@ -84,6 +97,29 @@ export async function transcreverBloco(
     return pronto.valor;
   }
 
+  // A reivindicação vai **antes** de buscar o áudio: os bytes de 30 s são a
+  // parte cara do que se desperdiçaria ao descobrir o dono depois.
+  if (!(await reivindicarTranscricao(sessao_id, i))) {
+    console.log(`[stt] sessão ${sessao_id} bloco ${i}: já tem dono, deixando com ele`);
+    return null;
+  }
+
+  try {
+    return await comAudio(sessao_id, i, keyTranscricao, ate);
+  } catch (e) {
+    // Solta o lease antes de subir: o próximo a passar tenta na hora, em vez de
+    // esperar dois minutos por um trabalho que já acabou — mal.
+    await atualizarManifest(sessao_id, (m) => soltarBloco(m, i)).catch(() => {});
+    throw e;
+  }
+}
+
+async function comAudio(
+  sessao_id: string,
+  i: number,
+  keyTranscricao: string,
+  ate: number | undefined,
+): Promise<TranscricaoBloco> {
   // A extensão sai do manifest: bloco gravado é `.webm`, arquivo importado
   // guarda o formato de origem. Chutar `.webm` mataria toda sessão importada.
   const manifest = await carregarManifest(sessao_id);
@@ -161,7 +197,11 @@ export async function transcricaoParcial(sessao_id: string): Promise<{ texto: st
  */
 export async function avancarJanelas(
   sessao_id: string,
-  { ate, fechando = false }: { ate?: number; fechando?: boolean } = {},
+  {
+    ate,
+    fechando = false,
+    catalogo = catalogoUmaVez(),
+  }: { ate?: number; fechando?: boolean; catalogo?: LeitorDoCatalogo } = {},
 ): Promise<void> {
   const m = await carregarManifest(sessao_id);
   const lista = janelasDe(m, { fechando });
@@ -179,24 +219,39 @@ export async function avancarJanelas(
       return;
     }
 
-    const parcial = await carregarParcial(sessao_id);
+    let parcial = await carregarParcial(sessao_id);
     if (estadoDaJanela(parcial, j.n)?.estado === "pronta") continue;
 
-    // Outro `waitUntil` já está nela. Parar, e não pular: ver acima.
-    if (!(await reivindicarJanela(sessao_id, j))) return;
+    if (!(await reivindicarJanela(sessao_id, j))) {
+      // Outro `waitUntil` está nela. Durante a gravação, deixar com ele e parar
+      // — parar, e não pular, porque a janela `n` precisa do acumulado da `n-1`.
+      if (!fechando) return;
+
+      // Fechando é diferente, e é o que a slice 8 conserta. O `/finalizar` chega
+      // segundos depois do último `/pronto`, então encontrar um lease vivo aqui
+      // é a **condição normal**, não defeito — e desistir dela era o que fazia a
+      // proposta cair no passe único de 17 min, em silêncio (§4.6). Agora ela é
+      // esperada: quem está nela quase sempre termina em segundos.
+      const fim = await esperarQuemEstaNela(sessao_id, j, ate);
+      if (fim === "desistiu") return;
+      if (fim === "pronta") continue;
+      parcial = await carregarParcial(sessao_id);
+    }
 
     try {
       const blocos = await blocosProntos(sessao_id, indicesDa(j));
       const trecho = concatenar(sessao_id, blocos);
 
-      // O grafo lido uma vez por janela, e usado duas: aqui, para montar o
-      // dossiê, e dentro de `extrairJanela`, para a resolução. Sem tratamento
-      // próprio de propósito — o catálogo já era condição da resolução antes
-      // desta fatia, e uma janela que não consegue lê-lo falha e é retentada,
-      // como sempre foi. O que degrada em silêncio é a busca **dentro** dele
+      // O grafo lido **uma vez por finalização**, e não uma por janela (slice
+      // 8): é um Cypher com quatro `OPTIONAL MATCH` e vários `collect(DISTINCT
+      // …)`, e o mesmo retrato serve as janelas que fecham no mesmo `waitUntil`
+      // e a montagem da proposta depois delas. Sem tratamento próprio de
+      // propósito — o catálogo já era condição da resolução antes desta fatia, e
+      // uma janela que não consegue lê-lo falha e é retentada, como sempre foi.
+      // O que degrada em silêncio é a busca **dentro** dele
       // (`candidatasDaJanela`), não a leitura.
-      const catalogo = await medir("catalogo", () => listarEntidades());
-      const dossie = await montarDossie(sessao_id, j, parcial.atomos, catalogo, fechando);
+      const lido = await catalogo();
+      const dossie = await montarDossie(sessao_id, j, parcial.atomos, lido, fechando);
 
       const r = await medir("janela", () =>
         extrairJanela(trecho, {
@@ -204,7 +259,7 @@ export async function avancarJanelas(
           unica,
           ate,
           dossie,
-          catalogo,
+          catalogo: lido,
         }),
       );
 
@@ -226,6 +281,64 @@ export async function avancarJanelas(
       console.error(`[janela] sessão ${sessao_id} janela ${j.n} falhou:`, e);
       return;
     }
+  }
+}
+
+/**
+ * O catálogo do grafo, lido **uma vez** e reusado (slice 8).
+ *
+ * `listarEntidades()` rodava duas vezes por finalização — uma dentro de cada
+ * janela e outra em `propostaDaSessao` — e nada entre as duas escreve entidade:
+ * o grafo só muda no confirmar (regra 5). O mesmo retrato serve as duas, e a
+ * leitura repetida era latência pura no meio do que esta fatia está encurtando.
+ *
+ * Um fecho, e não um cache de módulo: o retrato vale para **esta** finalização,
+ * e a próxima lê de novo. Falha não é guardada — a próxima janela tenta outra
+ * vez, que é o comportamento que o comentário dentro do laço descreve.
+ */
+export type LeitorDoCatalogo = () => Promise<EntidadeDoGrafo[]>;
+
+export function catalogoUmaVez(): LeitorDoCatalogo {
+  let lido: EntidadeDoGrafo[] | null = null;
+  return async () => (lido ??= await medir("catalogo", () => listarEntidades()));
+}
+
+/** De quanto em quanto tempo se pergunta se quem está na janela terminou. */
+const INTERVALO_LEASE_MS = 700;
+
+/**
+ * Espera quem reivindicou a janela terminar — e assume se ele não terminar.
+ *
+ * Três saídas: `pronta` (ele fechou, sigo para a próxima janela), `minha` (o
+ * lease venceu e eu assumi) e `desistiu` (acabou o orçamento). O prazo, quando
+ * quem chama não passa nenhum, é o do próprio lease: depois dele não há mais o
+ * que esperar, porque quem estava nela está morto.
+ */
+async function esperarQuemEstaNela(
+  sessao_id: string,
+  j: Janela,
+  ate?: number,
+): Promise<"pronta" | "minha" | "desistiu"> {
+  const prazo = ate ?? Date.now() + LEASE_MS;
+  console.log(`[janela] sessão ${sessao_id} janela ${j.n}: outro worker está nela, esperando`);
+
+  for (;;) {
+    if (Date.now() >= prazo) {
+      console.error(`[janela] sessão ${sessao_id}: janela ${j.n} presa até o fim do orçamento`);
+      registrarFalha(
+        "janela",
+        `a janela ${j.n} ficou presa até o fim do orçamento`,
+        "janela_presa",
+      );
+      return "desistiu";
+    }
+    await new Promise((r) => setTimeout(r, INTERVALO_LEASE_MS));
+
+    const estado = estadoDaJanela(await carregarParcial(sessao_id), j.n)?.estado;
+    if (estado === "pronta") return "pronta";
+    // `falhou` ou lease vencido: a reivindicação é quem decide, e ela já sabe
+    // ler as duas coisas (`janela.reivindicar`).
+    if (await reivindicarJanela(sessao_id, j)) return "minha";
   }
 }
 
@@ -277,7 +390,18 @@ async function montarDossie(
  * áudio corrompido) agora leva 150 s para ser declarado perdido em vez de 45 s.
  */
 export const ESPERA_MAX_MS = 150_000;
-const INTERVALO_ESPERA_MS = 1_000;
+
+/**
+ * De quanto em quanto tempo o laço reconfere o manifest.
+ *
+ * Era 1 s, e a slice 8 o apertou para 400 ms. O número não é o custo de uma ida
+ * ao R2 — é **latência pura** no instante em que eu estou olhando a tela: no
+ * caso comum falta um bloco só, ele chega em menos de um segundo, e metade do
+ * tempo entre "chegou" e "o laço percebeu" era esta constante. Junto com os
+ * outros dois pollings do caminho (a fila do cliente e a tela de processamento)
+ * eram ~3,5 s de espera que não era trabalho de ninguém.
+ */
+const INTERVALO_ESPERA_MS = 400;
 
 /**
  * Fecha a sessão: espera os blocos pendentes, concatena com offsets
@@ -427,13 +551,18 @@ export async function extrairSessao(
     // exercitaria o passe único enquanto a gravação usa as janelas.
     if (forcar) await zerarParcial(sessao_id);
 
+    // Um retrato do grafo para a finalização inteira: as janelas que faltam
+    // fechar e a montagem da proposta depois delas (slice 8).
+    const catalogo = catalogoUmaVez();
+
     await avancarJanelas(sessao_id, {
       fechando: true,
       ate: Date.now() + ORCAMENTO_JANELAS_MS,
+      catalogo,
     });
 
     const extracao = await medir("proposta", () =>
-      propostaDaSessao(sessao_id, transcricao.valor),
+      propostaDaSessao(sessao_id, transcricao.valor, catalogo),
     );
 
     // A que está lá agora, lida antes de o PUT passar por cima dela. Só no
@@ -462,7 +591,7 @@ export async function extrairSessao(
     }
     // A tela só sabe dizer que falhou; sem esta linha o motivo se perde.
     console.error(`[extracao] sessão ${sessao_id} falhou:`, e);
-    registrarFalha("proposta", e);
+    registrarFalha("proposta", e, e instanceof JanelaPresaError ? "janela_presa" : undefined);
     // Transcrição intacta, retry manual.
     await atualizarSessao(sessao_id, { status: "erro" }, DE_ONDE_SE_CAI_EM_ERRO);
     return { status: "erro" };
@@ -481,35 +610,67 @@ export async function extrairSessao(
 export const ORCAMENTO_JANELAS_MS = 120_000;
 
 /**
- * A proposta da sessão: a lista que as janelas acumularam, ou o passe único.
+ * Uma janela não fechou, e a sessão não tem proposta por causa disso.
  *
- * O fallback é o seguro desta fatia. Janela que não fechou — modelo fora,
- * limite de taxa que não cedeu, resposta sem JSON duas vezes — não pode custar
- * a sessão: o passe único é o caminho de antes da 4.8, com o mesmo prompt e o
- * mesmo parser, e no pior caso a espera volta a ser a de antes.
+ * Existe para `extrairSessao` distinguir este caso dos outros na hora de
+ * classificar a falha — e para quem lê o log saber que o conserto é mandar
+ * re-extrair, não investigar o modelo.
  */
-async function propostaDaSessao(sessao_id: string, transcricao: Transcricao): Promise<Extracao> {
+export class JanelaPresaError extends Error {
+  constructor(readonly janelas: readonly number[]) {
+    super(`janela(s) ${janelas.join(", ")} não fecharam`);
+    this.name = "JanelaPresaError";
+  }
+}
+
+/**
+ * A proposta da sessão: a lista que as janelas acumularam. **Só isso.**
+ *
+ * Aqui havia um fallback, e ele era o seguro da 4.8: janela que não fechasse
+ * fazia a sessão inteira sair num passe só, com o mesmo prompt e o mesmo parser,
+ * e no pior caso a espera voltava a ser a de antes. A slice 8 o removeu, e a
+ * razão está no relógio: esse "pior caso" é o caminho de 1–2 min que a 4.8
+ * existe para eliminar, e ele acontecia **em silêncio** — nada na tela
+ * distinguia uma proposta montada de oito janelas de uma tirada num passe de
+ * 17 minutos. Eu pagava sem saber, e é justamente o que esta fatia foi acabar.
+ *
+ * O gatilho mais comum era nem defeito: um lease de 120 s ainda segurado por um
+ * `waitUntil` anterior no instante em que o `/finalizar` rodava. Isso agora é
+ * **esperado** em vez de desistido (`esperarQuemEstaNela`), e o que sobra aqui é
+ * janela genuinamente presa — modelo fora, limite que não cedeu, orçamento
+ * estourado. Isso é defeito, e defeito vai para `erro` com o motivo: eu mando
+ * re-extrair, e nunca mais pago um passe único de 17 minutos sem saber.
+ *
+ * **A troca está declarada**: uma sessão que antes entregaria nove átomos por
+ * passe único passa a parar e pedir re-extração. É a troca que eu quis —
+ * prefiro saber. O áudio, a transcrição e o acumulado continuam todos no R2.
+ */
+async function propostaDaSessao(
+  sessao_id: string,
+  transcricao: Transcricao,
+  catalogo: LeitorDoCatalogo,
+): Promise<Extracao> {
   const m = await carregarManifest(sessao_id);
   const janelas = janelasDe(m, { fechando: true });
   const parcial = await carregarParcial(sessao_id);
 
   if (todasProntas(parcial, janelas)) {
-    return montarExtracao(parcial, transcricao, await listarEntidades());
+    return montarExtracao(parcial, transcricao, await catalogo());
   }
 
   // Sem janela nenhuma não há o que ter falhado: é o manifest vazio, e o passe
   // único é o caminho certo, não o de recuperação. Só o outro caso é erro.
-  if (janelas.length > 0) {
-    const faltando = janelas
-      .filter((j) => estadoDaJanela(parcial, j.n)?.estado !== "pronta")
-      .map((j) => j.n);
-    console.error(
-      `[janela] sessão ${sessao_id}: janela(s) ${faltando.join(", ")} não fecharam; ` +
-        `extraindo a sessão inteira num passe só. O motivo de cada uma está em ` +
-        `parcial.json e nas linhas [janela] acima.`,
-    );
-  }
-  return extrair(transcricao);
+  if (janelas.length === 0) return extrair(transcricao);
+
+  const faltando = janelas
+    .filter((j) => estadoDaJanela(parcial, j.n)?.estado !== "pronta")
+    .map((j) => j.n);
+  console.error(
+    `[janela] sessão ${sessao_id}: janela(s) ${faltando.join(", ")} não fecharam; ` +
+      `a sessão vai para 'erro' e espera eu mandar re-extrair. O motivo de cada ` +
+      `uma está em parcial.json e nas linhas [janela] acima.`,
+  );
+  throw new JanelaPresaError(faltando);
 }
 
 /**

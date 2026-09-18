@@ -3,6 +3,7 @@ import { waitUntil } from "@vercel/functions";
 import { EXT_GRAVACAO, extensaoAceita } from "@/lib/audio";
 import { chaveChunkAudio } from "@/lib/chaves";
 import { atualizarManifest, registrarChunk } from "@/lib/manifest";
+import { comInvocacao } from "@/lib/invocacao";
 import { comMedicao } from "@/lib/medidas";
 import { existe } from "@/lib/r2";
 import { avancarJanelas, transcreverBloco } from "@/lib/pipeline";
@@ -87,19 +88,21 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; i:
   // linha que ainda vai mudar. `caminho` sai da extensão do bloco: `.webm` é o
   // que o navegador grava, e qualquer outra coisa veio de arquivo importado.
   waitUntil(
-    comMedicao(
-      id,
-      "pronto",
-      () =>
-        transcreverBloco(id, i)
-          .then(() =>
-            recuperarCandidatas(id, i).catch((e) => {
-              console.error(`[candidatas] sessão ${id} bloco ${i}:`, e);
-              return null;
-            }),
-          )
-          .then(() => avancarJanelas(id)),
-      { caminho: ext === EXT_GRAVACAO ? "gravacao" : "importacao" },
+    comInvocacao(() =>
+      comMedicao(
+        id,
+        "pronto",
+        () =>
+          transcreverBloco(id, i)
+            .then(() =>
+              recuperarCandidatas(id, i).catch((e) => {
+                console.error(`[candidatas] sessão ${id} bloco ${i}:`, e);
+                return null;
+              }),
+            )
+            .then(() => avancarJanelas(id)),
+        { caminho: ext === EXT_GRAVACAO ? "gravacao" : "importacao" },
+      ),
     ).catch((e) => {
       console.error(`[stt] sessão ${id} bloco ${i} falhou:`, e);
     }),

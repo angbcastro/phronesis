@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
+import { comInvocacao } from "@/lib/invocacao";
 import { comMedicao } from "@/lib/medidas";
 import { extrairSessao } from "@/lib/pipeline";
 import { buscarSessao } from "@/lib/sessoes";
@@ -52,7 +53,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // marcas do cliente não existem neste caminho, então a linha sai com
   // `espera_ms` nulo — ela conta o servidor, não a minha espera.
   waitUntil(
-    comMedicao(id, "extrair", () => extrairSessao(id, { forcar }), { fecha: true }).catch((e) => {
+    comInvocacao(() =>
+      comMedicao(id, "extrair", () => extrairSessao(id, { forcar }), { fecha: true }),
+    ).catch((e) => {
       console.error(`[extrair] sessão ${id} falhou:`, e);
     }),
   );
