@@ -5,8 +5,9 @@
  */
 import { EXT_GRAVACAO } from "./audio";
 import { chaveManifest } from "./chaves";
+import { atualizarJson } from "./etag";
 import type { ChunkManifest, Manifest } from "./tipos";
-import { ConflitoR2Error, getJson, putJson } from "./r2";
+import { getJson } from "./r2";
 
 // ---------- puro ----------
 
@@ -69,14 +70,13 @@ export async function carregarManifest(sessao_id: string): Promise<Manifest> {
   return o?.valor ?? manifestVazio(sessao_id);
 }
 
-const TENTATIVAS_MANIFEST = 10;
-const BASE_MS_MANIFEST = 40;
-const TETO_MS_MANIFEST = 2_000;
+const ESPERA_MANIFEST = { tentativas: 10, base_ms: 40, teto_ms: 2_000 };
 
 /**
  * Aplica `mutador` ao manifest e grava condicionalmente. Em conflito
  * (outro `/pronto` gravou antes), relê e reaplica — o mutador precisa ser
- * puro e idempotente.
+ * puro e idempotente. O laço mora em `etag.ts` desde a slice 8; o que é daqui
+ * são os números de `ESPERA_MANIFEST`.
  *
  * **Dez tentativas, não seis** (medido na importação, slice 4.10): um
  * bloco cujo STT tropeça no rate limit do Gateway fica preso em
@@ -93,23 +93,11 @@ export async function atualizarManifest(
   sessao_id: string,
   mutador: (m: Manifest) => Manifest,
 ): Promise<Manifest> {
-  const key = chaveManifest(sessao_id);
-
-  for (let tentativa = 0; tentativa < TENTATIVAS_MANIFEST; tentativa++) {
-    const atual = await getJson<Manifest>(key);
-    const base = atual?.valor ?? manifestVazio(sessao_id);
-    const novo = mutador(base);
-
-    if (novo === base && atual) return base; // nada mudou
-
-    try {
-      await putJson(key, novo, atual?.etag ? { ifMatch: atual.etag } : { ifNoneMatch: "*" });
-      return novo;
-    } catch (e) {
-      if (!(e instanceof ConflitoR2Error)) throw e;
-      const espera = Math.min(BASE_MS_MANIFEST * 2 ** tentativa, TETO_MS_MANIFEST);
-      await new Promise((r) => setTimeout(r, espera + Math.random() * 40));
-    }
-  }
-  throw new Error(`Não consegui gravar o manifest de ${sessao_id} após ${TENTATIVAS_MANIFEST} tentativas`);
+  const { valor } = await atualizarJson<Manifest>(
+    chaveManifest(sessao_id),
+    (cru) => cru ?? manifestVazio(sessao_id),
+    mutador,
+    { ...ESPERA_MANIFEST, rotulo: `o manifest de ${sessao_id}` },
+  );
+  return valor;
 }

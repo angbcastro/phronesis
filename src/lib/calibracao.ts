@@ -41,6 +41,7 @@ import {
 } from "./modelos";
 import { aplicarEdicoes, secaoDoEnvelope, secoesDe } from "./redacao";
 import { carimbo, efetivo, gravarOverride } from "./overrides";
+import { atualizarJson } from "./etag";
 import { criarLocalizador } from "./offsets";
 import { ConflitoR2Error, getJson, putJson } from "./r2";
 import { regrasEmVigor } from "./regras";
@@ -57,9 +58,6 @@ import type {
   Transcricao,
 } from "./tipos";
 
-/** Mesmo teto do manifest: a concorrência aqui é ainda menor que a de lá. */
-const TENTATIVAS_INDICE = 6;
-
 /**
  * O índice, normalizado. **Nunca o `valor` cru.**
  *
@@ -73,37 +71,26 @@ export async function carregarIndice(): Promise<IndiceCalibracao> {
 }
 
 /**
- * Read-modify-write condicional por etag, com o laço de espera de
- * `atualizarManifest` — e não uma imitação sem ele.
+ * Read-modify-write condicional por etag (`etag.ts`).
  *
  * O mutador roda **dentro** de cada tentativa, sobre o que acabou de ser lido.
  * É o que faz duas escritas quase simultâneas se somarem em vez de a segunda
  * apagar a primeira: quem perde a corrida relê o corrente e reaplica.
+ *
+ * A normalização vai no `normalizar` do laço, e não só em `carregarIndice`,
+ * pelo mesmo motivo: o mutador roda sobre o que acabou de ser lido, e o que
+ * acabou de ser lido pode ser o objeto da 4.6, sem `padroes`.
  */
 export async function atualizarIndice(
   mutador: (i: IndiceCalibracao) => IndiceCalibracao,
 ): Promise<IndiceCalibracao> {
-  const key = chaveIndiceCalibracao();
-
-  for (let tentativa = 0; tentativa < TENTATIVAS_INDICE; tentativa++) {
-    const atual = await getJson<IndiceCalibracao>(key);
-    // Normalizado aqui também, e não só em `carregarIndice`: o mutador roda
-    // sobre o que acabou de ser lido, e o que acabou de ser lido pode ser o
-    // objeto da 4.6.
-    const base = normalizarIndice(atual?.valor, new Date().toISOString());
-    const novo = mutador(base);
-
-    if (novo === base && atual) return base; // nada mudou
-
-    try {
-      await putJson(key, novo, atual?.etag ? { ifMatch: atual.etag } : { ifNoneMatch: "*" });
-      return novo;
-    } catch (e) {
-      if (!(e instanceof ConflitoR2Error)) throw e;
-      await new Promise((r) => setTimeout(r, 40 * 2 ** tentativa + Math.random() * 40));
-    }
-  }
-  throw new Error(`Não consegui gravar o índice de calibração após ${TENTATIVAS_INDICE} tentativas`);
+  const { valor } = await atualizarJson<IndiceCalibracao>(
+    chaveIndiceCalibracao(),
+    (cru) => normalizarIndice(cru, new Date().toISOString()),
+    mutador,
+    { rotulo: "o índice de calibração" },
+  );
+  return valor;
 }
 
 /**

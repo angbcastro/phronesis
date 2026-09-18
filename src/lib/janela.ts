@@ -18,11 +18,12 @@
  * gravado antes da minha confirmação na revisão (regra 5).
  */
 import { chaveParcial } from "./chaves";
+import { atualizarJson } from "./etag";
 import { PROMPT_VERSION } from "./extracao";
 import type { ResultadoDaJanela } from "./extracao";
 import { agregarCandidatas } from "./entidades";
 import type { EntidadeDoGrafo } from "./entidades";
-import { ConflitoR2Error, getJson, putJson } from "./r2";
+import { getJson, putJson } from "./r2";
 import { mencoesDe, sobreDe } from "./referencias";
 import { prefixoContiguo } from "./transcricao";
 import { JANELA_BLOCOS } from "./tipos";
@@ -46,8 +47,6 @@ import type {
  * servidor basta), e sem prazo a sessão nunca mais fecharia.
  */
 export const LEASE_MS = 120_000;
-
-const TENTATIVAS_PARCIAL = 6;
 
 // ---------- puro ----------
 
@@ -261,32 +260,21 @@ export async function carregarParcial(sessao_id: string): Promise<Parcial> {
  * Aplica `mutador` ao parcial e grava condicionalmente. Em conflito — outra
  * janela gravou antes —, relê e reaplica; o mutador precisa ser puro.
  *
- * É o mesmo desenho de `manifest.atualizarManifest`, e é a terceira cópia dele
- * no projeto (manifest, índice de calibração, aqui). Extrair um helper para
- * `r2.ts` é refatoração fora do escopo desta fatia.
+ * O laço é o de `etag.ts` desde a slice 8. Era a terceira cópia dele no projeto
+ * (manifest, índice de calibração, aqui), e a dívida estava declarada aqui e no
+ * §14 — a quarta cópia teria sido a das medidas, que é a fatia que a pagou.
  */
 export async function atualizarParcial(
   sessao_id: string,
   mutador: (p: Parcial) => Parcial | null,
 ): Promise<{ parcial: Parcial; mudou: boolean }> {
-  const key = chaveParcial(sessao_id);
-
-  for (let tentativa = 0; tentativa < TENTATIVAS_PARCIAL; tentativa++) {
-    const atual = await getJson<Parcial>(key);
-    const base = atual?.valor ?? parcialVazio(sessao_id);
-    const novo = mutador(base);
-
-    if (novo === null || novo === base) return { parcial: base, mudou: false };
-
-    try {
-      await putJson(key, novo, atual?.etag ? { ifMatch: atual.etag } : { ifNoneMatch: "*" });
-      return { parcial: novo, mudou: true };
-    } catch (e) {
-      if (!(e instanceof ConflitoR2Error)) throw e;
-      await new Promise((r) => setTimeout(r, 40 * 2 ** tentativa + Math.random() * 40));
-    }
-  }
-  throw new Error(`Não consegui gravar o parcial de ${sessao_id} após ${TENTATIVAS_PARCIAL} tentativas`);
+  const { valor, mudou } = await atualizarJson<Parcial>(
+    chaveParcial(sessao_id),
+    (cru) => cru ?? parcialVazio(sessao_id),
+    mutador,
+    { rotulo: `o parcial de ${sessao_id}` },
+  );
+  return { parcial: valor, mudou };
 }
 
 /**

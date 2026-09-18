@@ -310,7 +310,9 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   condicional — e nenhum LIST, nunca
   chaves.ts       layout do R2 num lugar só + validação de id (barra path
                   traversal) + as chaves de uma sessão inteira, para apagar
-  manifest.ts     verdade sobre quais blocos existem; read-modify-write por etag
+  etag.ts         o laço read-modify-write condicional por etag, num lugar só —
+                  manifest, parcial, índice de calibração e medidas passam por ele
+  manifest.ts     verdade sobre quais blocos existem; escreve por `etag.ts`
   estados.ts      máquina de estados da sessão e as predicadas de leitura
   modelos.ts      porta única de modelo: todo LLM sai pelo Vercel AI Gateway,
                   e o diagnóstico de resposta vazia que os três agentes usam
@@ -3813,6 +3815,24 @@ read-modify-write condicional: lê o objeto com o etag, aplica um mutador **puro
 idempotente**, grava com `If-Match` (ou `If-None-Match: *` na primeira vez). Em
 412/409 (`ConflitoR2Error`) relê e reaplica, com backoff, até 10 tentativas
 (subiu de 6 na importação, slice 4.10 — ver abaixo), teto de 2 s por espera.
+
+**O laço mora em `etag.ts` desde a slice 8, e é um só.** Ele estava copiado três
+vezes — manifest, `parcial.json` e `calibracao/indice.json` —, com a dívida
+declarada no docstring de `atualizarParcial` ("extrair um helper é refatoração
+fora do escopo desta fatia"); a quarta cópia seria a das medidas, e quatro é onde
+uma correção passa a alcançar só três. Cada chamador
+continua trazendo o que é dele: a curva de espera (os números do manifest são os
+únicos diferentes, e o porquê está logo abaixo), o `normalizar` que materializa o
+objeto ausente ou conserta o formato antigo, e o mutador. O que o laço devolve a
+mais é `mudou` — "a escrita foi minha?" —, e é isso que faz a reivindicação de
+uma janela ser uma trava de verdade em vez de uma esperança.
+
+**Módulo próprio e não uma função em `r2.ts`**, por um motivo estrutural de
+teste: meia dúzia de arquivos de `tests/` troca `@/lib/r2` inteiro por uma
+fábrica com `getJson`/`putJson` mockados, e um laço morando lá obrigaria cada
+fábrica dessas a fornecê-lo também. Daqui ele **consome** o `r2.ts` mockado.
+`tests/etag.test.ts` cobre as duas escritas que se somam, o conflito reaplicado,
+o `null` que não grava e o teto da espera.
 
 **A importação multiplica quem escreve o manifest ao mesmo tempo.** Um bloco cujo
 STT tropeça no rate limit do Gateway fica preso em `comEsperaDeLimite` por até
