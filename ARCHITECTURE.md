@@ -5137,13 +5137,16 @@ O que existe agora, e vale nos dois sentidos porque mora nas regras **base**:
   painel ficam os dois `position: absolute; inset: 0`, para que nenhum deles
   estique a caixa durante a troca;
 - **a bola** se move por `transform: translateY(calc(3.75rem - 50dvh))
-  scale(0.32)`. O `0,32` reproduz os 84px de antes em qualquer largura (o CSS não
-  divide comprimento por comprimento, e `min(72vw, 264px)` dá 259–264px em
-  aparelho real); o `50dvh` é exato e não estimado, porque a `.tela` é
-  `min-height: 100dvh` com padding vertical simétrico, `justify-content: center`,
-  e o `.palco` é o único filho em fluxo. Com raio de ~42px a borda de baixo para
-  em ~6,4rem, acima do `top: 8.5rem` do painel — que é o que faz os dois
-  conviverem sem um cobrir o outro. O `.palco` fica em `z-index: 6` **sempre**:
+  scale(0.32)`. O `0,32` é fator e não comprimento, porque o CSS não divide
+  comprimento por comprimento: ele encolhe o que `--circulo-tamanho` disser, e
+  com os 220px de hoje a bola parada fica em ~70px. O `50dvh` é exato e não
+  estimado, porque a `.tela` é `min-height: 100dvh` com padding vertical
+  simétrico, `justify-content: center`, e o `.palco` é o único filho em fluxo.
+  Quem chega mais perto do painel não é a bola parada, é o auge da respiração:
+  220px × 1,2 × 0,32 dá raio de ~42px, e a borda de baixo para em ~6,4rem, acima
+  do `top: 8.5rem` do painel — que é o que faz os dois conviverem sem um cobrir o
+  outro. É o único lugar do sistema onde subir `--respiracao-max` ou
+  `--circulo-tamanho` tem consequência de layout. O `.palco` fica em `z-index: 6` **sempre**:
   indo e voltando a bola atravessa a faixa do painel (`z-index: 5`), e um
   `z-index` que sumisse com a classe esconderia metade do caminho de volta.
 
@@ -5289,15 +5292,16 @@ gravando, o timer, o "salvo" e o "parar".
 
 O palco é um grid de uma célula com tudo empilhado (`.palco > * { grid-area: 1/1 }`):
 
-- **o halo** (`.brilho`) é um disco terracota atrás do botão, do mesmo tamanho:
-  parado ele some por baixo, e ao respirar (escala 0,837 → 1,181 e raio 24 px →
-  42 px, 3,75 s `ease-in-out alternate`) aparece só a borda. O círculo cresce
-  como peça só, com o texto parado no meio. O `background` dele não é
-  decoração: sombra externa recorta a própria border-box, e sem fundo o anel
-  entre o botão e a borda do halo ficava sem sombra **e** sem fundo — um anel
-  preto pulsando em volta do círculo;
-- **o círculo** é o botão, 264 px (`min(72vw, 264px)`, o `min` só para não
-  estourar aparelho estreito), terracota, texto branco de 18 px/500;
+- **o halo** (`.brilho`) é um disco da cor de acento atrás do botão, do mesmo
+  tamanho: parado ele some por baixo, e ao respirar (escala 1 → 1,2 e raio
+  24 px → 42 px, ciclo inteiro de ~7 s em `ease-in-out alternate`) aparece só a
+  borda. O círculo cresce como peça só, com o texto parado no meio. O
+  `background` dele não é decoração: sombra externa recorta a própria
+  border-box, e sem fundo o anel entre o botão e a borda do halo ficava sem
+  sombra **e** sem fundo — um anel preto pulsando em volta do círculo;
+- **o círculo** é o botão, 220 px (`min(var(--circulo-guarda), var(--circulo-tamanho))`,
+  a guarda de 72vw só para não estourar aparelho estreito), da cor de acento,
+  texto branco de 18 px/500;
 - **as ondas** são **três de cada lado**, num `<canvas>` absoluto. O bloco que o contém vira a própria
   célula do grid, ou seja a faixa vertical do círculo — é o que põe o eixo da
   onda no centro dele sem número mágico. Some e aparece por opacidade em 400 ms
@@ -5307,31 +5311,69 @@ O palco é um grid de uma célula com tudo empilhado (`.palco > * { grid-area: 1
   para fora do alcance de um leitor de tela. Entra deslizando 8 px, no mesmo
   tempo e na mesma curva das ondas.
 
-**O círculo cresceu 20% e a respiração junto** — 220 px → 264 px, 4,5 s →
-3,75 s, e a amplitude (escala e raio do halo) 20% maior nas duas pontas. **O
-`72vw` não cresceu**, e isso é deliberado: ele não é tamanho, é guarda. Num
-aparelho de 320 px é ele quem impede o círculo de encostar nas bordas; crescê-lo
-junto poria o círculo em 82% da largura da tela. Com `min(72vw, 264px)`, aparelho
-normal ganha os 20% e aparelho estreito continua protegido — lá o círculo
-simplesmente não cresce.
+#### A zona morta, e por que `--respiracao-min` não desce abaixo de 1
 
-**A área do pulso mudou de novo depois, sem mexer em RPM nem em halo.** O
-pedido foi 30% menor no fundo e 30% maior no topo, em **área** — e área cresce
-com o quadrado da escala, não linear com ela. De 1,0/1,036² para 0,7×/1,3× a
-mesma área dá scale(0,837) e scale(1,181), tirando a raiz quadrada de cada
-lado. `3,75 s` e o `box-shadow` (24 px → 42 px) continuam os mesmos, por pedido
-explícito. Um efeito colateral que não é bug: como o disco tem exatamente o
-tamanho do botão e fica atrás dele, tudo `scale` ≤ 1 já é invisível — encolher
-o fundo do pulso não muda nada que se veja. O pulso inteiro está no
-crescimento até 1,181, bem mais largo que o 1,036 de antes.
+O disco tem **exatamente** o tamanho do botão e mora **atrás** dele. Isso quer
+dizer que a escala do disco não é o que se vê: o que se vê é a largura do anel
+que sobra para fora do botão, e ela só existe acima de `scale(1)`. Abaixo disso
+o disco está inteiro escondido, e a animação continua rodando sem pintar nada.
 
-Efeito colateral a conhecer: as ondas nascem na borda do círculo e correm até a
-borda da tela (`percurso = largura / 2 - raio`), então **o círculo maior encurta
-a corrida delas**. Num celular de 390 px o percurso cai de ~65 px para ~43 px. O
-`raio` é medido em tempo de execução (`circulo.current.offsetWidth / 2`), então
-nada quebra e `onda.ts` não muda — mas três camadas com 3 a 4,25 ciclos cada
-nesse espaço ficam mais apertadas. Se incomodar, o conserto é sangrar `.palco`
-para a largura inteira com margem negativa de `1.25rem`, recuperando 40 px.
+Foi o defeito que a respiração teve entre os commits `659073e` e este. O pedido
+de então era 30% menos área no fundo e 30% mais no topo; a conversão por área
+(√0,7 e √1,3, porque área cresce com o quadrado da escala) deu `scale(0,837) →
+scale(1,181)` e estava certa na aritmética. Só que ela foi aplicada à área do
+**disco**, e o que a pessoa vê é a área do **anel**. Resultado medido na régua
+do próprio keyframe: **47% de cada meia-volta acontecia com o disco invisível**,
+e a `ease-in-out` — que espalha a fase lenta pelo intervalo inteiro — gastava
+justamente a parte devagar lá dentro, atravessando depressa a faixa visível. O
+`box-shadow` (24 px → 42 px) saiu de fase junto: metade do crescimento do glow
+já tinha acontecido quando o disco assomava. Não respirava, piscava.
+
+O conserto é o piso: `--respiracao-min: 1` põe o fundo do ciclo exatamente onde
+o anel tem largura zero, e o ciclo inteiro passa a ser faixa visível. A amplitude
+que era invisível virou amplitude de verdade, `1 → 1,2`, e o ciclo alongou para
+~7 s para caber nela sem pressa. **O botão encolheu junto**, de 264 px para
+220 px: no auge a respiração chega a 264 px, que é o tamanho que o círculo tinha
+parado antes — o gesto ocupa o mesmo espaço de tela, e é o círculo em repouso que
+ficou menor.
+
+**O `72vw` continua sendo guarda, e não tamanho.** Num aparelho de 320 px é ele
+quem impede o círculo de encostar nas bordas; lá o alvo de 220 px não é
+alcançado e o círculo simplesmente fica menor.
+
+#### Os controles
+
+Nada disso é literal no CSS. O topo de `globals.css` tem um bloco `---- os
+controles do tema ----` com oito propriedades, e a respiração inteira, o halo e
+a cor do sistema saem dele:
+
+| Controle | Padrão | O que faz |
+|---|---|---|
+| `--acento` | `#d65a31` | a cor do sistema inteiro |
+| `--halo-intensidade` | `0.55` | 0 = sem halo, 1 = acento opaco |
+| `--halo-raio-min` / `--halo-raio-max` | `24px` / `42px` | o desfoque da sombra nas duas pontas |
+| `--respiracao-min` / `--respiracao-max` | `1` / `1.2` | a escala do disco |
+| `--respiracao-rpm` | `8.6` | ciclos inteiros por minuto (8,6 ≈ 7 s) |
+| `--circulo-tamanho` / `--circulo-guarda` | `220px` / `72vw` | o alvo, e o teto em aparelho estreito |
+
+`--glow` e `--circulo` deixaram de ser valores e viraram derivados: o primeiro é
+`color-mix()` de `--acento` com `--halo-intensidade`, o segundo é o `min()` dos
+dois últimos. O glow era o **único** ponto do CSS onde o terracota estava escrito
+duas vezes (`rgba(214, 90, 49, .55)`), e com ele derivado trocar `--acento` leva
+o halo junto.
+
+A duração sai do rpm por `calc(30s / var(--respiracao-rpm))` — 30 s e não 60 s
+porque `alternate` faz um ciclo inteiro valer duas durações. A folga vertical do
+`.palco`, que era `1.5rem` escolhido à mão para a amplitude de então, virou
+`max(1.5rem, calc(var(--circulo) * (var(--respiracao-max) - 1) / 2))`: subir a
+amplitude deixou de poder decepar o halo no overflow.
+
+**Limite resolvido de graça:** as ondas nascem na borda do círculo e correm até a
+borda da tela (`percurso = largura / 2 - raio`), e o círculo de 264 px havia
+encurtado a corrida delas para ~43 px num celular de 390 px. Com 220 px o percurso
+volta a ~65 px. O `raio` é medido em tempo de execução
+(`circulo.current.offsetWidth / 2`), então `onda.ts` nunca precisou saber de nada
+disso.
 
 **Canvas, e não SVG animado**, porque a onda segue o microfone a 60 quadros por
 segundo e reconstruir um path do DOM nessa cadência engasga no celular — que é
@@ -5362,7 +5404,12 @@ nesses números sem perceber.
 
 `prefers-reduced-motion` para o halo no estado médio e tira o deslize do selo.
 A onda continua, porque ali ela não é enfeite: é o retorno de que o microfone
-está ouvindo.
+está ouvindo. **"Estado médio" passou a custar uma linha a mais.** Enquanto a
+amplitude era de 3,6%, `animation: none` bastava: sem animação o disco fica na
+escala natural, que é 1. Com o piso da respiração agora em 1 e o teto em 1,2,
+escala natural é o fundo do ciclo — o ponto onde o halo não existe —, e a regra
+prometia um estado médio que entregava halo nenhum. Ela passa a calcular a média
+dos dois extremos, na escala e no raio da sombra, a partir dos mesmos controles.
 
 **O timer deixou de ser o herói.** Ele era `clamp(3rem, 16vw, 5rem)` porque era
 o centro da tela; com o círculo nesse posto, ficou em 1,5 rem, tabular, no tom
@@ -5371,8 +5418,13 @@ falei.
 
 ### 11.2 Tokens de cor
 
-Um lugar só, no topo de `src/app/globals.css`. Nada de cor literal em regra de
+Um lugar só, no topo de `src/app/globals.css`, e ele tem três camadas: o bloco
+de **controles** (o que se mexe), os tokens de superfície (o que quase nunca se
+mexe) e os **derivados** (o que não se mexe). Nada de cor literal em regra de
 componente — quem precisa de uma variação usa `color-mix()` sobre o token.
+
+Os controles estão tabelados em §11.1, junto com a respiração que a maior parte
+deles governa. Aqui ficam os tokens de superfície e os dois derivados:
 
 | Token | Valor | Onde |
 |---|---|---|
@@ -5380,18 +5432,44 @@ componente — quem precisa de uma variação usa `color-mix()` sobre o token.
 | `--fundo-alto` | `#1a1a1c` | cartão, campo, chip |
 | `--texto` / `--texto-fraco` | `#ececec` / `#8a8a8f` | texto e texto secundário |
 | `--linha` | `#2a2a2e` | borda |
-| `--acento` | `#d65a31` | terracota: círculo, ondas, confirmar, destaque |
-| `--sobre-acento` | `#ffffff` | texto **sobre** terracota — a única superfície que não usa `--texto` |
-| `--glow` | `rgba(214,90,49,.55)` | o halo do botão de gravar |
+| `--sobre-acento` | `#ffffff` | texto **sobre** o acento — a única superfície que não usa `--texto` |
 | `--status` | `#ffffff` a 0,7 | texto de status e ícone |
 | `--rec` | `#ff4d3d` | o ponto vermelho do selo de REC |
-| `--circulo` | `min(72vw, 264px)` | diâmetro do botão de gravar |
 | `--raio` | `14px` | o canto de cartão, campo e chip |
 | `--ok` | `#6aa84f` | o ponto de "salvo" |
+| `--glow` | *derivado* de `--acento` + `--halo-intensidade` | o halo do botão de gravar |
+| `--circulo` | *derivado* de `--circulo-tamanho` + `--circulo-guarda` | diâmetro do botão de gravar |
+
+`--acento` governa ~45 regras, todas por `var()` ou `color-mix()`. O único lugar
+do CSS onde a cor estava escrita uma segunda vez era `--glow`
+(`rgba(214, 90, 49, .55)` é o mesmo `#d65a31` em decimal), e trocar o acento
+deixava o halo para trás — daí ele ter virado derivado.
 
 `--fundo` e `--acento` mudaram de `#0f0f10` e `#d8613c` para os valores acima
 quando o botão foi redesenhado; a diferença é pequena, e manter dois terracotas
 quase iguais no mesmo sistema seria pior que trocar o antigo.
+
+#### O tema fora do CSS
+
+Três arquivos carregam cor que **nenhuma custom property alcança**, porque são
+estáticos de build lidos pelo sistema operacional, não pelo navegador. Trocar o
+tema pede passar neles à mão:
+
+| Arquivo | O quê |
+|---|---|
+| `public/icone.svg` | `fill="#d65a31"` (o círculo) e `#0d0d0d` (o fundo) — o ícone do PWA |
+| `src/app/layout.tsx` | `themeColor: "#0d0d0d"` na `metadata` — a barra do navegador |
+| `public/manifest.webmanifest` | `background_color` e `theme_color`, os dois `#0d0d0d` |
+
+São quatro linhas, e estão aqui para que a próxima troca de cor não deixe o
+ícone do PWA em terracota com o resto do sistema em outra cor.
+
+#### A única cor literal em regra de componente
+
+`.selo-rec` tem `background: rgba(0, 0, 0, 0.18)`. Não é o `--fundo`: é sombra
+sobre a cor que estiver embaixo, e embaixo dela está o acento, qualquer que ele
+seja. Derivá-la de um token mudaria o resultado em vez de preservá-lo, então ela
+fica — e fica anotada, para não parecer descuido.
 
 **Phronesis é escuro, e só.** O bloco `prefers-color-scheme: light` saiu: um
 segundo tema é uma segunda tela para manter certa a cada mudança, e o botão de

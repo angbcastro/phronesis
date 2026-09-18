@@ -1,10 +1,52 @@
 :root {
+  /* ---- os controles do tema ------------------------------------------
+
+     Este bloco é o painel do sistema inteiro: cor, halo e respiração. Tudo
+     que vem depois dele deriva daqui — não há cor nem número de animação
+     escrito duas vezes neste arquivo, e quem precisa de uma variação usa
+     `color-mix()` ou `calc()` sobre um destes. Trocar o tema é trocar uma
+     linha, não caçar literais em 2.300 linhas de CSS. */
+
+  /* A cor do sistema: o círculo de gravar, as ondas do canvas, o halo, o
+     botão de confirmar e todo destaque saem daqui. */
+  --acento: #d65a31;
+
+  /* O halo do botão de gravar. `intensidade` vai de 0 (sem halo nenhum) a 1
+     (acento opaco); os dois raios são o desfoque da sombra no fundo e no
+     topo da respiração — é a distância que o brilho alcança, não o tamanho
+     do disco. */
+  --halo-intensidade: 0.55;
+  --halo-raio-min: 24px;
+  --halo-raio-max: 42px;
+
+  /* A respiração do círculo, em escala do disco.
+
+     `--respiracao-min: 1` não é gosto, é regra: o disco tem exatamente o
+     tamanho do botão e fica atrás dele, então qualquer valor abaixo de 1 é
+     invisível — some por baixo do botão e vira tempo morto no meio do ciclo.
+     Foi o que estragou a animação no commit 659073e, com um mínimo de 0,837
+     que gastava 47% de cada meia-volta escondido. Ver §11.1.
+
+     `--respiracao-rpm` conta ciclos inteiros (crescer e voltar) por minuto:
+     8,6 rpm ≈ 7 s por respiração. Menos rpm, respiração mais longa. */
+  --respiracao-min: 1;
+  --respiracao-max: 1.2;
+  --respiracao-rpm: 8.6;
+
+  /* O diâmetro do botão parado, e a guarda que impede o círculo de encostar
+     nas bordas de um aparelho estreito. A guarda não é tamanho: num aparelho
+     de 320px é ela que manda, e o círculo simplesmente não cresce até o alvo.
+     No auge da respiração o halo chega a `tamanho × --respiracao-max`. */
+  --circulo-tamanho: 220px;
+  --circulo-guarda: 72vw;
+
+  /* ---- fim dos controles --------------------------------------------- */
+
   --fundo: #0d0d0d;
   --fundo-alto: #1a1a1c;
   --texto: #ececec;
   --texto-fraco: #8a8a8f;
   --linha: #2a2a2e;
-  --acento: #d65a31;
   --ok: #6aa84f;
   --rec: #ff4d3d;
   --raio: 14px;
@@ -14,16 +56,17 @@
      claro do sistema, em cima de um fundo #0d0d0d. */
   color-scheme: dark;
 
-  /* Sobre o terracota o texto é branco puro: é a única superfície do sistema
+  /* Sobre o acento o texto é branco puro: é a única superfície do sistema
      que não usa --texto. */
   --sobre-acento: #ffffff;
   --status: rgba(255, 255, 255, 0.7);
 
-  /* O halo do botão de gravar, e o diâmetro dele. 264px é o alvo desde o
-     redesenho (§11.1); o `min` existe só para o círculo não estourar um
-     aparelho estreito. */
-  --glow: rgba(214, 90, 49, 0.55);
-  --circulo: min(72vw, 264px);
+  /* Derivados dos controles, e é por isso que eles não estão lá em cima: não
+     se mexe nestes dois. `--glow` era uma segunda cópia do terracota escrita
+     em decimal (`rgba(214, 90, 49, .55)`) — trocar `--acento` deixava o halo
+     para trás, e o botão e o brilho dele ficavam de cores diferentes. */
+  --glow: color-mix(in srgb, var(--acento) calc(var(--halo-intensidade) * 100%), transparent);
+  --circulo: min(var(--circulo-guarda), var(--circulo-tamanho));
 
   /* O stack do sistema, que era a fonte do corpo, virou o fallback das duas.
      `--fonte-ritual` (Nunito) e `--fonte-gestao` (Inter) vêm do `next/font` no
@@ -85,8 +128,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   width: 100%;
   display: grid;
   place-items: center;
-  /* Folga vertical para o halo respirar sem ser cortado pelo overflow. */
-  padding: 1.5rem 0;
+  /* Folga vertical para o halo respirar sem ser cortado pelo overflow. Sai da
+     própria amplitude: o disco transborda metade do que cresce para cada lado,
+     e assim subir `--respiracao-max` não decepa o halo. O piso de 1,5rem é o
+     que sobra quando a respiração está quase parada. */
+  padding: max(1.5rem, calc(var(--circulo) * (var(--respiracao-max) - 1) / 2)) 0;
   /* Aqui, e não em `.tela.com-chat .palco`: transição declarada só no estado de
      destino some junto com a classe, e o caminho de volta vira um corte. Ver o
      bloco do círculo minimizado, no fim do arquivo. */
@@ -117,7 +163,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .palco.gravando .ondas { opacity: 1; }
 
-/* O disco que respira. Fica atrás do botão, do mesmo terracota e do mesmo
+/* O disco que respira. Fica atrás do botão, do mesmo acento e do mesmo
    tamanho — parado ele desaparece por baixo dele, e ao escalar aparece só a
    borda. É isso que faz o círculo crescer como uma peça só, com o texto
    parado no meio.
@@ -131,24 +177,26 @@ button { font: inherit; color: inherit; cursor: pointer; }
   aspect-ratio: 1;
   border-radius: 50%;
   background: var(--acento);
-  box-shadow: 0 0 24px var(--glow);
+  box-shadow: 0 0 var(--halo-raio-min) var(--glow);
   pointer-events: none;
-  animation: respirar 3.75s ease-in-out infinite alternate;
+  /* `alternate` faz o ciclo inteiro valer duas durações — daí 30s dividido
+     pelo rpm, e não 60s. Os números moram nos controles, no topo do arquivo. */
+  animation: respirar calc(30s / var(--respiracao-rpm)) ease-in-out infinite alternate;
 }
 
-/* Com o círculo maior, a respiração acompanhou: 20% mais rápida (4,5 s → 3,75 s)
-   e 20% mais ampla, tanto na escala quanto no raio do halo. */
-/* A área do pulso ficou 30% menor no fundo e 30% maior no topo — em área, não
-   em escala: `scale` é fator linear, e área cresce com o quadrado dele. De
-   1,0/1,036² (halo) para 0,7×/1,3× a mesma área dá scale(0,837)/scale(1,181)
-   — raiz quadrada de cada lado. RPM (3,75s) e o halo (24px→42px de
-   box-shadow) ficam como estavam, por pedido: só o tamanho do disco muda.
-   scale(0,837) não se vê: abaixo de scale(1) o disco já é menor que o botão e
-   desaparece atrás dele, do jeito que `.brilho` já descreve — o pulso todo
-   se lê no crescimento até scale(1,181), bem mais largo que o 1,036 de antes. */
+/* A respiração inteira sai dos controles. Custom property herdada de `:root`
+   é substituída dentro de um `@keyframes` sem problema: ela não é o que anima,
+   é o valor estático de cada uma das duas pontas.
+
+   O que a curva vê é só a faixa acima de scale(1) — o disco tem o tamanho do
+   botão e mora atrás dele, então o mínimo é onde ele some e o máximo é a
+   largura do anel no auge. É por isso que `--respiracao-min` abaixo de 1
+   estraga a animação em vez de ampliá-la: a zona invisível come parte do ciclo
+   e a `ease-in-out` gasta a fase lenta lá dentro, entregando um pisca no lugar
+   de uma respiração. */
 @keyframes respirar {
-  from { transform: scale(0.837); box-shadow: 0 0 24px var(--glow); }
-  to   { transform: scale(1.181); box-shadow: 0 0 42px var(--glow); }
+  from { transform: scale(var(--respiracao-min)); box-shadow: 0 0 var(--halo-raio-min) var(--glow); }
+  to   { transform: scale(var(--respiracao-max)); box-shadow: 0 0 var(--halo-raio-max) var(--glow); }
 }
 
 .botao-gravar {
@@ -190,8 +238,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   gap: 0.4rem;
   padding: 0.28rem 0.65rem;
   border-radius: 999px;
-  /* Ele está sobre o terracota, nos dois temas: branco a 70 %, e um pill
-     escuro de leve para o texto não se dissolver no laranja. */
+  /* Ele está sobre o acento: branco a 70 %, e um pill escuro de leve para o
+     texto não se dissolver nele. O literal preto é o único do arquivo fora
+     de `:root` — não é o `--fundo`, é sombra sobre a cor de baixo, qualquer
+     que ela seja. */
   background: rgba(0, 0, 0, 0.18);
   color: color-mix(in srgb, var(--sobre-acento) 70%, transparent);
   font-size: 0.7rem;
@@ -222,9 +272,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* Quem pediu menos movimento não perde informação: o halo para no estado
    médio e o selo aparece sem deslizar. A onda continua, porque ali ela não é
-   enfeite — é o retorno de que o microfone está ouvindo. */
+   enfeite — é o retorno de que o microfone está ouvindo.
+
+   `animation: none` sozinho não para no meio: sem animação o disco fica na
+   escala natural, que é 1 — o fundo da respiração, onde ele está escondido
+   atrás do botão. Com amplitude de 3,6% a diferença não se via; com 20% a
+   promessa desta regra virava um halo que simplesmente não existe. Daí a
+   escala e o raio serem a média dos dois extremos, calculada dos controles. */
 @media (prefers-reduced-motion: reduce) {
-  .brilho { animation: none; box-shadow: 0 0 34px var(--glow); }
+  .brilho {
+    animation: none;
+    transform: scale(calc((var(--respiracao-min) + var(--respiracao-max)) / 2));
+    box-shadow: 0 0 calc((var(--halo-raio-min) + var(--halo-raio-max)) / 2) var(--glow);
+  }
   .selo-rec { animation-duration: 1ms; }
 }
 
@@ -2277,17 +2337,21 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
    Os dois números:
 
-   `scale(0.32)` reproduz os 84px de antes em qualquer largura. `--circulo` é
-   `min(72vw, 264px)`, ou seja 259–264px em qualquer aparelho real, e 32% disso
-   dá 83–84px. Um fator vale aqui porque o CSS não divide comprimento por
-   comprimento.
+   `scale(0.32)` é fator, e não comprimento, porque o CSS não divide
+   comprimento por comprimento. Ele encolhe o que `--circulo-tamanho` disser:
+   com os 220px de hoje a bola minimizada fica em ~70px parada. O número
+   acompanha o controle sozinho — se o círculo mudar de tamanho, esta bola muda
+   junto, que é o comportamento certo.
 
    `translateY(calc(3.75rem - 50dvh))` põe o centro da bola a 3,75rem do topo.
    O ponto de partida é 50dvh exato, e não estimado: a `.tela` é `min-height:
    100dvh` com padding vertical simétrico e `justify-content: center`, e o
-   `.palco` é o único filho em fluxo. Com raio de ~42px, a borda de baixo para
-   em ~6,4rem — acima do `top: 8.5rem` do painel, que é o que faz os dois
-   conviverem sem um cobrir o outro. */
+   `.palco` é o único filho em fluxo. Quem chega mais perto do painel não é a
+   bola, é o auge da respiração: 220px × 1,2 × 0,32 dá raio de ~42px, e a borda
+   de baixo para em ~6,4rem — acima do `top: 8.5rem` do painel, que é o que faz
+   os dois conviverem sem um cobrir o outro. Subir muito `--respiracao-max` ou
+   `--circulo-tamanho` come essa folga, e é o único lugar do sistema onde isso
+   tem consequência de layout. */
 .tela.com-chat .palco {
   transform: translateY(calc(3.75rem - 50dvh)) scale(0.32);
   opacity: 0.45;
