@@ -47,6 +47,19 @@
  * provedor nas dependências). O erro é reconhecido pela forma — `name`, `type`,
  * `statusCode` —, como `modelos.ts` faz com `RespostaDoModelo`. Se o SDK mudar
  * o formato, `tests/limite.test.ts` é quem avisa.
+ *
+ * **E há uma quarta classe de falha, medida em 2026-09-18: a chamada que não
+ * volta.** A sessão `mu73d88b0w4u6o5d440j` (203 s de fala) gastou 300.116 ms
+ * numa única extração que o Gateway nunca respondeu, e morreu no `headersTimeout`
+ * do undici — que é **300 s, o mesmo `maxDuration` da rota**. Quando esse teto
+ * dispara não sobra orçamento nenhum para o `catch` gravar a falha, marcar a
+ * sessão como `erro` ou tentar outro caminho: a função é morta no meio e a sessão
+ * fica presa em `extraindo` para sempre, com a tela batendo. Tudo o mais naquela
+ * sessão foi rápido — STT 7,2 s somados, catálogo 88 ms, camada semântica 513 ms.
+ *
+ * Daí o `AbortSignal` desta camada. Ela é quem tem o `ate`, então é quem sabe
+ * quanto tempo uma chamada pode custar sem comer o orçamento de quem espera. O
+ * prazo é **por tentativa**, não pelo conjunto: cada ida ao Gateway ganha o seu.
  */
 import { codigoDeRede } from "./rede";
 
@@ -76,6 +89,91 @@ export const TENTATIVAS = ESPERAS_MS.length + 1;
 export const ESPERAS_TRANSITORIA_MS = [1_000, 3_000];
 
 export const TENTATIVAS_TRANSITORIA = ESPERAS_TRANSITORIA_MS.length + 1;
+
+/**
+ * Quanto uma única chamada de modelo pode custar quando quem chama não tem prazo.
+ *
+ * O caso é a janela que fecha **durante a fala**, em `/chunks/:i/pronto`: ali
+ * `avancarJanelas` vai sem `ate` de propósito, porque esperar o rate limit passar
+ * é de graça enquanto eu ainda estou falando (§5.3). Só que "esperar é de graça"
+ * vale para a espera **entre** tentativas, não para uma chamada pendurada: a rota
+ * tem 300 s de `maxDuration` do mesmo jeito, e uma chamada só nunca pode comer a
+ * função inteira — foi exatamente o que aconteceu em 18/09.
+ *
+ * **90 s, e o número vem da aritmética do orçamento.** Fica abaixo dos 120 s de
+ * `ORCAMENTO_JANELAS_MS`, então na janela do fim quem manda continua sendo o
+ * orçamento de quem chamou; e no `/pronto` deixa a corrente daquela passada —
+ * STT, extração, resolução, os desempates em paralelo — caber nos 300 s.
+ */
+export const TETO_CHAMADA_MS = 90_000;
+
+/**
+ * O que fica reservado, dentro do `ate`, para o `catch` de quem chamou gravar.
+ *
+ * Um prazo que termina junto com o orçamento não serve de nada: é o defeito que
+ * esta fatia conserta, só que menor. Quando a chamada é cortada, ainda falta
+ * escrever `parcial.json`, o objeto de medidas e o estado da sessão — e os três
+ * são laços por etag, que podem repetir.
+ */
+export const FOLGA_PARA_GRAVAR_MS = 5_000;
+
+/**
+ * A chamada não voltou no prazo, e fui eu quem a cortou.
+ *
+ * Existe para não se confundir com nada: **não é** limite de taxa e **não é**
+ * falha transitória. Um `overloaded` passa sozinho em segundos e merece a escada
+ * curta; uma chamada que ficou 90 s pendurada e foi cortada por mim já gastou
+ * tudo o que havia para gastar, e repetir é a maneira de transformar um defeito
+ * em três. Ela sobe na primeira, como o modelo inexistente e o JSON inválido.
+ */
+export class PrazoDeChamadaError extends Error {
+  constructor(
+    readonly rotulo: string,
+    readonly prazo_ms: number,
+    opcoes?: { cause?: unknown },
+  ) {
+    super(
+      prazo_ms <= 0
+        ? `${rotulo}: sem orçamento para chamar o modelo`
+        : `${rotulo}: a chamada não voltou em ${Math.round(prazo_ms / 1000)}s`,
+      opcoes,
+    );
+    this.name = "PrazoDeChamadaError";
+  }
+}
+
+/** Foi o meu prazo que cortou esta chamada? Reconhece pela forma, como os outros dois. */
+export function ehPrazoDeChamada(e: unknown): boolean {
+  return cadeia(e).some(
+    (alvo) =>
+      alvo !== null &&
+      typeof alvo === "object" &&
+      (alvo as { name?: unknown }).name === "PrazoDeChamadaError",
+  );
+}
+
+/**
+ * O relógio de uma tentativa: um sinal que corta a chamada e a memória de quem
+ * o disparou.
+ *
+ * `AbortSignal.timeout` faria o mesmo em uma linha e foi recusado por duas
+ * coisas: o timer dele sobrevive à chamada que voltou depressa, e daqui não dá
+ * para distinguir "estourou o meu prazo" de "o sinal veio de fora" — que é
+ * justamente a pergunta que decide se o erro entra na escada ou sobe.
+ */
+function relogioDaChamada(ms: number): {
+  sinal: AbortSignal;
+  estourou: () => boolean;
+  parar: () => void;
+} {
+  const controle = new AbortController();
+  let estourou = false;
+  const t = setTimeout(() => {
+    estourou = true;
+    controle.abort();
+  }, ms);
+  return { sinal: controle.signal, estourou: () => estourou, parar: () => clearTimeout(t) };
+}
 
 /**
  * O erro vem embrulhado: `RetryError` do AI SDK guarda o original em
@@ -126,8 +224,15 @@ export function ehLimiteDeTaxa(e: unknown): boolean {
  * **Fora desta lista nada é repetido**, e é a amarra que importa: um id de
  * modelo errado, um prompt que estoura o contexto e um JSON inválido falham
  * igual na segunda vez, e repetir só faz a tela esperar mais.
+ *
+ * **O meu próprio corte nunca entra aqui**, e a guarda é a primeira linha. Sem
+ * ela o conserto viraria o defeito: `UND_ERR_HEADERS_TIMEOUT` já está em
+ * `DEPOIS_DE_ABRIR` (`rede.ts`), então uma chamada pendurada seria lida como
+ * blip de rede e repetida duas vezes — três chamadas de 90 s onde havia uma, e
+ * no caminho sem `ate` a função morre antes de qualquer uma delas voltar.
  */
 export function ehTransitorio(e: unknown): boolean {
+  if (ehPrazoDeChamada(e)) return false;
   return cadeia(e).some((alvo) => {
     if (codigoDeRede(alvo)) return true;
     if (alvo === null || typeof alvo !== "object") return false;
@@ -170,8 +275,28 @@ export interface OpcoesLimite {
    * Instante (epoch ms) depois do qual não vale mais esperar. Quem chama dentro
    * de um `waitUntil` com prazo — `finalizarSessao` — passa o seu, para a espera
    * não comer o orçamento inteiro da função e o bloco morrer sem sequer o log.
+   *
+   * Desde 18/09 ele manda também no prazo **da chamada**, não só no da espera
+   * entre tentativas: é a mesma pergunta — quanto tempo eu ainda tenho — feita
+   * sobre a parte que de fato consumiu os 300 s daquela sessão.
    */
   ate?: number;
+  /** Teto de uma chamada. Só se mexe nele em teste; o padrão é `TETO_CHAMADA_MS`. */
+  tetoDaChamada?: number;
+}
+
+/**
+ * Quanto esta tentativa pode durar: o que sobra do orçamento, nunca mais que o
+ * teto. Sem `ate`, o teto sozinho — que é o caso da janela que fecha durante a
+ * fala.
+ */
+export function prazoDaChamada(
+  ate: number | undefined,
+  teto: number = TETO_CHAMADA_MS,
+  agora: number = Date.now(),
+): number {
+  if (ate === undefined) return teto;
+  return Math.min(teto, ate - agora - FOLGA_PARA_GRAVAR_MS);
 }
 
 /**
@@ -188,10 +313,22 @@ export interface OpcoesLimite {
  *
  * **O que não é nem um nem outro sobe na primeira.** Modelo inexistente, prompt
  * que estoura o contexto, resposta sem JSON: repetir vai falhar igual.
+ *
+ * **E toda tentativa vai com prazo** (18/09). `fn` recebe um `AbortSignal` e o
+ * repassa ao `generateText`/`transcribe`; quando ele dispara, o erro que sobe é
+ * `PrazoDeChamadaError`, que não é nem limite nem transitório e por isso não
+ * ganha escada nenhuma. O sinal é **passado**, e não uma corrida por fora,
+ * porque cortar o socket é o que faz a chamada terminar — e chamada que termina
+ * é chamada que `medirAgente` consegue contar. Corrida por fora deixaria a
+ * promessa pendurada e o custo dela fora do registro, justamente no caso que a
+ * slice 8 existe para medir.
+ *
+ * Quem ignora o sinal continua sem teto, e é deliberado: o chat já traz o seu,
+ * vindo do botão de cancelar da tela.
  */
 export async function comEsperaDeLimite<T>(
   rotulo: string,
-  fn: () => Promise<T>,
+  fn: (sinal: AbortSignal) => Promise<T>,
   opcoes: OpcoesLimite = {},
 ): Promise<T> {
   const {
@@ -199,15 +336,32 @@ export async function comEsperaDeLimite<T>(
     tentativasTransitorias = TENTATIVAS_TRANSITORIA,
     dormir = dormirDeVerdade,
     ate,
+    tetoDaChamada = TETO_CHAMADA_MS,
   } = opcoes;
 
   let deLimite = 0;
   let transitorias = 0;
 
   for (;;) {
+    const prazo = prazoDaChamada(ate, tetoDaChamada);
+    // Chamar sem orçamento é o jeito de a função morrer no meio em vez de
+    // falhar: quem chamou já não tem tempo nem de gravar o que deu errado.
+    if (prazo <= 0) {
+      console.warn(`[limite] ${rotulo}: sem orçamento para chamar o modelo`);
+      throw new PrazoDeChamadaError(rotulo, 0);
+    }
+
+    const relogio = relogioDaChamada(prazo);
     try {
-      return await fn();
+      return await fn(relogio.sinal);
     } catch (e) {
+      if (relogio.estourou()) {
+        console.error(
+          `[limite] ${rotulo}: a chamada não voltou em ${Math.round(prazo / 1000)}s — cortada.`,
+        );
+        throw new PrazoDeChamadaError(rotulo, prazo, { cause: e });
+      }
+
       const limite = ehLimiteDeTaxa(e);
       if (!limite && !ehTransitorio(e)) throw e;
 
@@ -232,6 +386,10 @@ export async function comEsperaDeLimite<T>(
 
       if (limite) deLimite++;
       else transitorias++;
+    } finally {
+      // O relógio é de **uma** tentativa: a próxima ganha o seu, com o que
+      // sobrou do orçamento depois desta espera.
+      relogio.parar();
     }
   }
 }

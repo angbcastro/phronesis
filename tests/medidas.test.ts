@@ -32,6 +32,7 @@ import { getJson, putJson } from "@/lib/r2";
 import {
   codigoDaFalha,
   comMedicao,
+  INTERVALO_DESCARGA_MS,
   fundirMedidas,
   indiceVazio,
   juntarLinha,
@@ -414,6 +415,82 @@ describe("comMedicao", () => {
     ).rejects.toThrow("caiu depois");
 
     expect(gravado().passos.stt?.n).toBe(1);
+  });
+
+  /**
+   * O buraco que a sessão `mu73d88b0w4u6o5d440j` abriu: função morta pelo
+   * `maxDuration` não chega ao `finally`, e gravar só lá levava o registro
+   * inteiro daquela invocação embora. `espera_blocos` e `concatenar` rodaram
+   * naquela sessão e não estão no objeto.
+   */
+  it("descarrega no meio do trabalho, e o passo de fora ainda não está lá", async () => {
+    vi.useFakeTimers();
+    try {
+      await comMedicao(SESSAO, "finalizar", async () => {
+        await medir("espera_blocos", async () => "os blocos chegaram");
+        await vi.advanceTimersByTimeAsync(INTERVALO_DESCARGA_MS);
+
+        const noMeio = gravado();
+        expect(noMeio.passos.espera_blocos?.n).toBe(1);
+        // O de fora não terminou, então não está — e é essa ausência que diz
+        // "esta invocação não voltou".
+        expect(noMeio.passos.finalizar).toBeUndefined();
+        return "ok";
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * `fundirMedidas` soma, então descarga que copiasse em vez de drenar contaria
+   * o mesmo trabalho duas vezes — e a medida passaria a mentir para cima.
+   */
+  it("o que já foi descarregado não é contado de novo no fim", async () => {
+    const deposito = new Map<string, unknown>();
+    vi.mocked(getJson).mockImplementation(async (key: string) =>
+      deposito.has(key) ? { valor: deposito.get(key), etag: null } : null,
+    );
+    vi.mocked(putJson).mockImplementation(async (key: string, valor: unknown) => {
+      deposito.set(key, valor);
+      return { etag: null };
+    });
+
+    vi.useFakeTimers();
+    try {
+      await comMedicao(SESSAO, "finalizar", async () => {
+        await medir("espera_blocos", async () => "chegaram");
+        await vi.advanceTimersByTimeAsync(INTERVALO_DESCARGA_MS);
+        await medir("concatenar", async () => "concatenou");
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const m = gravado();
+    expect(m.passos.espera_blocos?.n).toBe(1);
+    expect(m.passos.concatenar?.n).toBe(1);
+    expect(m.passos.finalizar?.n).toBe(1);
+  });
+
+  it("descarga que falha devolve o pedaço, e ele entra na gravação seguinte", async () => {
+    const erros = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(putJson).mockRejectedValueOnce(new Error("R2 fora do ar"));
+
+    vi.useFakeTimers();
+    try {
+      await comMedicao(SESSAO, "finalizar", async () => {
+        await medir("espera_blocos", async () => "chegaram");
+        await vi.advanceTimersByTimeAsync(INTERVALO_DESCARGA_MS);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // A primeira descarga se perdeu no R2; o passo não se perdeu com ela.
+    expect(gravado().passos.espera_blocos?.n).toBe(1);
+    expect(erros).toHaveBeenCalled();
+    erros.mockRestore();
   });
 
   it("com `fecha`, a linha vai ao índice com a duração e os blocos", async () => {

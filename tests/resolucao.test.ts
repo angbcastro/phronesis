@@ -958,12 +958,29 @@ describe("o que o extrator apontou", () => {
       response: { modelId: "zai/glm-5.3-flash" },
     } as never);
 
-    const r = await resolverReferencias([atomo("Isinha")], [no("Isinha")], { ate: Date.now() });
+    // Orçamento que cabe a chamada e não cabe os 20 s da primeira espera.
+    const r = await resolverReferencias([atomo("Isinha")], [no("Isinha")], {
+      ate: Date.now() + 10_000,
+    });
 
     // Sem orçamento para esperar, ela desiste na hora — e o prior segura a
     // menção, como sempre segurou.
     expect(r.sobre[0].entidade).toBe("Isinha");
     expect(chamar).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * O outro lado da mesma linha, desde 18/09: orçamento que não cabe nem a
+   * chamada não vira chamada nenhuma. Antes o modelo era chamado assim mesmo e o
+   * `waitUntil` morria no meio dela, sem deixar sequer o log — foi o que prendeu
+   * a sessão `mu73d88b0w4u6o5d440j` em `extraindo`.
+   */
+  it("sem orçamento para a chamada, o agente 2 nem é chamado", async () => {
+    const r = await resolverReferencias([atomo("Isinha")], [no("Isinha")], { ate: Date.now() });
+
+    expect(chamar).toHaveBeenCalledTimes(0);
+    // A degradação é a de sempre: o prior segura a menção e a revisão decide.
+    expect(r.sobre[0].entidade).toBe("Isinha");
   });
 });
 

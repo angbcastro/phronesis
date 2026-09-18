@@ -11,12 +11,17 @@ import { describe, expect, it, vi } from "vitest";
 import {
   comEsperaDeLimite,
   ehLimiteDeTaxa,
+  ehPrazoDeChamada,
   ehTransitorio,
   esperaDoLimite,
   esperaTransitoria,
   ESPERAS_MS,
   ESPERAS_TRANSITORIA_MS,
+  FOLGA_PARA_GRAVAR_MS,
+  prazoDaChamada,
+  PrazoDeChamadaError,
   TENTATIVAS,
+  TETO_CHAMADA_MS,
 } from "@/lib/limite";
 
 /** `GatewayRateLimitError` como o `@ai-sdk/gateway` o constrói. */
@@ -120,9 +125,9 @@ describe("esperar o limite passar", () => {
 
   it("não espera além do prazo de quem chamou", async () => {
     const fn = vi.fn().mockRejectedValue(embrulhado(limiteDoGateway()));
-    // Orçamento menor que a primeira espera: não adianta dormir, o `waitUntil`
-    // morre antes de a chamada voltar.
-    const ate = Date.now() + 1_000;
+    // Orçamento que cabe a chamada e não cabe a primeira espera de 20 s: não
+    // adianta dormir, o `waitUntil` morre antes de a chamada voltar.
+    const ate = Date.now() + 10_000;
 
     await expect(comEsperaDeLimite("stt", fn, { ...semDormir, ate })).rejects.toThrow();
     expect(fn).toHaveBeenCalledTimes(1);
@@ -196,12 +201,111 @@ describe("a falha que passa sozinha", () => {
     expect(fn).toHaveBeenCalledTimes(4);
   });
 
-  it("o prazo de quem chamou vale para as duas escadas", async () => {
-    const fn = vi.fn().mockRejectedValue({ statusCode: 502 });
+  /**
+   * A escada curta continua valendo quando há orçamento — e quem a corta, desde
+   * 18/09, é o prazo **da chamada**, não mais o da espera: um orçamento que não
+   * cabe 1 s de sono também não cabe a chamada que viria antes dele.
+   */
+  it("com orçamento, a escada curta roda inteira", async () => {
+    const fn = vi.fn().mockRejectedValueOnce({ statusCode: 502 }).mockResolvedValue("extraído");
 
     await expect(
-      comEsperaDeLimite("extracao", fn, { ...semDormir, ate: Date.now() - 1 }),
-    ).rejects.toMatchObject({ statusCode: 502 });
+      comEsperaDeLimite("extracao", fn, { ...semDormir, ate: Date.now() + 60_000 }),
+    ).resolves.toBe("extraído");
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * A quarta classe de falha: a chamada que não volta (18/09).
+ *
+ * Medida na sessão `mu73d88b0w4u6o5d440j` — 203 s de fala, 7 blocos, tudo
+ * rápido menos **uma** extração que gastou 300.116 ms e morreu no
+ * `headersTimeout` do undici, que é o mesmo `maxDuration` de 300 s da rota.
+ * Quando o teto é o da plataforma, não sobra orçamento para o `catch` gravar a
+ * falha nem para marcar a sessão como `erro`: a função é morta no meio e a
+ * sessão fica presa em `extraindo`, com a tela batendo para sempre.
+ */
+describe("a chamada que não volta", () => {
+  const semDormir = { dormir: async () => {} };
+
+  it("sem prazo de quem chamou, o teto é o absoluto", () => {
+    expect(prazoDaChamada(undefined)).toBe(TETO_CHAMADA_MS);
+  });
+
+  it("com prazo, é o que sobra menos a folga de gravar — e nunca mais que o teto", () => {
+    const agora = 1_000_000;
+    expect(prazoDaChamada(agora + 30_000, TETO_CHAMADA_MS, agora)).toBe(
+      30_000 - FOLGA_PARA_GRAVAR_MS,
+    );
+    // Orçamento enorme não afrouxa o teto: quem manda é o menor dos dois.
+    expect(prazoDaChamada(agora + 600_000, TETO_CHAMADA_MS, agora)).toBe(TETO_CHAMADA_MS);
+  });
+
+  /**
+   * A folga existe para o `catch` de quem chamou ainda conseguir escrever —
+   * `parcial.json`, a medida, o estado da sessão. Prazo que termina junto com o
+   * orçamento é o defeito de 18/09 outra vez, só que menor.
+   */
+  it("sem orçamento, o modelo nem é chamado", async () => {
+    const fn = vi.fn().mockResolvedValue("nunca");
+
+    await expect(
+      comEsperaDeLimite("extracao", fn, { ...semDormir, ate: Date.now() + 1_000 }),
+    ).rejects.toBeInstanceOf(PrazoDeChamadaError);
+    expect(fn).toHaveBeenCalledTimes(0);
+  });
+
+  it("o sinal chega à chamada, e cortar vira PrazoDeChamadaError", async () => {
+    const fn = vi.fn(
+      (sinal: AbortSignal) =>
+        new Promise((_, rejeitar) => {
+          sinal.addEventListener("abort", () => rejeitar(new Error("aborted")));
+        }),
+    );
+
+    await expect(
+      comEsperaDeLimite("extracao", fn, { ...semDormir, tetoDaChamada: 20 }),
+    ).rejects.toBeInstanceOf(PrazoDeChamadaError);
+    // Uma tentativa, e só: o corte não ganha escada nenhuma.
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * A amarra que impede o conserto de virar o defeito. `UND_ERR_HEADERS_TIMEOUT`
+   * está em `DEPOIS_DE_ABRIR` (`rede.ts`), então sem esta guarda uma chamada
+   * pendurada seria lida como blip de rede e repetida duas vezes — três chamadas
+   * de 90 s onde havia uma, num `waitUntil` que morre aos 300 s.
+   */
+  it("o corte não é transitório nem limite de taxa", () => {
+    const meu = new PrazoDeChamadaError("extracao", 90_000, {
+      cause: Object.assign(new TypeError("fetch failed"), {
+        cause: { code: "UND_ERR_HEADERS_TIMEOUT" },
+      }),
+    });
+
+    expect(ehPrazoDeChamada(meu)).toBe(true);
+    expect(ehTransitorio(meu)).toBe(false);
+    expect(ehLimiteDeTaxa(meu)).toBe(false);
+    // E o de fora continua sendo transitório quando não fui eu quem cortou.
+    const deFora = Object.assign(new TypeError("fetch failed"), {
+      cause: { code: "UND_ERR_HEADERS_TIMEOUT" },
+    });
+    expect(ehTransitorio(deFora)).toBe(true);
+  });
+
+  it("cada tentativa ganha o seu relógio", async () => {
+    const sinais: AbortSignal[] = [];
+    const fn = vi.fn(async (sinal: AbortSignal) => {
+      sinais.push(sinal);
+      if (sinais.length === 1) throw { statusCode: 502 };
+      return "extraído";
+    });
+
+    await expect(comEsperaDeLimite("extracao", fn, semDormir)).resolves.toBe("extraído");
+    expect(sinais).toHaveLength(2);
+    expect(sinais[0]).not.toBe(sinais[1]);
+    // O da primeira foi parado junto com ela: ele não corta a segunda.
+    expect(sinais[0].aborted).toBe(false);
   });
 });

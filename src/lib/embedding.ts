@@ -21,9 +21,18 @@
  * texto a qualquer momento; um átomo sem vetor é um átomo que a rota de
  * retrofill alcança depois. Quem chama trata a falha como aviso, nunca como
  * motivo para derrubar um confirmar.
+ *
+ * **E nada aqui pode ficar pendurado** (18/09). As duas chamadas vão com o
+ * `TETO_CHAMADA_MS` de `limite.ts`, pelo mesmo motivo que as quatro do caminho
+ * automático: sem prazo próprio o único teto é o `headersTimeout` de 300 s do
+ * undici, que é o `maxDuration` da rota — e uma chamada assim mata a função
+ * antes de qualquer `catch`. Aqui não entra a escada de repetição do
+ * `comEsperaDeLimite`: quem chama já engole a falha (`candidatosSemanticos`), e
+ * o que faltava era o teto, não o retry.
  */
 import { createHash } from "node:crypto";
 import { embed, embedMany } from "ai";
+import { TETO_CHAMADA_MS } from "./limite";
 import { medirAgente } from "./medidas";
 import { DIMENSAO_EMBEDDING, garantirGateway, modeloEmbedding } from "./modelos";
 import { CAMPOS_PERFIL } from "./tipos";
@@ -63,7 +72,9 @@ export async function embutir(texto: string): Promise<Vetor> {
   const modelo = modeloEmbedding();
   try {
     // String de propósito: id em string sai pelo Gateway (regra 8).
-    const r = await medirAgente("embedding", () => embed({ model: modelo, value: texto }));
+    const r = await medirAgente("embedding", () =>
+      embed({ model: modelo, value: texto, abortSignal: AbortSignal.timeout(TETO_CHAMADA_MS) }),
+    );
     return { embedding: conferirDimensao(r.embedding), modelo };
   } catch (e) {
     throw new EmbeddingError(e instanceof Error ? e.message : String(e));
@@ -86,7 +97,11 @@ export async function embutirVarios(textos: readonly string[]): Promise<Vetor[]>
     const lote = textos.slice(i, i + TAMANHO_DO_LOTE);
     try {
       const r = await medirAgente("embedding", () =>
-        embedMany({ model: modelo, values: [...lote] }),
+        embedMany({
+          model: modelo,
+          values: [...lote],
+          abortSignal: AbortSignal.timeout(TETO_CHAMADA_MS),
+        }),
       );
       for (const embedding of r.embeddings) {
         saida.push({ embedding: conferirDimensao(embedding), modelo });

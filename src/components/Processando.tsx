@@ -36,6 +36,28 @@ interface Estado {
 const INTERVALO_POLL_MS = 750;
 
 /**
+ * Até quando vale continuar perguntando (18/09).
+ *
+ * O laço não tinha teto, e a tela só sabia falar em falha quando o **status**
+ * dizia `erro`. Sessão cuja função morreu no `maxDuration` nunca chega a `erro`:
+ * ela fica em `extraindo` no grafo, e a tela fica em "lendo o que você disse…"
+ * para sempre — foi o que a sessão `mu73d88b0w4u6o5d440j` fez, e o que fez a
+ * espera parecer infinita em vez de falha.
+ *
+ * **Seis minutos, e o número é o da plataforma, não o do gosto.** O `/finalizar`
+ * tem `maxDuration` de 300 s; passado esse tempo com folga, o que estava
+ * trabalhando **provavelmente não está mais**, e insistir é olhar para uma tela
+ * que ninguém vai atualizar. Chamar de travado antes disso seria pior que
+ * esperar: eu reextrairia uma sessão que ainda estava viva, e pagaria duas vezes.
+ */
+export const TETO_DA_ESPERA_MS = 360_000;
+
+/** Já passou do tempo em que ainda poderia haver alguém trabalhando? */
+export function esperouDemais(desde: number, agora: number = Date.now()): boolean {
+  return agora - desde >= TETO_DA_ESPERA_MS;
+}
+
+/**
  * A sessão precisa que alguém chame `/finalizar` para andar?
  *
  * Os estados de fora são os que já estão andando por conta própria, ou que
@@ -67,10 +89,14 @@ export function Processando({ id }: { id: string }) {
   const router = useRouter();
   const [estado, setEstado] = useState<Estado | null>(null);
   const [falhou, setFalhou] = useState(false);
+  const [travou, setTravou] = useState(false);
   const finalizou = useRef(false);
 
   useEffect(() => {
     let vivo = true;
+    // O relógio da espera é o da visita: abrir a sessão de novo pela lista
+    // recomeça a contagem, que é o que eu quero quando volto para conferir.
+    const abriu = Date.now();
     let timer: ReturnType<typeof setTimeout>;
 
     async function buscar(): Promise<Estado | null> {
@@ -105,6 +131,13 @@ export function Processando({ id }: { id: string }) {
       const atual = await buscar();
       if (!vivo) return;
 
+      // O teto. Não é desistir do trabalho — o áudio e a transcrição continuam
+      // no R2 —, é parar de olhar para uma tela que já não vai mudar sozinha.
+      if (esperouDemais(abriu)) {
+        setTravou(true);
+        return;
+      }
+
       if (atual) {
         setEstado(atual);
         setFalhou(atual.status === "erro");
@@ -137,6 +170,12 @@ export function Processando({ id }: { id: string }) {
 
       {status === "confirmada" ? (
         <p className="aguardando">Essa sessão já foi confirmada — os átomos dela estão no Neo4j.</p>
+      ) : travou ? (
+        <p className="aguardando">
+          Isso já passou do tempo que o servidor tem para trabalhar — o mais provável é que a
+          extração tenha ficado pendurada. O áudio e a transcrição estão inteiros: dá para mandar
+          extrair de novo pela lista de <Link href="/sessoes">sessões</Link>.
+        </p>
       ) : falhou ? (
         <p className="aguardando">
           Alguma coisa falhou no meio do caminho. O áudio está inteiro no servidor — dá para tentar

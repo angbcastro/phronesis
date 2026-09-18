@@ -931,7 +931,7 @@ export async function resolverReferencias(
           `resolucao ${modeloDaChamada}`,
           // Dentro da espera, e não fora: tentativa recusada por limite também
           // é ida ao Gateway, e é a conta de chamadas que a slice 8 mede.
-          () =>
+          (sinal) =>
             medirAgente("resolucao", () =>
               generateText({
                 // String de propósito: id em string sai pelo Gateway (regra 8).
@@ -943,6 +943,8 @@ export async function resolverReferencias(
                 // tentativas rápidas do SDK contra um 429 não destravam nada e
                 // ainda alimentam o limite que estão esperando (`limite.ts`).
                 maxRetries: 0,
+                // O prazo da tentativa, vindo do `ate` de quem chamou (`limite.ts`).
+                abortSignal: sinal,
               }),
             ),
           { ate },

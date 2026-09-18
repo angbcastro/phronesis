@@ -129,7 +129,7 @@ export async function transcrever(
       // A contagem fica **dentro** da espera de limite, e não fora: cada
       // tentativa é uma ida ao Gateway e custa igual. Contar só a que deu certo
       // esconderia exatamente a rajada que a slice 8 foi medir (`medidas.ts`).
-      () =>
+      (sinal) =>
         medirAgente("stt", () =>
           // `model` é string de propósito: id em string sai pelo Gateway. Objeto
           // de provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
@@ -142,6 +142,10 @@ export async function transcrever(
             // rápidas do SDK contra um 429 não destravam nada e ainda alimentam o
             // limite que estão esperando (`limite.ts`).
             maxRetries: 0,
+            // O prazo da tentativa, de quem tem o orçamento. Sem ele o único teto
+            // é o `headersTimeout` de 300 s do undici, que é o mesmo
+            // `maxDuration` da rota — e aí não sobra tempo nem para o `catch`.
+            abortSignal: sinal,
           }),
         ),
       { ate },

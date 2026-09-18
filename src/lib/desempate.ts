@@ -204,7 +204,7 @@ export async function desempatar(
     const chamar = (teto: number) =>
       comEsperaDeLimite(
         `desempate ${meu.modelo}`,
-        () =>
+        (sinal) =>
           medirAgente("desempate", () =>
             generateText({
               // String de propósito: id em string sai pelo Gateway (regra 8).
@@ -214,6 +214,10 @@ export async function desempatar(
               maxOutputTokens: teto,
               // A espera longa daqui é a única camada de retry, como na resolução.
               maxRetries: 0,
+              // E o prazo da tentativa, também como na resolução (`limite.ts`).
+              // Aqui ele importa em dobro: N desempates correm em `Promise.all`,
+              // e um pendurado segurava a janela inteira.
+              abortSignal: sinal,
             }),
           ),
         { ate },

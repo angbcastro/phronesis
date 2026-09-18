@@ -19,14 +19,29 @@ primeira revisão à mão), 6 (o chat: perguntar ao grafo em texto livre), 7 (o
 laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas) e 8
 (o sistema se cronometra, e encolhe o que mede) construídas.**
 
-**A slice 8 sobe em duas partes, e a ordem não é detalhe.** A primeira é só o
+**A slice 8 sobe em partes, e a ordem não é detalhe.** A primeira é só o
 cronômetro (§4.17): três objetos no R2, as três marcas do cliente, a
 instrumentação nos passos que já existem e o resumo mensal na batida diária.
 Nenhum conserto de desempenho vai junto — se instrumento e conserto subissem no
 mesmo deploy, não se saberia o que melhorou, e a fatia inteira existe para saber.
-A segunda são os seis consertos e o penhasco virando erro (§4.18). Entre as duas
-vai **uma sessão real gravada**, com o `medidas.json` dela lido: é ele a linha de
-base contra a qual a segunda metade é julgada, e **nada disso foi medido ainda**.
+Depois vêm os seis consertos e o penhasco virando erro (§4.18). Entre as duas vai
+**uma sessão real gravada**, com o `medidas.json` dela lido.
+
+**A linha de base foi colhida em 2026-09-18, e ela não mediu uma espera: mediu
+uma trava.** A sessão `mu73d88b0w4u6o5d440j` (203 s de fala, 7 blocos) ficou
+presa em `extraindo` e nunca abriu a revisão. Tudo no pipeline foi rápido — fila
+do cliente 2,7 s, STT 7,2 s somados, catálogo 88 ms, camada semântica 513 ms — e
+**uma única chamada de extração gastou 300.116 ms sem devolver um token**,
+morrendo no `headersTimeout` do undici, que é o mesmo `maxDuration` de 300 s da
+rota. Isso refutou a suspeita que estava escrita: o custo não era a resolução da
+janela do fim.
+
+A consequência entrou **antes** dos seis consertos, e é a quarta classe de falha
+do §5.3 — **prazo por chamada de modelo**, mais a medida que sobrevive à função
+morta (§4.17) e o corredor com teto (§11). Sem ela os consertos pioravam este
+caso exato: `ehTransitorio` passaria a repetir uma chamada pendurada, e no
+caminho sem `ate` seriam três de 90 s num `waitUntil` que morre aos 300 s.
+
 Quem fecha a fatia sou eu — a medida existe para dizer *onde* mexer, não para
 declarar que ficou bom.
 
@@ -3558,6 +3573,28 @@ ausência é informação, zero seria mentira.
 linha `[medidas]` no log e nada mais, e o erro do trabalho sobe inteiro com a
 medida do que já tinha rodado gravada junto.
 
+**E o coletor descarrega no meio do caminho, não só no fim** (18/09). Gravar
+apenas no `finally` deixava o registro cego exatamente onde ele é mais
+necessário: função morta pelo `maxDuration` não chega ao `finally`, e a medida
+inteira daquela invocação ia junto. Foi o que a sessão `mu73d88b0w4u6o5d440j`
+mostrou — `espera_blocos` e `concatenar` **rodaram** (o `transcricao.json` e o
+`finalizado: true` provam) e não estão no objeto, porque o `/finalizar` foi morto
+no meio da chamada seguinte. `INTERVALO_DESCARGA_MS` é 30 s: uma passada de
+`/pronto` típica dura segundos e não paga descarga nenhuma, e a de 300 s paga
+dez, contra um registro inteiro perdido.
+
+**Drenar, e não copiar.** `fundirMedidas` soma, então mandar duas vezes o mesmo
+acumulado contaria o mesmo trabalho duas vezes e a medida passaria a mentir para
+cima: cada descarga leva o pedaço novo e zera o coletor, e o objeto no R2 é a
+soma de todos eles. Descarga que falha **devolve** o pedaço ao coletor, para a
+próxima tentar de novo com ele junto; e as descargas são enfileiradas, nunca
+simultâneas, porque duas gravações sobre a mesma chave brigariam no laço por etag
+à toa.
+
+**O que continua faltando numa invocação morta é o passo de fora** — `finalizar`,
+`pronto` —, que por definição não terminou. Essa ausência não é buraco: é o
+sinal. Passo de fora que falta é invocação que não voltou.
+
 **Sem tela nesta fatia.** Quando eu quiser olhar, eu peço: `GET /api/medidas` dá
 o índice, `?mes=AAAA-MM` o resumo do mês, e `GET /api/sessoes/:id/medidas` o
 detalhe daquela sessão. As rotas existem porque sem `LIST` no R2 a série só seria
@@ -3765,6 +3802,8 @@ com prefixo:
 | `[pipeline] sessão <id>: desistiu após 150s…` | `finalizarSessao` | o prazo estourou; lista os blocos que faltaram, e diz se a causa foi rate limit |
 | `[limite] <rótulo>: rate limit do Gateway — esperando Ns` | `comEsperaDeLimite` | o Gateway recusou por excesso e vai haver outra tentativa |
 | `[limite] <rótulo>: sem orçamento para esperar Ns` | `comEsperaDeLimite` | o limite ainda vale, mas esperar estouraria o prazo de quem chamou |
+| `[limite] <rótulo>: a chamada não voltou em Ns — cortada.` | `comEsperaDeLimite` | a quarta classe de falha (§5.3): o Gateway não respondeu dentro do prazo e **eu** cortei, antes que o `maxDuration` matasse a função |
+| `[limite] <rótulo>: sem orçamento para chamar o modelo` | `comEsperaDeLimite` | o que sobrava do prazo não cabia nem a chamada; melhor não chamar do que morrer no meio dela |
 | `[janela] sessão <id> janela <n> (blocos a-b): +N átomo(s)…` | `avancarJanelas` | uma janela fechou — é o `console.log` que mostra a extração acontecendo durante a gravação, e ele diz de quantas entidades era o dossiê |
 | `[candidatas] sessão <id> bloco <i>:` | `/pronto` e `candidatasDaJanela` | a busca daquele bloco falhou; o dossiê fica menor e a janela roda como na 4.8 |
 | `[grafias] sessão <id>: N grafia(s) viraram alias` | `/confirmar` | a grafia que eu falei virou alias do nó que eu confirmei (§4.14) |
@@ -3866,6 +3905,7 @@ deste sistema, e a única em que o conserto é o relógio:
 | rede | `rede.ts` | repetir já, se o pedido não saiu |
 | serviço | quem chamou | subir: repetir vai falhar igual |
 | **limite de taxa** | **`limite.ts`** | **esperar dezenas de segundos e repetir** |
+| **a chamada que não volta** | **`limite.ts`** | **cortar dentro do orçamento e subir — nunca repetir** |
 
 `rede.ts` não serve aqui, e juntar os dois seria erro: lá a pergunta é "o pedido
 chegou a sair?", e um 429 cairia em "erro do serviço — nunca repete", que é o
@@ -3939,6 +3979,63 @@ Quando a espera não basta, a linha de desistência diz isso com todas as letras
 "a causa foi rate limit do AI Gateway… chamar /finalizar de novo daqui a alguns
 minutos costuma resolver" —, porque a alternativa é procurar defeito no código
 onde só havia pressa. O áudio fica intacto no R2 e o retry é o mesmo de sempre.
+
+**A quarta classe foi medida em 2026-09-18, e ela não é pressa: é silêncio.** A
+sessão `mu73d88b0w4u6o5d440j` — 203 s de fala, 7 blocos — gastou **300.116 ms**
+numa única chamada de extração que o Gateway nunca respondeu, e morreu no
+`headersTimeout` do undici. Todo o resto daquela sessão foi rápido: STT 7,2 s
+somados (pior bloco 1,8 s), catálogo 88 ms, camada semântica 513 ms, a fila do
+cliente drenando em 2,7 s. **Não foi volume**: 43 entidades, 108 átomos, uma
+janela de dois minutos de fala, e o Gateway não devolveu um token sequer de uso.
+
+O que torna isso estrutural, e não azar: **o `headersTimeout` do undici é 300 s,
+que é exatamente o `maxDuration` da rota.** Quando ele dispara não sobra
+orçamento nenhum para o `catch` gravar a falha, marcar a sessão como `erro` ou
+cair em outro caminho — a função é morta no meio e a sessão fica presa em
+`extraindo` **para sempre**, com a tela batendo. Foi o que aconteceu: quem
+estourou primeiro (o `/pronto` do bloco 3, começado às 15:08:42) alcançou o
+`catch` e deixou `parcial.json` e a medida; o `/finalizar`, começado às 15:10:06,
+foi morto antes do seu. E **sem streaming em lugar nenhum** do sistema, o Gateway
+só manda headers quando a geração inteira acaba — então aquele teto é, na
+prática, "tempo total de geração", e um modelo que pensa demais é indistinguível
+de um Gateway pendurado.
+
+**O conserto é o prazo por chamada, e ele mora onde já mora o orçamento.**
+`comEsperaDeLimite` passou a entregar um `AbortSignal` a quem ela embrulha, e as
+quatro chamadas do caminho automático o repassam ao `generateText`/`transcribe`
+(`stt.ts`, `extracao.ts`, `resolucao.ts`, `desempate.ts`); `embedding.ts` leva o
+mesmo teto direto, sem a escada, porque quem o chama já engole a falha.
+
+| | Prazo da chamada |
+|---|---|
+| quem passa `ate` | o que sobra do orçamento, menos `FOLGA_PARA_GRAVAR_MS` (5 s) |
+| quem não passa (`/pronto`) | `TETO_CHAMADA_MS`, 90 s |
+
+Os 90 s são aritmética de orçamento, não gosto: ficam abaixo dos 120 s de
+`ORCAMENTO_JANELAS_MS`, então na janela do fim quem manda continua sendo o
+orçamento de quem chamou; e no `/pronto` deixam a corrente daquela passada — STT,
+extração, resolução, os desempates em paralelo — caber nos 300 s. A folga de 5 s
+existe porque prazo que termina junto com o orçamento é o mesmo defeito outra
+vez, só que menor: quando a chamada é cortada ainda falta escrever
+`parcial.json`, o objeto de medidas e o estado da sessão, e os três são laços por
+etag.
+
+**O sinal é passado, e não uma corrida por fora**, porque cortar o socket é o que
+faz a chamada *terminar* — e chamada que termina é chamada que `medirAgente`
+consegue contar. Corrida por fora deixaria a promessa pendurada e o custo dela
+fora do registro, justamente no caso que a slice 8 existe para medir.
+
+**E o corte não é transitório.** `PrazoDeChamadaError` sobe na primeira, como o
+modelo inexistente e o JSON inválido, e `ehTransitorio` o recusa na primeira
+linha. Sem essa amarra o conserto viraria o defeito: `UND_ERR_HEADERS_TIMEOUT`
+está em `DEPOIS_DE_ABRIR` (`rede.ts`), então uma chamada pendurada seria lida
+como blip de rede e ganharia a escada curta — três chamadas de 90 s onde havia
+uma, num `waitUntil` que morre aos 300 s. Vindo de fora, sem ter sido eu a
+cortar, o mesmo código continua sendo transitório.
+
+**Orçamento que não cabe a chamada não vira chamada.** Antes o modelo era chamado
+assim mesmo e o `waitUntil` morria no meio dele, sem deixar sequer o log; agora
+sobe `PrazoDeChamadaError` com `prazo_ms: 0` e quem chamou tem tempo de gravar.
 
 ### 5.4 Quando não há o que transcrever
 
@@ -5067,6 +5164,15 @@ ficariam parados para sempre —, e não toca em `finalizando`, `transcrevendo` 
 (regra 4: proposta que existe não rechama o modelo) e acontece uma vez por
 visita.
 
+**E ele tem teto desde 18/09.** O laço não tinha nenhum, e a tela só sabia falar
+em falha quando o **status** dizia `erro` — mas sessão cuja função morreu no
+`maxDuration` nunca chega a `erro`: ela fica em `extraindo` no grafo (§5.3), e a
+tela ficava em "lendo o que você disse…" indefinidamente. É o que faz uma trava
+parecer lentidão. Passados `TETO_DA_ESPERA_MS` (6 min) o corredor para de
+perguntar e diz o que aconteceu, apontando o reextrair da lista. O relógio é o da
+**visita**: abrir a sessão de novo recomeça a contagem, que é o que se quer ao
+voltar para conferir.
+
 **Em `/` a porta de serviço inteira é uma engrenagem no meio da borda
 esquerda** — sessões, entidades, agentes, calibração e subir um áudio, num menu
 lateral (`Gestao`).
@@ -5915,7 +6021,14 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   envelope e não depois dele, e o teto de duas seções por rodada.
 - `tests/processando.test.ts` — quando o corredor empurra a sessão parada, que é
   a única decisão dele que não é cosmética: empurrar demais paga uma chamada de
-  modelo à toa, empurrar de menos deixa a sessão sem caminho até a revisão.
+  modelo à toa, empurrar de menos deixa a sessão sem caminho até a revisão. E,
+  desde 18/09, o teto da espera: os 300 s de `maxDuration` cabem inteiros dentro
+  dele, porque chamar de travado cedo demais custa uma re-extração à toa.
+- `tests/limite.test.ts` — as três escadas e o que **não** é escada. O corte por
+  prazo não é transitório nem limite de taxa, e é essa linha que impede o
+  conserto de virar três chamadas de 90 s onde havia uma; que orçamento
+  insuficiente não vira chamada nenhuma; e que cada tentativa ganha o seu relógio,
+  sem o da anterior cortá-la.
 - `tests/correcoes.test.ts` — a apuração inteira, pura: que rejeitar, editar e
   trocar o sujeito viram correção (critério 1); que dois renomes na mesma sessão
   não colapsam num id só (critério 2); e que canonização **não** produz correção
@@ -6550,10 +6663,13 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   Nenhuma delas impede eu mesmo aprovar um rascunho ruim depressa.
 - **Sessão travada em `extraindo` não tem retry automático.** O corredor a deixa
   em paz de propósito: uma extração pode estar de fato correndo, e empurrar de
-  novo pagaria uma segunda chamada de modelo pela mesma sessão. Se o `waitUntil`
-  daquela extração morreu, a sessão fica girando "lendo o que você disse…" e a
-  saída é o **reextrair** da lista. `transcrito` e `erro`, esses, o corredor
-  empurra sozinho.
+  novo pagaria uma segunda chamada de modelo pela mesma sessão. A saída continua
+  sendo o **reextrair** da lista; `transcrito` e `erro`, esses, o corredor empurra
+  sozinho. **O que mudou em 18/09 é que ela deixou de girar para sempre**: o
+  corredor tem teto (`TETO_DA_ESPERA_MS`, 6 min) e passa a dizer que travou, com
+  o caminho da lista. Seis minutos porque os 300 s de `maxDuration` do
+  `/finalizar` têm de caber inteiros dentro dele — chamar de travado antes seria
+  eu reextrair uma sessão viva e pagar duas vezes.
 - **Desfazer uma emenda é um passo, e só um** (slice 7). O `VersaoDePrompt` do
   snapshot guarda `anterior`, então dá para voltar ao texto de antes; o que não
   existe é linha do tempo. Duas emendas ruins seguidas se desfazem abrindo o

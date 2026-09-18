@@ -312,6 +312,7 @@ se instrumento e conserto forem ao ar juntos, não dá para saber o que melhorou
 |---|---|
 | `beed258` | o laço por etag num lugar só — refatoração, não muda comportamento |
 | `b132ace` | **a medida**: os três objetos no R2, as marcas do cliente, a instrumentação |
+| *(18/09)* | **o prazo por chamada** — nasceu do que a medida encontrou; ver o passo 3.5 |
 | `3d9b778` | **os seis consertos** e o penhasco virando erro |
 
 **Passo 1 — subir até a medida, e só até ela.**
@@ -342,6 +343,34 @@ O que olhar, e o que cada coisa quer dizer:
 | `pior_ms` de cada passo | a soma esconde o caso ruim — trinta blocos de 2 s e vinte e nove de 1 s mais um de 31 s pedem consertos opostos |
 | `agentes` | quantas chamadas por agente, e tokens quando o Gateway devolve. É a conta de "quatro chamadas para entregar uma" |
 | `falhas` | o que quebrou, com o motivo em texto livre (só neste objeto) |
+
+**Passo 3.5 — o que o passo 3 encontrou, em 18/09, e o que ele mudou.**
+
+A linha de base existe, e ela **não mediu uma espera: mediu uma trava.** Sessão
+`mu73d88b0w4u6o5d440j`, 203 s de fala, 7 blocos, presa em `extraindo` até hoje —
+`transcricao.json` gravado, `extracao.json` nunca.
+
+| | |
+|---|---|
+| fila do cliente | 2,7 s |
+| STT dos 7 blocos | 7,2 s somados, pior 1,8 s |
+| `listarEntidades()` | 88 ms (43 entidades, 108 átomos) |
+| candidatas + embeddings | 513 ms + 2,2 s |
+| **uma chamada de extração** | **300.116 ms, zero token devolvido** |
+| `espera_ms` | `null` — a revisão nunca abriu |
+
+**A suspeita do §2.2 estava errada**: o custo não é a resolução da janela do fim.
+É uma chamada de modelo que não volta, morrendo no `headersTimeout` de 300 s do
+undici — que é o mesmo `maxDuration` da rota, e por isso não sobra orçamento nem
+para marcar `erro`.
+
+Daí um commit **antes** dos seis consertos: o prazo por chamada (`AbortSignal`
+saindo de `comEsperaDeLimite`), a medida descarregando no meio do trabalho, e o
+corredor com teto. `ARCHITECTURE.md` §5.3 tem a quarta classe de falha inteira.
+
+**Sem ele os consertos pioravam este caso**: `ehTransitorio` reconheceria
+`UND_ERR_HEADERS_TIMEOUT` e repetiria a chamada pendurada duas vezes — três de
+90 s onde havia uma, num `waitUntil` que morre aos 300 s.
 
 **Passo 4 — subir os consertos.**
 

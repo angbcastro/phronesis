@@ -492,6 +492,18 @@ export function registrarFalha(
  *
  * **Uma falha aqui nunca sobe.** O resultado de `fn` é o que importa; a medida é
  * o que se perde.
+ *
+ * **E ela descarrega no meio do caminho, não só no fim** (18/09). Gravar apenas
+ * no `finally` deixava a medida cega exatamente onde ela é mais necessária:
+ * função morta pelo `maxDuration` não chega ao `finally`, e o registro inteiro
+ * daquela invocação se perde. Foi o que aconteceu com a sessão
+ * `mu73d88b0w4u6o5d440j` — `espera_blocos` e `concatenar` **rodaram**
+ * (`transcricao.json` e o `finalizado: true` provam) e não estão no objeto,
+ * porque o `/finalizar` foi morto no meio da chamada seguinte.
+ *
+ * O que continua faltando numa invocação morta é o passo **de fora** —
+ * `finalizar`, `pronto` —, que por definição não terminou. E essa ausência é
+ * informação: passo de fora que falta é invocação que não voltou.
  */
 export async function comMedicao<T>(
   sessao_id: string,
@@ -503,25 +515,68 @@ export async function comMedicao<T>(
 
   const c: Coletor = { sessao_id, caminho, passos: {}, agentes: {}, falhas: [] };
 
+  // Uma descarga por vez: duas gravações simultâneas sobre a mesma chave
+  // brigariam no laço por etag à toa, e cada uma leva um pedaço diferente.
+  let fila: Promise<void> = Promise.resolve();
+  const enfileirar = (fecha: boolean): Promise<void> => (fila = fila.then(() => gravar(c, fecha)));
+
+  const relogio = setInterval(() => void enfileirar(false), INTERVALO_DESCARGA_MS);
+  // O trabalho é quem segura a função viva, nunca o cronômetro dela.
+  (relogio as unknown as { unref?: () => void }).unref?.();
+
   try {
     return await contexto.run(c, () => medir(passo, fn));
   } finally {
-    await gravar(c, fecha);
+    clearInterval(relogio);
+    await enfileirar(fecha);
   }
+}
+
+/**
+ * De quanto em quanto tempo o coletor descarrega o que já mediu.
+ *
+ * Trinta segundos é o teto do que uma invocação morta pode levar embora, e o
+ * piso do que ela custa: uma passada de `/pronto` típica dura segundos e não
+ * paga descarga nenhuma; a de 300 s paga dez, contra um registro inteiro
+ * perdido.
+ */
+export const INTERVALO_DESCARGA_MS = 30_000;
+
+/**
+ * Tira do coletor o que ele acumulou, deixando-o zerado.
+ *
+ * **Drenar, e não copiar**, porque `fundirMedidas` soma: mandar duas vezes o
+ * mesmo acumulado contaria o mesmo trabalho duas vezes. Cada descarga leva o
+ * pedaço novo, e o objeto no R2 é a soma de todos eles.
+ */
+function drenar(c: Coletor): {
+  passos: Partial<Record<PassoMedido, CustoDoPasso>>;
+  agentes: Partial<Record<AgenteId, CustoDoAgente>>;
+  falhas: FalhaMedida[];
+} {
+  const parte = { passos: c.passos, agentes: c.agentes, falhas: c.falhas };
+  c.passos = {};
+  c.agentes = {};
+  c.falhas = [];
+  return parte;
 }
 
 async function gravar(c: Coletor, fecha: boolean): Promise<void> {
   const agora = new Date().toISOString();
+  const parte = drenar(c);
+  const vazio =
+    Object.keys(parte.passos).length === 0 &&
+    Object.keys(parte.agentes).length === 0 &&
+    parte.falhas.length === 0;
+  // Descarga periódica sem nada novo não paga GET+PUT. A do fim paga, porque é
+  // ela que fecha a linha do índice.
+  if (vazio && !fecha) return;
+
   try {
     const { valor } = await atualizarJson<MedidasDaSessao>(
       chaveMedidas(c.sessao_id),
       (cru) => normalizarMedidas(cru, c.sessao_id, c.caminho, agora),
-      (m) =>
-        fundirMedidas(
-          m,
-          { caminho: c.caminho, passos: c.passos, agentes: c.agentes, falhas: c.falhas },
-          agora,
-        ),
+      (m) => fundirMedidas(m, { caminho: c.caminho, ...parte }, agora),
       { rotulo: `as medidas de ${c.sessao_id}` },
     );
     // O objeto que acabou de ser gravado, e não uma releitura dele: é o mesmo
@@ -529,9 +584,29 @@ async function gravar(c: Coletor, fecha: boolean): Promise<void> {
     // escrever.
     if (fecha) await fecharLinha(c.sessao_id, valor);
   } catch (e) {
+    // Devolve o que não entrou: a descarga é no meio do trabalho agora, e um
+    // PUT que falhou aqui não pode apagar o que ele levou. A próxima descarga
+    // — ou a do fim — tenta de novo com este pedaço junto.
+    devolver(c, parte);
     // O cronômetro não pode custar a sessão.
     console.error(`[medidas] sessão ${c.sessao_id}: não consegui gravar a medida:`, e);
   }
+}
+
+/** Põe de volta no coletor o pedaço que não conseguiu ser gravado. */
+function devolver(c: Coletor, parte: ReturnType<typeof drenar>): void {
+  for (const [nome, custo] of Object.entries(parte.passos) as [PassoMedido, CustoDoPasso][]) {
+    const atual = c.passos[nome];
+    c.passos[nome] = {
+      n: (atual?.n ?? 0) + custo.n,
+      ms: (atual?.ms ?? 0) + custo.ms,
+      pior_ms: Math.max(atual?.pior_ms ?? 0, custo.pior_ms),
+    };
+  }
+  for (const [id, custo] of Object.entries(parte.agentes) as [AgenteId, CustoDoAgente][]) {
+    c.agentes[id] = somarAgente(c.agentes[id], custo);
+  }
+  c.falhas = [...c.falhas, ...parte.falhas].slice(0, TETO_FALHAS_POR_SESSAO);
 }
 
 /** O detalhe de uma sessão, como ele está no R2. `null` quando nunca foi medida. */

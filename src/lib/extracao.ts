@@ -1028,7 +1028,7 @@ export async function extrairJanela(
         // A contagem vai **dentro** da espera: cada tentativa é uma ida ao
         // Gateway e custa igual, e é essa conta — quantas chamadas por sessão —
         // que a slice 8 foi medir (`medidas.ts`).
-        () =>
+        (sinal) =>
           medirAgente("extracao", () =>
             // `model` é string de propósito: id em string sai pelo Gateway. Objeto
             // de provedor furaria a porta única — ver o cabeçalho de `modelos.ts`.
@@ -1041,6 +1041,9 @@ export async function extrairJanela(
               // três tentativas rápidas que o SDK faz sozinho contra um 429 não
               // destravam nada e ainda alimentam o limite que estão esperando.
               maxRetries: 0,
+              // O prazo da tentativa (`limite.ts`). Foi **esta** chamada que ficou
+              // 300 s pendurada em 18/09 e matou a função antes do `catch`.
+              abortSignal: sinal,
             }),
           ),
         { ate },
