@@ -146,17 +146,28 @@ export interface EntradaApuracao {
 /**
  * De quem é a culpa quando eu corrijo sujeito ou menção.
  *
- * O sinal é **por átomo**, não por sessão: `resolucao.ts` roda a camada
- * determinística para toda menção, e `prompt_version_resolucao` só marca se
- * alguma teve que ir ao modelo — então uma sessão sem ambiguidade nenhuma
- * (comum com o grafo pequeno) pode ter batido no nó errado por acaso.
- *
  * `conhecida: true` é a resolução decidindo entre nós que existem;
  * `conhecida: false` é candidata nova, mais perto de "o extrator escreveu algo
  * que não bate com nada".
+ *
+ * **E a resolução só responde por uma sessão em que ela rodou** (slice 8.1).
+ * `resolucao.ts` roda a camada determinística para toda menção e só chama o
+ * modelo quando há ambiguidade; sessão sem ambiguidade nenhuma — comum com o
+ * grafo pequeno — não chama o agente 2, e quem escreveu aquele nome foi o
+ * agente 1. Etiquetar a correção como `resolucao` ali mandava material sobre um
+ * prompt que não participou para o `calibracao-2`, que é justamente o que a
+ * slice 7 ligou ao laço de aprendizado.
+ *
+ * **A precisão é por sessão, e isso é escolha.** Saber se *aquela menção* foi ao
+ * modelo pediria um campo novo gravado em toda proposta. Numa sessão mista —
+ * duas menções ao modelo e oito determinísticas — as correções das oito ainda
+ * vão para a resolução: erra para o lado de dar material demais ao agente 2,
+ * que é o agente que existe para decidir isso.
  */
-const agenteDaReferencia = (ref: ReferenciaResolvida): AgenteCorrecao =>
-  ref.conhecida ? "resolucao" : "extracao";
+const agenteDaReferencia = (
+  ref: ReferenciaResolvida,
+  resolucaoRodou: boolean,
+): AgenteCorrecao => (ref.conhecida && resolucaoRodou ? "resolucao" : "extracao");
 
 /**
  * As correções de uma revisão. Não grava nada, não faz rede — é a função que o
@@ -170,6 +181,12 @@ export function apurarCorrecoes(entrada: EntradaApuracao): Correcao[] {
   const conhecidas = new Set(
     proposta.entidades.filter((e) => e.conhecida).map((e) => e.nome_normalizado),
   );
+
+  // Os dois nascem `null` quando nenhuma menção precisou de julgamento — a
+  // proposta não registra versão de agente que não rodou (`tipos.ts`).
+  const versaoResolucao = proposta.prompt_version_resolucao;
+  const modeloResolucao = proposta.modelo_resolucao;
+  const resolucaoRodou = versaoResolucao !== null && modeloResolucao !== null;
   const porIndice = new Map(confirmados.map((c) => [c.indice, c]));
   const tocadosDe = new Map(g.atomos.map((a) => [a.indice, new Set<CampoGesto>(a.campos)]));
 
@@ -209,6 +226,20 @@ export function apurarCorrecoes(entrada: EntradaApuracao): Correcao[] {
     incorporada_em: null,
   };
 
+  /**
+   * A procedência do agente que a correção acusa (regra 7, slice 8.1).
+   *
+   * `doAtomo` carimba a extração, que é o que produziu o átomo — e é o carimbo
+   * certo para `texto`, `tipo`, `rejeitado` e as menções acrescentadas. Quando a
+   * etiqueta diz `resolucao`, porém, o carimbo tem que dizer o mesmo: era o
+   * defeito que esta emenda conserta, e ele valia para toda confirmação em que
+   * eu corrigia um sujeito.
+   */
+  const carimboDe = (agente: AgenteCorrecao) =>
+    agente === "resolucao" && versaoResolucao !== null && modeloResolucao !== null
+      ? { prompt_version: versaoResolucao, modelo: modeloResolucao }
+      : {};
+
   /** Procedência do átomo da proposta, nunca do corpo (regra 7). */
   const doAtomo = (a: AtomoProposto) => ({
     sessao_id,
@@ -226,6 +257,7 @@ export function apurarCorrecoes(entrada: EntradaApuracao): Correcao[] {
   for (const a of proposta.atomos) {
     const base = doAtomo(a);
     const ref = sobreDe(a, conhecidas);
+    const agenteRef = agenteDaReferencia(ref, resolucaoRodou);
     const confirmado = porIndice.get(a.indice);
     const tocados = tocadosDe.get(a.indice) ?? new Set<CampoGesto>();
 
@@ -280,8 +312,9 @@ export function apurarCorrecoes(entrada: EntradaApuracao): Correcao[] {
     ) {
       registrar({
         ...base,
+        ...carimboDe(agenteRef),
         id: chaveDeAtomo(a.id, "sujeito"),
-        agente: agenteDaReferencia(ref),
+        agente: agenteRef,
         tipo: "sujeito",
         antes: ref.entidade,
         depois: confirmado.sobre,
@@ -328,8 +361,9 @@ export function apurarCorrecoes(entrada: EntradaApuracao): Correcao[] {
     if (removidas.length > 0) {
       registrar({
         ...base,
+        ...carimboDe(agenteRef),
         id: chaveDeAtomo(a.id, "mencao_removida"),
-        agente: agenteDaReferencia(ref),
+        agente: agenteRef,
         tipo: "mencao_removida",
         antes: removidas.join(", "),
         depois: "",

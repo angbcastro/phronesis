@@ -620,7 +620,13 @@ export interface Correcao {
   texto_proposto: string;
   /** As âncoras, para o player da tela de calibração. */
   inicios_s: number[];
-  /** Do átomo da proposta, nunca do corpo (regra 7). */
+  /**
+   * Do átomo da proposta, nunca do corpo (regra 7) — e **do agente que a
+   * etiqueta acusa** (slice 8.1). Correção de `sujeito` ou `mencao_removida`
+   * marcada como `resolucao` carrega `prompt_version_resolucao` e
+   * `modelo_resolucao`; todo o resto carrega a versão da extração, que é quem
+   * produziu o átomo.
+   */
   prompt_version: string;
   modelo: string;
   /** `false` = inferida pelo valor, sem gesto que a testemunhe. */

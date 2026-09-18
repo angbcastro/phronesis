@@ -2,7 +2,7 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-6.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-8.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
@@ -15,8 +15,9 @@ com a revisão), 4.7 (o painel dos agentes), 4.8 (a extração acompanha a fala)
 importado entra pela mesma porta), 4.11 (a entidade se apresenta, e o agente 2
 mede a própria dúvida), 4.12 (a ficha se escreve sozinha), 5 (confrontar:
 relações entre átomos ao longo do tempo), 5.1 (o confronto calibrado pela
-primeira revisão à mão), 6 (o chat: perguntar ao grafo em texto livre) e 7 (o
-laço de retroalimentação deixa de ser da extração) construídas.**
+primeira revisão à mão), 6 (o chat: perguntar ao grafo em texto livre), 7 (o
+laço de retroalimentação deixa de ser da extração) e 8.1 (as quatro emendas)
+construídas.**
 
 **A 7 é a fatia que muda o que "calibrar" quer dizer.** Até ela o sistema tinha
 **um** laço fechado — correção na revisão → `calibracao/indice.json` →
@@ -2176,8 +2177,17 @@ entidade, e uma edição minha não pode virar dez correções.
 
 `Correcao` (`tipos.ts`) tem `antes`, `depois`, o texto proposto, as âncoras do
 átomo (é delas que sai o `▶ mm:ss` da tela de calibração, mais abaixo nesta
-seção), a procedência **do átomo da proposta** — nunca do corpo, regra 7 —,
-`tocado` e `incorporada_em` (`null` = em aberto).
+seção), a procedência — nunca do corpo, regra 7 —, `tocado` e `incorporada_em`
+(`null` = em aberto).
+
+**A procedência é do agente que a etiqueta acusa, e não sempre a do átomo**
+(slice 8.1). Até a 8.1 ela era copiada do átomo da proposta, que carrega sempre
+`prompt_version` e `modelo` da **extração** — então uma correção etiquetada
+`resolucao` dizia um agente na etiqueta e outro no carimbo, e era o agente que
+a slice 7 acabara de ligar ao laço de aprendizado. Agora correção de `sujeito`
+ou `mencao_removida` marcada como `resolucao` carrega `prompt_version_resolucao`
+e `modelo_resolucao` da proposta; todo o resto continua com a versão da
+extração, que é quem produziu o átomo.
 
 A chave **não** é sempre `${atomo_id}|${tipo}`. Três tipos não têm átomo, e com
 um id fixo por tipo os três colapsariam num registro só, uma correção nova
@@ -2200,16 +2210,28 @@ Cada correção sai etiquetada com o agente que a produziu:
 | `rejeitado`, `texto`, `tipo`, `faltou` | `extracao` | é o `extracao-9` produzindo o que não presta |
 | `entidade_recusada` | `extracao` | listou como entidade o que não é pessoa, organização, projeto nem objetivo |
 | `entidade_tipo` | `extracao` | errou o palpite de tipo na lista `entidades` |
-| `sujeito`, `mencao_removida` | `resolucao` ou `extracao` | **por átomo**: `sobre.conhecida` decide |
+| `sujeito`, `mencao_removida` | `resolucao` ou `extracao` | `sobre.conhecida` **e** a resolução ter rodado na sessão |
 | `mencao_adicionada` | `extracao` | menção que o extrator não listou; não há referência original para a resolução ter errado |
 | `entidade_renomeada` | `grafo` | higiene de grafia — salvo quando o nome apagado era pronome, e aí é `extracao` furando a seção "NOME DE ENTIDADE É NOME" |
 
-O sinal de `sujeito`/`mencao_*` é por átomo e não por sessão: `resolucao.ts` roda
-a camada determinística para toda menção, e `prompt_version_resolucao` só marca
-se alguma foi ao modelo — então uma sessão sem ambiguidade nenhuma (comum com o
-grafo pequeno) pode ter batido no nó errado por acaso. `conhecida: true` é a
-resolução decidindo entre nós que existem; `conhecida: false` é candidata nova,
-mais perto de "o extrator escreveu algo que não bate com nada".
+O sinal de `sujeito`/`mencao_*` tem **duas partes, e elas vêm de escalas
+diferentes**. A primeira é por átomo: `conhecida: true` é a resolução decidindo
+entre nós que existem, e `conhecida: false` é candidata nova, mais perto de "o
+extrator escreveu algo que não bate com nada". A segunda é por sessão, e entrou
+na 8.1: **a resolução só responde por uma sessão em que ela rodou.**
+`resolucao.ts` roda a camada determinística para toda menção e só chama o modelo
+quando há ambiguidade, e `prompt_version_resolucao` fica `null` quando nenhuma
+foi — sessão sem ambiguidade nenhuma, comum com o grafo pequeno, não chamou o
+agente 2, e quem escreveu aquele nome foi o agente 1. Nessas, a correção volta a
+ser da `extracao`, com a versão dela, e o `calibracao-2` deixa de receber
+material sobre um prompt que não participou.
+
+**A precisão fica certa por sessão e grosseira por menção, e isso é escolha.**
+Saber se *aquela* menção foi ao modelo pediria um campo novo gravado em toda
+proposta — o que tiraria a emenda do tamanho de emenda. Numa sessão mista, duas
+menções ao modelo e oito determinísticas, as correções das oito ainda vão para a
+resolução: erra para o lado de dar material demais ao agente 2, que é o agente
+que existe para decidir isso.
 
 **Capturava os três e calibrava um só até a slice 7.** `resolucao` e `grafo`
 acumularam etiquetados e sem consumidor por três fatias. Na 7 `Correcao.agente`
@@ -4948,9 +4970,34 @@ fecha o painel quando não há nada em curso.
 Dentro do painel: a lista de conversas (ativas, com as arquivadas atrás de um
 separador que conta quantas são), o botão de nova conversa, a conversa aberta
 com as mensagens, o campo de texto, e o "parar" no lugar do enviar enquanto o
-agente trabalha. Abrir a barra pela primeira vez numa visita abre **a conversa
-mais recente ativa** — é o que faz "toco de novo e continuo de onde parei" ser
-verdade; depois disso, qual conversa está aberta é decisão minha.
+agente trabalha.
+
+**Abrir a barra é sempre começar do zero** — conversa nova, campo vazio, foco no
+campo. **A slice 6 decidia o contrário** (abrir a conversa ativa mais recente na
+primeira abertura de cada visita, para "toco de novo e continuo de onde parei"
+ser verdade) e a **8.1 reverteu**: no uso deu o oposto, porque eu abro o chat
+para perguntar uma coisa nova e caía no meio da conversa de ontem, com uma saída
+a mais para dar antes de escrever. A decisão antiga nem se cumpria como
+escrita — ela morava numa `useRef` por montagem do componente, e o `<Chat>` é
+desmontado ao gravar e ao navegar, então "só na primeira abertura" virava "toda
+vez". O que defende a conversa longa fechada sem querer é a lista, a um toque no
+ícone do cabeçalho. Abrir e fechar sem perguntar não grava nada: o nó
+`:Conversa` nasce no `POST /api/chat`, com a primeira pergunta.
+
+**O teclado virtual encolhe a caixa do chat por baixo, e só ela** (8.1).
+`.chat.aberto` é `position: fixed`, e fixed se posiciona contra o viewport de
+**layout**, que o teclado do Android não encolhe — a caixa de escrever ficava
+debaixo do teclado e eu digitava sem ver. `Chat.tsx` escuta `visualViewport` e
+escreve `--teclado` **no nó da caixa**, e o `bottom` de `.chat.aberto` o soma ao
+recuo seguro. A alternativa era `interactiveWidget: "resizes-content"` no
+`layout.tsx`: uma linha, e consertaria os campos da revisão de brinde. Perdeu no
+critério que a spec da 8.1 fixou — consertar o chat **sem mexer na tela de
+gravar** —, porque o chat mora justamente nela: a bola minimizada é posicionada
+por `translateY(calc(3.75rem - 50dvh))` e o halo, o véu e as gavetas medem em
+`dvh`, e encolher o viewport de layout mexeria em todos eles no instante em que
+o teclado sobe, com a bola visível. O preço do caminho cirúrgico é a dívida que
+o projeto já tem em três lugares: mais um número que o JS e o CSS têm de manter
+em sincronia.
 
 O progresso aparece como uma linha por passo concluído ("buscou 'término' ·
 sobre Isinha — 4 trechos"), e não como um carregando genérico: a espera de uma
@@ -5593,6 +5640,13 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 
 ## 14. Limites conhecidos
 
+- **A tela de entidades ficou meio a meio** (8.1). Marcar canônica remenda só
+  aquela entidade no estado local; as outras dez (fundir, tipo, criar, renomear,
+  perfil, resumo, aliases, enriquecer uma, enriquecer as marcadas, desfazer)
+  continuam terminando em `carregar()`, que refaz `GET /api/entidades?perfil=1`
+  inteiro e redesenha a lista e a ficha — o que dá a impressão de a página pular
+  para o topo. A inconsistência é declarada e tem data de validade: começou pela
+  estrela porque foi a que incomodou, e o uso diz se e quando as outras vêm.
 - **A busca de `/entidades` é no cliente, sobre a lista inteira.**
   `GET /api/entidades` não tem `LIMIT` e nunca teve; `peneirar()` filtra em
   memória o que a rota já mandou. É de graça e instantâneo enquanto o grafo
@@ -6199,6 +6253,21 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   incluindo o `desempate-1` — é a 7.1. `mencao_adicionada` ficou de fora dessa regra: acrescentar uma menção
   que o extrator não listou é falha de extração por definição — não existe
   referência original para a resolução ter errado.
+  **A 8.1 apertou uma dimensão e deixou a outra**: sessão em que nenhuma menção
+  foi ao modelo devolve a correção à `extracao`, mas numa sessão mista as
+  menções resolvidas sem modelo ainda alimentam o agente 2. Está certo por
+  sessão e torto por menção — melhor do que estava, e não exato.
+- **Correção de menção decidida no desempate continua creditada à resolução**
+  (8.1). A proposta guarda uma versão só de resolução, e ela é a da primeira
+  passada; criar campo próprio para a segunda é outra emenda. Consequência: o
+  prompt do `desempate-1` segue sem receber correção nenhuma — o buraco que a
+  slice 7 abriu e não fechou.
+- **As correções gravadas antes da 8.1 ficam com o carimbo torto.** Recalcular
+  não é confiável: `forcar` sobrescreve `extracao.json` guardando só uma
+  anterior, então a proposta original de uma sessão re-extraída pode já não
+  existir. Elas envelhecem e a poda do índice (teto de 500) come as mais
+  velhas; até lá o `calibracao-2` aprende com alguma procedência errada, e isso
+  é sabido.
 - **`grafo` continua sem consumidor, e agora por um motivo.** `resolucao` ganhou o
   dele na slice 7, quando `paraCalibrar` passou a receber o agente; `grafo` não é
   agente, não tem prompt e não há o que emendar com ele. Ele aparece na porta de

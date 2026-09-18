@@ -1919,6 +1919,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   --recuo-lateral: max(0.75rem, env(safe-area-inset-left), env(safe-area-inset-right));
   --recuo-baixo: max(1.25rem, env(safe-area-inset-bottom));
   --altura-barra: 44px;
+  /* Quanto do fundo da tela o teclado virtual está cobrindo. Zero é o valor
+     honesto para quem não tem teclado de software; quem tem, `Chat.tsx` escreve
+     a medida do `visualViewport` neste nó. Declarado aqui para o valor ter um
+     lugar onde se ler, e não só um `var(--teclado, 0px)` solto no `bottom`. */
+  --teclado: 0px;
 
   position: fixed;
   z-index: 5;
@@ -2019,7 +2024,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
    de uma animação em vez de uma segunda caixa. */
 .chat.aberto {
   top: 8.5rem;
-  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  /* O teclado entra no `bottom` e não na altura: a caixa é ancorada nos quatro
+     `inset`, e encolher por baixo é o que mantém a caixa de escrever acima do
+     teclado sem mexer no topo, onde a bola minimizada convive. */
+  bottom: calc(var(--teclado) + max(0.75rem, env(safe-area-inset-bottom)));
   max-width: 34rem;
   border-radius: var(--raio);
   opacity: 1;

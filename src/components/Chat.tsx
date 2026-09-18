@@ -173,9 +173,9 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
   const parada = useRef<AbortController | null>(null);
   const fim = useRef<HTMLDivElement | null>(null);
   const campo = useRef<HTMLTextAreaElement | null>(null);
-  // Nasce `true` para a primeira abertura escolher a conversa mais recente, e
-  // só ela: depois disso, qual conversa está aberta é decisão minha.
-  const primeiraAbertura = useRef(true);
+  // A caixa inteira, para o teclado virtual poder encolhê-la — ver o efeito do
+  // `visualViewport`.
+  const caixa = useRef<HTMLElement | null>(null);
   // Sem isto, a montagem da página (fechada, e nunca aberta) contaria como um
   // fechamento e o painel piscaria inteiro por 384 ms na tela de gravar.
   const jaAbriu = useRef(false);
@@ -196,6 +196,23 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
     }
   }, []);
 
+  /**
+   * Começar do zero. Sobe até aqui porque o efeito de abertura a reusa — abrir
+   * o chat **é** pedir conversa nova (slice 8.1).
+   *
+   * **Não cria conversa órfã:** o nó `:Conversa` nasce no `POST /api/chat`,
+   * quando a primeira pergunta é enviada. Abrir e fechar sem perguntar não
+   * grava nada.
+   */
+  const nova = useCallback(() => {
+    parada.current?.abort();
+    setAberta(null);
+    setMensagens([]);
+    setPassos([]);
+    setProblema(null);
+    setVista("conversa");
+  }, []);
+
   useEffect(() => {
     if (aberto) {
       jaAbriu.current = true;
@@ -211,8 +228,77 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
     return () => clearTimeout(t);
   }, [aberto]);
 
+  /**
+   * Abrir o chat é sempre começar do zero (slice 8.1).
+   *
+   * **Isto reverte a decisão da slice 6**, que era abrir a conversa ativa mais
+   * recente para "toco de novo e continuo de onde parei" ser verdade. No uso
+   * deu o contrário: eu abro o chat para perguntar uma coisa nova e caio no meio
+   * da conversa de ontem, e tenho que sair dela primeiro. A decisão original
+   * nem se cumpria como escrita — ela morava numa `useRef` por montagem, e o
+   * `<Chat>` é desmontado ao gravar e ao navegar, então "só na primeira
+   * abertura" virava "toda vez".
+   *
+   * O que defende a conversa longa que eu fechar sem querer é a lista, a um
+   * toque no ícone do cabeçalho — e ela já existe.
+   */
+  useEffect(() => {
+    if (aberto) nova();
+  }, [aberto, nova]);
+
+  /**
+   * O teclado virtual, que o CSS não vê.
+   *
+   * `.chat.aberto` é `position: fixed`, e fixed se posiciona contra o viewport
+   * de **layout** — que o teclado do Android não encolhe. O `bottom` da caixa
+   * fica debaixo do teclado, e com ele a caixa de escrever: eu digito sem ver o
+   * que escrevo. Só o `visualViewport` sabe quanto sobrou.
+   *
+   * **O `--teclado` é escrito no nó da caixa, e não na raiz**, e é essa a
+   * escolha de mecanismo que a spec da 8.1 deixou em aberto.
+   * `interactiveWidget: "resizes-content"` no `layout.tsx` seria uma linha e
+   * consertaria a revisão de brinde, mas perde no critério declarado: o chat
+   * mora **na tela de gravar**, onde a bola minimizada é posicionada por
+   * `translateY(calc(3.75rem - 50dvh))` e o halo e as gavetas medem em `dvh`.
+   * Encolher o viewport de layout mexeria em todos eles com o teclado subindo,
+   * na tela onde a bola está visível. Este caminho não sai da caixa.
+   *
+   * O `scrollIntoView` acompanha porque a área de mensagens não rebobina
+   * sozinha quando a caixa encolhe: sem ele, o teclado sobe e a última resposta
+   * fica acima do corte. A guarda do valor igual é o que segura o jitter da
+   * barra do navegador aparecendo e sumindo.
+   */
+  useEffect(() => {
+    const visual = typeof window === "undefined" ? null : window.visualViewport;
+    if (!aberto || !visual) return;
+
+    let anterior = -1;
+    const medir = () => {
+      const coberto = Math.max(
+        0,
+        Math.round(window.innerHeight - visual.height - visual.offsetTop),
+      );
+      if (coberto === anterior) return;
+      anterior = coberto;
+      caixa.current?.style.setProperty("--teclado", `${coberto}px`);
+      fim.current?.scrollIntoView({ block: "end" });
+    };
+
+    medir();
+    visual.addEventListener("resize", medir);
+    visual.addEventListener("scroll", medir);
+    return () => {
+      visual.removeEventListener("resize", medir);
+      visual.removeEventListener("scroll", medir);
+      caixa.current?.style.removeProperty("--teclado");
+    };
+  }, [aberto]);
+
   // A lista chega ao abrir, e não antes: a tela de gravar não consulta nada por
   // conta própria — mesma disciplina da sugestão de calibrar na `Gestao`.
+  //
+  // Ela chega, e **nenhuma conversa é aberta com ela**: a lista é o caminho de
+  // volta, não o que abre por padrão (ver o efeito acima).
   useEffect(() => {
     if (!aberto) return;
     let vivo = true;
@@ -224,12 +310,6 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
         const d = (await r.json()) as { conversas: Conversa[] };
         if (!vivo) return;
         setConversas(d.conversas);
-
-        if (primeiraAbertura.current) {
-          primeiraAbertura.current = false;
-          const ultima = separarConversas(d.conversas).ativas[0];
-          if (ultima) await carregarMensagens(ultima.id);
-        }
       } catch (e) {
         console.error("[chat]", e);
         if (vivo) setProblema("Não consegui listar as conversas.");
@@ -239,7 +319,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
     return () => {
       vivo = false;
     };
-  }, [aberto, carregarMensagens]);
+  }, [aberto]);
 
   // Esc fecha, como na gaveta da `Gestao`. Enquanto o agente responde ele para
   // a geração em vez de fechar: sair no meio perderia a resposta que já custou.
@@ -349,15 +429,6 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
     }
   }, [aberta, enviando, rascunho]);
 
-  const nova = useCallback(() => {
-    parada.current?.abort();
-    setAberta(null);
-    setMensagens([]);
-    setPassos([]);
-    setProblema(null);
-    setVista("conversa");
-  }, []);
-
   const abrirConversa = useCallback(
     async (c: Conversa) => {
       parada.current?.abort();
@@ -414,7 +485,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
   const primeiraPergunta = mensagens.find((m) => m.papel === "eu")?.texto;
 
   return (
-    <section className={`chat ${aberto ? "aberto" : ""}`}>
+    <section ref={caixa} className={`chat ${aberto ? "aberto" : ""}`}>
       {!aberto && (
         <button className="barra" onClick={aoAbrir} aria-label="perguntar ao diário">
           {/* Só três pontos, por pedido: a barra convida sem prometer assunto.

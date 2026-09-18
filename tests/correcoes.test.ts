@@ -88,10 +88,16 @@ const candidata = (
   precisa_nome: false,
 });
 
+/**
+ * Uma proposta. `resolucao` liga a procedência do agente 2 — `null` nos dois
+ * campos é sessão em que nenhuma menção foi ao modelo, que é o caso comum e o
+ * padrão aqui.
+ */
 function proposta(
   atomos: AtomoProposto[],
   entidades: EntidadeCandidata[] = [candidata("eu")],
   sessao_id = SESSAO,
+  resolucao: { prompt_version: string; modelo: string } | null = null,
 ): Extracao {
   return {
     sessao_id,
@@ -100,8 +106,8 @@ function proposta(
     descartados: [],
     prompt_version: "extracao-5",
     modelo: "zai/glm-5.3-flash",
-    prompt_version_resolucao: null,
-    modelo_resolucao: null,
+    prompt_version_resolucao: resolucao?.prompt_version ?? null,
+    modelo_resolucao: resolucao?.modelo ?? null,
     granularidade: "palavra",
     criado_em: "2026-09-03T20:00:00.000Z",
   };
@@ -253,7 +259,33 @@ describe("trocar o sujeito e as menções", () => {
     });
   });
 
-  it("sujeito que o grafo já conhecia é erro da resolução", () => {
+  it("sujeito que o grafo já conhecia é erro da resolução, com a versão dela", () => {
+    const p = proposta(
+      [atomo(0, { sobre: "Rafa", conhecida: true })],
+      [candidata("Rafa", { conhecida: true }), candidata("Rapha", { conhecida: true })],
+      SESSAO,
+      { prompt_version: "resolucao-5", modelo: "zai/glm-5.3-flash" },
+    );
+    const cs = apurar({
+      proposta: p,
+      confirmados: [confirmado(0, { sobre: "Rapha" })],
+      entidades: [entidade("Rapha")],
+      gestos: gestos({ atomos: [{ indice: 0, campos: ["sobre"] }] }),
+    });
+
+    // O carimbo é do agente que a etiqueta acusa, e não o da extração que
+    // produziu o átomo: era o defeito que a 8.1 conserta.
+    expect(cs[0]).toMatchObject({
+      tipo: "sujeito",
+      agente: "resolucao",
+      prompt_version: "resolucao-5",
+      modelo: "zai/glm-5.3-flash",
+    });
+  });
+
+  it("sessão em que a resolução não rodou devolve o sujeito à extração", () => {
+    // Nenhuma menção foi ao modelo, então `prompt_version_resolucao` é `null`:
+    // quem escreveu aquele nome foi o agente 1, e é ele que recebe a correção.
     const p = proposta(
       [atomo(0, { sobre: "Rafa", conhecida: true })],
       [candidata("Rafa", { conhecida: true }), candidata("Rapha", { conhecida: true })],
@@ -265,7 +297,12 @@ describe("trocar o sujeito e as menções", () => {
       gestos: gestos({ atomos: [{ indice: 0, campos: ["sobre"] }] }),
     });
 
-    expect(cs[0]).toMatchObject({ tipo: "sujeito", agente: "resolucao" });
+    expect(cs[0]).toMatchObject({
+      tipo: "sujeito",
+      agente: "extracao",
+      prompt_version: "extracao-5",
+      modelo: "zai/glm-5.3-flash",
+    });
   });
 
   it("menção acrescentada é sempre do extrator, mesmo em átomo de entidade conhecida", () => {
@@ -289,6 +326,8 @@ describe("trocar o sujeito e as menções", () => {
     const p = proposta(
       [atomo(0, { sobre: "Isinha", conhecida: true, menciona: ["Pedro"] })],
       [candidata("Isinha", { conhecida: true })],
+      SESSAO,
+      { prompt_version: "resolucao-5", modelo: "zai/glm-5.3-flash" },
     );
     const cs = apurar({
       proposta: p,
@@ -296,7 +335,29 @@ describe("trocar o sujeito e as menções", () => {
       entidades: [entidade("Isinha")],
     });
 
-    expect(cs[0]).toMatchObject({ tipo: "mencao_removida", agente: "resolucao" });
+    expect(cs[0]).toMatchObject({
+      tipo: "mencao_removida",
+      agente: "resolucao",
+      prompt_version: "resolucao-5",
+    });
+  });
+
+  it("menção removida em sessão sem resolução é da extração", () => {
+    const p = proposta(
+      [atomo(0, { sobre: "Isinha", conhecida: true, menciona: ["Pedro"] })],
+      [candidata("Isinha", { conhecida: true })],
+    );
+    const cs = apurar({
+      proposta: p,
+      confirmados: [confirmado(0, { sobre: "Isinha", menciona: [] })],
+      entidades: [entidade("Isinha")],
+    });
+
+    expect(cs[0]).toMatchObject({
+      tipo: "mencao_removida",
+      agente: "extracao",
+      prompt_version: "extracao-5",
+    });
   });
 
   it("acrescentar e tirar menção no mesmo átomo são duas correções, não uma", () => {

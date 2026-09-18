@@ -278,6 +278,8 @@ export function Entidades() {
   const painel = useRef<HTMLElement | null>(null);
   /** A linha que abriu a ficha — é para ela que o foco volta ao fechar. */
   const linhaTocada = useRef<HTMLButtonElement | null>(null);
+  /** A estrela da ficha — é para ela que o foco volta depois de alternar. */
+  const estrela = useRef<HTMLButtonElement | null>(null);
 
   const carregar = useCallback(async () => {
     // `?perfil=1`: esta é a tela que edita os três campos. A revisão não pede,
@@ -565,7 +567,22 @@ export function Entidades() {
     void carregar();
   }
 
-  /** A ficha oficial. Um toque, reversível, sem consequência retroativa. */
+  /**
+   * A ficha oficial. Um toque, reversível, sem consequência retroativa.
+   *
+   * **A única ação desta tela que não relê o grafo** (slice 8.1). As outras dez
+   * terminam em `carregar()`, que refaz `GET /api/entidades?perfil=1` inteiro e
+   * troca o array por objetos novos — a lista e a ficha se redesenham juntas, e
+   * marcar uma estrela dá a impressão de a página pular para o topo. Aqui a
+   * tela remenda só aquela entidade: o valor novo é o que ela mesma mandou, a
+   * rota o devolve de volta, e `canonico` não entra em nenhum dos dois
+   * critérios de `peneirar` — a linha fica onde está.
+   *
+   * O foco volta na mão porque o botão fica `disabled` durante a requisição: o
+   * navegador solta o foco para o `<body>` e ninguém o devolve. O pedido espera
+   * um quadro — focar um botão ainda desabilitado não faz nada, e o `disabled`
+   * só sai quando o React repinta.
+   */
   async function alternarCanonico(chave: string, canonico: boolean) {
     setOcupado(`${chave}|canonico`);
     setFalha(null);
@@ -575,11 +592,14 @@ export function Entidades() {
       body: JSON.stringify({ chave, canonico }),
     }).catch(() => null);
     setOcupado(null);
+    requestAnimationFrame(() => estrela.current?.focus());
     if (!r?.ok) {
       setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
       return;
     }
-    void carregar();
+    setEntidades((lista) =>
+      lista?.map((e) => (e.nome_normalizado === chave ? { ...e, canonico } : e)) ?? lista,
+    );
   }
 
   /**
@@ -975,6 +995,7 @@ export function Entidades() {
                   </button>
                   <h2>{emFoco.nome}</h2>
                   <button
+                    ref={estrela}
                     className={emFoco.canonico ? "reextrair canonico" : "reextrair"}
                     disabled={ocupado === `${chave}|canonico`}
                     aria-pressed={emFoco.canonico}
