@@ -284,7 +284,9 @@ com a janela 0 marcada `pronta`.
 | a linha `[janela] … janela 0` | o caminho novo está vivo |
 | nenhuma linha `[janela]` | o `avancarJanelas` não está sendo chamado, ou nenhum bloco fechou janela — conferir se os 4 primeiros blocos ficaram `transcrito: true` no manifest |
 | `[janela] … falhou:` | o motivo está na própria linha; a janela fica `falhou` no parcial e é retentada no bloco seguinte |
-| `[janela] … não fecharam` no fim | caiu no passe único. A sessão não morreu, mas a fatia não entregou nada — é o caso a investigar |
+| `[janela] … não fecharam` no fim | **desde a slice 8, a sessão vai para `erro`** e espera eu mandar re-extrair; antes ela caía no passe único em silêncio. É o caso a investigar, e agora ele aparece |
+| `[janela] … outro worker está nela, esperando` | condição normal: o `/finalizar` chegou enquanto uma janela ainda fechava, e está esperando em vez de desistir (slice 8) |
+| `[stt] … já tem dono, deixando com ele` | a trava do bloco funcionou: o STT não foi pago duas vezes (slice 8) |
 
 ### 2.2 Cronometrar do botão até a revisão abrir
 
@@ -295,6 +297,64 @@ parar até `/sessao/:id/revisar` abrir sozinha.
 Se continuar em dezenas de segundos, o suspeito não é a extração: é a resolução
 da janela do fim (embedding + duas consultas vetoriais + a chamada do agente 2),
 que roda inteira ali.
+
+> **Resolvido pela slice 8, em duas partes — e há um passo meu entre elas.**
+> O cronômetro deixou de ser cronômetro de mão: o sistema se mede sozinho e
+> grava, sessão por sessão (`ARCHITECTURE.md` §4.17). O que falta é rodar.
+> Ver o §2.2.1.
+
+### 2.2.1 A linha de base da slice 8 — um passo meu entre dois deploys
+
+A fatia 8 está no repositório em **três commits**, e a ordem de subida importa:
+se instrumento e conserto forem ao ar juntos, não dá para saber o que melhorou.
+
+| Commit | O que é |
+|---|---|
+| `beed258` | o laço por etag num lugar só — refatoração, não muda comportamento |
+| `b132ace` | **a medida**: os três objetos no R2, as marcas do cliente, a instrumentação |
+| `3d9b778` | **os seis consertos** e o penhasco virando erro |
+
+**Passo 1 — subir até a medida, e só até ela.**
+
+```bash
+git push origin b132ace:master
+```
+
+**Passo 2 — gravar uma sessão real e longa** (mais de 3 min, senão não fecha
+janela nenhuma durante a fala — §2.1), do telefone, e deixar a revisão abrir
+sozinha.
+
+**Passo 3 — ler o número.** Pelo navegador, já autenticado:
+
+```
+/api/sessoes/<id>/medidas     o detalhe: tempo por passo, chamadas, falhas
+/api/medidas                  o índice: uma linha por sessão
+/api/medidas?mes=2026-09      o resumo do mês (escrito pela batida diária)
+```
+
+O que olhar, e o que cada coisa quer dizer:
+
+| Campo | Pergunta que ele responde |
+|---|---|
+| `cliente` + `espera_ms` do índice | quanto eu esperei de verdade, do parar até a revisão abrir |
+| `fila_ms` vs `servidor_ms` | a espera foi o último bloco subindo, ou foi o servidor? |
+| `passos` | onde o tempo foi: `stt`, `candidatas`, `catalogo`, `janela`, `espera_blocos`, `proposta` |
+| `pior_ms` de cada passo | a soma esconde o caso ruim — trinta blocos de 2 s e vinte e nove de 1 s mais um de 31 s pedem consertos opostos |
+| `agentes` | quantas chamadas por agente, e tokens quando o Gateway devolve. É a conta de "quatro chamadas para entregar uma" |
+| `falhas` | o que quebrou, com o motivo em texto livre (só neste objeto) |
+
+**Passo 4 — subir os consertos.**
+
+```bash
+git push
+```
+
+**Passo 5 — gravar outra sessão parecida e comparar as duas linhas do índice.**
+O `medidas/indice.json` guarda as duas, e o mês inteiro fica em
+`medidas/<AAAA-MM>.json` mesmo depois de eu apagar as sessões.
+
+**Quem fecha a fatia sou eu.** A medida existe para dizer *onde* mexer, não para
+declarar que ficou bom.
 
 ### 2.3 Olhar a lista na revisão — o maior risco da fatia
 

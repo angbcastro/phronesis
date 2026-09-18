@@ -230,7 +230,7 @@ export async function avancarJanelas(
       // Fechando é diferente, e é o que a slice 8 conserta. O `/finalizar` chega
       // segundos depois do último `/pronto`, então encontrar um lease vivo aqui
       // é a **condição normal**, não defeito — e desistir dela era o que fazia a
-      // proposta cair no passe único de 17 min, em silêncio (§4.6). Agora ela é
+      // proposta cair no passe único de 17 min, em silêncio (§4.18). Agora ela é
       // esperada: quem está nela quase sempre termina em segundos.
       const fim = await esperarQuemEstaNela(sessao_id, j, ate);
       if (fim === "desistiu") return;
