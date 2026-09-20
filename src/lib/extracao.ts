@@ -116,10 +116,15 @@ export class ExtracaoError extends Error {
 }
 
 /**
- * Teto de saída generoso porque `zai/glm-5.3-flash` é modelo de raciocínio: numa
- * sessão de 4 mil caracteres ele gastou 1720 tokens raciocinando para 122 de
- * texto. Sem folga, o raciocínio come o orçamento e a resposta chega sem JSON
- * nenhum — foi assim que a sessão `mtgo3kaf5` falhou.
+ * Teto de saída generoso porque o modelo da extração pode ser de raciocínio, e
+ * foi durante toda a medição: `zai/glm-5.3-flash`, padrão até 20/09, numa sessão
+ * de 4 mil caracteres gastou 1720 tokens raciocinando para 122 de texto. Sem
+ * folga, o raciocínio come o orçamento e a resposta chega sem JSON nenhum — foi
+ * assim que a sessão `mtgo3kaf5` falhou.
+ *
+ * **O teto fica onde está com o padrão novo** (`deepseek/deepseek-v4.1-flash`):
+ * ele não cobra nada de quem não precisa dele — o que se paga é o que se gera —
+ * e a defesa não depende de qual id está na variável de ambiente.
  *
  * **E subir este número não é o conserto.** Depois da `mtgo3kaf5` ele já foi
  * subido uma vez, e a janela 0 da `mtqoeoqh3e3724514q1f` gastou os 8000

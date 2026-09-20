@@ -38,6 +38,7 @@ import {
   rodarElo,
 } from "@/lib/enriquecimento";
 import type { AtomoDaEntidade } from "@/lib/enriquecimento";
+import { modeloEnriquecimento } from "@/lib/modelos";
 import { query } from "@/lib/neo4j";
 import { NUNCA_ENRIQUECIDA, TETO_RESUMO } from "@/lib/tipos";
 
@@ -209,7 +210,11 @@ describe("escrever a ficha", () => {
     expect(f.resumo).toBe("Produtor");
     expect(f.atomos).toBe(2);
     expect(f.prompt_version).toBe(PROMPT_VERSION_ENRIQUECIMENTO);
-    expect(f.modelo).toBe("zai/glm-5.3-flash");
+    // Contra `modeloEnriquecimento()`, e não contra um id escrito à mão: o
+    // padrão troca por decisão minha (já trocou uma vez), e o que este teste
+    // guarda é o carimbo existir e vir de quem faz a chamada — não qual modelo
+    // está em cartaz.
+    expect(f.modelo).toBe(modeloEnriquecimento());
   });
 
   it("o modelo sai por string, pelo Gateway (regra 8)", async () => {

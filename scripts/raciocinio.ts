@@ -14,7 +14,9 @@
  * A sonda fica porque a pergunta pode voltar — outro modelo em `EXTRACAO_MODEL`,
  * outro provedor, outro comportamento — e porque a resposta que ela já deu para
  * o `zai/glm-5.3-flash` está registrada em `ARCHITECTURE.md` §4.4: **dá** para
- * calar este modelo, com duas opções diferentes, e escolhemos não calar.
+ * calar aquele modelo, com duas opções diferentes, e escolhemos não calar. O
+ * padrão hoje é outro (`deepseek/deepseek-v4.1-flash`) e a sonda não foi rodada
+ * contra ele: é exatamente o tipo de pergunta que ela existe para responder.
  *
  * Por que medir em vez de escrever o nome direto no código, se um dia for o
  * caso: **opção que o provedor não conhece some em silêncio**. É a mesma lição
@@ -33,7 +35,7 @@
 import { generateText } from "ai";
 
 /** Igual a `modeloExtracao()`: `||` e não `??`, string vazia é ausência. */
-const MODELO = process.env.EXTRACAO_MODEL || "zai/glm-5.3-flash";
+const MODELO = process.env.EXTRACAO_MODEL || "deepseek/deepseek-v4.1-flash";
 
 /** O mesmo teto que `src/lib/extracao.ts` usa, para a medição valer para ele. */
 const TETO = Number(process.env.PROBE_TETO || "8000");

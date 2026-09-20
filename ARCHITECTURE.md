@@ -714,14 +714,14 @@ painel de `/agentes` (§4.13):
 | Função | Agente | Padrão |
 |---|---|---|
 | `modeloStt()` | STT | `xai/grok-stt` |
-| `modeloExtracao()` | `extracao-9` | `zai/glm-5.3-flash` |
+| `modeloExtracao()` | `extracao-9` | `deepseek/deepseek-v4.1-flash` |
 | `modeloResolucao()` | `resolucao-5` | o da extração |
 | `modeloDesempate()` | `desempate-1` | o da resolução |
 | `modeloPerfil()` | `perfil-1` | o da extração |
 | `modeloEnriquecimento()` | `enriquecimento-1` | o da extração |
 | `modeloCalibracao()` | `calibracao-2` | o da extração |
 | `modeloRedacao()` | `redacao-1` | o da calibração |
-| `modeloDuplicatas()` | `duplicatas-2` | `zai/glm-5.3-flash` |
+| `modeloDuplicatas()` | `duplicatas-2` | `deepseek/deepseek-v4.1-flash` |
 | `modeloEmbedding()` | embedding | `openai/text-embedding-3-small` |
 | `modeloConfronto()` | `confronto-2` | o da extração |
 
@@ -964,6 +964,13 @@ A sonda pergunta sob duas chaves (`PROBE_PROVEDOR`) porque o Gateway resolveu
 se a opção viaja sob o provedor do id ou sob o que atendeu. Neste caso a do id
 bastou.
 
+**Esta medição é do modelo que era o padrão até 20/09.** Desde então o padrão da
+extração é `deepseek/deepseek-v4.1-flash`, e a sonda **não** foi rodada contra
+ele — nem precisa ser, enquanto a decisão for não calar o raciocínio de modelo
+nenhum. Se um dia ela voltar a importar, `pnpm probe:raciocinio` já lê o padrão
+novo; e a tabela acima continua valendo para o `zai`, que `EXTRACAO_MODEL` traz
+de volta sem deploy.
+
 ### 4.5 Concatenação
 
 Cada `chunk_NNN.json` traz offsets relativos ao próprio início. O offset absoluto
@@ -1082,11 +1089,18 @@ sinal automático que existe, já que a qualidade é avaliada à mão na revisã
 
 #### O modelo raciocina, e o raciocínio come a saída
 
-`zai/glm-5.3-flash` é modelo de raciocínio. Numa sessão de 4 mil caracteres ele
-gastou **1720 tokens raciocinando para 122 de texto** — e quando o raciocínio
-consome o orçamento inteiro a resposta chega sem JSON nenhum. Foi assim que a
-sessão `mtgo3kaf5` falhou, de forma intermitente: a mesma transcrição às vezes
-passava.
+`zai/glm-5.3-flash`, o padrão da extração até 20/09, é modelo de raciocínio.
+Numa sessão de 4 mil caracteres ele gastou **1720 tokens raciocinando para 122
+de texto** — e quando o raciocínio consome o orçamento inteiro a resposta chega
+sem JSON nenhum. Foi assim que a sessão `mtgo3kaf5` falhou, de forma
+intermitente: a mesma transcrição às vezes passava.
+
+**A troca do padrão para `deepseek/deepseek-v4.1-flash` não move nada desta
+seção.** O que as defesas abaixo olham é o `finishReason` da resposta e a razão
+entre pensamento e texto, nunca o nome do modelo: num modelo que pensa pouco
+elas simplesmente não disparam. O que a troca abre é uma pergunta sem resposta
+medida — quanto este pensa —, e quem responde é a sessão real, pelo diagnóstico
+que já sai no log.
 
 **São duas causas diferentes com consertos diferentes**, e o `finishReason` é o
 que as separa. Por duas fatias esta tabela existiu como prescrição escrita, e o
@@ -5947,8 +5961,8 @@ NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
 AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, deduplicação, embedding, calibração, confronto, chat, título
 STT_MODEL                 opcional; padrão xai/grok-stt
-EXTRACAO_MODEL            opcional; padrão zai/glm-5.3-flash
-DUPLICATAS_MODEL          opcional; padrão zai/glm-5.3-flash
+EXTRACAO_MODEL            opcional; padrão deepseek/deepseek-v4.1-flash
+DUPLICATAS_MODEL          opcional; padrão deepseek/deepseek-v4.1-flash
 RESOLUCAO_MODEL           opcional; padrão igual ao da extração
 DESEMPATE_MODEL           opcional; padrão igual ao da resolução
 PERFIL_MODEL              opcional; padrão igual ao da extração
@@ -6610,17 +6624,22 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   nasceram às 13:28:17 e a sessão seguinte só começou às 13:28:37: a extração
   dela encontrou as duas já lá e o segundo confirmar reaproveitou os nós em vez
   de criar novos.
-- **`zai/glm-5.3-flash` pensa muito, e deixamos.** Ele chegou a gastar 1720
+- **O modelo da extração pensa muito, e deixamos — e o padrão trocou sem
+  remedir** (20/09). `zai/glm-5.3-flash`, padrão até então, chegou a gastar 1720
   tokens pensando para 122 de texto, e na janela 0 da sessão
   `mtqoeoqh3e3724514q1f` gastou os 8000 inteiros sem escrever um byte de JSON.
   As defesas do §4.6 seguram a janela pelo teto, não pela mordaça: calar o
   raciocínio é possível e medido (§4.4), e foi recusado porque cobraria a conta
   na qualidade da extração. **O limite conhecido que sobra é o custo**: janela
   que estoura paga duas chamadas em vez de uma, e não há medida de quantas
-  estouram — a sessão real é que diz. Trocar o modelo
-  continua sendo `EXTRACAO_MODEL`, sem tocar em código — e vale notar que
-  `zai/glm-5.3-flash` nem aparece na lista de modelos conhecidos do
-  `@ai-sdk/gateway` instalado (4.0.62), que conhece `zai/glm-5.3`.
+  estouram — a sessão real é que diz. O padrão agora é
+  `deepseek/deepseek-v4.1-flash`, por decisão minha e sem sonda nova: **quanto
+  ele pensa, se estoura o teto e como se sai na qualidade da lista são três
+  coisas ainda não medidas**, e a primeira sessão real é que diz. Trocar de
+  volta, ou para outro, continua sendo `EXTRACAO_MODEL`, sem tocar em código — e
+  vale notar que `zai/glm-5.3-flash` nem aparecia na lista de modelos conhecidos
+  do `@ai-sdk/gateway` instalado (4.0.62), que conhece `zai/glm-5.3`; o id novo
+  não foi conferido contra essa lista, e a string sai pelo Gateway de todo jeito.
 - **O rate limit do free tier derruba o fallback quando ele mais importa.** Na
   mesma sessão, com a janela perdida, o passe único levou 429 em todas as
   tentativas e a sessão foi para `erro`. As nove chamadas que isso custava
@@ -6973,7 +6992,7 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   conversa nem por dia: o teto é por mensagem.
 - **`CHAT_MODEL` precisa de tool-calling multi-passo bom pelo Gateway, e isso
   não foi medido** (slice 6). O padrão é o mesmo da extração
-  (`zai/glm-5.3-flash`), escolhido para devolver JSON curto — que não é a mesma
+  (`deepseek/deepseek-v4.1-flash`), escolhido para devolver JSON curto — que não é a mesma
   habilidade. Se ele encadear mal, o conserto é `CHAT_MODEL` ou o painel de
   `/agentes`, sem deploy; mas qual modelo serve ainda é pergunta aberta.
 - **A conversa longa entra inteira no prompt, a cada mensagem** (slice 6). Não há

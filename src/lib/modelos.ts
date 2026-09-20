@@ -86,7 +86,7 @@ export function modeloStt(): string {
  *
  * `||` e não `??`: string vazia no `.env.local` é ausência, não escolha.
  */
-export const MODELO_EXTRACAO_PADRAO = "zai/glm-5.3-flash";
+export const MODELO_EXTRACAO_PADRAO = "deepseek/deepseek-v4.1-flash";
 
 export function modeloExtracao(): string {
   return validarIdDeModelo(process.env.EXTRACAO_MODEL || MODELO_EXTRACAO_PADRAO);
@@ -165,7 +165,7 @@ export function modeloRedacao(): string {
  * Modelo que julga se duas entidades parecidas são a mesma coisa (slice 3).
  * Mesma família da extração: saída JSON curta, chamado sob demanda.
  */
-export const MODELO_DUPLICATAS_PADRAO = "zai/glm-5.3-flash";
+export const MODELO_DUPLICATAS_PADRAO = "deepseek/deepseek-v4.1-flash";
 
 export function modeloDuplicatas(): string {
   return validarIdDeModelo(process.env.DUPLICATAS_MODEL || MODELO_DUPLICATAS_PADRAO);
@@ -194,8 +194,11 @@ export function modeloDuplicatas(): string {
  *                                          segunda tentativa acerta por sorte e
  *                                          o problema volta na sessão seguinte.
  *
- * `zai/glm-5.3-flash` já gastou 1720 tokens pensando para 122 de texto — é o
- * modo de falha que este sistema mais vê (`ARCHITECTURE.md` §4.6). Os dois
+ * `zai/glm-5.3-flash` — o padrão até 20/09 — já gastou 1720 tokens pensando para
+ * 122 de texto, e é o modo de falha que este sistema mais viu (`ARCHITECTURE.md`
+ * §4.6). **Se `deepseek/deepseek-v4.1-flash` falha do mesmo jeito ainda não foi
+ * medido**, e é justamente isto aqui que responde: o diagnóstico não olha o nome
+ * do modelo, olha o `finishReason` e a razão entre pensamento e texto. Os dois
  * consertos viraram `faltouOrcamento()` e `textoDaResposta()`, logo abaixo:
  * durante duas fatias esta tabela foi prescrição escrita e não código.
  *
