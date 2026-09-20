@@ -46,7 +46,7 @@ vi.mock("@/lib/sessoes", () => ({
   atualizarSessao: vi.fn(async () => null),
 }));
 
-import { avancarJanelas, extrairSessao } from "@/lib/pipeline";
+import { avancarJanelas, extrairSessao, ORCAMENTO_JANELAS_MS } from "@/lib/pipeline";
 import { extrair, extrairJanela } from "@/lib/extracao";
 import { listarEntidades } from "@/lib/entidades";
 import { carregarManifest } from "@/lib/manifest";
@@ -381,5 +381,102 @@ describe("a proposta final", () => {
 
     expect(parcial()?.atomos).toHaveLength(3);
     expect(parcial()?.janelas).toHaveLength(1);
+  });
+});
+
+/**
+ * A segunda chance da janela que falhou (decisão 5 da slice 8.2).
+ *
+ * Antes desta fatia `extrairSessao` chamava `avancarJanelas` **uma vez**: uma
+ * janela que falhasse derrubava a proposta inteira e a sessão ia para `erro`
+ * esperando eu mandar re-extrair à mão. Com a revisão aberta e crescendo
+ * debaixo da mão isso passou a custar o que eu já tinha editado, e a fatia dá
+ * uma segunda passada antes de desistir.
+ *
+ * **A coerência com a slice 8 é deliberada**: se a segunda também falhar, a
+ * sessão vai para `erro` do mesmo jeito. O retry é a chance a mais que a revisão
+ * aberta permite dar, não uma revogação do penhasco virando erro.
+ */
+describe("a janela que falha ganha uma segunda tentativa, e só ela", () => {
+  beforeEach(() => {
+    r2.set(CHAVE_TRANSCRICAO, { valor: transcricao, etag: "t" });
+  });
+
+  it("falhou uma vez e passou na segunda: a sessão abre a revisão", async () => {
+    vi.mocked(extrairJanela)
+      .mockRejectedValueOnce(new Error("o modelo não voltou"))
+      .mockResolvedValue(resultado(2) as never);
+
+    const r = await extrairSessao("s1");
+
+    expect(r.status).toBe("em_revisao");
+    expect(extrairJanela).toHaveBeenCalledTimes(2);
+    expect(parcial()?.janelas[0].estado).toBe("pronta");
+  });
+
+  it("falhou as duas: a sessão vai para erro, como a slice 8 manda", async () => {
+    vi.mocked(extrairJanela).mockRejectedValue(new Error("o modelo sumiu"));
+
+    const r = await extrairSessao("s1");
+
+    expect(r.status).toBe("erro");
+    expect(extrairJanela).toHaveBeenCalledTimes(2);
+    expect(extrair).not.toHaveBeenCalled();
+    expect(erros.join("\n")).toContain("não fecharam");
+  });
+
+  it("janela já pronta não é refeita na segunda passada", async () => {
+    // Seis blocos: a janela 0 (quatro blocos) e a 1 (os dois do fim). Só a 1
+    // falha, e a segunda passada não pode pagar a 0 de novo.
+    vi.mocked(carregarManifest).mockResolvedValue(manifest(6) as never);
+    await avancarJanelas("s1");
+    expect(parcial()?.janelas[0].estado).toBe("pronta");
+
+    vi.mocked(extrairJanela).mockClear();
+    vi.mocked(extrairJanela)
+      .mockRejectedValueOnce(new Error("o modelo não voltou"))
+      .mockResolvedValue(resultado(1) as never);
+
+    await extrairSessao("s1");
+
+    // Duas chamadas, e as duas para a janela 1: a tentativa e a segunda chance.
+    expect(extrairJanela).toHaveBeenCalledTimes(2);
+    for (const [trecho] of vi.mocked(extrairJanela).mock.calls) {
+      expect((trecho as Transcricao).texto).toContain("bloco 4 falado");
+    }
+  });
+
+  it("tudo pronto na primeira passada não paga segunda passada nenhuma", async () => {
+    await avancarJanelas("s1");
+    vi.mocked(extrairJanela).mockClear();
+
+    await extrairSessao("s1");
+
+    expect(extrairJanela).not.toHaveBeenCalled();
+  });
+
+  /**
+   * O ponto mais fácil de errar desta decisão.
+   *
+   * `finalizarSessao` já pode ter gasto até `ESPERA_MAX_MS` (150 s) esperando
+   * blocos antes de chegar aqui, e `150 + 120 = 270 s` cabe de propósito sob o
+   * `maxDuration` de 300 s. Dar 120 s novos à segunda tentativa levaria o pior
+   * caso a 390 s: a função morreria no meio, que é pior que a falha que a
+   * segunda tentativa existe para consertar.
+   */
+  it("as duas tentativas dividem o mesmo prazo, e não ganham um cada", async () => {
+    const t0 = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(t0);
+    vi.mocked(extrairJanela)
+      .mockRejectedValueOnce(new Error("o modelo não voltou"))
+      .mockResolvedValue(resultado(1) as never);
+
+    await extrairSessao("s1");
+
+    const prazos = vi
+      .mocked(extrairJanela)
+      .mock.calls.map(([, opcoes]) => (opcoes as { ate?: number }).ate);
+    expect(prazos[0]).toBe(t0 + ORCAMENTO_JANELAS_MS);
+    expect(prazos[1]).toBe(prazos[0]);
   });
 });

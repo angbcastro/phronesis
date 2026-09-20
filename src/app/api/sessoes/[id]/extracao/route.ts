@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { chaveExtracao, chaveExtracaoAnterior, chaveTranscricao } from "@/lib/chaves";
+import { chaveExtracaoAnterior } from "@/lib/chaves";
+import { propostaAtual } from "@/lib/pipeline";
 import { getJson } from "@/lib/r2";
 import { buscarSessao } from "@/lib/sessoes";
 import { erro, erroDeInfra, parametros } from "@/lib/rotas";
-import type { Extracao, Transcricao } from "@/lib/tipos";
+import type { Extracao } from "@/lib/tipos";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,15 +17,21 @@ export const dynamic = "force-dynamic";
  * precisa. Sessão gravada tem um bloco a cada 30 s; sessão importada tem um
  * bloco só, cobrindo tudo — o mapa resolve os dois sem caso especial.
  *
- * As buscas são independentes e vão em paralelo: em série, esta tela custava a
- * soma de idas à rede, e em link ruim isso são vinte segundos de espera antes
- * de qualquer pixel.
+ * **Desde a slice 8.2 ela serve também o que ainda está crescendo.** Antes, só
+ * `extracao.json` contava: enquanto ele não existisse, a resposta era 404 e o
+ * acumulado das janelas ficava escondido no `parcial.json`. Agora quem monta a
+ * resposta é `propostaAtual`, e o 404 passou a significar exatamente **"zero
+ * átomos ainda"** — a única condição em que a tela de processamento continua
+ * sendo a ponte. Quando a resposta vem de um parcial, `crescendo` é `true` e
+ * `trechos_totais`/`trechos_faltando` dizem quanto falta; é o que o rodapé da
+ * revisão mostra e o que trava o confirmar.
  *
  * **`anterior` vem como cabeçalho, não como lista** (slice 4.6). Existe uma
  * proposta anterior quando eu já forcei uma re-extração daquela sessão, e o que
  * a revisão precisa saber de cara é só se ela existe e de que versão do prompt
  * é — a lista inteira dobraria o payload desta tela para um caso raro. Quem
- * quer os átomos antigos pede `?anterior=1`, que é o que o toggle faz.
+ * quer os átomos antigos pede `?anterior=1`, que é o que o toggle faz, e só
+ * esse caminho paga a leitura do objeto inteiro.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const p = parametros(await ctx.params);
@@ -33,15 +40,17 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const querListaAnterior = new URL(req.url).searchParams.get("anterior") === "1";
 
   try {
-    const [sessao, proposta, transcricao, anterior] = await Promise.all([
+    // As buscas são independentes e vão em paralelo: em série, esta tela custava
+    // a soma de idas à rede, e em link ruim isso são vinte segundos de espera
+    // antes de qualquer pixel.
+    const [sessao, atual, anterior] = await Promise.all([
       buscarSessao(p.id),
-      getJson<Extracao>(chaveExtracao(p.id)),
-      getJson<Transcricao>(chaveTranscricao(p.id)),
-      getJson<Extracao>(chaveExtracaoAnterior(p.id)),
+      propostaAtual(p.id),
+      querListaAnterior ? getJson<Extracao>(chaveExtracaoAnterior(p.id)) : null,
     ]);
 
     if (!sessao) return erro("sessão não encontrada", 404);
-    if (!proposta) {
+    if (!atual) {
       return erro(`sessão em '${sessao.status}': ainda não há proposta de extração`, 404);
     }
 
@@ -49,16 +58,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       status: sessao.status,
       iniciada_em: sessao.iniciada_em,
       duracao_s: sessao.duracao_s,
-      extracao: proposta.valor,
-      blocos: transcricao?.valor.blocos ?? [],
-      anterior: anterior
+      extracao: atual.extracao,
+      blocos: atual.blocos,
+      crescendo: atual.crescendo,
+      trechos_totais: atual.trechos_totais,
+      trechos_faltando: atual.trechos_faltando,
+      anterior: atual.anterior
         ? {
-            atomos: anterior.valor.atomos.length,
-            prompt_version: anterior.valor.prompt_version,
-            modelo: anterior.valor.modelo,
-            criado_em: anterior.valor.criado_em,
+            ...atual.anterior,
             // Só quando pedida: é a metade cara da resposta.
-            ...(querListaAnterior ? { lista: anterior.valor.atomos } : {}),
+            ...(anterior ? { lista: anterior.valor.atomos } : {}),
           }
         : null,
     });

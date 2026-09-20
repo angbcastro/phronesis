@@ -29,14 +29,20 @@
  * mesmo ramo que já esconde a `Gestao` hoje. A tela de gravar é onde este
  * projeto historicamente corta, não adiciona.
  *
- * As funções puras deste arquivo (`partirLinhas`, `frasePasso`,
- * `rotuloDaConversa`, `separarConversas`) são exportadas para
- * `tests/chat.test.ts`: elas são a lógica que erra calada — um NDJSON partido
- * no meio de um caractere, uma conversa sem título, um passo sem parâmetro.
+ * As funções puras deste arquivo (`frasePasso`, `rotuloDaConversa`,
+ * `separarConversas`) são exportadas para `tests/chat.test.ts`: elas são a
+ * lógica que erra calada — uma conversa sem título, um passo sem parâmetro.
+ * `partirLinhas` era a quarta, e mudou de casa na slice 8.2: o fluxo NDJSON
+ * ganhou um segundo consumidor (a revisão que cresce) e o parser foi para
+ * `@/client/ndjson`. Continua reexportado daqui porque é daqui que o teste o
+ * importa, e é o mesmo parser.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { lerEventos, partirLinhas } from "@/client/ndjson";
 import { usaTransicao } from "@/client/transicao";
 import type { Conversa, Mensagem, PassoDeFerramenta } from "@/lib/tipos";
+
+export { partirLinhas };
 
 interface Props {
   aberto: boolean;
@@ -53,20 +59,6 @@ type Evento =
   | { tipo: "erro"; erro: string };
 
 // ─────────────────────────── as funções puras ───────────────────────────
-
-/**
- * Parte o que chegou do fluxo em linhas inteiras, guardando o resto.
- *
- * **O resto não é detalhe**: um chunk de rede corta onde quiser, inclusive no
- * meio de um `\n` ou de um caractere multibyte, e `JSON.parse` de meia linha
- * derruba a leitura inteira. É a única coisa deste arquivo que erraria em
- * silêncio — daí ela ser pura e testada.
- */
-export function partirLinhas(acumulado: string): { linhas: string[]; resto: string } {
-  const partes = acumulado.split("\n");
-  const resto = partes.pop() ?? "";
-  return { linhas: partes.filter((l) => l.trim() !== ""), resto };
-}
 
 const nomeDoTipo = (t: unknown): string =>
   Array.isArray(t) ? t.map((x) => String(x).toLowerCase()).join(", ") : "";
@@ -366,30 +358,14 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
         throw new Error(d?.erro ?? `/api/chat respondeu ${r.status}`);
       }
 
-      const leitor = r.body.getReader();
-      const decodificador = new TextDecoder();
-      let sobra = "";
       // O id vive aqui, e não no estado: numa conversa nova ele só existe
       // depois do primeiro evento, e `aberta` dentro deste fecho é o valor de
       // antes do envio — o título chegaria e não acharia a linha para renomear.
       let idAtual = aberta?.id ?? "";
 
-      for (;;) {
-        const { done, value } = await leitor.read();
-        // `stream: true` é o que impede um caractere acentuado partido entre
-        // dois chunks de virar "�" no meio de uma resposta em português.
-        sobra += decodificador.decode(value ?? new Uint8Array(), { stream: !done });
-        const { linhas, resto } = partirLinhas(sobra);
-        sobra = resto;
-
-        for (const linha of linhas) {
-          let e: Evento;
-          try {
-            e = JSON.parse(linha) as Evento;
-          } catch {
-            console.error("[chat] linha que não é JSON:", linha.slice(0, 200));
-            continue;
-          }
+      await lerEventos<Evento>(
+        r.body,
+        (e) => {
           if (e.tipo === "conversa") {
             idAtual = e.conversa.id;
             setAberta(e.conversa);
@@ -409,10 +385,9 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
           } else if (e.tipo === "erro") {
             setProblema(e.erro);
           }
-        }
-
-        if (done) break;
-      }
+        },
+        "chat",
+      );
     } catch (e) {
       if (controle.signal.aborted) {
         // Parar é uma decisão, não um erro: a pergunta já ficou gravada e a

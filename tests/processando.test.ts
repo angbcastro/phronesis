@@ -7,12 +7,8 @@
  * nenhuma proposta — que foi exatamente o beco em que `transcrito` ficou.
  */
 import { describe, expect, it } from "vitest";
-import {
-  esperouDemais,
-  legenda,
-  precisaFinalizar,
-  TETO_DA_ESPERA_MS,
-} from "@/components/Processando";
+import { esperouDemais, TETO_DA_ESPERA_MS } from "@/client/espera";
+import { deveSairParaRevisao, legenda, precisaFinalizar } from "@/components/Processando";
 
 describe("quando o corredor chama /finalizar", () => {
   it("sessão que nunca foi fechada precisa — é o caminho normal do botão", () => {
@@ -73,5 +69,28 @@ describe("até quando vale continuar perguntando", () => {
     const abriu = 1_000_000;
     expect(esperouDemais(abriu, abriu + TETO_DA_ESPERA_MS)).toBe(true);
     expect(esperouDemais(abriu, abriu + TETO_DA_ESPERA_MS + 1)).toBe(true);
+  });
+});
+
+/**
+ * A ponte saindo (slice 8.2).
+ *
+ * A tela de processamento deixou de esperar a proposta fechar: ela sai no
+ * primeiro evento com átomo. A pergunta é só essa, e ela é pura — errar para
+ * mais mandaria a revisão abrir vazia, errar para menos manteria a tela morta
+ * que esta fatia existe para acabar.
+ */
+describe("quando a ponte sai para a revisão", () => {
+  it("sem evento nenhum, fica", () => {
+    expect(deveSairParaRevisao(null)).toBe(false);
+    expect(deveSairParaRevisao(undefined)).toBe(false);
+  });
+
+  it("proposta sem átomo ainda não é o que mostrar", () => {
+    expect(deveSairParaRevisao({ extracao: { atomos: [] } })).toBe(false);
+  });
+
+  it("um átomo basta — a espera passa a acontecer com a lista na frente", () => {
+    expect(deveSairParaRevisao({ extracao: { atomos: [{}] } })).toBe(true);
   });
 });

@@ -29,11 +29,27 @@
  * pode ter vários trechos, então há um botão por âncora. Átomo sem âncora não
  * ganha player e aparece marcado — trecho que não existe na transcrição costuma
  * ser afirmação que o modelo inventou.
+ *
+ * **Desde a slice 8.2 esta tela cresce debaixo da mão.** Ela não busca uma vez e
+ * para: consome o fluxo de `/extracao/eventos` e troca a proposta inteira a cada
+ * janela que fecha. Trocar a lista inteira é seguro **por construção** — os
+ * índices dos átomos são carimbados na escrita (`aplicarJanela`) e nunca
+ * renumeram, e `edicoes`, `rejeitados`, `renomes` e `abertos` são todos
+ * chaveados por esse índice, nunca embutidos no array. O que eu já editei
+ * sobrevive a cada evento.
+ *
+ * **O confirmar espera a proposta fechar** (decisão 3, e ela é absoluta):
+ * enquanto `crescendo` for verdadeiro o botão fica travado, e uma linha discreta
+ * no rodapé diz por quê. Confirmar metade da sessão partiria em duas tudo que é
+ * chaveado por `sessao_id` — a captura de correções, os embeddings, o confronto.
+ * Nem o teto da espera destrava: ele só troca a mensagem por uma honesta.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { esperouDemais } from "@/client/espera";
 import { marcarRevisaoAberta } from "@/client/medidas";
+import { lerEventos } from "@/client/ndjson";
 import { SeletorEntidade } from "@/components/SeletorEntidade";
 import { CATALOGO_VAZIO, montarCatalogo, resolver } from "@/lib/catalogo";
 import { mencoesDe, sobreDe } from "@/lib/referencias";
@@ -41,6 +57,7 @@ import { localizarNoAudio } from "@/lib/transcricao";
 import { ehPronome, normalizarNome } from "@/lib/texto";
 import { CAMPOS_GESTO, ROTULO_TIPO_ENTIDADE, TIPOS_ATOMO, TIPOS_ENTIDADE } from "@/lib/tipos";
 import type { Catalogo, EntidadeDoCatalogo } from "@/lib/catalogo";
+import type { EventoDaProposta } from "@/lib/pipeline";
 import type {
   AtomoProposto,
   BlocoAbsoluto,
@@ -54,8 +71,15 @@ import type {
   TipoEntidade,
 } from "@/lib/tipos";
 
-interface Proposta {
+export interface Proposta {
   status: string;
+  /**
+   * A proposta ainda vai crescer: faltam janelas (slice 8.2). É o que trava o
+   * confirmar e o que acende a linha do rodapé.
+   */
+  crescendo?: boolean;
+  trechos_totais?: number;
+  trechos_faltando?: number;
   extracao: {
     atomos: AtomoProposto[];
     entidades: EntidadeCandidata[];
@@ -421,6 +445,38 @@ function EntidadeRef({
   );
 }
 
+/**
+ * Quanto se espera antes de reabrir um fluxo que caiu.
+ *
+ * O mesmo intervalo com que o servidor reconfere a proposta
+ * (`INTERVALO_EVENTOS_MS`): reabrir mais depressa não traz o átomo antes, e
+ * reabrir mais devagar é espera morta na única tela em que eu estou olhando.
+ */
+const INTERVALO_RECONEXAO_MS = 700;
+
+/**
+ * Quando um evento do fluxo substitui a proposta em tela (slice 8.2).
+ *
+ * Trocar a lista inteira é seguro — os índices são carimbados na escrita e não
+ * renumeram —, mas **uma reconexão pode trazer um retrato mais velho**: o fluxo
+ * cai, a tela reabre, e o primeiro evento da conexão nova pode ter sido montado
+ * antes do último da conexão antiga. A lista só cresce, então "tem menos átomos
+ * que a que está na tela" é exatamente a assinatura desse caso — e a resposta é
+ * ignorar, não piscar para trás.
+ */
+export function mesclarProposta(atual: Proposta | null, nova: Proposta): Proposta {
+  if (!atual) return nova;
+  return nova.extracao.atomos.length < atual.extracao.atomos.length ? atual : nova;
+}
+
+/** Quantos trechos ainda faltam, para a linha do rodapé. `null` = não mostrar. */
+export function faltamTrechos(p: Proposta | null): { faltam: number; total: number } | null {
+  if (!p?.crescendo) return null;
+  const total = p.trechos_totais ?? 0;
+  const faltam = p.trechos_faltando ?? 0;
+  return total > 0 && faltam > 0 ? { faltam, total } : null;
+}
+
 export function Revisao({ id }: { id: string }) {
   const router = useRouter();
   const [proposta, setProposta] = useState<Proposta | null>(null);
@@ -436,31 +492,99 @@ export function Revisao({ id }: { id: string }) {
   const [fontesAbertas, setFontesAbertas] = useState<ReferenciaNoAtomo | null>(null);
   const [filtros, setFiltros] = useState<Record<number, TipoEntidade | "todas">>({});
   const [gravando, setGravando] = useState(false);
+  /** O fluxo caiu e não voltou a tempo. Não destrava nada — só explica. */
+  const [travouEspera, setTravouEspera] = useState(false);
   /** A lista da proposta anterior, buscada só quando eu peço para ver. */
   const [anterior, setAnterior] = useState<AtomoProposto[] | null>(null);
 
   const audio = useRef<HTMLAudioElement | null>(null);
+  const mediu = useRef(false);
 
+  /**
+   * O fluxo da proposta: abre, recebe, e reabre se cair antes de fechar.
+   *
+   * **A reconexão não é luxo, é o desenho.** O fluxo do servidor fecha sozinho
+   * aos 280 s (`TETO_STREAM_MS`), 20 s antes de a plataforma o matar, e uma
+   * sessão longa pode passar disso. Fechar limpo e reabrir é o que impede a
+   * tela de ficar esperando para sempre um átomo que não vem — que é o limite
+   * que a própria spec aponta como o que decide se a fatia é usável.
+   *
+   * O teto de `@/client/espera` é o fim da linha: passado ele sem a proposta
+   * fechar, a tela diz o que aconteceu. **O confirmar continua travado** — a
+   * decisão 3 não tem exceção, e destravá-lo aqui gravaria meia sessão.
+   */
   useEffect(() => {
     let vivo = true;
-    fetch(`/api/sessoes/${id}/extracao`, { cache: "no-store" })
-      .then(async (r) => {
-        if (!r.ok) throw new Error(((await r.json()) as { erro?: string }).erro ?? `erro ${r.status}`);
-        return (await r.json()) as Proposta;
-      })
-      .then((d) => {
-        if (!vivo) return;
-        setProposta(d);
-        // A terceira marca, e o fim da espera que a slice 8 mede: a proposta
-        // está na tela. **Depois** do `setProposta`, e não antes — o que se
-        // mede é a revisão montada, não a resposta chegando. Só vale se esta
-        // aba passou pelo corredor; abrir uma revisão velha pela lista não
-        // inventa espera nenhuma (`client/medidas.ts`).
-        void marcarRevisaoAberta(id);
-      })
-      .catch((e: Error) => vivo && setFalha(e.message));
+    let fechou = false;
+    let controle: AbortController | null = null;
+    let timer: ReturnType<typeof setTimeout>;
+    // O relógio é o da visita, como no corredor: reabrir a revisão pela lista
+    // recomeça a contagem.
+    const abriu = Date.now();
+
+    async function acompanhar() {
+      controle = new AbortController();
+      try {
+        const r = await fetch(`/api/sessoes/${id}/extracao/eventos`, {
+          cache: "no-store",
+          signal: controle.signal,
+        });
+        if (!r.ok || !r.body) throw new Error(`o fluxo da proposta respondeu ${r.status}`);
+
+        await lerEventos<EventoDaProposta>(
+          r.body,
+          (e) => {
+            if (!vivo) return;
+            if (e.tipo === "erro") {
+              setFalha(e.erro);
+              return;
+            }
+            setFalha(null);
+            setProposta((p) =>
+              mesclarProposta(p, {
+                status: e.status,
+                crescendo: e.proposta.crescendo,
+                trechos_totais: e.proposta.trechos_totais,
+                trechos_faltando: e.proposta.trechos_faltando,
+                extracao: e.proposta.extracao as Proposta["extracao"],
+                blocos: e.proposta.blocos,
+                anterior: e.proposta.anterior ?? null,
+              }),
+            );
+            if (!e.proposta.crescendo) fechou = true;
+
+            // A terceira marca, e o fim da espera que a slice 8 mede: a
+            // proposta está na tela. **Depois** do `setProposta`, e não antes —
+            // o que se mede é a revisão montada, não a resposta chegando. Uma
+            // vez só: os eventos seguintes são a lista crescendo, não a espera
+            // acabando de novo. Só vale se esta aba passou pelo corredor
+            // (`client/medidas.ts`).
+            if (!mediu.current) {
+              mediu.current = true;
+              void marcarRevisaoAberta(id);
+            }
+          },
+          "revisao",
+        );
+      } catch (e) {
+        if (vivo && !controle.signal.aborted) {
+          console.error("[revisao]", e);
+        }
+      }
+
+      if (!vivo || fechou) return;
+      if (esperouDemais(abriu)) {
+        setTravouEspera(true);
+        return;
+      }
+      timer = setTimeout(() => void acompanhar(), INTERVALO_RECONEXAO_MS);
+    }
+
+    void acompanhar();
     return () => {
       vivo = false;
+      controle?.abort();
+      clearTimeout(timer);
     };
   }, [id]);
 
@@ -576,6 +700,10 @@ export function Revisao({ id }: { id: string }) {
 
   const aprovados = atomos.filter((a) => !rejeitados.has(a.indice));
 
+  /** A proposta ainda vai crescer — o confirmar espera (decisão 3). */
+  const crescendo = proposta?.crescendo === true;
+  const faltando = faltamTrechos(proposta);
+
   /**
    * Entidade que é sujeito de um átomo aprovado não pode ser desmarcada: sem ela
    * o átomo ficaria sem `:SOBRE`, o que o schema não admite.
@@ -655,7 +783,10 @@ export function Revisao({ id }: { id: string }) {
   }
 
   async function confirmar() {
-    if (!proposta || gravando || pendentes.length > 0) return;
+    // `crescendo` entra na guarda, e não só no `disabled`: o botão é uma
+    // aparência, esta linha é a regra. Gravar metade da sessão partiria em duas
+    // tudo que é chaveado por `sessao_id`.
+    if (!proposta || gravando || pendentes.length > 0 || proposta.crescendo) return;
     setGravando(true);
     setFalha(null);
 
@@ -726,7 +857,17 @@ export function Revisao({ id }: { id: string }) {
     return (
       <main className="leitura">
         <h1>revisão</h1>
-        <p className="aguardando">…</p>
+        {travouEspera ? (
+          // O fluxo nunca trouxe um átomo. Sem esta linha a tela ficaria nas
+          // reticências para sempre, que é a trava que a 8.2 foi acabar.
+          <p className="aguardando">
+            essa sessão não chegou a produzir nada para revisar no tempo que o servidor tem para
+            trabalhar. O áudio está inteiro — dá para mandar extrair de novo pela lista de{" "}
+            <Link href="/sessoes">sessões</Link>.
+          </p>
+        ) : (
+          <p className="aguardando">…</p>
+        )}
       </main>
     );
   }
@@ -1150,11 +1291,30 @@ export function Revisao({ id }: { id: string }) {
             {pendentes.map((e) => `"${e.nome}"`).join(", ")} antes de confirmar
           </p>
         )}
+        {/*
+          A linha discreta da decisão 7: o confirmar travado precisa dizer por
+          quê. Uma frase, e ela some quando a proposta fecha — sem barra de
+          progresso e sem marca de "novo" em átomo nenhum. Esta é a tela mais
+          apertada do sistema e ela foi enxugada de propósito.
+        */}
+        {travouEspera ? (
+          <p className="aguardando">
+            os últimos trechos não chegaram no tempo que o servidor tem para trabalhar. O que está
+            aqui está inteiro no R2 — recarregue a página, ou mande extrair de novo pela lista de{" "}
+            <Link href="/sessoes">sessões</Link>.
+          </p>
+        ) : (
+          faltando && (
+            <p className="aguardando">
+              faltam {faltando.faltam} de {faltando.total} trecho(s)
+            </p>
+          )
+        )}
         {falha && <p className="aguardando">{falha}</p>}
         <button
           className="confirmar"
           onClick={() => void confirmar()}
-          disabled={gravando || pendentes.length > 0}
+          disabled={gravando || pendentes.length > 0 || crescendo}
         >
           {gravando ? "gravando…" : `confirmar ${aprovados.length} item(ns)`}
         </button>

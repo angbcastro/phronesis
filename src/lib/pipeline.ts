@@ -10,6 +10,12 @@
  * ao acumulado (`janela.ts`). Quando eu paro, sobra a janela do fim, e a
  * proposta é montada a partir do que já estava lá. Ninguém aperta nada entre
  * parar de falar e ter a proposta — só que agora isso custa segundos.
+ *
+ * E desde a slice 8.2 esse acumulado **deixa de ficar escondido**: enquanto a
+ * proposta final não fecha, `propostaAtual` monta uma proposta de verdade com o
+ * que as janelas já produziram, e `acompanharProposta` fica olhando o
+ * `parcial.json` para avisar a tela a cada janela que fecha. Nada disso toca o
+ * grafo — o que vale para `extracao.json` vale para o parcial (regra 5).
  */
 import {
   chaveChunkAudio,
@@ -56,8 +62,10 @@ import { transcrever } from "./stt";
 import { concatenar, prefixoContiguo } from "./transcricao";
 import type {
   AtomoProposto,
+  BlocoAbsoluto,
   Extracao,
   Janela,
+  Parcial,
   StatusSessao,
   Transcricao,
   TranscricaoBloco,
@@ -555,11 +563,14 @@ export async function extrairSessao(
     // fechar e a montagem da proposta depois delas (slice 8).
     const catalogo = catalogoUmaVez();
 
-    await avancarJanelas(sessao_id, {
-      fechando: true,
-      ate: Date.now() + ORCAMENTO_JANELAS_MS,
-      catalogo,
-    });
+    // As duas tentativas dividem **um** orçamento, e isso não é economia: é o
+    // que mantém a finalização inteira dentro dos 270 s que cabem sob o
+    // `maxDuration` de 300 s (ver `ORCAMENTO_JANELAS_MS`). Dar 120 s novos à
+    // segunda levaria o pior caso a 390 s — a função morreria no meio, que é
+    // pior que a falha que a segunda tentativa existe para consertar.
+    const ate = Date.now() + ORCAMENTO_JANELAS_MS;
+    await avancarJanelas(sessao_id, { fechando: true, ate, catalogo });
+    await segundaChance(sessao_id, { ate, catalogo });
 
     const extracao = await medir("proposta", () =>
       propostaDaSessao(sessao_id, transcricao.valor, catalogo),
@@ -599,6 +610,38 @@ export async function extrairSessao(
 }
 
 /**
+ * A segunda chance da janela que falhou — e **só** dela (decisão 5 da 8.2).
+ *
+ * Até aqui `extrairSessao` chamava `avancarJanelas` uma vez: janela que falhasse
+ * derrubava a proposta inteira em `JanelaPresaError`, a sessão ia para `erro` e
+ * eu tinha de mandar re-extrair à mão. Com a revisão aberta e crescendo debaixo
+ * da minha mão, isso passou a custar caro demais — o que eu já tinha editado
+ * morria junto (limite declarado da spec).
+ *
+ * **Não é código novo de retry.** `avancarJanelas` já pula janela `pronta` e já
+ * reivindica de novo a que está `falhou`; chamá-la uma segunda vez reprocessa
+ * exclusivamente o que falta, na ordem, sem tocar no que fechou. A guarda de
+ * `todasProntas` é o que impede a chamada quando não há nada a refazer.
+ *
+ * **Se a segunda também falhar, a sessão vai para `erro`**, como a decisão 5 da
+ * slice 8 manda: janela presa é defeito, não condição normal. Esta é a chance a
+ * mais que a revisão aberta permite dar, não uma revogação daquela regra.
+ */
+async function segundaChance(
+  sessao_id: string,
+  { ate, catalogo }: { ate: number; catalogo: LeitorDoCatalogo },
+): Promise<void> {
+  const parcial = await carregarParcial(sessao_id);
+  const janelas = janelasDe(await carregarManifest(sessao_id), { fechando: true });
+  // Sem janela nenhuma não há o que ter falhado — é o manifest vazio, e quem
+  // trata esse caso é `propostaDaSessao`, com o passe único.
+  if (janelas.length === 0 || todasProntas(parcial, janelas)) return;
+
+  console.warn(`[janela] sessão ${sessao_id}: nem tudo fechou na primeira passada, tentando de novo`);
+  await avancarJanelas(sessao_id, { fechando: true, ate, catalogo });
+}
+
+/**
  * Quanto tempo a finalização dá às janelas que faltam fechar.
  *
  * O teto de cima é o `maxDuration` de 300 s da rota, dos quais até 150 s já
@@ -606,6 +649,12 @@ export async function extrairSessao(
  * cobre uma janela de menos de dois minutos de fala e sobra; o número existe
  * para o caso ruim, em que ele decide **quando desistir e cair no passe único**
  * em vez de o `waitUntil` morrer sem deixar proposta nenhuma.
+ *
+ * **As duas passadas dividem este orçamento** (`segundaChance`, slice 8.2), e
+ * não ganham um cada: `150 + 120 = 270 s` cabe de propósito sob os 300 s, e
+ * `150 + 120 + 120 = 390 s` não caberia. No pior caso a segunda tentativa
+ * recebe pouco ou nenhum tempo, e `avancarJanelas` já sabe desistir
+ * educadamente quando o relógio acabou.
  */
 export const ORCAMENTO_JANELAS_MS = 120_000;
 
@@ -721,3 +770,240 @@ const marcarEmRevisao = (sessao_id: string) =>
     "em_revisao",
     "erro",
   ]);
+
+/**
+ * A proposta como ela está **agora** — fechada ou ainda crescendo (slice 8.2).
+ *
+ * Até aqui a revisão só existia depois de `extracao.json`, e o acumulado das
+ * janelas ficava escondido em `parcial.json` esperando o fim da sessão para ser
+ * mostrado. Ele já era uma proposta de verdade: cada janela grava seus átomos
+ * com a entidade resolvida e a procedência completa, e os ids são carimbados na
+ * **escrita** (`aplicarJanela`), então átomo que já apareceu não muda de número
+ * quando chega mais. Esta função é o que torna esse material visível.
+ *
+ * **`null` é "nem um átomo ainda"**, e é a única condição em que a tela de
+ * processamento continua sendo a ponte. Sessão curta, primeira janela ainda
+ * rodando: é para esse caso que ela existe.
+ *
+ * Nenhuma peça de leitura é nova — `carregarParcial`, `carregarManifest`,
+ * `blocosProntos`, `janelasDe` e `montarExtracao` já estavam todas aqui.
+ */
+export interface PropostaAtual {
+  extracao: Extracao;
+  /** O mapa que traduz offset absoluto em "bloco N, segundo M", para o player. */
+  blocos: BlocoAbsoluto[];
+  /** Ainda faltam janelas. É o que trava o confirmar (decisão 3 da 8.2). */
+  crescendo: boolean;
+  /** Quantos trechos a sessão tem hoje. Só quando `crescendo` — o rodapé é dela. */
+  trechos_totais?: number;
+  trechos_faltando?: number;
+  /** A proposta que um `forcar` substituiu, em cabeçalho (slice 4.6). */
+  anterior?: {
+    atomos: number;
+    prompt_version: string;
+    modelo: string;
+    criado_em: string;
+  } | null;
+}
+
+/**
+ * O contexto de uma proposta que já fechou: o mapa de blocos e a anterior.
+ *
+ * Separado da leitura de `extracao.json` de propósito. Quem pergunta "já
+ * fechou?" pergunta isso **a cada 700 ms** dentro do fluxo, e essas duas
+ * leituras não têm o que dizer enquanto a resposta for não — no caminho que
+ * cresce, `transcricao.json` nem existe e `extracao-anterior.json` quase nunca.
+ * Pagá-las por tick seria triplicar o custo do laço para nada.
+ */
+async function fechadaDe(sessao_id: string, extracao: Extracao): Promise<PropostaAtual> {
+  const [transcricao, anterior] = await Promise.all([
+    getJson<Transcricao>(chaveTranscricao(sessao_id)),
+    getJson<Extracao>(chaveExtracaoAnterior(sessao_id)),
+  ]);
+
+  return {
+    extracao,
+    blocos: transcricao?.valor.blocos ?? [],
+    crescendo: false,
+    anterior: anterior
+      ? {
+          atomos: anterior.valor.atomos.length,
+          prompt_version: anterior.valor.prompt_version,
+          modelo: anterior.valor.modelo,
+          criado_em: anterior.valor.criado_em,
+        }
+      : null,
+  };
+}
+
+/** O caminho fechado: `extracao.json` existe, e ele vence o parcial. */
+async function propostaFechada(sessao_id: string): Promise<PropostaAtual | null> {
+  const pronta = await getJson<Extracao>(chaveExtracao(sessao_id));
+  return pronta ? fechadaDe(sessao_id, pronta.valor) : null;
+}
+
+/**
+ * O caminho que cresce: o acumulado das janelas virando proposta.
+ *
+ * A transcrição ainda não existe como objeto — ela é gravada no fim —, então o
+ * mapa de blocos sai de `concatenar` sobre o **prefixo contíguo** do que já foi
+ * transcrito. É o mesmo prefixo que `janelasDe` usa, e pelo mesmo motivo: um
+ * buraco no meio faria a fala ser lida fora de ordem. É esse mapa que faz o
+ * player funcionar na revisão que ainda está crescendo.
+ */
+async function propostaCrescendo(
+  sessao_id: string,
+  parcial: Parcial,
+  catalogo: LeitorDoCatalogo,
+): Promise<PropostaAtual | null> {
+  if (parcial.atomos.length === 0) return null;
+
+  const m = await carregarManifest(sessao_id);
+  const janelas = janelasDe(m, { fechando: true });
+  const transcritos = prefixoContiguo(m.chunks.filter((c) => c.transcrito));
+  const blocos = await blocosProntos(sessao_id, transcritos.map((c) => c.i));
+  const transcricao = concatenar(sessao_id, blocos);
+
+  return {
+    extracao: montarExtracao(parcial, transcricao, await catalogo()),
+    blocos: transcricao.blocos,
+    crescendo: true,
+    trechos_totais: janelas.length,
+    trechos_faltando: janelas.filter((j) => estadoDaJanela(parcial, j.n)?.estado !== "pronta")
+      .length,
+    anterior: null,
+  };
+}
+
+export async function propostaAtual(
+  sessao_id: string,
+  { catalogo = catalogoUmaVez() }: { catalogo?: LeitorDoCatalogo } = {},
+): Promise<PropostaAtual | null> {
+  const fechada = await propostaFechada(sessao_id);
+  if (fechada) return fechada;
+  return propostaCrescendo(sessao_id, await carregarParcial(sessao_id), catalogo);
+}
+
+/** Um evento do fluxo NDJSON de `GET /api/sessoes/:id/extracao/eventos`. */
+export type EventoDaProposta =
+  | { tipo: "proposta"; status: StatusSessao; proposta: PropostaAtual }
+  | { tipo: "erro"; erro: string };
+
+/**
+ * De quanto em quanto tempo o fluxo reconfere se a proposta mudou.
+ *
+ * Mesma ordem de grandeza de `INTERVALO_LEASE_MS`, e pelo mesmo motivo: é o
+ * tempo entre uma janela fechar e alguém perceber, e é ele que decide se o
+ * átomo aparece na minha frente ou "daqui a pouco".
+ */
+export const INTERVALO_EVENTOS_MS = 700;
+
+/**
+ * Até quando um fluxo vive antes de fechar sozinho.
+ *
+ * Vinte segundos abaixo do `maxDuration` de 300 s da rota, e a folga é o ponto:
+ * fluxo morto pela plataforma no meio é um corpo que nunca fecha, e a tela fica
+ * esperando um evento que não vem — com o confirmar travado junto. Fechar limpo
+ * é seguro porque o cliente reconecta, e é a resposta ao limite que a própria
+ * spec aponta como o que decide se a fatia é usável.
+ */
+export const TETO_STREAM_MS = 280_000;
+
+const dormirDeVerdade = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export interface OpcoesAcompanhar {
+  sinal?: AbortSignal;
+  agora?: () => number;
+  dormir?: (ms: number) => Promise<unknown>;
+  intervalo?: number;
+  teto?: number;
+  catalogo?: LeitorDoCatalogo;
+}
+
+/**
+ * O laço que alimenta o fluxo: relê, e só emite quando mudou.
+ *
+ * **Isto não é push de verdade**, e o comentário existe para ninguém ler a rota
+ * e achar que é: não há pub/sub neste projeto — sem Redis, sem WebSocket, fora
+ * do stack decidido em `CLAUDE.md`. O que a conexão aberta compra é a viagem de
+ * ida que o polling do navegador pagaria a cada volta; o polling continua
+ * existindo, só que do lado do servidor, onde o R2 está a milissegundos.
+ *
+ * **O carimbo é o que segura o custo.** `parcial.atualizado_em` muda a cada
+ * escrita de janela; enquanto ele for o mesmo, não se remonta `montarExtracao`
+ * nem se releem os blocos. Um tick sem novidade custa duas leituras pequenas. O
+ * catálogo é lido **uma vez por conexão** (`catalogoUmaVez`), como na
+ * finalização, e pelo mesmo motivo: nada entre os ticks escreve entidade.
+ *
+ * Tudo o que anda é injetável (`sinal`, `agora`, `dormir`, `intervalo`, `teto`)
+ * — mesmo padrão de `comEsperaDeLimite`, e é o que torna isto testável sem rede
+ * e sem relógio de verdade.
+ */
+export async function acompanharProposta(
+  sessao_id: string,
+  manda: (evento: EventoDaProposta) => void,
+  {
+    sinal,
+    agora = Date.now,
+    dormir = dormirDeVerdade,
+    intervalo = INTERVALO_EVENTOS_MS,
+    teto = TETO_STREAM_MS,
+    catalogo = catalogoUmaVez(),
+  }: OpcoesAcompanhar = {},
+): Promise<void> {
+  const fim = agora() + teto;
+  /** O `atualizado_em` do último parcial que virou evento. */
+  let carimbo: string | null = null;
+
+  for (;;) {
+    if (sinal?.aborted) return;
+    if (agora() >= fim) {
+      console.log(`[eventos] sessão ${sessao_id}: teto do fluxo, fechando — o cliente reconecta`);
+      return;
+    }
+
+    try {
+      const sessao = await buscarSessao(sessao_id);
+      if (!sessao) {
+        manda({ tipo: "erro", erro: "sessão não encontrada" });
+        return;
+      }
+
+      // Uma leitura pequena, e ela é a pergunta do tick: já fechou? O contexto
+      // da proposta fechada só é pago quando a resposta é sim.
+      const pronta = await getJson<Extracao>(chaveExtracao(sessao_id));
+      if (pronta) {
+        // O último evento do fluxo: `crescendo: false` é o que destrava o
+        // confirmar, e depois dele não há mais o que esperar.
+        const proposta = await fechadaDe(sessao_id, pronta.valor);
+        manda({ tipo: "proposta", status: sessao.status, proposta });
+        return;
+      }
+
+      // A checagem de `erro` vem **depois** da proposta fechada, de propósito:
+      // uma sessão que caiu em erro mas cuja proposta já está no R2 tem o que
+      // mostrar, e mandar falha ali seria esconder a lista que existe.
+      if (sessao.status === "erro") {
+        manda({ tipo: "erro", erro: "a extração dessa sessão falhou no meio" });
+        return;
+      }
+
+      const parcial = await carregarParcial(sessao_id);
+      if (parcial.atomos.length > 0 && parcial.atualizado_em !== carimbo) {
+        const proposta = await propostaCrescendo(sessao_id, parcial, catalogo);
+        if (proposta) {
+          carimbo = parcial.atualizado_em;
+          manda({ tipo: "proposta", status: sessao.status, proposta });
+        }
+      }
+    } catch (e) {
+      // R2 ou Neo4j não atenderam. Fechar e deixar o cliente reconectar é mais
+      // honesto que insistir calado por 280 s — e a reconexão é barata.
+      console.error(`[eventos] sessão ${sessao_id}:`, e);
+      manda({ tipo: "erro", erro: e instanceof Error ? e.message : "não consegui ler a proposta" });
+      return;
+    }
+
+    await dormir(intervalo);
+  }
+}

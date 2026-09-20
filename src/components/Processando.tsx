@@ -9,14 +9,25 @@
  * fila esvaziar e chamar `/finalizar`), dizer em que passo o sistema está e
  * **ir sozinha para a revisão** quando a proposta fica pronta.
  *
+ * **Desde a slice 8.2 ela é uma ponte curta.** Ela não espera mais a proposta
+ * fechar: abre o fluxo de `/extracao/eventos` ao montar e sai no **primeiro**
+ * evento com átomo, que numa sessão longa acontece quase na hora — várias
+ * janelas já fecharam durante a fala. Ela continua existindo para o caso em que
+ * ainda não há nada a mostrar: sessão de dois minutos, primeira janela ainda
+ * rodando. O polling de `/api/sessoes/:id` fica como rede de segurança — é ele
+ * que ainda chama o `/finalizar`, vê `erro` e conta o teto da espera.
+ *
  * Quem quiser ler o texto vai pela lista de sessões — `/sessao/:id/transcricao`.
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { esperouDemais } from "@/client/espera";
 import { acordar, aguardarFilaVazia } from "@/client/fila";
 import { marcarFilaVazia } from "@/client/medidas";
+import { lerEventos } from "@/client/ndjson";
 import { terminouDeProcessar } from "@/lib/estados";
+import type { EventoDaProposta } from "@/lib/pipeline";
 import type { StatusSessao } from "@/lib/tipos";
 
 interface Estado {
@@ -36,28 +47,6 @@ interface Estado {
 const INTERVALO_POLL_MS = 750;
 
 /**
- * Até quando vale continuar perguntando (18/09).
- *
- * O laço não tinha teto, e a tela só sabia falar em falha quando o **status**
- * dizia `erro`. Sessão cuja função morreu no `maxDuration` nunca chega a `erro`:
- * ela fica em `extraindo` no grafo, e a tela fica em "lendo o que você disse…"
- * para sempre — foi o que a sessão `mu73d88b0w4u6o5d440j` fez, e o que fez a
- * espera parecer infinita em vez de falha.
- *
- * **Seis minutos, e o número é o da plataforma, não o do gosto.** O `/finalizar`
- * tem `maxDuration` de 300 s; passado esse tempo com folga, o que estava
- * trabalhando **provavelmente não está mais**, e insistir é olhar para uma tela
- * que ninguém vai atualizar. Chamar de travado antes disso seria pior que
- * esperar: eu reextrairia uma sessão que ainda estava viva, e pagaria duas vezes.
- */
-export const TETO_DA_ESPERA_MS = 360_000;
-
-/** Já passou do tempo em que ainda poderia haver alguém trabalhando? */
-export function esperouDemais(desde: number, agora: number = Date.now()): boolean {
-  return agora - desde >= TETO_DA_ESPERA_MS;
-}
-
-/**
  * A sessão precisa que alguém chame `/finalizar` para andar?
  *
  * Os estados de fora são os que já estão andando por conta própria, ou que
@@ -75,6 +64,22 @@ export function esperouDemais(desde: number, agora: number = Date.now()): boolea
  */
 export function precisaFinalizar(status: string): boolean {
   return !["finalizando", "transcrevendo", "extraindo", "em_revisao", "confirmada"].includes(status);
+}
+
+/**
+ * Já há o que mostrar na revisão? É a ponte saindo (decisão 2 da 8.2).
+ *
+ * **Um átomo basta.** A pergunta não é "a proposta fechou" — essa é a do
+ * confirmar, e ela é da revisão. Aqui a pergunta é se existe alguma coisa para
+ * eu começar a ler, e a partir daí a espera acontece com a lista na minha
+ * frente em vez de com um verbo no meio da tela.
+ *
+ * Pura para ser testável sem simular fluxo de verdade.
+ */
+export function deveSairParaRevisao(proposta: {
+  extracao?: { atomos?: unknown[] };
+} | null | undefined): boolean {
+  return (proposta?.extracao?.atomos?.length ?? 0) > 0;
 }
 
 /** O que dizer em cada passo. Um verbo, sem barra de progresso. */
@@ -129,6 +134,13 @@ export function Processando({ id }: { id: string }) {
 
     async function volta() {
       const atual = await buscar();
+
+      // **Antes da guarda de `vivo`, e isso não é descuido.** Desde a 8.2 a
+      // ponte pode sair para a revisão enquanto esta volta ainda está na rede;
+      // se o empurrão morresse junto com a tela, a sessão ficaria sem ninguém
+      // para chamar o `/finalizar` e a proposta nunca fecharia. A chamada é
+      // idempotente e `finalizou` garante uma por visita.
+      if (atual) void garantirFinalizacao(atual);
       if (!vivo) return;
 
       // O teto. Não é desistir do trabalho — o áudio e a transcrição continuam
@@ -141,7 +153,6 @@ export function Processando({ id }: { id: string }) {
       if (atual) {
         setEstado(atual);
         setFalhou(atual.status === "erro");
-        void garantirFinalizacao(atual);
 
         // A porta da frente: a proposta ficou pronta, a revisão abre sozinha.
         // `replace` porque voltar para um corredor já atravessado não faz
@@ -159,6 +170,54 @@ export function Processando({ id }: { id: string }) {
     return () => {
       vivo = false;
       clearTimeout(timer);
+    };
+  }, [id, router]);
+
+  /**
+   * A ponte saindo (slice 8.2): o fluxo avisa no instante em que existe átomo.
+   *
+   * Separado do polling de propósito. O de cima é o que **empurra** a sessão —
+   * chama o `/finalizar`, conta o teto, mostra o verbo — e continua sendo a rede
+   * de segurança se este aqui não abrir. Este só responde uma pergunta: já dá
+   * para sair? Numa sessão longa a resposta vem no primeiro evento, antes mesmo
+   * de o `status` virar `em_revisao`.
+   *
+   * Falhar aqui não custa nada: sem o fluxo, a tela volta a ser exatamente o
+   * que era antes desta fatia, e sai pela porta de `em_revisao`.
+   */
+  useEffect(() => {
+    const controle = new AbortController();
+    let vivo = true;
+
+    void (async () => {
+      try {
+        const r = await fetch(`/api/sessoes/${id}/extracao/eventos`, {
+          cache: "no-store",
+          signal: controle.signal,
+        });
+        if (!r.ok || !r.body) return;
+
+        await lerEventos<EventoDaProposta>(
+          r.body,
+          (e) => {
+            if (!vivo || e.tipo !== "proposta") return;
+            if (!deveSairParaRevisao(e.proposta)) return;
+            vivo = false;
+            // Abortar antes de navegar: a conexão é do servidor, e deixá-la
+            // aberta seria pagar 280 s de laço por uma tela que já saiu.
+            controle.abort();
+            router.replace(`/sessao/${id}/revisar`);
+          },
+          "processando",
+        );
+      } catch {
+        // Aborto meu, ou rede. O polling acima continua valendo.
+      }
+    })();
+
+    return () => {
+      vivo = false;
+      controle.abort();
     };
   }, [id, router]);
 

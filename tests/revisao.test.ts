@@ -11,16 +11,18 @@
 import { describe, expect, it } from "vitest";
 import {
   FRASE_DA_CAMADA,
+  faltamTrechos,
   herdadasDoAtomo,
   incertasDoAtomo,
   localizarNoAudio,
+  mesclarProposta,
   montarCorpoDoConfirmar,
   ondeEstaA,
   referenciasDoAtomo,
 } from "@/components/Revisao";
 import { CATALOGO_VAZIO, montarCatalogo } from "@/lib/catalogo";
 import { CAMADAS_DE_CANDIDATO } from "@/lib/tipos";
-import type { AtomoEditado } from "@/components/Revisao";
+import type { AtomoEditado, Proposta } from "@/components/Revisao";
 import type {
   AtomoProposto,
   BlocoAbsoluto,
@@ -360,5 +362,79 @@ describe("as referências que a tela destaca", () => {
     for (const c of CAMADAS_DE_CANDIDATO) {
       expect(FRASE_DA_CAMADA[c]).toBeTruthy();
     }
+  });
+});
+
+/**
+ * A proposta que chega em pedaços (slice 8.2).
+ *
+ * Duas decisões puras seguram a tela que cresce debaixo da mão: qual retrato
+ * vence quando dois chegam fora de ordem, e o que a linha do rodapé diz. A
+ * primeira é a que erraria calada — uma reconexão trazendo um retrato mais
+ * velho faria a lista **encolher** na minha frente, no meio de uma edição.
+ */
+describe("a proposta que cresce", () => {
+  const comAtomos = (n: number, extra: Partial<Proposta> = {}): Proposta =>
+    ({
+      status: "extraindo",
+      crescendo: true,
+      extracao: {
+        atomos: Array.from({ length: n }, (_, k) => ({ indice: k })),
+        entidades: [],
+        descartados: [],
+        modelo: "zai/glm-5.3-flash",
+        prompt_version: "extracao-9",
+      },
+      blocos: [],
+      anterior: null,
+      ...extra,
+    }) as unknown as Proposta;
+
+  it("a primeira sempre entra — não há o que comparar", () => {
+    const nova = comAtomos(3);
+    expect(mesclarProposta(null, nova)).toBe(nova);
+  });
+
+  it("a que cresceu substitui a que está na tela", () => {
+    const nova = comAtomos(7);
+    expect(mesclarProposta(comAtomos(3), nova)).toBe(nova);
+  });
+
+  it("o mesmo tamanho ainda entra: é a proposta fechando, com os mesmos átomos", () => {
+    // O último evento do fluxo troca `crescendo` sem acrescentar átomo nenhum,
+    // e é ele que destrava o confirmar. Ignorá-lo travaria a tela para sempre.
+    const fechada = comAtomos(7, { crescendo: false });
+    expect(mesclarProposta(comAtomos(7), fechada)).toBe(fechada);
+  });
+
+  it("a que encolheu é ignorada — é retrato velho de uma reconexão", () => {
+    const naTela = comAtomos(7);
+    expect(mesclarProposta(naTela, comAtomos(3))).toBe(naTela);
+  });
+});
+
+describe("a linha do rodapé", () => {
+  const proposta = (p: Partial<Proposta>): Proposta =>
+    ({ extracao: { atomos: [] }, blocos: [], ...p }) as unknown as Proposta;
+
+  it("não existe antes de haver proposta", () => {
+    expect(faltamTrechos(null)).toBeNull();
+  });
+
+  it("não existe com a proposta fechada — o rodapé some quando o confirmar libera", () => {
+    expect(faltamTrechos(proposta({ crescendo: false, trechos_totais: 9, trechos_faltando: 0 }))).toBeNull();
+  });
+
+  it("diz quantos faltam de quantos enquanto cresce", () => {
+    expect(faltamTrechos(proposta({ crescendo: true, trechos_totais: 9, trechos_faltando: 2 }))).toEqual({
+      faltam: 2,
+      total: 9,
+    });
+  });
+
+  it("crescendo sem contagem nenhuma não inventa número", () => {
+    // Proposta montada por uma versão anterior, ou parcial sem janela: a tela
+    // fica sem a linha, e o confirmar continua travado por `crescendo`.
+    expect(faltamTrechos(proposta({ crescendo: true }))).toBeNull();
   });
 });

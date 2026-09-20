@@ -2,7 +2,7 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-8.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-8.2.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
@@ -16,8 +16,18 @@ importado entra pela mesma porta), 4.11 (a entidade se apresenta, e o agente 2
 mede a própria dúvida), 4.12 (a ficha se escreve sozinha), 5 (confrontar:
 relações entre átomos ao longo do tempo), 5.1 (o confronto calibrado pela
 primeira revisão à mão), 6 (o chat: perguntar ao grafo em texto livre), 7 (o
-laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas) e 8
-(o sistema se cronometra, e encolhe o que mede) construídas.**
+laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas), 8
+(o sistema se cronometra, e encolhe o que mede) e 8.2 (a revisão abre antes de a
+proposta fechar) construídas.**
+
+**A 8.2 era condicional, e a condição se cumpriu.** A `Specs/slice-8.md` declarou
+que ela só existiria "se o número desta continuar ruim"; as sessões reais
+gravadas desde 18/09 mostraram 119–301 s de espera e uma sessão presa por dois
+dias, então a fatia subiu (§4.19). O que ela muda é o instante em que a revisão
+abre: não mais quando a proposta fecha, e sim quando o **primeiro átomo** existe.
+No mesmo deploy, o teto de saída da extração subiu de 8000 para 16.000 tokens
+(§4.6) — decisão tomada contra a evidência já registrada de que subir o número
+não resolve sozinho, e com o escalonamento preservado por cima dele.
 
 **A slice 8 sobe em partes, e a ordem não é detalhe.** A primeira é só o
 cronômetro (§4.17): três objetos no R2, as três marcas do cliente, a
@@ -400,7 +410,9 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   atomos.ts       escreve :Atomo, :Entidade e :PERFILA — só o confirmar chama;
                   e embute o átomo depois de gravá-lo, nunca antes
   pipeline.ts     transcrever bloco / avançar janelas / finalizar sessão
-                  (o orquestrador)
+                  (o orquestrador) — e, desde a 8.2, a proposta enquanto ela
+                  cresce (`propostaAtual`) mais o laço do fluxo que a transmite
+                  (`acompanharProposta`), com relógio e sono injetáveis
   auth.ts         magic link HMAC, cookie httpOnly, a janela que desliza e a
                   credencial do cron — as duas que a porta única reconhece
   backup.ts       o dump do grafo para o R2: sem o vetor, e numa chave que gira
@@ -425,14 +437,21 @@ src/client/       navegador
   transicao.ts    a troca de modo da tela de gravar dentro de uma View
                   Transition; `flushSync` e `prefers-reduced-motion` num lugar
                   só — ver §11
+  ndjson.ts       o parser e o laço de leitura do fluxo NDJSON, um só para as
+                  três telas que consomem um (chat, processando, revisão).
+                  Nasceu dentro do `Chat.tsx`; a terceira cópia o tirou de lá
+  espera.ts       até quando vale continuar olhando uma sessão que não fechou —
+                  o teto de 360 s do corredor, que a revisão que cresce usa também
 
 src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Gravacao (a tela de gravar), BotaoGravar (o círculo, o halo,
                   as ondas laterais e o selo de REC), Gestao (a engrenagem e a
                   gaveta), Importacao (subir arquivo — item da gaveta),
                   Tipografia (a classe da fonte, conforme a rota),
-                  Processando (fechar a sessão e esperar; leva à revisão),
-                  Revisao (aprovar, editar, escutar, confirmar),
+                  Processando (fechar a sessão e esperar; ponte curta, sai no
+                    primeiro átomo que existir),
+                  Revisao (aprovar, editar, escutar, confirmar — e crescer
+                    debaixo da mão enquanto o fim é extraído),
                   Calibracao (o que eu já corrigi, com o áudio à mão),
                   Agentes (o fluxo desenhado, e o prompt e o modelo de cada um),
                   SeletorEntidade (a barra pesquisável de entidade, nos dois
@@ -445,7 +464,7 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Chat (a barra, o painel, a lista de conversas, o progresso por
                     passo e o (i) com o rastro — nasce dentro da `Gravacao`),
                   ServiceWorker (registra `sw.js`; não desenha nada)
-src/app/api/      44 rotas em dez famílias — sessão, entidade, calibração,
+src/app/api/      46 rotas em dez famílias — sessão, entidade, calibração,
                   agentes, átomos, confronto, chat/conversas, medidas, as 2 de
                   auth e a do cron (seção 10)
 src/middleware.ts porta única: sem credencial válida nada responde — cookie de
@@ -3538,7 +3557,7 @@ como saber, e ele marca em `src/client/medidas.ts`:
 |---|---|---|
 | `parou` | `Gravacao.parar()` / `Importacao` | o toque em "parar", ou o arquivo aceito — o último gesto meu antes da espera |
 | `fila_vazia` | `Processando` | `aguardarFilaVazia()` voltou e o `/finalizar` vai sair |
-| `revisou` | `Revisao` | a proposta montou na tela. É o fim da espera |
+| `revisou` | `Revisao` | a proposta montou na tela. É o fim da espera — e desde a 8.2 é o **primeiro** evento do fluxo que a marca, uma vez só, não cada janela que chega |
 
 `parou` **não vai à rede** quando acontece: ele fica no `sessionStorage` e sobe
 junto com `fila_vazia`, num pedido só. Mandá-lo no instante do toque seria mandar
@@ -3681,6 +3700,110 @@ para, e não pula, porque a janela `n` precisa do acumulado da `n-1`.
 único passa a parar e pedir re-extração. É a troca que eu quis — prefiro saber.
 Áudio, transcrição e acumulado continuam todos no R2, e o retry é
 `POST /api/sessoes/:id/extrair`, o mesmo botão de sempre.
+
+
+### 4.19 A revisão abre antes de a proposta fechar (slice 8.2)
+
+A slice 8 declarou esta fatia **condicional**: ela só existia se o número da 8
+continuasse ruim. Continuou. Depois dos seis consertos, as sessões reais gravadas
+a partir de 18/09 ainda mostraram 119–301 s de espera entre parar de falar e a
+revisão abrir, e a `mu4um3ot3t5k4g1u1p1j` ficou **dois dias** presa, retentada e
+falhando do mesmo jeito a cada vez. O gatilho disparou.
+
+**O que sobrava de espera era trabalho que só pode acontecer depois que eu paro:**
+o STT do último bloco, a janela final, a resolução de identidade dela. Isso tem
+piso. O resto da sessão — que é a maior parte — **já estava extraído** quando eu
+parava, desde a 4.8. O que esta fatia faz é parar de esconder esse material.
+
+**A tela de revisão abre com o que existe e recebe o resto.** Não é prévia em
+modo leitura: é a revisão de verdade, com edição, marcação e player. O que torna
+isso viável não é óbvio e está na 4.8: o id do átomo é carimbado **na escrita**
+(`aplicarJanela`), não na extração. A lista cresce por baixo; nada se renumera,
+nada troca de lugar. `edicoes`, `rejeitados`, `renomes` e `abertos` são todos
+`Record`/`Set` chaveados por esse índice — então trocar a proposta inteira a cada
+evento é seguro **por construção**.
+
+| Peça | O que era | O que é |
+|---|---|---|
+| `GET /api/sessoes/:id/extracao` | 404 enquanto `extracao.json` não existisse | serve o acumulado de `parcial.json`, dizendo `crescendo: true`; o 404 passou a significar **zero átomos** |
+| `GET …/extracao/eventos` | não existia | um fluxo NDJSON, consumido pelas **duas** telas |
+| `Processando` | esperava `status === "em_revisao"` | sai no **primeiro** evento com átomo, antes do status virar |
+| `Revisao` | buscava uma vez e parava | consome o fluxo, funde, e destrava o confirmar no fim |
+| janela que falha | derrubava a proposta e a sessão ia para `erro` | é tentada **uma segunda vez, só ela**, antes de desistir |
+
+**"O servidor empurra" é uma meia-verdade, e ela está no código.** Não há pub/sub
+neste projeto — sem Redis, sem WebSocket, fora do stack decidido em `CLAUDE.md`.
+O que `acompanharProposta` faz é **polling curto do lado do servidor**: relê
+`parcial.json` a cada `INTERVALO_EVENTOS_MS` (700 ms, a mesma ordem de grandeza
+de `INTERVALO_LEASE_MS`) e só emite quando `parcial.atualizado_em` mudou. O que a
+conexão aberta compra é a viagem de ida que o polling do navegador pagaria a cada
+volta, e o formato é exatamente o de `/api/chat`: `ReadableStream<Uint8Array>`,
+`application/x-ndjson`, `Cache-Control: no-store`, `X-Accel-Buffering: no`. Não
+há um segundo protocolo de streaming no projeto.
+
+**O carimbo é o que segura o custo.** Enquanto `atualizado_em` não muda, não se
+remonta `montarExtracao` nem se releem os blocos: um tick sem novidade custa duas
+leituras pequenas no R2. O catálogo do grafo é lido **uma vez por conexão**
+(`catalogoUmaVez`, §4.18), como na finalização e pelo mesmo motivo — nada entre
+os ticks escreve entidade.
+
+**O teto do fluxo é o que decide se a fatia é usável**, e a própria spec o diz.
+`TETO_STREAM_MS` é 280 s: fecha limpo 20 s antes do `maxDuration` de 300 s da
+rota, para o corpo nunca ser cortado no meio pela plataforma. Fechar sem evento
+final é seguro porque o cliente reconecta — e a reconexão traz o outro cuidado,
+`mesclarProposta`: um retrato com **menos** átomos que o da tela é um retrato
+velho de uma conexão anterior, e é ignorado. A lista só cresce.
+
+**Confirmar espera a proposta fechar, e isso é absoluto.** Enquanto `crescendo`
+for verdadeiro o botão fica travado, e a guarda está também dentro de
+`confirmar()` — o `disabled` é aparência, a linha é a regra. Confirmar em duas
+levas foi recusado: partiria em duas tudo que é chaveado por `sessao_id` — a
+captura de correções, os embeddings, o confronto, a idempotência inteira.
+Confirmar descartando o que chegasse depois foi recusado por pior: eu perderia
+átomos do fim da fala sem reparar. **A regra 5 não está em jogo** — nada é
+gravado antes da confirmação, com ou sem esta fatia; o que está em jogo é não
+gravar **metade**. Nem o teto da espera destrava: passado ele, a tela troca a
+mensagem por uma honesta e o botão continua travado.
+
+**A linha do rodapé é a única concessão de interface.** "faltam 2 de 9 trecho(s)",
+e ela some quando a proposta fecha. Nada de barra de progresso, nada de marca de
+"novo" em átomo que chega: esta é a tela mais apertada do sistema e ela foi
+enxugada de propósito fora de fatia (o texto edita no lugar, a dúvida virou uma
+frase, a procedência foi para trás de um `ⓘ`). Encher de indicador agora desfaria
+isso.
+
+**O mapa de blocos vem do parcial, e é o que faz o player funcionar antes do
+fim.** `transcricao.json` só existe depois que a sessão fecha; na proposta que
+cresce, `concatenar` sobre o **prefixo contíguo** dos blocos já transcritos
+devolve o mesmo mapa `{i, offset_s}` que a revisão sempre usou. Sem ele, o átomo
+apareceria sem botão de escutar justamente enquanto eu o estou julgando.
+
+**A segunda chance da janela não é código novo de retry.** `avancarJanelas` já
+pula janela `pronta` e já reivindica de novo a que está `falhou`; chamá-la uma
+segunda vez reprocessa exclusivamente o que falta, na ordem, sem tocar no que
+fechou. **As duas passadas dividem um orçamento só** (`ORCAMENTO_JANELAS_MS`), e
+isso não é economia: `finalizarSessao` já pode ter gasto até `ESPERA_MAX_MS`
+(150 s) esperando blocos, e `150 + 120 = 270 s` cabe de propósito sob o
+`maxDuration` de 300 s. Dar 120 s novos à segunda levaria o pior caso a 390 s — a
+função morreria no meio, que é pior que a falha que ela existe para consertar. Se
+a segunda também falhar, a sessão vai para `erro`, como a decisão 5 da slice 8
+manda: a coerência entre as duas fatias é deliberada.
+
+O caminho durante a fala (`fechando: false`, a cada `/pronto`) não mudou: uma
+janela que falha ali já é retentada de graça na chamada natural do bloco seguinte.
+
+**A máquina de estados não ganhou estado novo.** `em_revisao` continua
+significando "a proposta fechou"; o que mudou é que a tela de revisão não espera
+mais por ele para abrir.
+
+**O parser de NDJSON saiu do `Chat.tsx`.** Com o segundo fluxo do projeto, três
+telas passaram a consumir o mesmo dialeto, e `partirLinhas`/`lerEventos` foram
+para `src/client/ndjson.ts`. `Chat.tsx` reexporta `partirLinhas` porque é de lá
+que `tests/chat.test.ts` o importa, e é o mesmo parser. Pelo mesmo motivo
+`TETO_DA_ESPERA_MS`/`esperouDemais` saíram de `Processando.tsx` para
+`src/client/espera.ts`: duas telas passaram a contar o mesmo teto, e a segunda
+não deve arrastar a primeira inteira para o bundle por causa de seis linhas puras
+(é a razão de `localizarNoAudio` morar em `transcricao.ts`, §4.5).
 
 
 ## 5. Estados da sessão
@@ -5039,7 +5162,8 @@ sessão de teste que foi mal não pode sumir para melhorar a média (§4.17).
 | `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s; `completa` é sobre a transcrição, não sobre a sessão |
 | `DELETE /api/sessoes/:id` | apaga os objetos da sessão no R2 e marca `descartada_em` | **409 se ainda está processando**; o grafo fica intacto (regra 6) — ver abaixo |
 | `POST /api/sessoes/:id/extrair` | dispara extração **e resolução** de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` refaz as duas e sobrescreve |
-| `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5; `anterior` vem como cabeçalho, e a lista antiga só com `?anterior=1` |
+| `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão — **fechada ou ainda crescendo** | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5; `anterior` vem como cabeçalho, e a lista antiga só com `?anterior=1`. Desde a 8.2 responde também do `parcial.json`, com `crescendo`/`trechos_totais`/`trechos_faltando`, e o **404 passou a significar "zero átomos"** (§4.19) |
+| `GET /api/sessoes/:id/extracao/eventos` | um **fluxo NDJSON** da proposta enquanto ela cresce: um evento por mudança, o último com `crescendo: false` | mesmo dialeto de `/api/chat`; polling curto do lado do servidor (700 ms), fecha sozinho aos 280 s e o cliente reconecta. As duas telas do corredor consomem o mesmo fluxo (§4.19) |
 | `POST /api/sessoes/:id/medidas` | as marcas que só o navegador sabe dar: `parou`, `fila_vazia`, `revisou` | epoch em ms, e toda marca reescreve a linha do índice; corpo sem marca plausível não grava nada (§4.17) |
 | `GET /api/sessoes/:id/medidas` | o detalhe medido daquela sessão | não há tela: é por aqui que "o objeto é lido sob demanda" acontece |
 | `GET /api/medidas` | o índice; com `?mes=AAAA-MM`, o resumo daquele mês | só leitura; existe porque `r2.ts` não tem `LIST` |
@@ -5092,7 +5216,7 @@ detalhe de deploy: o teto de execução é o que decide se um `waitUntil` termin
 
 | `maxDuration` | Rotas |
 |---|---|
-| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/entidades/enriquecer`, `/confronto/rodar`, `/cron/confronto`, `/chat` — as que chamam modelo dentro de `waitUntil`, correm a mesma fila em loop, ou encadeiam até oito chamadas antes de responder |
+| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/entidades/enriquecer`, `/confronto/rodar`, `/cron/confronto`, `/chat`, `/extracao/eventos` — as que chamam modelo dentro de `waitUntil`, correm a mesma fila em loop, encadeiam até oito chamadas antes de responder, ou **mantêm um fluxo aberto** |
 | 60 s | `/confirmar`, `/atomos/embutir`, `/entidades/embutir`, `/entidades/duplicatas`, `/entidades/fundir`, `/entidades/perfil/rascunho`, `/calibracao/rascunho` |
 | padrão | todo o resto |
 
@@ -5106,17 +5230,24 @@ rate limit sem prazo** que a fila usa (§4.9): uma espera de 75 s estouraria um
 teto de 60 e mataria o elo no meio do sono. `LEASE_MS` é o mesmo número, e é por
 isso: passado ele, a função que reivindicou está morta com certeza.
 
-`dynamic = "force-dynamic"` em doze rotas, todas de leitura de estado:
+`dynamic = "force-dynamic"` em treze rotas, todas de leitura de estado:
 `GET /api/sessoes`, `GET /api/sessoes/:id`, `GET /api/sessoes/:id/extracao`,
-`GET /api/entidades`, `GET /api/calibracao`, `GET /api/calibracao/sugestao`,
-`GET /api/confronto`, `GET /api/conversas`, as duas de `/api/chat` e as duas de
-medidas (`/api/medidas` e `/api/sessoes/:id/medidas`).
+`GET /api/sessoes/:id/extracao/eventos`, `GET /api/entidades`,
+`GET /api/calibracao`, `GET /api/calibracao/sugestao`, `GET /api/confronto`,
+`GET /api/conversas`, as duas de `/api/chat` e as duas de medidas
+(`/api/medidas` e `/api/sessoes/:id/medidas`).
 
 O 300 s do `/chat` é o mais justificado da tabela, e o único que não é sobre
 `waitUntil`: uma pergunta composta paga até oito idas ao Gateway antes da
 síntese, mais a síntese, e a espera de rate limit continua sem prazo. Ele
 responde em **fluxo**, então a resposta começa a chegar muito antes disso — o
 teto é para o pior caso, não para o normal.
+
+O 300 s de `/extracao/eventos` é de outra natureza: ali nenhum modelo é chamado,
+e o teto é quanto a **conexão** pode viver. `TETO_STREAM_MS` (280 s) fecha o
+corpo 20 s antes dele de propósito — fluxo morto pela plataforma no meio deixaria
+a revisão esperando para sempre um átomo que não vem, e com o confirmar travado
+junto (§4.19).
 
 **O `DELETE` de sessão apaga o material, não o grafo** (slice 4.10). Existe porque
 calibrar gera sessão de teste, e uma sessão de 17 min fatiada são 35 objetos no
@@ -5149,8 +5280,8 @@ número não vai bater com a tela.
 | Rota | Componente | O que mostra |
 |---|---|---|
 | `/` | `Gravacao` + `BotaoGravar` + `Gestao` + `Chat` | o círculo "Como foi seu dia?", uma engrenagem discreta na borda esquerda e a barra do chat no rodapé, centralizada — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo", e nem a engrenagem nem a barra |
-| `/sessao/:id` | `Processando` | o corredor: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e abre a revisão sozinho |
-| `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar |
+| `/sessao/:id` | `Processando` | o corredor, e desde a 8.2 uma **ponte curta**: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e sai para a revisão no primeiro átomo que existir |
+| `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar — e, desde a 8.2, **crescer** enquanto o fim é extraído, com o confirmar travado e uma linha no rodapé até fechar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo, buscável por nome e por grafia, filtrável por tipo e por "sem resumo", em ordem de mais falada. Cada linha é um nome e uma linha de meta; tocá-la abre a **ficha** num painel de tela cheia — tipo, renomear, canônica, resumo, grafias, os três campos de perfil, o enriquecer/desfazer e **fundir com…**, que funde duas entidades quaisquer à mão. O lote é modo: "enriquecer" acende os checkboxes e uma barra grudada no topo |
@@ -5902,7 +6033,11 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   passar na frente, e o penhasco — janela que não fecha manda a sessão para `erro`
   em vez de cair no passe único (slice 8, §4.18). Mais o dossiê da 4.9: a janela
   recebe o nó que o bloco cita, as candidatas ficam gravadas e as chaves vistas
-  ficam no parcial.
+  ficam no parcial. E a segunda chance da 8.2: falhou uma vez e passou na segunda
+  abre a revisão, falhou as duas ainda vai para `erro`, janela já pronta não é
+  refeita na segunda passada, e — o ponto mais fácil de errar — **as duas
+  tentativas dividem o mesmo `ate`**, porque dar 120 s novos à segunda levaria o
+  pior caso a 390 s sob um `maxDuration` de 300 s.
 - `tests/recuperacao.test.ts` — o RAG por bloco (4.14) sem rede nenhuma: que
   "giam" alcança "Giampaolo Lepore" pela camada `prefixo`, que grafo vazio devolve
   dossiê vazio (e aí a extração sai como na 4.8), que o arquivo do bloco é a
@@ -6034,7 +6169,25 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   a única decisão dele que não é cosmética: empurrar demais paga uma chamada de
   modelo à toa, empurrar de menos deixa a sessão sem caminho até a revisão. E,
   desde 18/09, o teto da espera: os 300 s de `maxDuration` cabem inteiros dentro
-  dele, porque chamar de travado cedo demais custa uma re-extração à toa.
+  dele, porque chamar de travado cedo demais custa uma re-extração à toa. E o
+  predicado da ponte (8.2): **um átomo basta** para sair para a revisão — errar
+  para mais abriria a revisão vazia, errar para menos manteria a tela morta que a
+  fatia existe para acabar.
+- `tests/proposta-viva.test.ts` — a proposta antes de fechar (8.2), sem rede e
+  sem relógio de verdade. De `propostaAtual`: `null` só quando não há átomo
+  nenhum (é o que mantém a ponte de pé), o acumulado virando proposta com
+  `trechos_totais`/`trechos_faltando`, a janela `falhou` contando como faltando,
+  o mapa de blocos vindo do parcial (sem ele o player some da revisão que cresce)
+  e a extração fechada vencendo o parcial. De `acompanharProposta`: que **parcial
+  sem mudança não vira evento** — é o carimbo segurando o custo —, que o catálogo
+  é lido uma vez por conexão mesmo com várias remontagens, que a proposta fechada
+  é o último evento, que sessão em `erro` fecha o fluxo mas **não** esconde uma
+  proposta que já existe, que abortado não lê nada, e que o teto fecha sem evento
+  extra em vez de deixar o laço preso.
+- `tests/extracao-rota.test.ts` — o contrato que a revisão lê, e o que mudou nele:
+  o 404 agora significa **zero átomos**, não "ainda não fechou"; `crescendo` e as
+  contagens viajam; a proposta anterior vem como cabeçalho e a lista antiga só é
+  paga com `?anterior=1`; e infraestrutura fora do ar é 502 com causa legível.
 - `tests/limite.test.ts` — as três escadas e o que **não** é escada. O corte por
   prazo não é transitório nem limite de taxa, e é essa linha que impede o
   conserto de virar três chamadas de 90 s onde havia uma; que orçamento
@@ -6856,6 +7009,31 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   4.15 — e uma pergunta real que ficou ruim. Se 0,45 passar a cortar átomo que
   eu queria, o número que diz isso é a `similaridade` que o (i) já mostra em
   cada achado.
+- **As edições da revisão continuam vivendo só na memória da página, e agora a
+  página fica aberta muito mais tempo** (8.2, decisão 6). Bloqueio de tela,
+  descarte da aba pelo sistema ou trocar de app e voltar perde o que eu editei —
+  e isso **já era verdade** antes desta fatia, sem aviso nenhum. O que a 8.2 faz
+  é aumentar o tempo de exposição, porque a revisão abre antes e espera o fim ali
+  dentro. Foi perguntado e escolhido assim, sabendo do risco; é o limite mais
+  afiado da fatia e o primeiro candidato a emenda se me morder.
+- **Se a segunda tentativa da janela falhar, a sessão vai para `erro` com a
+  revisão aberta** (8.2) — e junto com ela vão as edições em memória. É a
+  consequência direta de combinar a decisão 5 com a 6, e as duas foram escolhidas
+  sabendo disso. O áudio, a transcrição e o acumulado continuam no R2; o que se
+  perde é o trabalho de revisão daquela sessão.
+- **A revisão passa a poder mostrar uma proposta que ainda vai mudar** (8.2). Eu
+  posso ler o conjunto, formar uma impressão, e ela mudar quando o fim chegar. A
+  linha do rodapé é a única defesa contra isso, e ela é discreta de propósito —
+  encher a tela mais apertada do sistema de indicador desfaria o enxugamento que
+  ela recebeu fora de fatia.
+- **Mais um caminho que pode ficar pendurado** (8.2). Um fluxo que o servidor
+  esquecesse de fechar deixaria a tela esperando para sempre um átomo que não
+  vem, com o confirmar travado junto. As defesas são duas e estão declaradas:
+  `TETO_STREAM_MS` (280 s) do lado do servidor e o teto de `@/client/espera`
+  (360 s) do lado da tela, que troca a mensagem por uma honesta **sem destravar
+  o confirmar**. O que nenhuma das duas cobre é a sessão cujo `waitUntil` morreu:
+  aí o fluxo fecha certo e a proposta simplesmente nunca fecha, e o conserto
+  continua sendo re-extrair pela lista de sessões.
 - **O teto de saída da extração subiu para 16.000 contra a evidência do próprio
   código** (20/09, §4.6). O raciocínio registrado — "o modelo enche o que houver"
   — continua valendo, e o que sustenta a decisão é outra coisa: cada estouro
