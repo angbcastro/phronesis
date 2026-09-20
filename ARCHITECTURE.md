@@ -1135,9 +1135,20 @@ O que mudou de comportamento, e é o que importa:
 **O teto não mudou junto**, e é de propósito: mexer no teto e no salvamento na
 mesma fatia esconderia qual dos dois funcionou.
 
-**Subir `MAX_TOKENS_SAIDA` não está na lista, e é de propósito.** Ele já foi
-subido uma vez depois da `mtgo3kaf5`, e a janela seguinte encheu os 8000 do
-mesmo jeito: o modelo ocupa o que houver.
+**Subir `MAX_TOKENS_SAIDA` não estava na lista, e o parágrafo original fica
+registrado porque ele continua verdadeiro:** ele já tinha sido subido uma vez
+depois da `mtgo3kaf5`, e a janela seguinte encheu os 8000 do mesmo jeito — o
+modelo ocupa o que houver. O escalonamento é o que resolve, e não o orçamento.
+
+**Mesmo assim ele subiu de novo em 20/09, de 8000 para 16.000, por decisão
+minha e sabendo disso.** O que mudou foi a evidência de produção: a sessão
+`mu4um3ot3t5k4g1u1p1j` ficou dois dias presa, retentada e falhando igual a cada
+vez, e o conserto do prazo por chamada (§5.3) tinha limitado o pior caso a 90 s
+por chamada **sem reduzir o tempo total** — porque quando uma chamada estoura o
+teto, a **janela inteira** é refeita do zero (extração, resolução e desempate),
+não só a chamada que estourou. O mecanismo não mudou: `FATOR_DE_FOLGA` continua
+2, e a segunda tentativa passa a ir com 32.000 quando `finishReason` for
+`length`. O que subiu foi o piso debaixo dele.
 
 **Pedir ao modelo para pensar menos também não está na lista, e também é de
 propósito** — ainda que se saiba exatamente como, e a medição esteja no §4.4. O
@@ -6845,6 +6856,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   4.15 — e uma pergunta real que ficou ruim. Se 0,45 passar a cortar átomo que
   eu queria, o número que diz isso é a `similaridade` que o (i) já mostra em
   cada achado.
+- **O teto de saída da extração subiu para 16.000 contra a evidência do próprio
+  código** (20/09, §4.6). O raciocínio registrado — "o modelo enche o que houver"
+  — continua valendo, e o que sustenta a decisão é outra coisa: cada estouro
+  refaz a janela inteira, não só a chamada. Se a `mu4um3ot3t5k4g1u1p1j` e as
+  próximas continuarem falhando com 16.000, o número não é o problema, e o
+  candidato seguinte é trocar o modelo de extração — não subir de novo.
 
 ---
 

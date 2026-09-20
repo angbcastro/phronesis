@@ -727,15 +727,19 @@ describe("com quanto orçamento a segunda tentativa vai", () => {
    * 8000 tokens de saída inteiros pensando, com 5210 de entrada, e devolveu
    * zero caractere. A segunda foi idêntica — mesmo prompt, mesmo teto, e
    * `temperature: 0` — e falhou pelo mesmo motivo, do mesmo jeito.
+   *
+   * O piso subiu para 16000 em 20/09, depois de a `mu4um3ot3t5k4g1u1p1j` ficar
+   * dois dias presa. O que estes testes protegem não é o número: é o
+   * escalonamento continuar existindo por cima dele.
    */
   it("dobra quando o raciocínio comeu o orçamento", () => {
-    expect(tetoDaSegundaTentativa({ finishReason: "length", text: "" })).toBe(16000);
+    expect(tetoDaSegundaTentativa({ finishReason: "length", text: "" })).toBe(32000);
   });
 
   it("repete o mesmo teto nos outros casos", () => {
     // Resposta vazia com o modelo terminando por conta própria é intermitente:
     // aí a segunda tentativa idêntica é exatamente o certo a fazer.
-    expect(tetoDaSegundaTentativa({ finishReason: "stop", text: "" })).toBe(8000);
-    expect(tetoDaSegundaTentativa({})).toBe(8000);
+    expect(tetoDaSegundaTentativa({ finishReason: "stop", text: "" })).toBe(16000);
+    expect(tetoDaSegundaTentativa({})).toBe(16000);
   });
 });

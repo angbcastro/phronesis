@@ -133,8 +133,18 @@ export class ExtracaoError extends Error {
  * o escalonamento abaixo: cortado no pensamento, a segunda tentativa vai com o
  * dobro de teto em vez de repetir a mesma chamada. Custa uma chamada a mais nas
  * janelas em que ele pensa muito, e essa é a troca escolhida.
+ *
+ * **E mesmo assim ele subiu de novo, de 8000 para 16000 (20/09).** O parágrafo
+ * acima continua valendo e não foi apagado: ele é o registro de que subir o
+ * número já não resolveu uma vez, e de que o mecanismo que resolve é o
+ * escalonamento. O que mudou foi a evidência de produção — a sessão
+ * `mu4um3ot3t5k4g1u1p1j` ficou dois dias presa, retentada e falhando igual, e
+ * cada estouro do teto por chamada refaz a **janela inteira** (extração,
+ * resolução e desempate), não só a chamada que estourou. Subir o piso foi a
+ * decisão tomada sabendo do precedente: o escalonamento continua intacto por
+ * cima dele, e a segunda tentativa passa a ir com 32000.
  */
-const MAX_TOKENS_SAIDA = 8000;
+const MAX_TOKENS_SAIDA = 16_000;
 
 /**
  * Quanto a segunda tentativa ganha de orçamento quando a primeira foi cortada
