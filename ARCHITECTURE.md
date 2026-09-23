@@ -20,6 +20,18 @@ laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas)
 (o sistema se cronometra, e encolhe o que mede) e 8.2 (a revisão abre antes de a
 proposta fechar) construídas.**
 
+**A slice 9 está aberta, e só o primeiro passo dela está no ar.** A fatia
+(`Specs/slice-9.md`) é o miolo do chat — como a pergunta vira busca e como a busca
+vira resposta —, e ela sobe em partes de propósito, pela disciplina que a slice 8
+fixou: o que mede e o que conserta não sobem juntos. O que está feito é o **prompt
+`chat-3`** (§4.16.2): a resposta responde antes de despejar, e busca paralela passou
+a ser autorizada. O que **ainda não existe**: a busca dizer quanto cortou e por que
+voltou vazia; o catálogo e o vetor lidos uma vez por pergunta; a terceira ferramenta
+`buscar_entidades`; e o streaming do texto final, que é condicional e pode não
+acontecer. Entre este passo e o próximo vai **uma pergunta real respondida e
+julgada à mão** — e antes dela, a medição de `CHAT_MODEL`, que a fatia põe na frente
+de todo o resto porque é a única que não custa deploy.
+
 **A 8.2 era condicional, e a condição se cumpriu.** A `Specs/slice-8.md` declarou
 que ela só existiria "se o número desta continuar ruim"; as sessões reais
 gravadas desde 18/09 mostraram 119–301 s de espera e uma sessão presa por dois
@@ -2643,7 +2655,7 @@ prompt e o modelo que a comandam, e na resolução e no confronto o **limiar**
 | `duplicatas-2` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
 | embedding (sem prompt) | `embedding.ts` | automático, depois de gravar | `EMBEDDING_MODEL` | — |
 | `confronto-2` | `confronto.ts` | periódico: cron próprio e sob demanda em `/confronto` (slice 5) | `CONFRONTO_MODEL` | `relacoes`, `novo`, `velho` |
-| `chat-2` | `chat.ts` | sob demanda, a cada mensagem na barra de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo` |
+| `chat-3` | `chat.ts` | sob demanda, a cada mensagem na barra de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo` |
 | `titulo-chat-1` | `conversas.ts` | sob demanda, uma vez por conversa nova (slice 6) | `CHAT_TITULO_MODEL` | `titulo` |
 
 **O `chat` é o único cujo envelope não são chaves de JSON**, e a diferença é
@@ -3309,6 +3321,14 @@ modelo em **string** — regra 8, como todo o resto). Ele para quando o modelo
 escreve texto, ou quando a soma das chamadas de ferramenta chega a
 `TETO_FERRAMENTAS = 8`.
 
+**Oito é piso, e não teto exato — desde que a slice 9 autorizou busca paralela.**
+`stopWhen` é avaliado **entre** passos, então um passo que pede três chamadas de uma
+vez parte de 7 e termina em 10. Isso já era possível antes (o SDK sempre pôde
+agrupar), mas o `chat-2` nunca dizia que podia, e o caso era raro; o `chat-3` manda
+fazer, e o caso vira comum. O transbordo é limitado pelo tamanho de um passo e
+barato, e por isso está documentado em vez de cortado — cortá-lo pediria
+`prepareStep` ou `activeTools`, custo de desenho para um risco que não apareceu.
+
 **Oito, e o número tem os dois lados medidos contra a pergunta real.** Quatro
 foi recusado: o caso Isinha gasta duas chamadas só para achar a data do término,
 e sobraria orçamento de menos para o resto. Dezesseis foi recusado pelo lado
@@ -3387,6 +3407,47 @@ ferramenta, nenhum catálogo de entidades injetado:
 **O (i) não perdeu nada nisso.** `paraRastro` e `PassoDeFerramenta` continuam
 guardando todos os achados inteiros de todas as chamadas — o rastro completo é a
 promessa da fatia, e o corte é só do que volta ao prompt.
+
+##### `chat-3`: a resposta para de fazer o trabalho do (i) (slice 9)
+
+O aperto acima cuidou de **quanto** material vem da busca. O que sobrou errado era
+o que a resposta fazia com ele: saía um relatório das buscas, e não uma resposta.
+
+O `chat-2` empurrava para esse registro em três instruções — *"Cite as datas"*,
+*"Cite no máximo cinco trechos"*, *"mostre os dois"* — e puxava para curto em uma
+só, na forma mais fraca que existe: *"Sem lista com marcador **quando** duas frases
+bastam"*, uma negativa condicional que autoriza a lista por omissão. Não havia teto
+de tamanho nem ordem, então evidência e resposta saíam misturadas. E "cite no
+máximo cinco" era lido como cota: cinco.
+
+O `chat-3` inverte a seção `COMO RESPONDER`:
+
+- **a resposta responde nas duas primeiras frases**, antes de qualquer evidência, e
+  sem preâmbulo nem repetição da pergunta — os passos na tela já disseram que
+  procurou;
+- **teto em número de frases**, não em adjetivo. "Prosa curta" não é teto;
+- **prosa, e lista só se eu pedir com essas palavras** — a permissão deixou de ser
+  por omissão;
+- **um trecho, no máximo dois**, e a justificativa entra no próprio prompt: a
+  procedência inteira mora no (i), e a resposta estava duplicando o (i) em prosa;
+- **a data entra dentro da frase**, não num bloco de citações.
+
+**O tom do `Specs/visao.md` §7 não mudou, e o princípio 4 do §5 continua cumprido.**
+Bibliotecário atento e não coach, não inventar, mostrar as duas pontas de uma
+contradição: tudo fica. "Sucinto" aqui é o oposto de "relatório", não de "com
+origem" — o que saiu da resposta foi o bloco de citações, não a origem, porque a
+origem tem um lugar melhor desde a slice 6.
+
+**E o `chat-3` autoriza busca paralela**, que o `chat-2` nunca disse que podia
+embora o SDK já agrupasse: duas buscas que não dependem uma da outra saem no mesmo
+passo. Junto vem o número que faltava — a maioria das perguntas se resolve em uma
+ou duas buscas, e mais de três é sinal de varredura. Ver o transbordo do teto em
+§4.16.1.
+
+**Ficou de fora de propósito**: a instrução para o modelo ler a linha de recorte da
+busca (`8 de 34 trechos`). Ela vai no `chat-4`, junto com a mudança que faz essa
+linha existir — instrução sobre saída que ainda não existe é texto morto, e
+atrapalharia o julgamento à mão que decide se o `chat-3` melhorou a resposta.
 
 Três detalhes que erram calado, e por isso estão fixados por teste:
 
@@ -6990,6 +7051,17 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   pergunta composta paga até oito idas ao Gateway antes da síntese, mais a
   síntese em si — e, quando o loop para no teto, mais uma. Não há orçamento por
   conversa nem por dia: o teto é por mensagem.
+- **E o teto de oito é piso, não teto exato** (slice 9). `stopWhen` é avaliado
+  entre passos, então um passo com três chamadas paralelas parte de 7 e termina em
+  10. Sempre foi possível; o `chat-3` manda usar busca paralela e transforma o caso
+  raro em comum. O transbordo é limitado pelo tamanho de um passo, e foi
+  documentado em vez de cortado (§4.16.1).
+- **Com busca paralela, qual chamada mostra o átomo repetido é indeterminado**
+  (slice 9). O `Set` de vistos é compartilhado pelas duas ferramentas e mutado
+  concorrentemente, então qual das buscas simultâneas escreve a linha inteira e
+  qual escreve `já mostrado acima` varia entre execuções. É cosmético — o modelo vê
+  o átomo uma vez de qualquer jeito, e o (i) guarda os dois achados inteiros —, mas
+  é a razão de **não existir teste sobre isso**: ele ficaria intermitente.
 - **`CHAT_MODEL` precisa de tool-calling multi-passo bom pelo Gateway, e isso
   não foi medido** (slice 6). O padrão é o mesmo da extração
   (`deepseek/deepseek-v4.1-flash`), escolhido para devolver JSON curto — que não é a mesma
