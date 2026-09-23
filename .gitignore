@@ -14,3 +14,7 @@ logs/
 # Segredos soltos na raiz (credenciais do Aura, chaves baixadas)
 *credentials*.txt
 *credenciais*.txt
+
+# Dado puxado do R2 para análise local (medidas, dumps). Não é código e não
+# volta para cá: quem manda é o R2, e arquivo velho aqui mentiria com autoridade.
+.local/
