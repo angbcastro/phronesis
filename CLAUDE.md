@@ -160,7 +160,7 @@ ENRIQUECIMENTO_MODEL      opcional; padrão igual ao da extração
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
 REDACAO_MODEL             opcional; padrão igual ao da calibração
 CONFRONTO_MODEL           opcional; padrão igual ao da extração
-CHAT_MODEL                opcional; padrão igual ao da extração
+CHAT_MODEL                opcional; padrão deepseek/deepseek-v4.1-flash, próprio desde a slice 9
 CHAT_TITULO_MODEL         opcional; padrão igual ao do chat
 EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões
 AUTH_SECRET, ALLOWED_EMAIL
