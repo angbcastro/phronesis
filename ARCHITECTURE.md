@@ -125,8 +125,10 @@ cortada é salva até o último átomo completo (§4.6), e `/sessões` ganhou um
 para apagar sessão de teste (§10) — porque uma sessão de 17 min fatiada são 35
 objetos no R2.
 **A verificação que decide a fatia é à mão**: importar o mesmo áudio de 17 min de
-novo e comparar com a proposta guardada, olhando o log. `PROXIMA-SESSAO.md` §2
-continua sendo a lista do que falta gravar e olhar.
+novo e comparar com a proposta guardada, olhando o log. A lista do que falta
+gravar e olhar vive na spec da fatia, em `Specs/` — o `PROXIMA-SESSAO.md` que a
+carregava foi apagado, porque checkpoint fora da spec virava uma segunda fonte de
+verdade que envelhecia sozinha.
 **A tela de revisão foi enxugada depois disso, fora de fatia** (§4.7): o texto do
 átomo edita no próprio lugar, a linha de dúvida virou `acho que é X — confirma?`
 e a procedência do GraphRAG saiu da vista padrão para um modal atrás do `ⓘ` ao

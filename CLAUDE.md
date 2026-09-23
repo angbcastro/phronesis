@@ -43,8 +43,11 @@ Contrato resumido (referência rápida, não substitui a leitura):
 :Organizacao                    — status ∈ ativa|fundida
                                 — perfil: contexto, pode_ajudar_com, fizemos_juntos
                                 — resumo (≤500), aliases (lista), canonico (bool)
-:Atomo                          — tipo ∈ FATO|OPINIAO|SENTIMENTO|APRENDIZADO|CONQUISTA|DECISAO|ROTINA
-:Sessao, :Foco, :Pergunta
+:Atomo                          — tipo ∈ FATO|OPINIAO|SENTIMENTO|APRENDIZADO|
+                                         CONQUISTA|DECISAO|HISTORIA|ROTINA
+                                — HISTORIA entrou na 007: pede o episódio com
+                                  detalhe, não a afirmação destilada
+:Sessao
 :Conversa                       — metadado de aplicação, sem elo com o grafo
                                 — titulo, criado_em, atualizada_em,
                                   arquivada_em (null = ativa), mensagens_key
@@ -57,10 +60,19 @@ Contrato resumido (referência rápida, não substitui a leitura):
 (:Entidade)-[:FUNDIDA_EM]->(:Entidade)  // fusão de duas entidades REAIS
                                         // grafia de STT é item de `aliases`
 (:Entidade)-[:DISTINTA_DE]->(:Entidade) // recusa minha: não propor de novo
-(:Projeto)-[:CONTRIBUI_PARA]->(:Objetivo)
-(:Pessoa)-[:ENVOLVIDA_EM]->(:Projeto)
-(:Foco)-[:APONTA_PARA]->(:Entidade)
 ```
+
+**Não há aresta semântica entre duas entidades.** As duas acima são escrituração
+de identidade, não sentido: uma pessoa se liga a um projeto apenas **através dos
+átomos que mencionam os dois**. Quem quiser "quem está envolvido no projeto X"
+faz co-ocorrência sobre `:SOBRE`/`:MENCIONA`, não travessia.
+
+Já foram desenhados e **nunca existiram** — nem migration, nem código:
+`:Foco`, `:Pergunta`, `(:Projeto)-[:CONTRIBUI_PARA]->(:Objetivo)`,
+`(:Pessoa)-[:ENVOLVIDA_EM]->(:Projeto)`, `(:Foco)-[:APONTA_PARA]->(:Entidade)`.
+Ficam registrados aqui como intenção, e não como contrato. Enquanto não houver
+migration, **não escrever Cypher que os atravesse**: a consulta não erra, volta
+vazia — que é pior, porque parece resposta.
 
 Propriedades em português (`nome`, `criado_em`, `valido_em`, `texto`), IDs em `id`.
 
