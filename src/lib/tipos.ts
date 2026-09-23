@@ -1166,6 +1166,38 @@ export interface AtomoAchado {
   similaridade?: number;
 }
 
+/**
+ * Quanto uma busca achou, e quanto dela mostrou (slice 9).
+ *
+ * **Os dois caminhos não contam a mesma coisa**, e é o detalhe que erraria
+ * calado. Sem `texto`, `total` é do diário inteiro: todo átomo que passou nos
+ * filtros. Com `texto`, o índice só olha `janela` vizinhos (`K_BUSCA`), e
+ * `total` é quantos **desses** passaram no piso e nos filtros — escrever "8 de
+ * 34" ali seria trocar um silêncio por uma mentira.
+ *
+ * Os campos do caminho vetorial são o que separa as três causas de uma busca
+ * vazia: nada passou do piso (`acima_do_piso = 0`, e `melhor_abaixo` diz por
+ * quanto), passou e o filtro cortou (`acima_do_piso > 0`, `total = 0`), ou não
+ * havia nada (`janela = 0`). É também o instrumento do `PISO_BUSCA`: quem
+ * decide o número sou eu, olhando isto no (i).
+ */
+export interface RecorteDaBusca {
+  /** Quantos passaram em tudo. Os mostrados são os primeiros deles. */
+  total: number;
+  /** Quantos foram mostrados. */
+  mostrados: number;
+  /** Só com `texto`: quantos vizinhos o índice trouxe (≤ `K_BUSCA`). */
+  janela?: number;
+  /** Só com `texto`: quantos da janela passaram do piso, antes dos filtros. */
+  acima_do_piso?: number;
+  /** Só com `texto`: a melhor similaridade que ficou abaixo do piso. */
+  melhor_abaixo?: number | null;
+  /** O piso em vigor na busca — sai daqui para o (i) não ter de adivinhar. */
+  piso?: number;
+  /** A busca tinha filtro de entidade, tipo ou período. */
+  filtrado?: boolean;
+}
+
 /** Um elo da cadeia que `historico_do_atomo` percorre (as relações da 011). */
 export interface EloDoHistorico {
   de: string;
@@ -1191,6 +1223,13 @@ export interface PassoDeFerramenta {
   achados: AtomoAchado[];
   /** Só de `historico_do_atomo`: as relações entre os átomos achados. */
   elos?: EloDoHistorico[];
+  /**
+   * Quanto a busca achou e quanto mostrou (slice 9). Opcional como os dois
+   * abaixo: mensagem gravada antes da slice 9 continua legível sem retrofill.
+   */
+  recorte?: RecorteDaBusca;
+  /** Quanto a ferramenta levou, do pedido à resposta (slice 9). */
+  duracao_ms?: number;
   /** Preenchido quando a ferramenta falhou — o modelo recebeu isto e seguiu. */
   erro?: string;
 }

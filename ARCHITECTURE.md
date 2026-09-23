@@ -20,17 +20,15 @@ laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas)
 (o sistema se cronometra, e encolhe o que mede) e 8.2 (a revisão abre antes de a
 proposta fechar) construídas.**
 
-**A slice 9 está aberta, e só o primeiro passo dela está no ar.** A fatia
-(`Specs/slice-9.md`) é o miolo do chat — como a pergunta vira busca e como a busca
-vira resposta —, e ela sobe em partes de propósito, pela disciplina que a slice 8
-fixou: o que mede e o que conserta não sobem juntos. O que está feito é o **prompt
-`chat-3`** (§4.16.2): a resposta responde antes de despejar, e busca paralela passou
-a ser autorizada. O que **ainda não existe**: a busca dizer quanto cortou e por que
-voltou vazia; o catálogo e o vetor lidos uma vez por pergunta; a terceira ferramenta
-`buscar_entidades`; e o streaming do texto final, que é condicional e pode não
-acontecer. Entre este passo e o próximo vai **uma pergunta real respondida e
-julgada à mão** — e antes dela, a medição de `CHAT_MODEL`, que a fatia põe na frente
-de todo o resto porque é a única que não custa deploy.
+**A slice 9 está aberta, e sobe em partes.** A fatia (`Specs/slice-9.md`) é o
+miolo do chat — como a pergunta vira busca e como a busca vira resposta. Feito: o
+prompt responde antes de despejar e autoriza busca paralela (`chat-3`); o chat tem
+padrão de modelo próprio (`MODELO_CHAT_PADRAO`); a busca diz quanto cortou e de
+que vazio se trata, e o (i) mostra o recorte e a duração de cada passo (`chat-4`);
+catálogo e vetor são lidos uma vez por pergunta (§4.16.2). O que **ainda não
+existe**: a terceira ferramenta, `buscar_entidades`. O streaming do texto final
+**não vai acontecer** nesta fatia, por decisão minha: a resposta mais curta
+encolhe a espera que ele consertaria.
 
 **A 8.2 era condicional, e a condição se cumpriu.** A `Specs/slice-8.md` declarou
 que ela só existiria "se o número desta continuar ruim"; as sessões reais
@@ -736,7 +734,7 @@ painel de `/agentes` (§4.13):
 | `modeloDuplicatas()` | `duplicatas-2` | `deepseek/deepseek-v4.1-flash` |
 | `modeloEmbedding()` | embedding | `openai/text-embedding-3-small` |
 | `modeloConfronto()` | `confronto-2` | o da extração |
-| `modeloChat()` | `chat-3` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |
+| `modeloChat()` | `chat-4` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |
 | `modeloTituloChat()` | `titulo-chat-1` | o do chat |
 
 A deduplicação de **entidade** chegou na slice 3 e é o `duplicatas-2`. O que
@@ -2657,7 +2655,7 @@ prompt e o modelo que a comandam, e na resolução e no confronto o **limiar**
 | `duplicatas-2` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
 | embedding (sem prompt) | `embedding.ts` | automático, depois de gravar | `EMBEDDING_MODEL` | — |
 | `confronto-2` | `confronto.ts` | periódico: cron próprio e sob demanda em `/confronto` (slice 5) | `CONFRONTO_MODEL` | `relacoes`, `novo`, `velho` |
-| `chat-3` | `chat.ts` | sob demanda, a cada mensagem na barra de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo` |
+| `chat-4` | `chat.ts` | sob demanda, a cada mensagem na barra de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo` |
 | `titulo-chat-1` | `conversas.ts` | sob demanda, uma vez por conversa nova (slice 6) | `CHAT_TITULO_MODEL` | `titulo` |
 
 **O `chat` é o único cujo envelope não são chaves de JSON**, e a diferença é
@@ -3450,6 +3448,95 @@ ou duas buscas, e mais de três é sinal de varredura. Ver o transbordo do teto 
 busca (`8 de 34 trechos`). Ela vai no `chat-4`, junto com a mudança que faz essa
 linha existir — instrução sobre saída que ainda não existe é texto morto, e
 atrapalharia o julgamento à mão que decide se o `chat-3` melhorou a resposta.
+
+##### `chat-4`: a busca diz o que cortou, e de que vazio se trata (slice 9)
+
+`TETO_ATOMOS = 8` e o modelo nunca recebia o total: uma pergunta sobre um mês com
+trinta átomos via oito e não sabia disso. O `chat-2` já mandava dizer o recorte
+usado, sem nunca dar o número com que fazer isso. Agora **as duas Cypher de
+`buscar_atomos` contam**, e o que volta ao modelo começa por uma linha de recorte
+(`linhaDoRecorte`), antes dos trechos.
+
+**Os dois caminhos não contam a mesma coisa**, e é o detalhe que erraria calado:
+
+| Caminho | O que `total` conta | A linha |
+|---|---|---|
+| sem `texto` | o diário inteiro que passou nos filtros | `mostrando 8 de 34 trechos com esses filtros, os mais recentes primeiro.` |
+| com `texto` | quantos dos `K_BUSCA = 48` vizinhos do índice passaram do piso e dos filtros | `mostrando 8 de 19 que passaram do piso e dos filtros, contados entre os 48 trechos mais parecidos — não no diário inteiro.` |
+
+Escrever "8 de 34" no caminho vetorial seria trocar um silêncio por uma mentira: o
+`queryNodes` nunca olhou além da janela.
+
+**E `nenhum trecho encontrado` deixou de ser uma frase para três coisas.** No
+caminho vetorial a consulta também devolve quantos vizinhos vieram (`janela`),
+quantos passaram do piso antes dos filtros (`acima_do_piso`) e a melhor
+similaridade que ficou abaixo dele (`melhor_abaixo`). Com isso:
+
+- **nada passou do piso** — "o mais parecido dos 48 ficou em 0,41": o sentido não
+  bateu, outra palavra pode achar, e alargar período ou tipo não muda nada;
+- **o filtro cortou** — "19 passaram do piso, e nenhum deles cabe nos filtros":
+  aí alargar o período é o gesto certo, e trocar a palavra é inútil;
+- **nada mesmo** — "nenhum trecho com esses filtros".
+
+O `chat-2` mandava "alargar é só para o vazio" sem nunca dizer de que vazio se
+tratava, e era ali que morava boa parte de "traz pouco". O `chat-4` dá o nome de
+cada um e o gesto que cabe a ele, e manda usar **o número da busca** quando disser
+o recorte na resposta — nunca estimativa, e nunca "do diário inteiro" quando a
+conta foi dentro da janela.
+
+**Como a contagem viaja.** Ela vem em toda linha do resultado. Na busca vazia, o
+`UNWIND (CASE WHEN size(x) = 0 THEN [null] ELSE x[0..$limite] END)` produz uma
+linha só, com `id` nulo, que existe para carregar os números; `buscarAtomos` a
+filtra dos achados. Sem esse `[null]`, busca vazia devolveria zero linhas e as
+três causas voltariam a ser uma.
+
+**As entidades se penduram depois do corte.** Antes, os dois `OPTIONAL MATCH` de
+`ENTIDADES_DE` rodavam sobre **todo** átomo que passava no filtro e o `LIMIT`
+jogava o trabalho fora no fim; agora a lista é cortada em `[0..$limite]` e só os
+mostrados ganham `sobre`/`cita`. Latência de graça, no mesmo commit.
+
+**`PISO_BUSCA` não mudou, e isso é decisão.** Os 0,45 foram alinhados com uma
+medida de átomo contra átomo (os 0,728 de `confronto.ts`); busca de chat é
+pergunta contra átomo, distribuição diferente e assimétrica, e aquela medida não
+diz nada sobre ela. O que entrou foi o **instrumento**: o (i) mostra, por passo, o
+piso, quantos passaram, quantos ficaram abaixo e o melhor cortado, ao lado da
+similaridade que cada achado já mostrava (`fraseRecorte`, em `Chat.tsx`). Quem
+decide o número é o dono do diário, olhando isso. Verificado contra o Aura em
+23/09 com o vetor de um átomo real: 42 dos 48 vizinhos acima de 0,45, o melhor
+cortado em 0,449 — e com um filtro impossível, `acima_do_piso = 42` e `total = 0`,
+o caso "o filtro cortou" separado do "nada passou do piso".
+
+**O (i) ganhou também a duração de cada passo** (`duracao_ms`). `medidas.ts` não
+serve aqui, e é por desenho: `comMedicao` é chaveado por `sessao_id`, e o chat não
+tem sessão.
+
+`RecorteDaBusca` e os dois campos novos de `PassoDeFerramenta` (`recorte`,
+`duracao_ms`) são **opcionais**: mensagem gravada no R2 antes da slice 9 continua
+legível sem retrofill — o (i) dela mostra "8 trechos" como sempre mostrou.
+
+##### O catálogo e o vetor, lidos uma vez por pergunta (slice 9)
+
+Cada `buscar_atomos` com `entidade` chamava `listarEntidades()` — o Cypher de
+quatro `OPTIONAL MATCH` — e cada busca com `texto` chamava `embutir()`. Com o teto
+de oito chamadas, eram até oito de cada por pergunta.
+
+`leituraDaPergunta()` é um fecho por chamada de `responder()`, no molde de
+`catalogoUmaVez()` (pipeline.ts): memoiza o catálogo e o vetor **por texto**.
+Guarda a promessa, então duas buscas paralelas com o mesmo texto esperam a mesma
+chamada; falha não é guardada, e a busca seguinte tenta de novo.
+
+Ele nasce **fora** do laço de `comEsperaDeLimite`, ao contrário de `rastro` e
+`vistos`: o grafo não muda no meio de uma pergunta, porque o chat não escreve — e
+uma tentativa repetida por rate limit reaproveita o que a perdida já leu.
+
+No vetor o ganho está menos na latência que na exposição: `embutir` **não tem
+escada de repetição**, e um 429 no modelo de embedding faz a busca com texto
+falhar macia. Um texto repetido deixa de ser uma segunda chance de 429. Texto
+diferente continua pedindo vetor novo — não há como não pedir.
+
+`umaVezPorInvocacao` foi recusado: ele é transparente no chat, porque nenhuma rota
+abre `comInvocacao`, e usá-lo pediria abrir esse contexto na rota e arrastar
+`configAgentes()` para dentro de um cache que `overrides.ts` avisa ser delicado.
 
 Três detalhes que erram calado, e por isso estão fixados por teste:
 
@@ -7093,19 +7180,20 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   rede cair entre o `fetch` e a gravação no R2, a linha fica na tela e some na
   próxima abertura da conversa. O grafo e o R2 continuam certos — quem mente por
   um instante é a tela.
-- **`buscar_atomos` sem `texto` devolve os mais recentes, sem dizer que cortou**
-  (slice 6). O teto é `TETO_ATOMOS = 8`, e o modelo não recebe a contagem total:
-  uma pergunta sobre um mês inteiro com trinta átomos vê oito e não sabe disso. O
-  sinal que existe é indireto — oito resultados redondos —, e o conserto honesto
-  seria devolver o total junto, que não foi feito nesta fatia. O aperto de volume
-  de 4.16.2 **agravou** este limite de propósito: doze viravam oito, e a troca
-  aceita foi ver menos por busca em vez de afogar a resposta.
+- **O total do caminho vetorial conta dentro da janela de `K_BUSCA`, não do
+  diário** (slice 9). O "sem dizer que cortou" da slice 6 está resolvido — as
+  duas Cypher contam, e o modelo lê o número antes dos trechos (§4.16.2) —, mas
+  com `texto` a conta é de quantos dos 48 vizinhos passaram. Com 108 átomos
+  (18/09) a janela era quase metade do diário; em 23/09 já eram 151, e ela é um
+  terço. A linha diz isso com todas as letras ("não no diário inteiro"); quando o
+  diário crescer mais, é o texto dela e o `K_BUSCA` que se revisitam juntos.
 - **O piso de 0,45 e o teto de 8 não foram medidos contra gabarito** (slice 6, e
   não podiam ser: `CLAUDE.md` diz que quem julga extração aqui sou eu, na tela).
   O que existe é uma medida emprestada — os 0,728 da varredura de confronto, em
-  4.15 — e uma pergunta real que ficou ruim. Se 0,45 passar a cortar átomo que
-  eu queria, o número que diz isso é a `similaridade` que o (i) já mostra em
-  cada achado.
+  4.15, que é átomo contra átomo e não diz nada sobre pergunta contra átomo — e
+  uma pergunta real que ficou ruim. Desde a slice 9 o instrumento está no (i):
+  por passo, quantos passaram do piso, quantos ficaram abaixo e o melhor
+  cortado.
 - **As edições da revisão continuam vivendo só na memória da página, e agora a
   página fica aberta muito mais tempo** (8.2, decisão 6). Bloqueio de tela,
   descarte da aba pelo sistema ou trocar de app e voltar perde o que eu editei —

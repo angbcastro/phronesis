@@ -72,7 +72,10 @@ const nomeDoTipo = (t: unknown): string =>
  */
 export function frasePasso(p: PassoDeFerramenta): string {
   const n = p.achados.length;
-  const quantos = p.erro ? p.erro : n === 0 ? "nada" : `${n} trecho${n === 1 ? "" : "s"}`;
+  // "8 de 34" quando a busca contou mais do que mostrou (slice 9). Mensagem
+  // gravada antes da 9 não tem recorte e continua dizendo só "8 trechos".
+  const de = p.recorte && p.recorte.total > n ? ` de ${p.recorte.total}` : "";
+  const quantos = p.erro ? p.erro : n === 0 ? "nada" : `${n}${de} trecho${n === 1 && de === "" ? "" : "s"}`;
 
   if (p.ferramenta === "historico_do_atomo") return `seguiu o que mudou — ${quantos}`;
 
@@ -93,6 +96,36 @@ export function frasePasso(p: PassoDeFerramenta): string {
   else if (q.ate) partes.push(`até ${q.ate}`);
 
   return `buscou ${partes.length === 0 ? "o mais recente" : partes.join(" · ")} — ${quantos}`;
+}
+
+/**
+ * A linha do (i) que diz **de onde** saiu a contagem, e quanto o passo levou
+ * (slice 9). É o instrumento da fatia: o piso, quantos ficaram abaixo dele e o
+ * melhor cortado, ao lado da similaridade que cada achado já mostrava — quem
+ * decide se o `PISO_BUSCA` está certo sou eu, olhando isto.
+ *
+ * `medidas.ts` não serve aqui, e é por desenho: `comMedicao` é chaveado por
+ * `sessao_id`, e o chat não tem sessão.
+ */
+export function fraseRecorte(p: PassoDeFerramenta): string {
+  const partes: string[] = [];
+  const r = p.recorte;
+  if (r && typeof r.janela === "number") {
+    const abaixo = r.janela - (r.acima_do_piso ?? 0);
+    partes.push(
+      `${r.acima_do_piso ?? 0} de ${r.janela} mais parecidos passaram do piso ${(r.piso ?? 0).toFixed(2)}`,
+    );
+    if (r.filtrado) partes.push(`${r.total} passaram também nos filtros`);
+    if (abaixo > 0 && typeof r.melhor_abaixo === "number") {
+      partes.push(`${abaixo} abaixo, o melhor em ${r.melhor_abaixo.toFixed(2)}`);
+    }
+  } else if (r) {
+    partes.push(`${r.total} no diário${r.filtrado ? " com esses filtros" : ""}`);
+  }
+  if (typeof p.duracao_ms === "number") {
+    partes.push(`${(p.duracao_ms / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s`);
+  }
+  return partes.join(" · ");
 }
 
 /** Quantos caracteres da primeira pergunta viram nome de uma conversa sem título. */
@@ -694,6 +727,7 @@ function Rastro({ passos }: { passos: readonly PassoDeFerramenta[] }) {
           <p className="cabecalho">
             <code>{p.ferramenta}</code> {frasePasso(p)}
           </p>
+          {fraseRecorte(p) !== "" && <p className="meta">{fraseRecorte(p)}</p>}
           {p.erro && <p className="meta">{p.erro}</p>}
           <ul>
             {p.achados.map((a) => (

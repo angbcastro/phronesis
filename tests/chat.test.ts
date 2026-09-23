@@ -44,6 +44,8 @@ import {
   TETO_FERRAMENTAS,
   buscarAtomos,
   chamadasFeitas,
+  leituraDaPergunta,
+  linhaDoRecorte,
   dataSimples,
   ferramentas,
   historicoDoAtomo,
@@ -73,6 +75,7 @@ import {
   TETO_ROTULO,
   diaCurto,
   frasePasso,
+  fraseRecorte,
   partirLinhas,
   rotuloDaConversa,
   separarConversas,
@@ -286,6 +289,143 @@ describe("buscar_atomos", () => {
   });
 });
 
+/**
+ * O que a slice 9 trouxe para a busca: ela diz quanto cortou, e diz de que vazio
+ * se trata. O detalhe que erraria calado é que os dois caminhos não contam a
+ * mesma coisa — com texto, a conta é dentro da janela do índice, e escrever
+ * "8 de 34" ali seria trocar um silêncio por uma mentira.
+ */
+describe("o recorte da busca", () => {
+  it("as entidades se penduram depois do corte, nos dois caminhos", async () => {
+    await buscarAtomos({});
+    await buscarAtomos({ texto: "x" });
+    for (const [cypher] of consulta.mock.calls) {
+      const c = String(cypher);
+      expect(c).not.toContain("LIMIT");
+      expect(c.indexOf("[0..$limite]")).toBeGreaterThan(-1);
+      expect(c.indexOf("[0..$limite]")).toBeLessThan(c.indexOf("OPTIONAL MATCH"));
+    }
+  });
+
+  it("sem texto, o total é do diário", async () => {
+    consulta.mockResolvedValue([
+      { id: "a1", texto: "t", tipo: "FATO", valido_em: "2026-08-01", sobre: [], cita: [], total: 34 },
+    ] as never);
+    const r = await buscarAtomos({ tipo: ["FATO"] });
+    expect(r.recorte).toEqual({ total: 34, mostrados: 1, filtrado: true });
+    expect(linhaDoRecorte(r.recorte!)).toBe(
+      "mostrando 1 de 34 trechos com esses filtros, os mais recentes primeiro.",
+    );
+  });
+
+  it("com texto, a conta diz que é dentro da janela, não do diário", async () => {
+    consulta.mockResolvedValue([
+      {
+        id: "a1", texto: "t", tipo: "FATO", valido_em: "", sobre: [], cita: [], similaridade: 0.6,
+        total: 19, janela: 48, acima_do_piso: 19, melhor_abaixo: 0.44,
+      },
+    ] as never);
+    const r = await buscarAtomos({ texto: "x" });
+    expect(r.recorte).toMatchObject({ total: 19, mostrados: 1, janela: 48, piso: PISO_BUSCA });
+    const linha = linhaDoRecorte(r.recorte!);
+    expect(linha).toContain("mostrando 1 de 19");
+    expect(linha).toContain("entre os 48 trechos mais parecidos");
+    expect(linha).toContain("não no diário inteiro");
+  });
+
+  it("a linha de busca vazia carrega os números e não vira átomo", async () => {
+    consulta.mockResolvedValue([
+      { id: null, texto: null, tipo: null, valido_em: "", sobre: [], cita: [], total: 0, janela: 48, acima_do_piso: 0, melhor_abaixo: 0.41 },
+    ] as never);
+    const r = await buscarAtomos({ texto: "x" });
+    expect(r.achados).toEqual([]);
+    expect(r.recorte).toMatchObject({ total: 0, acima_do_piso: 0, melhor_abaixo: 0.41 });
+  });
+
+  it("as três causas de vazio deixam de ser uma frase só", () => {
+    const piso = linhaDoRecorte({
+      total: 0, mostrados: 0, janela: 48, acima_do_piso: 0, melhor_abaixo: 0.41, piso: 0.45,
+    });
+    expect(piso).toContain("nada passou do piso");
+    expect(piso).toContain("0.41");
+    expect(piso).toContain("alargar período ou tipo não muda nada");
+
+    const filtro = linhaDoRecorte({
+      total: 0, mostrados: 0, janela: 48, acima_do_piso: 19, melhor_abaixo: 0.44, piso: 0.45, filtrado: true,
+    });
+    expect(filtro).toContain("o filtro cortou");
+    expect(filtro).toContain("19 passaram do piso");
+
+    expect(linhaDoRecorte({ total: 0, mostrados: 0, filtrado: true })).toContain(
+      "nenhum trecho com esses filtros",
+    );
+  });
+
+  it("o modelo lê o recorte antes dos trechos", () => {
+    const s = respostaDaBusca({
+      achados: [atomo()],
+      recorte: { total: 34, mostrados: 1, filtrado: false },
+    });
+    expect(s.split("\n")[0]).toBe("mostrando 1 de 34 trechos, os mais recentes primeiro.");
+    expect(s.split("\n")[1]).toContain("[id a1");
+  });
+
+  it("o passo do (i) guarda o recorte e a duração", async () => {
+    consulta.mockResolvedValue([
+      { id: "a1", texto: "t", tipo: "FATO", valido_em: "", sobre: [], cita: [], total: 3 },
+    ] as never);
+    const passos: PassoDeFerramenta[] = [];
+    await ferramentas((p) => passos.push(p)).buscar_atomos.execute!({} as never, {} as never);
+    expect(passos[0].recorte).toMatchObject({ total: 3, mostrados: 1 });
+    expect(passos[0].duracao_ms).toBeTypeOf("number");
+  });
+});
+
+/**
+ * Decisão 4: o catálogo e o vetor, uma vez por pergunta. Com o teto de oito
+ * chamadas eram até oito de cada — e `embutir` não tem escada de repetição.
+ */
+describe("o que a pergunta lê uma vez só", () => {
+  it("o catálogo é lido uma vez para várias buscas por entidade", async () => {
+    achar.mockReturnValue({ id: "e1", nome: "Isinha", chaves: ["isinha"] } as never);
+    const leitura = leituraDaPergunta();
+    await buscarAtomos({ entidade: "Isinha" }, leitura);
+    await buscarAtomos({ entidade: "Isa" }, leitura);
+    expect(catalogo).toHaveBeenCalledTimes(1);
+  });
+
+  it("o mesmo texto embute uma vez, mesmo em paralelo; texto diferente embute de novo", async () => {
+    const leitura = leituraDaPergunta();
+    await Promise.all([
+      buscarAtomos({ texto: "isinha" }, leitura),
+      buscarAtomos({ texto: "isinha", tipo: ["FATO"] }, leitura),
+    ]);
+    await buscarAtomos({ texto: "término" }, leitura);
+    expect(embutir).toHaveBeenCalledTimes(2);
+  });
+
+  it("falha não fica guardada: a próxima busca tenta de novo", async () => {
+    vi.mocked(embutir).mockRejectedValueOnce(new Error("429") as never);
+    const leitura = leituraDaPergunta();
+    await expect(buscarAtomos({ texto: "x" }, leitura)).rejects.toThrow("429");
+    await buscarAtomos({ texto: "x" }, leitura);
+    expect(embutir).toHaveBeenCalledTimes(2);
+  });
+
+  it("uma resposta inteira lê o catálogo uma vez, por mais buscas que faça", async () => {
+    achar.mockReturnValue({ id: "e1", nome: "Isinha", chaves: ["isinha"] } as never);
+    chamar.mockImplementation((async (opcoes: {
+      tools: Record<string, { execute: (a: unknown, b: unknown) => Promise<unknown> }>;
+    }) => {
+      await opcoes.tools.buscar_atomos.execute({ entidade: "Isinha" }, {});
+      await opcoes.tools.buscar_atomos.execute({ entidade: "Isinha", tipo: ["FATO"] }, {});
+      return respostaDoModelo("pronto");
+    }) as never);
+    await responder([{ papel: "eu", texto: "x", criado_em: "" }]);
+    expect(catalogo).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("os parâmetros que o modelo manda", () => {
   it("data solta vira AAAA-MM-DD, e lixo vira vazio", () => {
     expect(dataSimples("2026-08-01T10:00:00.000Z")).toBe("2026-08-01");
@@ -462,7 +602,8 @@ describe("o mesmo átomo não volta inteiro duas vezes", () => {
     const segunda = await f.buscar_atomos.execute!({ texto: "término" } as never, {} as never);
 
     expect(String(primeira)).toContain("terminei com a Isinha");
-    expect(String(segunda)).toBe("[id a1] já mostrado acima");
+    // Abaixo da linha do recorte, o átomo repetido é só a lembrança.
+    expect(String(segunda).split("\n").at(-1)).toBe("[id a1] já mostrado acima");
     // O rastro completo é a promessa da spec: os dois passos guardam o achado.
     expect(passos).toHaveLength(2);
     expect(passos[1].achados[0].texto).toBe("terminei com a Isinha");
@@ -854,6 +995,24 @@ describe("o progresso e a lista", () => {
     expect(
       frasePasso({ ferramenta: "historico_do_atomo", parametros: { atomo_id: "a1" }, achados: [atomo()] }),
     ).toBe("seguiu o que mudou — 1 trecho");
+  });
+
+  it("com recorte, o passo diz quanto mostrou de quanto achou, e de onde veio a conta", () => {
+    const passo: PassoDeFerramenta = {
+      ferramenta: "buscar_atomos",
+      parametros: { texto: "prioridades", tipo: ["DECISAO"] },
+      achados: [atomo(), atomo({ id: "a2" })],
+      recorte: {
+        total: 5, mostrados: 2, janela: 48, acima_do_piso: 19, melhor_abaixo: 0.44, piso: 0.45, filtrado: true,
+      },
+      duracao_ms: 1234,
+    };
+    expect(frasePasso(passo)).toBe("buscou “prioridades” · decisao — 2 de 5 trechos");
+    expect(fraseRecorte(passo)).toBe(
+      "19 de 48 mais parecidos passaram do piso 0.45 · 5 passaram também nos filtros · 29 abaixo, o melhor em 0.44 · 1,2 s",
+    );
+    // Mensagem gravada antes da slice 9: sem recorte, sem linha nova.
+    expect(fraseRecorte({ ferramenta: "buscar_atomos", parametros: {}, achados: [] })).toBe("");
   });
 
   it("passo que falhou diz o erro em vez da contagem", () => {

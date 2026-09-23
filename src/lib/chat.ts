@@ -39,7 +39,7 @@
  */
 import { generateText, jsonSchema, tool } from "ai";
 import { embutir } from "./embedding";
-import { acharPorChave, listarEntidades } from "./entidades";
+import { acharPorChave, listarEntidades, type EntidadeDoGrafo } from "./entidades";
 import { comEsperaDeLimite } from "./limite";
 import {
   diagnostico,
@@ -60,11 +60,12 @@ import {
   type EloDoHistorico,
   type Mensagem,
   type PassoDeFerramenta,
+  type RecorteDaBusca,
   type TipoAtomo,
 } from "./tipos";
 
 /** Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7). */
-export const PROMPT_VERSION_CHAT = "chat-3";
+export const PROMPT_VERSION_CHAT = "chat-4";
 
 export class ChatError extends Error {
   constructor(message: string) {
@@ -168,7 +169,8 @@ A maioria das perguntas se resolve em uma ou duas buscas. Mais que três é sina
 Buscas que não dependem uma da outra vão juntas, no mesmo passo. "O que eu aprendi e o que eu conquistei em agosto" são duas buscas independentes: peça as duas de uma vez. Só espere o resultado quando a busca seguinte precisar dele.
 Encadeie quando a pergunta pedir. "Como eu estava depois que terminei com a Isinha" são duas buscas em sequência: primeiro achar quando foi o término, depois buscar o período seguinte. Uma data que você não tem, você procura — não estima.
 Pergunta vaga se estreita, não se varre. "Minhas prioridades", "como eu estou", "no que eu ando mexendo" são perguntas sobre agora: ponha um desde nas últimas semanas e escolha os tipos que cabem, em vez de varrer o diário inteiro. Diga na resposta qual recorte você usou, para eu poder pedir outro.
-Alargar é só para o vazio. Se a busca voltou NADA, tente outro caminho — outra palavra, sem filtro de tipo, período mais largo. Se ela voltou pouco, pouco é a resposta: alargar aí só traz assunto de outro lugar.
+A primeira linha de cada busca diz quanto ela achou e quanto mostrou: "mostrando 8 de 34". Quando disser o recorte na resposta, use esse número — ele vem da busca, nunca de estimativa. Com texto, a conta é entre os trechos mais parecidos, não no diário inteiro; não diga "de todo o diário" nesse caso.
+Alargar é só para o vazio, e a primeira linha diz que vazio é. "Nada passou do piso": o sentido não bateu — tente outra palavra; alargar período ou tipo não muda nada. "O filtro cortou": havia trecho parecido fora do recorte — aí sim, alargue o período ou tire o tipo. "Nenhum trecho com esses filtros": não há registro, e é isso que você diz. Se a busca voltou pouco, pouco é a resposta: alargar aí só traz assunto de outro lugar.
 Pare quando tiver o suficiente. Buscar mais do que precisa é lento e enche a resposta de material que não responde nada.
 
 COMO RESPONDER
@@ -177,7 +179,7 @@ Curto. Quatro ou cinco frases resolvem quase tudo. Se você passou de um parágr
 Prosa, não lista. Sem marcadores, sem títulos, sem tabela — só se eu pedir com essas palavras.
 Escolha um trecho, no máximo dois. A procedência inteira de cada resposta fica guardada e eu a abro quando quero: cada busca que você fez e tudo que ela trouxe. A resposta não é o lugar de repetir isso. É o lugar de responder.
 A data entra na frase, não num bloco de citações: "no fim de julho você escreveu que estava aliviado" — e não uma lista de trechos com a data na frente.
-Sobrou coisa boa de fora? Diga em uma frase o que ficou, e ofereça continuar. "Tem mais três registros sobre isso em setembro, se você quiser." Uma oferta, não um despejo.
+Sobrou coisa boa de fora? Diga em uma frase o que ficou, com o número que a busca deu, e ofereça continuar. "Tem mais três registros sobre isso em setembro, se você quiser." Uma oferta, não um despejo.
 Você é um bibliotecário atento, não um coach. Devolve o que está registrado; não dá conselho que ninguém pediu, não anima, não interpreta sentimento além do que o texto diz.
 Português, segunda pessoa ("você"), do jeito que eu falo: direto, sem formalidade.
 Não invente. Nada que não tenha vindo de uma busca entra na resposta. Se o que você achou não responde a pergunta, diga isso em uma frase — é uma resposta melhor que uma inventada.
@@ -252,6 +254,73 @@ export interface ResultadoDeBusca {
   achados: AtomoAchado[];
   /** Preenchido quando pedi uma entidade que o grafo não conhece. */
   aviso?: string;
+  /**
+   * Quanto a busca achou e quanto mostrou (slice 9). Opcional: a busca que
+   * nem chegou ao banco — entidade desconhecida — não tem o que contar.
+   */
+  recorte?: RecorteDaBusca;
+}
+
+/**
+ * O que uma pergunta lê do grafo **uma vez só** (slice 9, decisão 4).
+ *
+ * Cada `buscar_atomos` com `entidade` chamava `listarEntidades()` — o Cypher de
+ * quatro `OPTIONAL MATCH` —, e cada busca com `texto` chamava `embutir()`. Com
+ * o teto de oito chamadas, eram até oito de cada por pergunta.
+ *
+ * Um fecho por chamada de `responder()`, no molde de `catalogoUmaVez()`
+ * (pipeline.ts). Ele nasce **fora** do laço de `comEsperaDeLimite`, ao
+ * contrário de `rastro` e `vistos`: o grafo não muda no meio de uma pergunta,
+ * porque o chat não escreve.
+ *
+ * **O vetor é memoizado por texto**, e o ganho está menos na latência que na
+ * exposição: `embutir` não tem escada de repetição, e um 429 no modelo de
+ * embedding faz a busca falhar macia. Guarda-se a **promessa**, então duas
+ * buscas paralelas com o mesmo texto esperam a mesma chamada. Falha não é
+ * guardada — a busca seguinte tenta de novo.
+ *
+ * `umaVezPorInvocacao` foi recusado: nenhuma rota abre `comInvocacao`, e usá-lo
+ * pediria abrir esse contexto na rota por um ganho que este fecho já dá.
+ */
+export interface LeituraDaPergunta {
+  catalogo: () => Promise<EntidadeDoGrafo[]>;
+  vetor: (texto: string) => Promise<number[]>;
+}
+
+export function leituraDaPergunta(): LeituraDaPergunta {
+  let catalogo: Promise<EntidadeDoGrafo[]> | null = null;
+  const vetores = new Map<string, Promise<number[]>>();
+  return {
+    catalogo: () =>
+      (catalogo ??= listarEntidades().catch((e) => {
+        catalogo = null;
+        throw e;
+      })),
+    vetor: (texto) => {
+      let v = vetores.get(texto);
+      if (!v) {
+        v = embutir(texto).then(
+          (r) => r.embedding,
+          (e) => {
+            vetores.delete(texto);
+            throw e;
+          },
+        );
+        vetores.set(texto, v);
+      }
+      return v;
+    },
+  };
+}
+
+/** A linha do grafo, com as contagens que vêm em toda linha (slice 9). */
+interface LinhaDeBusca extends Omit<LinhaDeAtomo, "id"> {
+  /** `null` na linha única de uma busca vazia — ela existe só pelas contagens. */
+  id: string | null;
+  total?: number;
+  janela?: number;
+  acima_do_piso?: number;
+  melhor_abaixo?: number | null;
 }
 
 /**
@@ -262,6 +331,15 @@ export interface ResultadoDeBusca {
  * vetorial entra e os demais filtros se somam como condição, ordenando por
  * similaridade.
  *
+ * **Os dois contam** (slice 9), e contam coisas diferentes — ver
+ * `RecorteDaBusca`. A contagem vem em toda linha; na busca vazia, uma linha só
+ * com `id` nulo carrega os números, pelo `[null]` do `UNWIND`. Sem ele, busca
+ * vazia devolveria zero linhas e as três causas de vazio voltariam a ser uma.
+ *
+ * **As entidades se penduram depois do corte**, e não antes: os dois `OPTIONAL
+ * MATCH` rodavam sobre todo átomo que passava no filtro, e o `LIMIT` jogava o
+ * trabalho fora no fim. Agora rodam só sobre os mostrados.
+ *
  * A entidade resolve pelo **catálogo inteiro** (`listarEntidades`), e não por
  * uma consulta de nome: é o único caminho que atravessa alias e fusão de graça
  * — a mesma lista que `acharPorChave` já varre na extração. "Isinha", "Isa" e
@@ -269,6 +347,7 @@ export interface ResultadoDeBusca {
  */
 export async function buscarAtomos(
   p: BuscaDeAtomos,
+  leitura: LeituraDaPergunta = leituraDaPergunta(),
   limite: number = TETO_ATOMOS,
 ): Promise<ResultadoDeBusca> {
   const texto = typeof p.texto === "string" ? p.texto.trim() : "";
@@ -279,7 +358,7 @@ export async function buscarAtomos(
 
   let entidadeId: string | null = null;
   if (nome !== "") {
-    const catalogo = await listarEntidades();
+    const catalogo = await leitura.catalogo();
     const achada = acharPorChave(normalizarNome(nome), catalogo);
     if (!achada) {
       // Não é erro: é informação que o modelo precisa para tentar outro nome em
@@ -323,38 +402,116 @@ export async function buscarAtomos(
   }
 
   const filtro = condicoes.join("\n       AND ");
+  const filtrado = condicoes.length > 1;
 
   const linhas =
     texto === ""
-      ? await query<LinhaDeAtomo>(
+      ? await query<LinhaDeBusca>(
           `MATCH (a:Atomo)
-     WHERE ${filtro}${ENTIDADES_DE("a")}
-     WITH a, collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
+     WHERE ${filtro}
+     WITH a ORDER BY coalesce(a.valido_em, '') DESC
+     WITH collect(a) AS todos
+     UNWIND (CASE WHEN size(todos) = 0 THEN [null] ELSE todos[0..$limite] END) AS a
+     WITH size(todos) AS total, a${ENTIDADES_DE("a")}
+     WITH total, a, collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
      RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
-            coalesce(a.valido_em, '') AS valido_em, sobre, cita
-     ORDER BY valido_em DESC
-     LIMIT $limite`,
+            coalesce(a.valido_em, '') AS valido_em, sobre, cita, total
+     ORDER BY valido_em DESC`,
           parametros,
         )
-      : await query<LinhaDeAtomo>(
+      : await query<LinhaDeBusca>(
           `CALL db.index.vector.queryNodes('atomo_embedding', $k, $vetor) YIELD node AS a, score
      WITH a, 2 * score - 1 AS similaridade
-     WHERE similaridade >= $piso
-       AND ${filtro}${ENTIDADES_DE("a")}
-     WITH a, similaridade, collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
-     RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
-            coalesce(a.valido_em, '') AS valido_em, sobre, cita, similaridade
+     WITH a, similaridade, similaridade >= $piso AS acima,
+          (similaridade >= $piso
+       AND ${filtro}) AS passou
      ORDER BY similaridade DESC
-     LIMIT $limite`,
+     WITH count(a) AS janela,
+          sum(CASE WHEN acima THEN 1 ELSE 0 END) AS acima_do_piso,
+          max(CASE WHEN acima THEN null ELSE similaridade END) AS melhor_abaixo,
+          collect(CASE WHEN passou THEN { no: a, similaridade: similaridade } END) AS passaram
+     UNWIND (CASE WHEN size(passaram) = 0 THEN [null] ELSE passaram[0..$limite] END) AS p
+     WITH janela, acima_do_piso, melhor_abaixo, size(passaram) AS total,
+          p.no AS a, p.similaridade AS similaridade${ENTIDADES_DE("a")}
+     WITH janela, acima_do_piso, melhor_abaixo, total, a, similaridade,
+          collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
+     RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
+            coalesce(a.valido_em, '') AS valido_em, sobre, cita, similaridade,
+            total, janela, acima_do_piso, melhor_abaixo
+     ORDER BY similaridade DESC`,
           {
             ...parametros,
             k: K_BUSCA,
             piso: PISO_BUSCA,
-            vetor: (await embutir(texto)).embedding,
+            vetor: await leitura.vetor(texto),
           },
         );
 
-  return { achados: linhas.map(daLinha) };
+  const achados = linhas
+    .filter((l): l is LinhaDeBusca & { id: string } => typeof l.id === "string" && l.id !== "")
+    .map(daLinha);
+  const conta = linhas[0];
+  const numero = (v: unknown, padrao: number) => (typeof v === "number" ? v : padrao);
+
+  const recorte: RecorteDaBusca = {
+    total: numero(conta?.total, achados.length),
+    mostrados: achados.length,
+    filtrado,
+    ...(texto === ""
+      ? {}
+      : {
+          janela: numero(conta?.janela, achados.length),
+          acima_do_piso: numero(conta?.acima_do_piso, achados.length),
+          melhor_abaixo: typeof conta?.melhor_abaixo === "number" ? conta.melhor_abaixo : null,
+          piso: PISO_BUSCA,
+        }),
+  };
+
+  return { achados, recorte };
+}
+
+/**
+ * A primeira linha do que a busca devolve ao modelo: quanto achou, quanto
+ * mostrou — e, quando voltou vazia, **qual** vazio (slice 9).
+ *
+ * As três causas pedem gestos opostos, e é por isso que deixaram de ser uma
+ * frase só: nada acima do piso pede outra palavra, e alargar o período é
+ * inútil; o filtro que cortou pede alargar o período, e outra palavra é
+ * inútil; e nada mesmo é a resposta.
+ */
+export function linhaDoRecorte(r: RecorteDaBusca): string {
+  const vetorial = typeof r.janela === "number";
+  const com = r.filtrado ? " com esses filtros" : "";
+
+  if (r.mostrados === 0) {
+    if (!vetorial || r.janela === 0) {
+      return r.filtrado
+        ? "nenhum trecho com esses filtros: o diário não tem nada que passe em todos eles."
+        : "nenhum trecho no diário.";
+    }
+    if ((r.acima_do_piso ?? 0) === 0) {
+      const melhor = typeof r.melhor_abaixo === "number" ? r.melhor_abaixo.toFixed(2) : "?";
+      return (
+        `nada passou do piso de similaridade (${(r.piso ?? PISO_BUSCA).toFixed(2)}): ` +
+        `o mais parecido dos ${r.janela} ficou em ${melhor}. ` +
+        `Outra palavra pode achar; alargar período ou tipo não muda nada.`
+      );
+    }
+    return (
+      `o filtro cortou: ${r.acima_do_piso} passaram do piso, e nenhum deles cabe nos filtros. ` +
+      `Alargar período ou tipo pode achar; outra palavra, não.`
+    );
+  }
+
+  if (vetorial) {
+    return (
+      `mostrando ${r.mostrados} de ${r.total} que passaram do piso${r.filtrado ? " e dos filtros" : ""}, ` +
+      `contados entre os ${r.janela} trechos mais parecidos — não no diário inteiro.`
+    );
+  }
+  return r.total > r.mostrados
+    ? `mostrando ${r.mostrados} de ${r.total} trechos${com}, os mais recentes primeiro.`
+    : `${r.total} ${r.total === 1 ? "trecho — o único" : "trechos — todos os"}${com}.`;
 }
 
 /**
@@ -487,9 +644,18 @@ function umaVezSo(a: AtomoAchado, vistos?: Set<string>): string {
   return linhaDeAtomo(a);
 }
 
+/**
+ * A busca como o modelo a lê: a linha do recorte em cima, os átomos embaixo.
+ *
+ * O recorte vai **antes** de propósito — é o número que o `chat-4` manda usar
+ * quando disser que recorte usou, e é a frase que diz de que vazio se trata.
+ */
 export function respostaDaBusca(r: ResultadoDeBusca, vistos?: Set<string>): string {
-  if (r.achados.length === 0) return r.aviso ?? "nenhum trecho encontrado.";
-  return r.achados.map((a) => umaVezSo(a, vistos)).join("\n");
+  if (r.aviso) return r.aviso;
+  const topo = r.recorte ? linhaDoRecorte(r.recorte) : null;
+  if (r.achados.length === 0) return topo ?? "nenhum trecho encontrado.";
+  const trechos = r.achados.map((a) => umaVezSo(a, vistos)).join("\n");
+  return topo ? `${topo}\n${trechos}` : trechos;
 }
 
 export function respostaDoHistorico(r: ResultadoDeHistorico, vistos?: Set<string>): string {
@@ -591,6 +757,7 @@ export interface Resposta {
 export function ferramentas(
   aoPasso?: (p: PassoDeFerramenta) => void,
   vistos?: Set<string>,
+  leitura: LeituraDaPergunta = leituraDaPergunta(),
 ) {
   const anunciar = (p: PassoDeFerramenta) => {
     try {
@@ -608,19 +775,28 @@ export function ferramentas(
       inputSchema: ESQUEMA_BUSCA,
       execute: async (entrada: BuscaDeAtomos) => {
         const parametros = parametrosLimpos(entrada ?? {});
+        const inicio = Date.now();
         try {
-          const r = await buscarAtomos(entrada ?? {});
+          const r = await buscarAtomos(entrada ?? {}, leitura);
           anunciar({
             ferramenta: "buscar_atomos",
             parametros,
             achados: r.achados.map(paraRastro),
+            ...(r.recorte ? { recorte: r.recorte } : {}),
+            duracao_ms: Date.now() - inicio,
             ...(r.aviso ? { erro: r.aviso } : {}),
           });
           return respostaDaBusca(r, vistos);
         } catch (e) {
           const erro = e instanceof Error ? e.message : String(e);
           console.error("[chat] buscar_atomos falhou:", e);
-          anunciar({ ferramenta: "buscar_atomos", parametros, achados: [], erro });
+          anunciar({
+            ferramenta: "buscar_atomos",
+            parametros,
+            achados: [],
+            duracao_ms: Date.now() - inicio,
+            erro,
+          });
           return `a busca falhou: ${erro}`;
         }
       },
@@ -632,6 +808,7 @@ export function ferramentas(
       inputSchema: ESQUEMA_HISTORICO,
       execute: async ({ atomo_id }: { atomo_id: string }) => {
         const parametros = { atomo_id };
+        const inicio = Date.now();
         try {
           const r = await historicoDoAtomo(atomo_id);
           anunciar({
@@ -639,13 +816,20 @@ export function ferramentas(
             parametros,
             achados: r.achados.map(paraRastro),
             elos: r.elos,
+            duracao_ms: Date.now() - inicio,
             ...(r.aviso ? { erro: r.aviso } : {}),
           });
           return respostaDoHistorico(r, vistos);
         } catch (e) {
           const erro = e instanceof Error ? e.message : String(e);
           console.error("[chat] historico_do_atomo falhou:", e);
-          anunciar({ ferramenta: "historico_do_atomo", parametros, achados: [], erro });
+          anunciar({
+            ferramenta: "historico_do_atomo",
+            parametros,
+            achados: [],
+            duracao_ms: Date.now() - inicio,
+            erro,
+          });
           return `a busca falhou: ${erro}`;
         }
       },
@@ -698,6 +882,11 @@ export async function responder(
   // ferramentas rodam de novo e o `aoPasso` anunciaria os dois conjuntos.
   const rastro: PassoDeFerramenta[] = [];
 
+  // Fora do laço, ao contrário do rastro e dos vistos: o grafo não muda no meio
+  // de uma pergunta, e uma tentativa repetida por rate limit reaproveita o que
+  // a perdida já leu.
+  const leitura = leituraDaPergunta();
+
   /**
    * As ferramentas de **uma tentativa** — rastro zerado e memória de vistos
    * nova.
@@ -710,10 +899,14 @@ export async function responder(
    */
   const ferramentasDaTentativa = () => {
     rastro.length = 0;
-    return ferramentas((p) => {
-      rastro.push(p);
-      aoPasso?.(p);
-    }, new Set<string>());
+    return ferramentas(
+      (p) => {
+        rastro.push(p);
+        aoPasso?.(p);
+      },
+      new Set<string>(),
+      leitura,
+    );
   };
 
   const comum = {
