@@ -387,16 +387,21 @@ export function modeloConfronto(): string {
  * Modelo do agente `chat` — o que lê a minha pergunta, escolhe as buscas e
  * escreve a resposta (slice 6).
  *
- * Padrão igual ao da extração, como quase todos. **É o segundo candidato mais
- * provável a ser separado**, depois do enriquecimento, e por um motivo que os
- * outros agentes não têm: este é o único que usa *tool-calling* multi-passo
- * pelo Gateway — ele decide quais ferramentas chamar, lê o que voltou e decide
- * de novo, até oito vezes. Um modelo bom em devolver JSON curto não é
- * necessariamente bom nisso, e isso não está medido (§14). Quando doer,
- * `CHAT_MODEL` separa sem tocar em código.
+ * **Constante própria desde a slice 9, e o motivo é acoplamento, não
+ * qualidade.** Até ali o padrão era o da extração, e a troca de modelo da
+ * extração em 20/09 mudou a resposta do chat num commit que não falava do chat.
+ * O valor é o mesmo id — escolha minha, sem medição —, mas agora trocar um não
+ * troca o outro.
+ *
+ * Este é o único agente que usa *tool-calling* multi-passo pelo Gateway: ele
+ * decide quais ferramentas chamar, lê o que voltou e decide de novo. Um modelo
+ * bom em devolver JSON curto não é necessariamente bom nisso, e isso continua
+ * não medido (§14). `CHAT_MODEL` ou o painel de `/agentes` trocam sem deploy.
  */
+export const MODELO_CHAT_PADRAO = "deepseek/deepseek-v4.1-flash";
+
 export function modeloChat(): string {
-  return validarIdDeModelo(process.env.CHAT_MODEL || modeloExtracao());
+  return validarIdDeModelo(process.env.CHAT_MODEL || MODELO_CHAT_PADRAO);
 }
 
 /**

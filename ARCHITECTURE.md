@@ -719,8 +719,8 @@ não se espalha pelo código.
 algum dos quatro pontos da tabela for furado. É o que sustenta a promessa de
 "uma chave, um lugar para ver custo" a cada agente novo que entra.
 
-**Hoje passam por aqui dez consumidores**, cada um com sua função em
-`modelos.ts` e sua variável de ambiente (§12), e todos os dez com caixa no
+**Hoje passam por aqui doze consumidores**, cada um com sua função em
+`modelos.ts` e sua variável de ambiente (§12), e todos os doze com caixa no
 painel de `/agentes` (§4.13):
 
 | Função | Agente | Padrão |
@@ -736,6 +736,8 @@ painel de `/agentes` (§4.13):
 | `modeloDuplicatas()` | `duplicatas-2` | `deepseek/deepseek-v4.1-flash` |
 | `modeloEmbedding()` | embedding | `openai/text-embedding-3-small` |
 | `modeloConfronto()` | `confronto-2` | o da extração |
+| `modeloChat()` | `chat-3` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |
+| `modeloTituloChat()` | `titulo-chat-1` | o do chat |
 
 A deduplicação de **entidade** chegou na slice 3 e é o `duplicatas-2`. O que
 continua não existindo é a deduplicação de **átomo**, numa fatia futura ainda
@@ -6030,7 +6032,7 @@ PERFIL_MODEL              opcional; padrão igual ao da extração
 ENRIQUECIMENTO_MODEL      opcional; padrão igual ao da extração
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
 CONFRONTO_MODEL           opcional; padrão igual ao da extração
-CHAT_MODEL                opcional; padrão igual ao da extração — é quem precisa de tool-calling multi-passo
+CHAT_MODEL                opcional; padrão deepseek/deepseek-v4.1-flash, próprio desde a slice 9 — é quem precisa de tool-calling multi-passo
 CHAT_TITULO_MODEL         opcional; padrão igual ao do chat
 EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões
 AUTH_SECRET, ALLOWED_EMAIL
@@ -7063,10 +7065,14 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   o átomo uma vez de qualquer jeito, e o (i) guarda os dois achados inteiros —, mas
   é a razão de **não existir teste sobre isso**: ele ficaria intermitente.
 - **`CHAT_MODEL` precisa de tool-calling multi-passo bom pelo Gateway, e isso
-  não foi medido** (slice 6). O padrão é o mesmo da extração
-  (`deepseek/deepseek-v4.1-flash`), escolhido para devolver JSON curto — que não é a mesma
-  habilidade. Se ele encadear mal, o conserto é `CHAT_MODEL` ou o painel de
-  `/agentes`, sem deploy; mas qual modelo serve ainda é pergunta aberta.
+  não foi medido** (slice 6). Desde a slice 9 o padrão é **constante própria**
+  (`MODELO_CHAT_PADRAO`), e não mais herança da extração: a troca de 20/09 mudou
+  a resposta do chat num commit que não falava do chat. O id continua sendo
+  `deepseek/deepseek-v4.1-flash` — escolhido para devolver JSON curto, que não é
+  a mesma habilidade —, e continua escolha sem medição: a spec da 9 pedia medir
+  cinco perguntas reais por candidato antes de fixar, e eu decidi fixar sem
+  medir. Se ele encadear mal, o conserto é `CHAT_MODEL` ou o painel de
+  `/agentes`, sem deploy; qual modelo serve continua pergunta aberta.
 - **A conversa longa entra inteira no prompt, a cada mensagem** (slice 6). Não há
   resumo nem poda de histórico: uma conversa de trinta trocas manda as trinta a
   cada pergunta nova. Se virar problema de custo ou de teto de contexto, é fatia

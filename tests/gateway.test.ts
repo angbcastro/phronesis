@@ -17,8 +17,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   MODELO_EMBEDDING_PADRAO,
+  MODELO_CHAT_PADRAO,
   MODELO_EXTRACAO_PADRAO,
   MODELO_STT_PADRAO,
+  modeloChat,
   modeloEmbedding,
   modeloExtracao,
   modeloPerfil,
@@ -185,6 +187,29 @@ describe("endereçamento de modelo", () => {
     } finally {
       if (antes === undefined) delete process.env.EXTRACAO_MODEL;
       else process.env.EXTRACAO_MODEL = antes;
+    }
+  });
+
+  /**
+   * O chat deixou de herdar o padrão da extração na slice 9: trocar o modelo da
+   * extração mudava a resposta do chat em silêncio. O id pode até ser o mesmo —
+   * o que este teste guarda é que um não arrasta o outro.
+   */
+  it("CHAT_MODEL tem padrão próprio, e a extração não o arrasta", () => {
+    const antes = process.env.CHAT_MODEL;
+    const antesExtracao = process.env.EXTRACAO_MODEL;
+    try {
+      delete process.env.CHAT_MODEL;
+      process.env.EXTRACAO_MODEL = "openai/gpt-4o-mini";
+      expect(modeloChat()).toBe(MODELO_CHAT_PADRAO);
+
+      process.env.CHAT_MODEL = "zai/glm-5.3-air";
+      expect(modeloChat()).toBe("zai/glm-5.3-air");
+    } finally {
+      if (antes === undefined) delete process.env.CHAT_MODEL;
+      else process.env.CHAT_MODEL = antes;
+      if (antesExtracao === undefined) delete process.env.EXTRACAO_MODEL;
+      else process.env.EXTRACAO_MODEL = antesExtracao;
     }
   });
 
