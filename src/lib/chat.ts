@@ -11,15 +11,19 @@
  * ela na seguinte. Nenhum pipeline de passo fixo cobre isso sem virar, na
  * prática, um agente disfarçado; então ele é um agente declarado.
  *
- * **Duas ferramentas, compostas.** Quatro ferramentas de dimensão única
+ * **Três ferramentas, compostas.** Quatro ferramentas de dimensão única
  * (semântica, entidade, período, confronto) foram desenhadas e recusadas: uma
  * pergunta composta — "o que eu fiz, aprendi e conquistei em agosto" — exigiria
  * encadear e cruzar à mão o que um parâmetro de lista resolve numa chamada só.
+ * A terceira (slice 9) não reverte isso: é outro substantivo — a ficha da
+ * entidade —, com índice e contagens próprios.
  *
  *   buscar_atomos        texto (vetor), entidade, tipo[], desde, ate — todos
  *                        opcionais, todos combináveis
  *   historico_do_atomo   a cadeia de ATUALIZA/CONTRADIZ/CONFIRMA/COMPLEMENTA
  *                        em volta de um átomo, nas duas direções
+ *   buscar_entidades     nome, texto (vetor de perfil), tipo — a ficha, as
+ *                        contagens e quem co-ocorre
  *
  * **Só leitura, e nem por ferramenta** (regra 5 do CLAUDE.md). Uma ferramenta
  * de escrita com confirmação — arquivar um átomo direto do chat — foi
@@ -51,12 +55,19 @@ import {
 } from "./modelos";
 import { query } from "./neo4j";
 import { carimbo, efetivo } from "./overrides";
+import { PISO_PERFIL } from "./resolucao";
 import { normalizarNome } from "./texto";
 import {
+  ROTULO_TIPO_ENTIDADE,
   TIPOS_ATOMO,
+  TIPOS_ENTIDADE,
   ehTipoRelacaoConfronto,
   type AtomoAchado,
   type BuscaDeAtomos,
+  type BuscaDeEntidades,
+  type CoOcorrencia,
+  type EntidadeAchada,
+  type TipoEntidade,
   type EloDoHistorico,
   type Mensagem,
   type PassoDeFerramenta,
@@ -65,7 +76,7 @@ import {
 } from "./tipos";
 
 /** Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7). */
-export const PROMPT_VERSION_CHAT = "chat-4";
+export const PROMPT_VERSION_CHAT = "chat-5";
 
 export class ChatError extends Error {
   constructor(message: string) {
@@ -154,7 +165,7 @@ const FATOR_DE_FOLGA = 2;
 
 export const INSTRUCOES = `Você responde perguntas sobre um diário pessoal falado. Quem pergunta é o dono do diário, falando de si mesmo: "eu" é sempre ele.
 
-O diário não está no seu contexto. Ele está num grafo, e você o alcança por duas ferramentas:
+O diário não está no seu contexto. Ele está num grafo, e você o alcança por três ferramentas:
 
 buscar_atomos — procura trechos registrados. Todos os parâmetros são opcionais e se combinam:
   texto      busca por sentido, não por palavra exata. Escreva a ideia, não a pergunta.
@@ -162,9 +173,16 @@ buscar_atomos — procura trechos registrados. Todos os parâmetros são opciona
   tipo       um ou mais de: FATO, OPINIAO, SENTIMENTO, APRENDIZADO, CONQUISTA, DECISAO, HISTORIA, ROTINA.
   desde/ate  datas AAAA-MM-DD.
 historico_do_atomo — dado o id de um trecho, devolve a cadeia de trechos ligados a ele no tempo: o que o atualizou, o que o contradisse, o que o confirmou, o que o complementou. É o que responde "como isso mudou".
+buscar_entidades — procura a ficha de pessoas, projetos, objetivos e organizações. Todos os parâmetros são opcionais:
+  nome       nome ou apelido; sem casamento exato, devolve as de nome parecido.
+  texto      busca por sentido na ficha: "quem entende de contabilidade".
+  tipo       Pessoa, Projeto, Objetivo ou Organizacao.
+  Sem nome nem texto, lista as mais faladas daquele tipo — é o que responde "quais são meus projetos".
+  A ficha diz quem é, com o que pode ajudar, o que já fizemos juntos, quantos trechos há, de quando a quando, e com quem mais ela aparece nos mesmos trechos.
 
 COMO BUSCAR
 Busque antes de responder. Você não sabe nada sobre esta pessoa que não tenha vindo de uma busca.
+Pergunta sobre quem alguém é, com quem eu faço o quê, ou quem pode ajudar com algo começa pela ficha, não pelos trechos: ela já diz por escrito o que você levaria várias buscas para reconstruir. A ficha é resumo; data e evidência estão nos trechos — busque-os com buscar_atomos e o nome da entidade quando a pergunta pedir. Ficha vazia não quer dizer que não há nada: quer dizer que ninguém escreveu, e os trechos continuam lá.
 A maioria das perguntas se resolve em uma ou duas buscas. Mais que três é sinal de que você está varrendo em vez de procurar.
 Buscas que não dependem uma da outra vão juntas, no mesmo passo. "O que eu aprendi e o que eu conquistei em agosto" são duas buscas independentes: peça as duas de uma vez. Só espere o resultado quando a busca seguinte precisar dele.
 Encadeie quando a pergunta pedir. "Como eu estava depois que terminei com a Isinha" são duas buscas em sequência: primeiro achar quando foi o término, depois buscar o período seguinte. Uma data que você não tem, você procura — não estima.
@@ -526,12 +544,328 @@ function vizinhosDeNome(
   catalogo: readonly { nome: string; chaves: string[] }[],
   quantos = 5,
 ): string[] {
+  return parecidasPorNome(nome, catalogo, quantos).map((e) => e.nome);
+}
+
+/** As entradas do catálogo cujas grafias contêm um pedaço do nome, ou vice-versa. */
+function parecidasPorNome<T extends { chaves: string[] }>(
+  nome: string,
+  catalogo: readonly T[],
+  quantos = 5,
+): T[] {
   const alvo = normalizarNome(nome);
   const pedacos = alvo.split(" ").filter((t) => t.length >= 3);
   return catalogo
     .filter((e) => e.chaves.some((c) => pedacos.some((t) => c.includes(t) || t.includes(c))))
-    .slice(0, quantos)
-    .map((e) => e.nome);
+    .slice(0, quantos);
+}
+
+// ──────────────────── ferramenta 3: buscar_entidades ────────────────────
+
+/**
+ * Quantas fichas uma busca de entidade devolve inteiras.
+ *
+ * Cinco, e não oito como os átomos: uma ficha é várias linhas — resumo, três
+ * campos de perfil, contagens, quem co-ocorre —, e cinco já é mais texto que
+ * oito átomos. Na listagem por tipo, as que sobram vão só pelo nome.
+ */
+export const TETO_ENTIDADES = 5;
+
+/** Quantas entidades co-ocorrentes cada ficha mostra. */
+export const TETO_JUNTO = 5;
+
+/**
+ * O piso da busca de entidade por `texto`: o mesmo `PISO_PERFIL` da camada 3a
+ * da resolução, e não o `PISO_BUSCA`.
+ *
+ * É a mesma espécie de comparação — texto corrido contra a string canônica
+ * curta de uma entidade (`fonteDaEntidade`), assimétrica, que pontua
+ * sistematicamente menos que átomo contra átomo. O `PISO_BUSCA` de 0,45 vive
+ * no outro espaço. Nenhum dos dois foi medido contra pergunta de chat; o (i)
+ * mostra o melhor cortado, como na busca de átomos.
+ */
+export const PISO_ENTIDADE = PISO_PERFIL;
+
+export interface ResultadoDeEntidades {
+  entidades: EntidadeAchada[];
+  /** Nomes que casaram por parecença, não por grafia exata. */
+  parecidas?: boolean;
+  /** Na listagem, os nomes que ficaram de fora do teto. */
+  outras?: string[];
+  recorte?: RecorteDaBusca;
+  aviso?: string;
+}
+
+interface LinhaDeFicha {
+  id: string;
+  primeira: string | null;
+  ultima: string | null;
+  junto_com: CoOcorrencia[] | null;
+}
+
+/**
+ * O que o catálogo não traz: a primeira e a última data, e quem co-ocorre.
+ *
+ * **Co-ocorrência, e não travessia.** Não há aresta semântica entre duas
+ * entidades — `:ENVOLVIDA_EM`, `:CONTRIBUI_PARA` e `:APONTA_PARA` nunca
+ * existiram. O que liga uma pessoa a um projeto são os átomos que citam as
+ * duas: aqui, os átomos ativos da entidade e quais outras entidades **esses
+ * átomos** citam, contadas por átomo.
+ *
+ * A fusão é atravessada como em `buscar_atomos`: o átomo antigo que ainda
+ * aponta para o nó perdedor é da mesma entidade.
+ */
+async function lerFichas(ids: readonly string[]): Promise<Map<string, LinhaDeFicha>> {
+  if (ids.length === 0) return new Map();
+  const linhas = await query<LinhaDeFicha>(
+    `UNWIND $ids AS id
+     MATCH (e:Entidade { id: id })
+     OPTIONAL MATCH (f:Entidade)-[:FUNDIDA_EM]->(e)
+     WITH id, e, collect(f) + [e] AS nos
+     UNWIND nos AS x
+     MATCH (a:Atomo)-[:SOBRE|:MENCIONA]->(x)
+     WHERE coalesce(a.status, 'ativo') = 'ativo'
+     WITH id, e, collect(DISTINCT a) AS atomos
+     WITH id, e, atomos,
+          [d IN [a IN atomos | left(coalesce(a.valido_em, ''), 10)] WHERE d <> ''] AS datas
+     UNWIND atomos AS a
+     OPTIONAL MATCH (a)-[:SOBRE|:MENCIONA]->(o:Entidade)
+     WHERE o <> e AND NOT (o)-[:FUNDIDA_EM]->(e) AND toLower(coalesce(o.nome, '')) <> 'eu'
+     WITH id, datas, o, count(DISTINCT a) AS vezes
+     ORDER BY vezes DESC, o.nome
+     WITH id, datas,
+          collect(CASE WHEN o IS NULL THEN null ELSE { nome: o.nome, vezes: vezes } END) AS junto
+     RETURN id,
+            reduce(m = '', d IN datas | CASE WHEN m = '' OR d < m THEN d ELSE m END) AS primeira,
+            reduce(m = '', d IN datas | CASE WHEN d > m THEN d ELSE m END) AS ultima,
+            junto[0..$teto] AS junto_com`,
+    { ids: [...ids], teto: TETO_JUNTO },
+  );
+  return new Map(linhas.map((l) => [l.id, l]));
+}
+
+const paraAchada = (
+  e: EntidadeDoGrafo,
+  ficha: LinhaDeFicha | undefined,
+  similaridade?: number,
+): EntidadeAchada => ({
+  id: e.id,
+  nome: e.nome,
+  tipo: e.tipo,
+  aliases: e.aliases,
+  resumo: e.resumo,
+  perfil: e.perfil,
+  atomos: e.atomos,
+  sessoes: e.sessoes,
+  primeira: ficha?.primeira ?? "",
+  ultima: ficha?.ultima ?? "",
+  junto_com: (ficha?.junto_com ?? []).filter(
+    (j): j is CoOcorrencia => typeof j?.nome === "string" && typeof j?.vezes === "number",
+  ),
+  ...(typeof similaridade === "number" ? { similaridade } : {}),
+});
+
+/**
+ * A ferramenta 3, por dentro (slice 9): a ficha de uma entidade, que até aqui
+ * era ilegível para o chat.
+ *
+ * **Três caminhos, na ordem em que se decidem:**
+ *
+ * - `nome` — pela grafia exata no catálogo (alias incluído, como em
+ *   `buscar_atomos`); sem ela, pelas grafias parecidas, e a resposta diz que
+ *   foram parecidas;
+ * - `texto` — por sentido, sobre `entidade_embedding` (migration 006): o vetor
+ *   é da string canônica — nome, tipo, grafias e os três campos de perfil —, e
+ *   por isso "quem pode me ajudar com X" só acha quem tem `pode_ajudar_com`
+ *   escrito;
+ * - nenhum dos dois — a listagem, as mais faladas primeiro. É o que responde
+ *   "quais são meus projetos".
+ *
+ * `tipo` filtra os três. O catálogo vem de `leitura`, então buscar entidade e
+ * depois buscar átomo por ela na mesma pergunta lê o catálogo uma vez só.
+ *
+ * **Vale o que a ficha tem dentro.** Em 23/09, 2 das 51 entidades tinham
+ * resumo. Ficha vazia faz esta ferramenta devolver casca — nome, contagens e
+ * quem co-ocorre —, e o conserto disso é rodar o lote de enriquecimento em
+ * `/entidades`, não mexer aqui.
+ */
+export async function buscarEntidades(
+  p: BuscaDeEntidades,
+  leitura: LeituraDaPergunta = leituraDaPergunta(),
+): Promise<ResultadoDeEntidades> {
+  const nome = typeof p.nome === "string" ? p.nome.trim() : "";
+  const texto = typeof p.texto === "string" ? p.texto.trim() : "";
+  const tipo = tipoDeEntidade(p.tipo);
+  const doTipo = (e: EntidadeDoGrafo) => tipo === null || e.tipo === tipo;
+
+  const catalogo = await leitura.catalogo();
+
+  if (nome !== "") {
+    const exata = acharPorChave(normalizarNome(nome), catalogo);
+    if (exata && doTipo(exata)) {
+      const fichas = await lerFichas([exata.id]);
+      return { entidades: [paraAchada(exata, fichas.get(exata.id))] };
+    }
+    const parecidas = parecidasPorNome(nome, catalogo.filter(doTipo), TETO_ENTIDADES);
+    if (parecidas.length === 0) {
+      return {
+        entidades: [],
+        aviso: `nenhuma entidade${tipo ? ` do tipo ${ROTULO_TIPO_ENTIDADE[tipo]}` : ""} se chama "${nome}", nem nada parecido. Tente outra grafia, ou buscar_atomos com o texto.`,
+      };
+    }
+    const fichas = await lerFichas(parecidas.map((e) => e.id));
+    return {
+      entidades: parecidas.map((e) => paraAchada(e, fichas.get(e.id))),
+      parecidas: true,
+    };
+  }
+
+  if (texto !== "") {
+    const linhas = await query<{ id: string; similaridade: number }>(
+      `CALL db.index.vector.queryNodes('entidade_embedding', $k, $vetor) YIELD node, score
+       WITH node AS e, 2 * score - 1 AS similaridade
+       OPTIONAL MATCH (e)-[:FUNDIDA_EM]->(vencedor:Entidade)
+       WITH coalesce(vencedor, e) AS alvo, max(similaridade) AS similaridade
+       RETURN alvo.id AS id, similaridade
+       ORDER BY similaridade DESC`,
+      { k: K_BUSCA, vetor: await leitura.vetor(texto) },
+    );
+    const porId = new Map(catalogo.map((e) => [e.id, e]));
+    const acima = linhas.filter((l) => l.similaridade >= PISO_ENTIDADE);
+    const abaixo = linhas.filter((l) => l.similaridade < PISO_ENTIDADE);
+    const passaram = acima
+      .map((l) => ({ e: porId.get(l.id), similaridade: l.similaridade }))
+      .filter((x): x is { e: EntidadeDoGrafo; similaridade: number } => !!x.e && doTipo(x.e));
+    const mostradas = passaram.slice(0, TETO_ENTIDADES);
+    const fichas = await lerFichas(mostradas.map((x) => x.e.id));
+    return {
+      entidades: mostradas.map((x) => paraAchada(x.e, fichas.get(x.e.id), x.similaridade)),
+      recorte: {
+        total: passaram.length,
+        mostrados: mostradas.length,
+        filtrado: tipo !== null,
+        janela: linhas.length,
+        acima_do_piso: acima.length,
+        melhor_abaixo: abaixo.length > 0 ? abaixo[0].similaridade : null,
+        piso: PISO_ENTIDADE,
+      },
+    };
+  }
+
+  // A listagem. "eu" fica de fora: é sujeito de quase todo átomo, e encabeçaria
+  // qualquer lista das mais faladas sem dizer nada que o prompt já não diga.
+  const lista = catalogo.filter((e) => doTipo(e) && e.nome_normalizado !== "eu");
+  const mostradas = lista.slice(0, TETO_ENTIDADES);
+  const fichas = await lerFichas(mostradas.map((e) => e.id));
+  return {
+    entidades: mostradas.map((e) => paraAchada(e, fichas.get(e.id))),
+    outras: lista.slice(TETO_ENTIDADES).map((e) => e.nome),
+    recorte: { total: lista.length, mostrados: mostradas.length, filtrado: tipo !== null },
+  };
+}
+
+/** Uma ficha, do jeito que ela entra no prompt de volta ao modelo. */
+export function textoDaFicha(e: EntidadeAchada): string {
+  const marcas = [
+    ROTULO_TIPO_ENTIDADE[e.tipo],
+    ...(typeof e.similaridade === "number" ? [`similaridade ${e.similaridade.toFixed(2)}`] : []),
+  ];
+  const linhas = [`${e.nome} (${marcas.join(", ")})`];
+  if (e.aliases.length > 0) linhas.push(`  também escrito: ${e.aliases.join(", ")}`);
+
+  const campos: [string, string][] = [
+    ["resumo", e.resumo],
+    ["contexto", e.perfil.contexto],
+    ["pode ajudar com", e.perfil.pode_ajudar_com],
+    ["fizemos juntos", e.perfil.fizemos_juntos],
+  ];
+  const escritos = campos.filter(([, v]) => v !== "");
+  if (escritos.length === 0) {
+    // Dito, e não omitido: sem esta linha o modelo leria a ausência como "não
+    // há nada a saber", quando o que há é ficha que ninguém escreveu.
+    linhas.push("  ficha vazia: nada escrito sobre ela ainda — o que se sabe está nos trechos.");
+  } else {
+    for (const [rotulo, valor] of escritos) linhas.push(`  ${rotulo}: ${valor}`);
+  }
+
+  const periodo =
+    e.primeira === ""
+      ? ""
+      : e.primeira === e.ultima
+        ? `, em ${e.primeira}`
+        : `, de ${e.primeira} a ${e.ultima}`;
+  linhas.push(`  ${e.atomos} trecho(s) em ${e.sessoes} sessão(ões)${periodo}`);
+  if (e.junto_com.length > 0) {
+    linhas.push(`  aparece junto com: ${e.junto_com.map((j) => `${j.nome} (${j.vezes})`).join(", ")}`);
+  }
+  return linhas.join("\n");
+}
+
+/** O que `buscar_entidades` devolve ao modelo, com o recorte em cima. */
+export function respostaDasEntidades(r: ResultadoDeEntidades): string {
+  if (r.aviso) return r.aviso;
+
+  const c = r.recorte;
+  let topo: string | null = null;
+  if (r.parecidas) {
+    topo = "nenhuma se chama exatamente assim; estas são as de nome parecido:";
+  } else if (c && typeof c.janela === "number") {
+    if (c.mostrados === 0) {
+      topo =
+        (c.acima_do_piso ?? 0) === 0
+          ? `nenhuma ficha passou do piso (${(c.piso ?? PISO_ENTIDADE).toFixed(2)}): a mais parecida ficou em ${typeof c.melhor_abaixo === "number" ? c.melhor_abaixo.toFixed(2) : "?"}. A maioria das fichas ainda não tem perfil escrito — procure nos trechos com buscar_atomos.`
+          : `${c.acima_do_piso} fichas passaram do piso, e nenhuma é do tipo pedido.`;
+    } else {
+      topo = `mostrando ${c.mostrados} de ${c.total} fichas que passaram do piso${c.filtrado ? " e do tipo" : ""}.`;
+    }
+  } else if (c) {
+    topo =
+      c.total === 0
+        ? "nenhuma entidade desse tipo no grafo."
+        : c.total > c.mostrados
+          ? `mostrando ${c.mostrados} de ${c.total}, as mais faladas primeiro. As outras: ${(r.outras ?? []).join(", ")}.`
+          : `${c.total} no grafo, todas abaixo.`;
+  }
+
+  const fichas = r.entidades.map(textoDaFicha).join("\n\n");
+  return [topo, fichas].filter((s) => s !== null && s !== "").join("\n\n") || "nenhuma entidade encontrada.";
+}
+
+/**
+ * O tipo que o modelo mandou, se for um dos quatro. "organização", "Organizacao"
+ * e "projetos" não casam por igual — o acento e a caixa sim, o plural não:
+ * tipo inventado é ignorado, não erra, como em `tiposValidos`.
+ */
+export function tipoDeEntidade(v: unknown): TipoEntidade | null {
+  if (typeof v !== "string") return null;
+  const alvo = normalizarNome(v);
+  return TIPOS_ENTIDADE.find((t) => normalizarNome(t) === alvo) ?? null;
+}
+
+/** A ficha cortada para o rastro: o (i) mostra um retrato, não o perfil inteiro. */
+const fichaParaRastro = (e: EntidadeAchada): EntidadeAchada => {
+  const corta = (s: string) => (s.length > TRECHO_NO_RASTRO ? `${s.slice(0, TRECHO_NO_RASTRO)}…` : s);
+  return {
+    ...e,
+    resumo: corta(e.resumo),
+    perfil: {
+      contexto: corta(e.perfil.contexto),
+      pode_ajudar_com: corta(e.perfil.pode_ajudar_com),
+      fizemos_juntos: corta(e.perfil.fizemos_juntos),
+    },
+  };
+};
+
+/** Os parâmetros de fato usados em `buscar_entidades`, para o (i). */
+export function parametrosDeEntidade(p: BuscaDeEntidades): Record<string, unknown> {
+  const limpos: Record<string, unknown> = {};
+  const nome = typeof p.nome === "string" ? p.nome.trim() : "";
+  const texto = typeof p.texto === "string" ? p.texto.trim() : "";
+  const tipo = tipoDeEntidade(p.tipo);
+  if (nome !== "") limpos.nome = nome;
+  if (texto !== "") limpos.texto = texto;
+  if (tipo !== null) limpos.tipo = tipo;
+  return limpos;
 }
 
 // ──────────────────── ferramenta 2: historico_do_atomo ────────────────────
@@ -726,6 +1060,22 @@ const ESQUEMA_HISTORICO = jsonSchema<{ atomo_id: string }>({
   required: ["atomo_id"],
 });
 
+const ESQUEMA_ENTIDADES = jsonSchema<BuscaDeEntidades>({
+  type: "object",
+  properties: {
+    nome: {
+      type: "string",
+      description: "nome, apelido ou grafia errada. Sem casamento exato, devolve as de nome parecido.",
+    },
+    texto: {
+      type: "string",
+      description:
+        "busca por sentido na ficha — o que a pessoa faz, com o que pode ajudar. Escreva a ideia, não a pergunta.",
+    },
+    tipo: { type: "string", enum: [...TIPOS_ENTIDADE] },
+  },
+});
+
 export interface OpcoesResposta {
   /** Chamado assim que uma ferramenta termina — é o progresso na tela. */
   aoPasso?: (passo: PassoDeFerramenta) => void;
@@ -825,6 +1175,40 @@ export function ferramentas(
           console.error("[chat] historico_do_atomo falhou:", e);
           anunciar({
             ferramenta: "historico_do_atomo",
+            parametros,
+            achados: [],
+            duracao_ms: Date.now() - inicio,
+            erro,
+          });
+          return `a busca falhou: ${erro}`;
+        }
+      },
+    }),
+
+    buscar_entidades: tool({
+      description:
+        "Procura a ficha de pessoas, projetos, objetivos e organizações: quem é, o que pode ajudar, o que fizemos juntos, quantos trechos, e com quem mais aparece. Sem parâmetro, lista as mais faladas.",
+      inputSchema: ESQUEMA_ENTIDADES,
+      execute: async (entrada: BuscaDeEntidades) => {
+        const parametros = parametrosDeEntidade(entrada ?? {});
+        const inicio = Date.now();
+        try {
+          const r = await buscarEntidades(entrada ?? {}, leitura);
+          anunciar({
+            ferramenta: "buscar_entidades",
+            parametros,
+            achados: [],
+            entidades: r.entidades.map(fichaParaRastro),
+            ...(r.recorte ? { recorte: r.recorte } : {}),
+            duracao_ms: Date.now() - inicio,
+            ...(r.aviso ? { erro: r.aviso } : {}),
+          });
+          return respostaDasEntidades(r);
+        } catch (e) {
+          const erro = e instanceof Error ? e.message : String(e);
+          console.error("[chat] buscar_entidades falhou:", e);
+          anunciar({
+            ferramenta: "buscar_entidades",
             parametros,
             achados: [],
             duracao_ms: Date.now() - inicio,

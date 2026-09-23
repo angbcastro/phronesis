@@ -1131,8 +1131,15 @@ export type PapelMensagem = (typeof PAPEIS_MENSAGEM)[number];
 export const ehPapelMensagem = (v: unknown): v is PapelMensagem =>
   typeof v === "string" && (PAPEIS_MENSAGEM as readonly string[]).includes(v);
 
-/** As duas ferramentas do agente `chat`. Só leitura, as duas (regra 5). */
-export const FERRAMENTAS_CHAT = ["buscar_atomos", "historico_do_atomo"] as const;
+/**
+ * As três ferramentas do agente `chat`. Só leitura, as três (regra 5).
+ *
+ * A terceira (slice 9) é sobre um substantivo diferente — a entidade, com
+ * ficha, índice e contagens próprios —, e por isso é ferramenta e não
+ * parâmetro. Não reverte a decisão da slice 6, que recusou quatro fatias do
+ * **mesmo** substantivo.
+ */
+export const FERRAMENTAS_CHAT = ["buscar_atomos", "historico_do_atomo", "buscar_entidades"] as const;
 
 export type FerramentaChat = (typeof FERRAMENTAS_CHAT)[number];
 
@@ -1198,6 +1205,48 @@ export interface RecorteDaBusca {
   filtrado?: boolean;
 }
 
+/** O que `buscar_entidades` aceita. Todos opcionais, como em `buscar_atomos`. */
+export interface BuscaDeEntidades {
+  /** Nome, apelido ou grafia errada — resolve por alias, depois por parecença. */
+  nome?: string;
+  /** Busca por sentido sobre o vetor de perfil (`entidade_embedding`, 006). */
+  texto?: string;
+  tipo?: TipoEntidade;
+}
+
+/** Uma entidade que aparece junto, nos mesmos átomos, com a entidade achada. */
+export interface CoOcorrencia {
+  nome: string;
+  /** Em quantos átomos as duas aparecem juntas. */
+  vezes: number;
+}
+
+/**
+ * Uma ficha como `buscar_entidades` a devolve: o que as slices 4.11 e 4.12
+ * construíram, as contagens e quem co-ocorre.
+ *
+ * **Co-ocorrência, e não travessia.** Não há aresta semântica entre duas
+ * entidades neste grafo — `:FUNDIDA_EM` e `:DISTINTA_DE` são escrituração de
+ * identidade. O que liga uma pessoa a um projeto são os átomos que citam os
+ * dois, e é isso que `junto_com` conta.
+ */
+export interface EntidadeAchada {
+  id: string;
+  nome: string;
+  tipo: TipoEntidade;
+  aliases: string[];
+  resumo: string;
+  perfil: Perfil;
+  atomos: number;
+  sessoes: number;
+  /** `AAAA-MM-DD` do primeiro e do último átomo datado; "" quando não há. */
+  primeira: string;
+  ultima: string;
+  junto_com: CoOcorrencia[];
+  /** Só quando a busca foi por `texto`. Cosseno, como em todo o resto. */
+  similaridade?: number;
+}
+
 /** Um elo da cadeia que `historico_do_atomo` percorre (as relações da 011). */
 export interface EloDoHistorico {
   de: string;
@@ -1223,6 +1272,8 @@ export interface PassoDeFerramenta {
   achados: AtomoAchado[];
   /** Só de `historico_do_atomo`: as relações entre os átomos achados. */
   elos?: EloDoHistorico[];
+  /** Só de `buscar_entidades`: as fichas achadas (slice 9). */
+  entidades?: EntidadeAchada[];
   /**
    * Quanto a busca achou e quanto mostrou (slice 9). Opcional como os dois
    * abaixo: mensagem gravada antes da slice 9 continua legível sem retrofill.

@@ -20,15 +20,17 @@ laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas)
 (o sistema se cronometra, e encolhe o que mede) e 8.2 (a revisão abre antes de a
 proposta fechar) construídas.**
 
-**A slice 9 está aberta, e sobe em partes.** A fatia (`Specs/slice-9.md`) é o
-miolo do chat — como a pergunta vira busca e como a busca vira resposta. Feito: o
-prompt responde antes de despejar e autoriza busca paralela (`chat-3`); o chat tem
-padrão de modelo próprio (`MODELO_CHAT_PADRAO`); a busca diz quanto cortou e de
-que vazio se trata, e o (i) mostra o recorte e a duração de cada passo (`chat-4`);
-catálogo e vetor são lidos uma vez por pergunta (§4.16.2). O que **ainda não
-existe**: a terceira ferramenta, `buscar_entidades`. O streaming do texto final
-**não vai acontecer** nesta fatia, por decisão minha: a resposta mais curta
-encolhe a espera que ele consertaria.
+**A slice 9 está construída, e sobe em partes.** A fatia (`Specs/slice-9.md`) é
+o miolo do chat — como a pergunta vira busca e como a busca vira resposta. Em
+quatro commits, cada um ponto de retorno: o prompt responde antes de despejar e
+autoriza busca paralela (`chat-3`); o chat tem padrão de modelo próprio
+(`MODELO_CHAT_PADRAO`); a busca diz quanto cortou e de que vazio se trata, o (i)
+mostra o recorte e a duração de cada passo, e catálogo e vetor são lidos uma vez
+por pergunta (`chat-4`); e a terceira ferramenta, `buscar_entidades`, lê a ficha
+da entidade (`chat-5`, §4.16.2). **Não aconteceram, por decisão minha:** a
+medição de `CHAT_MODEL` antes de fixar o padrão, e o streaming do texto final —
+a resposta mais curta encolhe a espera que ele consertaria. Nada disto foi
+julgado numa pergunta real ainda; é o que falta.
 
 **A 8.2 era condicional, e a condição se cumpriu.** A `Specs/slice-8.md` declarou
 que ela só existiria "se o número desta continuar ruim"; as sessões reais
@@ -389,8 +391,9 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   confronto.ts    o agente `confronto` (slice 5): candidatos por vetor entre
                   átomos, ATUALIZA/CONTRADIZ/CONFIRMA/COMPLEMENTA, e GRAVA —
                   mesmo padrão do enriquecimento, nunca em tempo real
-  chat.ts         o agente `chat` (slice 6): as duas ferramentas só-leitura, o
-                  loop com teto de 8 chamadas, e o rastro que o botão (i) abre.
+  chat.ts         o agente `chat` (slice 6): as três ferramentas só-leitura (a
+                  terceira, `buscar_entidades`, desde a slice 9), o loop com
+                  teto de 8 chamadas, e o rastro que o botão (i) abre.
                   Não sabe que conversa existe
   conversas.ts    :Conversa, as mensagens no R2, arquivar e apagar — e o agente
                   `titulo-chat`, a única chamada de modelo que mora aqui
@@ -734,7 +737,7 @@ painel de `/agentes` (§4.13):
 | `modeloDuplicatas()` | `duplicatas-2` | `deepseek/deepseek-v4.1-flash` |
 | `modeloEmbedding()` | embedding | `openai/text-embedding-3-small` |
 | `modeloConfronto()` | `confronto-2` | o da extração |
-| `modeloChat()` | `chat-4` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |
+| `modeloChat()` | `chat-5` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |
 | `modeloTituloChat()` | `titulo-chat-1` | o do chat |
 
 A deduplicação de **entidade** chegou na slice 3 e é o `duplicatas-2`. O que
@@ -2655,14 +2658,16 @@ prompt e o modelo que a comandam, e na resolução e no confronto o **limiar**
 | `duplicatas-2` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
 | embedding (sem prompt) | `embedding.ts` | automático, depois de gravar | `EMBEDDING_MODEL` | — |
 | `confronto-2` | `confronto.ts` | periódico: cron próprio e sob demanda em `/confronto` (slice 5) | `CONFRONTO_MODEL` | `relacoes`, `novo`, `velho` |
-| `chat-4` | `chat.ts` | sob demanda, a cada mensagem na barra de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo` |
+| `chat-5` | `chat.ts` | sob demanda, a cada mensagem na barra de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo`, `buscar_entidades` |
 | `titulo-chat-1` | `conversas.ts` | sob demanda, uma vez por conversa nova (slice 6) | `CHAT_TITULO_MODEL` | `titulo` |
 
 **O `chat` é o único cujo envelope não são chaves de JSON**, e a diferença é
 real: o parser dele é o loop de *tool-calling*, não um `JSON.parse`. O que um
 prompt editado não pode perder é o nome do que ele pode chamar — um prompt que
 não cita `buscar_atomos` é um prompt que desliga a ferramenta, e a recusa diz
-isso antes de salvar.
+isso antes de salvar. Desde a slice 9 o envelope tem os três nomes: um prompt
+editado antes dela, e salvo em `/agentes`, **não** cita `buscar_entidades` — a
+ferramenta continua oferecida ao modelo, mas sem a instrução de quando usá-la.
 
 **O limiar é o terceiro campo editável** (4.11), e desde a 5.1 são **dois** os
 agentes que têm um — e eles medem coisas diferentes: na resolução, abaixo dele
@@ -3348,7 +3353,7 @@ congelaria a mentira dentro do objeto imutável do `prompt_hash` — "esse mês"
 "semana passada" passariam a ser resolvidos contra o dia em que eu editei o
 prompt em `/agentes`.
 
-#### 4.16.2 As duas ferramentas, e por que duas
+#### 4.16.2 As ferramentas, e por que não quatro
 
 Quatro ferramentas de dimensão única — semântica, entidade, período, confronto —
 foram desenhadas primeiro e recusadas: uma pergunta composta ("o que eu fiz,
@@ -3574,6 +3579,85 @@ coisas levam a respostas opostas.
 a pergunta fica sem resposta; ferramenta que devolve "não consegui" deixa o
 modelo tentar outro caminho — que é o que uma pessoa faria. O erro vai para o
 rastro do (i) do mesmo jeito, então nada fica escondido.
+
+##### A terceira ferramenta: `buscar_entidades` (slice 9, `chat-5`)
+
+```
+buscar_entidades({ nome?, texto?, tipo?: TipoEntidade })
+```
+
+Até aqui o chat só alcançava a camada dos átomos. A ficha que as slices 4.11 e
+4.12 construíram — `resumo`, `contexto`, `pode_ajudar_com`, `fizemos_juntos` — era
+**ilegível para ele**: "quem pode me ajudar com X" só se respondia relendo átomos
+e re-deduzindo o que a ficha já diz por escrito. O índice `entidade_embedding` da
+migration 006 existia, a extração o usava, e o chat nunca o tocou.
+
+**Três caminhos, na ordem em que se decidem:**
+
+- **`nome`** — pela grafia exata no catálogo (`acharPorChave`, alias incluído,
+  como em `buscar_atomos`); sem ela, pelas grafias parecidas, e a resposta abre
+  dizendo que foram parecidas. Nem exata nem parecida: aviso, sem consulta;
+- **`texto`** — por sentido, sobre `entidade_embedding`, até `K_BUSCA` vizinhos,
+  com a fusão atravessada para o vencedor. O vetor é da string canônica
+  (`fonteDaEntidade`: nome, tipo, grafias e os três campos de perfil), então
+  "quem entende de contabilidade" só acha quem tem isso escrito na ficha;
+- **nenhum dos dois** — a listagem, as mais faladas primeiro (a ordem do
+  catálogo), sem o `"eu"`. É o que responde "quais são meus projetos".
+
+`tipo` filtra os três. Até `TETO_ENTIDADES = 5` fichas inteiras — uma ficha são
+várias linhas, e cinco já pesam mais que oito átomos —; na listagem, as que
+sobram vão só pelo nome.
+
+**O piso do caminho por texto é o `PISO_PERFIL` (0,34) da resolução, e não o
+`PISO_BUSCA`.** É a mesma espécie de comparação — texto corrido contra a string
+canônica curta de uma entidade, assimétrica, que pontua sistematicamente menos
+que átomo contra átomo. Nenhum dos dois foi medido contra pergunta de chat; o
+recorte vai para o (i) como na busca de átomos, com o melhor cortado. Conferido
+contra o Aura em 23/09 com o vetor de um átomo real sobre a Isinha: 47 vizinhos,
+três acima de 0,34, a Isinha em primeiro com 0,60.
+
+**A ficha traz o que o catálogo já tem e o que ele não tem.** Do catálogo
+(`leitura.catalogo()`, o mesmo retrato que `buscar_atomos` usa na mesma
+pergunta): nome, tipo, grafias, resumo, os três campos, átomos e sessões. De uma
+consulta só (`lerFichas`, por `UNWIND $ids`): a primeira e a última data, e
+**quem co-ocorre**.
+
+**Co-ocorrência, e não travessia.** Não existe o que atravessar:
+`:ENVOLVIDA_EM`, `:CONTRIBUI_PARA` e `:APONTA_PARA` nunca ganharam migration nem
+código, e as únicas arestas entre duas entidades são `:FUNDIDA_EM` e
+`:DISTINTA_DE`, que são escrituração de identidade. Uma ferramenta que andasse
+por elas voltaria vazia sempre. O que funciona é: os átomos ativos ligados à
+entidade (atravessando a fusão), e quais outras entidades **esses átomos**
+citam, contadas por átomo, as `TETO_JUNTO = 5` mais frequentes. Um teste guarda
+que a consulta não nomeia nenhuma das arestas que não existem.
+
+**Ficha vazia é dita, e não omitida.** "ficha vazia: nada escrito sobre ela
+ainda — o que se sabe está nos trechos." Sem essa linha o modelo leria a
+ausência como "não há nada a saber". E o `chat-5` diz o mesmo com outras
+palavras: pergunta sobre quem alguém é, com quem eu faço o quê ou quem pode
+ajudar começa pela ficha; data e evidência continuam nos trechos, buscados por
+`buscar_atomos` com o nome da entidade.
+
+**Recusado, e por quê:**
+
+- **uma ferramenta por label** (`buscar_projetos`, `buscar_pessoas`) — `:Projeto`
+  já é um tipo de `:Entidade`, e por label seria exatamente a decisão que a 6
+  recusou. É parâmetro;
+- **injetar o catálogo de entidades no prompt** — o custo nunca foi o token
+  (~300 para 43 entidades): é que o catálogo dá ao modelo nomes que ele não
+  buscou, e o prompt inteiro se apoia em "você não sabe nada que não tenha vindo
+  de uma busca". A ferramenta resolve o mesmo problema puxando em vez de
+  empurrando. A §4.14 já tinha decidido a mesma pergunta para o extrator;
+- **travessia de grafo entre entidades** — ver acima.
+
+**Não reverte a decisão da slice 6.** O que aquela entrevista recusou foram
+quatro fatias do **mesmo substantivo**, todas sobre átomo. Esta é um substantivo
+diferente, com ficha, índice e contagens próprios.
+
+O rastro guarda as fichas em `PassoDeFerramenta.entidades`, com os campos de
+texto cortados em `TRECHO_NO_RASTRO`; `achados` fica vazio. O (i) mostra nome,
+tipo, quantos trechos, até quando, a similaridade quando houver, o resumo (ou o
+contexto, ou "ficha vazia") e com quem aparece.
 
 #### 4.16.3 Só leitura, e nem por ferramenta
 
@@ -7187,6 +7271,23 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   (18/09) a janela era quase metade do diário; em 23/09 já eram 151, e ela é um
   terço. A linha diz isso com todas as letras ("não no diário inteiro"); quando o
   diário crescer mais, é o texto dela e o `K_BUSCA` que se revisitam juntos.
+- **`buscar_entidades` vale o que a ficha tem dentro** (slice 9). Em 23/09, 2 das
+  51 entidades ativas tinham `resumo`, 2 tinham `contexto`, 1 tinha
+  `pode_ajudar_com`. Ficha vazia faz a ferramenta custar uma chamada para
+  devolver casca — nome, contagens, datas e quem co-ocorre —, e o caminho por
+  `texto` quase só acha pelo nome, porque é só o nome que está no vetor. O
+  conserto é rodar o lote de enriquecimento em `/entidades` (4.12), não mexer
+  na ferramenta; o agente 4 que escreve as fichas nunca foi medido numa sessão
+  real.
+- **Três ferramentas disputam mais atenção do modelo que duas** (slice 9), e o
+  `CHAT_MODEL` que as recebe é o `deepseek/deepseek-v4.1-flash`, escolhido sem
+  medir tool-calling multi-passo. Se ele encadear mal, a ferramenta nova piora a
+  resposta em vez de melhorar — e o conserto é o modelo ou o prompt, não remover
+  a ferramenta.
+- **Um prompt do chat editado em `/agentes` antes da slice 9 não conhece o que
+  ela trouxe.** O override guardado no R2 vence o `chat-5` do código: a linha de
+  recorte continua saindo da busca, e `buscar_entidades` continua oferecida,
+  mas sem as instruções de como ler uma nem quando usar a outra.
 - **O piso de 0,45 e o teto de 8 não foram medidos contra gabarito** (slice 6, e
   não podiam ser: `CLAUDE.md` diz que quem julga extração aqui sou eu, na tela).
   O que existe é uma medida emprestada — os 0,728 da varredura de confronto, em

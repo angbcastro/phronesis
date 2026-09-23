@@ -42,8 +42,14 @@ import {
   PROMPT_VERSION_CHAT,
   TETO_ATOMOS,
   TETO_FERRAMENTAS,
+  PISO_ENTIDADE,
+  TETO_ENTIDADES,
   buscarAtomos,
+  buscarEntidades,
   chamadasFeitas,
+  respostaDasEntidades,
+  textoDaFicha,
+  tipoDeEntidade,
   leituraDaPergunta,
   linhaDoRecorte,
   dataSimples,
@@ -86,7 +92,13 @@ import { acharPorChave, listarEntidades } from "@/lib/entidades";
 import { embutir } from "@/lib/embedding";
 import { ConflitoR2Error, getJson, putJson, remover } from "@/lib/r2";
 import { query, queryUm } from "@/lib/neo4j";
-import type { AtomoAchado, Conversa, Mensagem, PassoDeFerramenta } from "@/lib/tipos";
+import type {
+  AtomoAchado,
+  Conversa,
+  EntidadeAchada,
+  Mensagem,
+  PassoDeFerramenta,
+} from "@/lib/tipos";
 
 const consulta = vi.mocked(query);
 const consultaUm = vi.mocked(queryUm);
@@ -174,11 +186,12 @@ describe("os dois agentes novos existem como agente", () => {
     expect(() => chavePromptAgente("-chat", "a1b2c3d4")).toThrow();
   });
 
-  it("o prompt do chat continua nomeando as duas ferramentas", () => {
+  it("o prompt do chat continua nomeando as três ferramentas", () => {
     // É o envelope deste agente: o parser dele é o loop de tool-calling, e um
     // prompt que não cita a ferramenta é um prompt que a desliga.
     expect(INSTRUCOES).toContain("buscar_atomos");
     expect(INSTRUCOES).toContain("historico_do_atomo");
+    expect(INSTRUCOES).toContain("buscar_entidades");
   });
 });
 
@@ -524,6 +537,200 @@ describe("historico_do_atomo", () => {
   });
 });
 
+// ─────────────────────────── ferramenta 3 ───────────────────────────
+
+/** Uma entrada de catálogo, no formato de `listarEntidades`. */
+const entrada = (extra: Record<string, unknown> = {}) => ({
+  id: "e1",
+  nome: "Isinha",
+  nome_normalizado: "isinha",
+  chaves: ["isinha", "isa"],
+  tipo: "Pessoa",
+  sessoes: 5,
+  atomos: 13,
+  aliases: ["Isa"],
+  resumo: "ex-namorada; terminamos em julho",
+  canonico: false,
+  perfil: { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" },
+  ...extra,
+});
+
+const ficha = (extra: Partial<EntidadeAchada> = {}): EntidadeAchada => ({
+  id: "e1",
+  nome: "Isinha",
+  tipo: "Pessoa",
+  aliases: [],
+  resumo: "",
+  perfil: { contexto: "", pode_ajudar_com: "", fizemos_juntos: "" },
+  atomos: 13,
+  sessoes: 5,
+  primeira: "2026-06-01",
+  ultima: "2026-09-20",
+  junto_com: [],
+  ...extra,
+});
+
+/**
+ * A ficha que as slices 4.11 e 4.12 construíram era ilegível para o chat. O que
+ * erraria calado aqui: a co-ocorrência virar travessia de aresta que não existe
+ * (volta vazia sempre), a ficha vazia ser lida como "nada a saber", e a busca
+ * por sentido usar o piso do espaço errado.
+ */
+describe("buscar_entidades", () => {
+  it("por nome, casa a grafia pelo catálogo e lê a ficha com a co-ocorrência", async () => {
+    catalogo.mockResolvedValue([entrada()] as never);
+    achar.mockReturnValue(entrada() as never);
+    porCypher([
+      [
+        /UNWIND \$ids AS id/,
+        [{ id: "e1", primeira: "2026-06-01", ultima: "2026-09-20", junto_com: [{ nome: "Murta", vezes: 3 }] }],
+      ],
+    ]);
+
+    const r = await buscarEntidades({ nome: "Isa" });
+    expect(r.entidades).toHaveLength(1);
+    expect(r.entidades[0]).toMatchObject({
+      nome: "Isinha",
+      resumo: "ex-namorada; terminamos em julho",
+      junto_com: [{ nome: "Murta", vezes: 3 }],
+      primeira: "2026-06-01",
+    });
+    const cypher = String(consulta.mock.calls[0][0]);
+    // Co-ocorrência sobre átomo, nunca aresta entre entidades.
+    expect(cypher).toContain("(a)-[:SOBRE|:MENCIONA]->(o:Entidade)");
+    expect(cypher).not.toMatch(/ENVOLVIDA_EM|CONTRIBUI_PARA|APONTA_PARA/);
+    expect(cypher).toContain("(f:Entidade)-[:FUNDIDA_EM]->(e)");
+    expect(cypher).toContain("coalesce(a.status, 'ativo') = 'ativo'");
+  });
+
+  it("sem grafia exata, devolve as parecidas e diz que foram parecidas", async () => {
+    catalogo.mockResolvedValue([entrada({ nome: "Isabela Prado", chaves: ["isabela prado"] })] as never);
+    achar.mockReturnValue(undefined as never);
+    const r = await buscarEntidades({ nome: "Isabela" });
+    expect(r.parecidas).toBe(true);
+    expect(respostaDasEntidades(r)).toContain("nenhuma se chama exatamente assim");
+  });
+
+  it("nome que não existe nem parecido volta com aviso, sem consultar o banco", async () => {
+    catalogo.mockResolvedValue([entrada()] as never);
+    achar.mockReturnValue(undefined as never);
+    const r = await buscarEntidades({ nome: "Zuleica" });
+    expect(r.entidades).toEqual([]);
+    expect(r.aviso).toContain("Zuleica");
+    expect(consulta).not.toHaveBeenCalled();
+  });
+
+  it("por texto, usa o índice de entidade e o piso do perfil, não o da busca de átomo", async () => {
+    catalogo.mockResolvedValue([
+      entrada(),
+      entrada({ id: "e2", nome: "Phronesis", tipo: "Projeto", chaves: ["phronesis"] }),
+    ] as never);
+    porCypher([
+      [/UNWIND \$ids AS id/, []],
+      [
+        /entidade_embedding/,
+        [
+          { id: "e2", similaridade: 0.6 },
+          { id: "e1", similaridade: 0.5 },
+          { id: "e9", similaridade: PISO_ENTIDADE - 0.01 },
+        ],
+      ],
+    ]);
+
+    const r = await buscarEntidades({ texto: "diário falado", tipo: "Projeto" });
+    expect(String(consulta.mock.calls[0][0])).toContain("queryNodes('entidade_embedding'");
+    expect(PISO_ENTIDADE).not.toBe(PISO_BUSCA);
+    expect(r.entidades.map((e) => e.nome)).toEqual(["Phronesis"]);
+    expect(r.entidades[0].similaridade).toBe(0.6);
+    expect(r.recorte).toMatchObject({
+      total: 1, mostrados: 1, janela: 3, acima_do_piso: 2, filtrado: true, piso: PISO_ENTIDADE,
+    });
+  });
+
+  it("nada acima do piso diz qual foi a melhor, e manda procurar nos trechos", async () => {
+    catalogo.mockResolvedValue([entrada()] as never);
+    porCypher([[/entidade_embedding/, [{ id: "e1", similaridade: 0.2 }]]]);
+    const s = respostaDasEntidades(await buscarEntidades({ texto: "contabilidade" }));
+    expect(s).toContain("nenhuma ficha passou do piso");
+    expect(s).toContain("0.20");
+    expect(s).toContain("buscar_atomos");
+  });
+
+  it("sem nome nem texto, lista as mais faladas do tipo, sem o eu, e nomeia as que sobraram", async () => {
+    const projetos = Array.from({ length: TETO_ENTIDADES + 2 }, (_, i) =>
+      entrada({ id: `p${i}`, nome: `Projeto ${i}`, nome_normalizado: `projeto ${i}`, tipo: "Projeto" }),
+    );
+    catalogo.mockResolvedValue([
+      entrada({ id: "eu", nome: "eu", nome_normalizado: "eu", tipo: "Projeto" }),
+      ...projetos,
+      entrada(),
+    ] as never);
+
+    const r = await buscarEntidades({ tipo: "projeto" as never });
+    expect(r.entidades).toHaveLength(TETO_ENTIDADES);
+    expect(r.entidades.map((e) => e.nome)).not.toContain("eu");
+    expect(r.outras).toEqual(["Projeto 5", "Projeto 6"]);
+    expect(r.recorte).toMatchObject({ total: TETO_ENTIDADES + 2, mostrados: TETO_ENTIDADES });
+    expect(respostaDasEntidades(r)).toContain("As outras: Projeto 5, Projeto 6.");
+  });
+
+  it("tipo em qualquer caixa e acento casa; tipo inventado é ignorado", () => {
+    expect(tipoDeEntidade("organização")).toBe("Organizacao");
+    expect(tipoDeEntidade("PESSOA")).toBe("Pessoa");
+    expect(tipoDeEntidade("projetos")).toBeNull();
+  });
+
+  it("ficha vazia é dita, e não omitida", () => {
+    const s = textoDaFicha(ficha());
+    expect(s).toContain("ficha vazia");
+    expect(s).toContain("13 trecho(s) em 5 sessão(ões), de 2026-06-01 a 2026-09-20");
+  });
+
+  it("ficha escrita mostra só os campos preenchidos, e quem co-ocorre", () => {
+    const s = textoDaFicha(
+      ficha({
+        resumo: "ex-namorada",
+        perfil: { contexto: "", pode_ajudar_com: "design", fizemos_juntos: "" },
+        junto_com: [{ nome: "Murta", vezes: 3 }],
+      }),
+    );
+    expect(s).toContain("resumo: ex-namorada");
+    expect(s).toContain("pode ajudar com: design");
+    expect(s).not.toContain("contexto:");
+    expect(s).not.toContain("ficha vazia");
+    expect(s).toContain("aparece junto com: Murta (3)");
+  });
+
+  it("entidade e átomo na mesma pergunta leem o catálogo uma vez só", async () => {
+    catalogo.mockResolvedValue([entrada()] as never);
+    achar.mockReturnValue(entrada() as never);
+    chamar.mockImplementation((async (opcoes: {
+      tools: Record<string, { execute: (a: unknown, b: unknown) => Promise<unknown> }>;
+    }) => {
+      await opcoes.tools.buscar_entidades.execute({ nome: "Isinha" }, {});
+      await opcoes.tools.buscar_atomos.execute({ entidade: "Isinha" }, {});
+      return respostaDoModelo("pronto");
+    }) as never);
+
+    const r = await responder([{ papel: "eu", texto: "quem é a Isinha?", criado_em: "" }]);
+    expect(catalogo).toHaveBeenCalledTimes(1);
+    expect(r.rastro.map((p) => p.ferramenta)).toEqual(["buscar_entidades", "buscar_atomos"]);
+    expect(r.rastro[0].entidades?.[0].nome).toBe("Isinha");
+    expect(r.rastro[0].achados).toEqual([]);
+  });
+
+  it("falha vira texto para o modelo, nunca exceção", async () => {
+    catalogo.mockRejectedValue(new Error("Neo4j fora do ar") as never);
+    const passos: PassoDeFerramenta[] = [];
+    const s = await ferramentas((p) => passos.push(p)).buscar_entidades.execute!(
+      {} as never,
+      {} as never,
+    );
+    expect(String(s)).toContain("Neo4j fora do ar");
+    expect(passos[0].erro).toContain("Neo4j fora do ar");
+  });
+});
+
 // ─────────────────────── o que volta ao modelo ───────────────────────
 
 describe("o texto que a ferramenta devolve", () => {
@@ -718,6 +925,7 @@ describe("o loop do agente", () => {
     expect(Object.keys(pedido.tools as object)).toEqual([
       "buscar_atomos",
       "historico_do_atomo",
+      "buscar_entidades",
     ]);
     // Id em string: é o que faz a chamada sair pelo Gateway (regra 8).
     expect(typeof pedido.model).toBe("string");
@@ -1013,6 +1221,20 @@ describe("o progresso e a lista", () => {
     );
     // Mensagem gravada antes da slice 9: sem recorte, sem linha nova.
     expect(fraseRecorte({ ferramenta: "buscar_atomos", parametros: {}, achados: [] })).toBe("");
+  });
+
+  it("o passo de entidade fala de fichas, não de trechos", () => {
+    expect(
+      frasePasso({
+        ferramenta: "buscar_entidades",
+        parametros: { texto: "contabilidade", tipo: "Pessoa" },
+        achados: [],
+        entidades: [ficha()],
+      }),
+    ).toBe("procurou “contabilidade” · pessoa — 1 ficha");
+    expect(frasePasso({ ferramenta: "buscar_entidades", parametros: {}, achados: [] })).toBe(
+      "procurou as mais faladas — nada",
+    );
   });
 
   it("passo que falhou diz o erro em vez da contagem", () => {

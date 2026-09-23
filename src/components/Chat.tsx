@@ -71,6 +71,7 @@ const nomeDoTipo = (t: unknown): string =>
  * mentirinha de interface que faz a espera parecer mais longa do que é.
  */
 export function frasePasso(p: PassoDeFerramenta): string {
+  if (p.ferramenta === "buscar_entidades") return fraseEntidades(p);
   const n = p.achados.length;
   // "8 de 34" quando a busca contou mais do que mostrou (slice 9). Mensagem
   // gravada antes da 9 não tem recorte e continua dizendo só "8 trechos".
@@ -96,6 +97,19 @@ export function frasePasso(p: PassoDeFerramenta): string {
   else if (q.ate) partes.push(`até ${q.ate}`);
 
   return `buscou ${partes.length === 0 ? "o mais recente" : partes.join(" · ")} — ${quantos}`;
+}
+
+/** A frase do passo de `buscar_entidades` (slice 9): fichas, não trechos. */
+function fraseEntidades(p: PassoDeFerramenta): string {
+  const n = p.entidades?.length ?? 0;
+  const de = p.recorte && p.recorte.total > n ? ` de ${p.recorte.total}` : "";
+  const quantas = p.erro ? p.erro : n === 0 ? "nada" : `${n}${de} ficha${n === 1 && de === "" ? "" : "s"}`;
+  const q = p.parametros as { nome?: string; texto?: string; tipo?: string };
+  const partes: string[] = [];
+  if (q.nome) partes.push(q.nome);
+  if (q.texto) partes.push(`“${q.texto}”`);
+  if (q.tipo) partes.push(q.tipo.toLowerCase());
+  return `procurou ${partes.length === 0 ? "as mais faladas" : partes.join(" · ")} — ${quantas}`;
 }
 
 /**
@@ -744,6 +758,25 @@ function Rastro({ passos }: { passos: readonly PassoDeFerramenta[] }) {
               </li>
             ))}
           </ul>
+          {(p.entidades?.length ?? 0) > 0 && (
+            <ul>
+              {p.entidades?.map((e) => (
+                <li key={e.id}>
+                  <span className="meta">
+                    {e.nome} · {e.tipo.toLowerCase()} · {e.atomos} trecho{e.atomos === 1 ? "" : "s"}
+                    {e.ultima === "" ? "" : ` · até ${e.ultima}`}
+                    {typeof e.similaridade === "number" ? ` · ${e.similaridade.toFixed(2)}` : ""}
+                  </span>
+                  <span>{e.resumo || e.perfil.contexto || "ficha vazia"}</span>
+                  {e.junto_com.length > 0 && (
+                    <span className="meta">
+                      junto com {e.junto_com.map((j) => `${j.nome} (${j.vezes})`).join(", ")}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
           {(p.elos?.length ?? 0) > 0 && (
             <ul className="elos">
               {p.elos?.map((e, j) => (

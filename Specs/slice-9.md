@@ -168,6 +168,12 @@ Então: **decide-se depois**, com o tempo medido na mão e o modelo já escolhid
 não valer, fica na gaveta, e esta spec registra o critério em vez de a fatia inteira
 ficar esperando por uma decisão que só a medida pode tomar.
 
+> **Decidido em 23/09: não acontece.** Sem medir: o streaming fica na gaveta, e a
+> fatia fecha sem ele. Está tudo bem a resposta chegar inteira no fim — a
+> decisão 1 encurta a espera que ele consertaria, e o risco do modo de falha do
+> raciocínio fica de fora junto. O critério acima continua escrito para o dia em
+> que a espera voltar a doer.
+
 ### 7. `CHAT_MODEL` passa a ter valor explícito, e é medido antes de tudo
 
 O motivo não é qualidade, é acoplamento: hoje trocar o modelo da extração **muda a
@@ -200,11 +206,21 @@ três ferramentas num modelo que já encadeia mal piora a resposta em vez de mel
 - **Nenhuma migration.** Nada aqui toca label, propriedade, índice ou constraint; as
   Cypher novas são de leitura sobre o que já existe.
 
+> **Decidido em 23/09: o valor explícito entra, a medição não.** O padrão virou
+> `MODELO_CHAT_PADRAO = "deepseek/deepseek-v4.1-flash"` — o mesmo id que o chat
+> já herdava, agora desacoplado da extração, que era o motivo declarado da
+> decisão. As cinco perguntas por candidato não foram feitas, e as decisões 3 e
+> 6 não esperaram por elas: a 3 foi construída mesmo assim, e a 6 foi
+> descartada. O risco fica registrado em "Limites" — se o modelo encadear mal,
+> a terceira ferramenta piora a resposta, e o conserto é `CHAT_MODEL` ou o
+> painel de `/agentes`, sem deploy.
+
 ## O escopo
 
 ### Entra
 
-As sete decisões acima. A decisão 6 entra **condicionada** à medida da 7 e da 1.
+As decisões 1 a 5 e 7 — a 7 sem a medição (ver a nota dela). A decisão 6 era
+condicionada à medida, e foi descartada em 23/09.
 
 ### Não entra
 
