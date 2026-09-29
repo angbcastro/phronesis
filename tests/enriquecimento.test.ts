@@ -230,15 +230,24 @@ describe("escrever a ficha", () => {
     expect(f.modelo).toBe("openai/gpt-5");
   });
 
-  it("orçamento estourado repete com o dobro, em vez de repetir a mesma chamada", async () => {
-    chamar
-      .mockResolvedValueOnce({ text: "", finishReason: "length" } as never)
-      .mockResolvedValueOnce({ text: `{"resumo":"x"}`, finishReason: "stop" } as never);
-
+  it("não manda teto de saída: o raciocínio cresce com a entidade (4.12.1)", async () => {
+    responder(`{"resumo":"x"}`);
     await escreverFicha(RAPHA, [atomo()]);
-    const teto = (i: number) =>
-      (chamar.mock.calls[i][0] as { maxOutputTokens: number }).maxOutputTokens;
-    expect(teto(1)).toBe(teto(0) * 2);
+    expect(chamar.mock.calls[0][0]).not.toHaveProperty("maxOutputTokens");
+  });
+
+  it("`length` sem teto nosso é erro com diagnóstico, e não uma segunda chamada", async () => {
+    // Com `temperature: 0`, repetir seria pagar duas vezes pela mesma falha.
+    chamar.mockResolvedValue({
+      text: `{"resumo":"cortad`,
+      finishReason: "length",
+      usage: { outputTokens: 32768 },
+    } as never);
+
+    await expect(escreverFicha(RAPHA, [atomo()])).rejects.toThrow(
+      /teto de saída do próprio modelo.*finishReason=length.*saida=32768/,
+    );
+    expect(chamar).toHaveBeenCalledTimes(1);
   });
 
   it("lê o JSON do pensamento quando o texto veio vazio e o orçamento sobrou", async () => {

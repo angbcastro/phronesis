@@ -55,15 +55,23 @@ import type { EstadoEnriquecimento, Perfil } from "./tipos";
 export const PROMPT_VERSION_ENRIQUECIMENTO = "enriquecimento-1";
 
 /**
- * O orçamento de saída. Quatro campos, um deles com teto de 500 e três sem teto
- * nenhum — mas "sem teto" é sobre o schema, não sobre o que cabe numa ficha que
- * se lê rápido. O que costuma estourar aqui é o raciocínio, não o texto, e para
- * isso existe o `FATOR_DE_FOLGA` como nos outros agentes.
+ * **Não há teto de saída, e é decisão da slice 4.12.1.** Aqui morava
+ * `MAX_TOKENS_SAIDA = 4000`, com uma segunda tentativa no dobro — o número dos
+ * agentes que leem **uma janela**. Este lê **a vida inteira** de uma entidade, e
+ * o raciocínio cresce com o que ele lê. Medido em 23/09 com os 128 átomos do
+ * "eu" (14.128 tokens de entrada, `deepseek/deepseek-v4.1-flash`):
+ *
+ * | teto  | finishReason | raciocínio | texto |
+ * |-------|--------------|------------|-------|
+ * | 4000  | length       | 3998       | 2     |
+ * | 24000 | stop         | 7392       | 400   |
+ *
+ * A segunda tentativa (8000) ficou a ~200 tokens de fechar e cortou o JSON no
+ * meio do `resumo`. Subir o número só empurra a mesma falha para quando a
+ * entidade crescer; o teto que sobra é o do próprio modelo (32.768 de saída
+ * para o padrão, segundo o Gateway), e trocar `ENRIQUECIMENTO_MODEL` troca esse
+ * número junto.
  */
-const MAX_TOKENS_SAIDA = 4000;
-
-/** Como em `resolucao.ts` e `desempate.ts`: o que a segunda tentativa ganha. */
-const FATOR_DE_FOLGA = 2;
 
 /** Quanto da resposta crua entra no log quando o parse falha. */
 const AMOSTRA_ERRO = 400;
@@ -289,27 +297,24 @@ export async function escreverFicha(
   });
   const prompt = montarPrompt(e, atomos, meu.prompt);
 
-  const chamar = (teto: number) =>
-    comEsperaDeLimite(`enriquecimento ${meu.modelo}`, () =>
-      generateText({
-        // String de propósito: id em string sai pelo Gateway (regra 8).
-        model: meu.modelo,
-        prompt,
-        temperature: 0,
-        maxOutputTokens: teto,
-        // A espera longa daqui é a única camada de retry, como na resolução.
-        maxRetries: 0,
-      }),
-    );
+  const r = await comEsperaDeLimite(`enriquecimento ${meu.modelo}`, () =>
+    generateText({
+      // String de propósito: id em string sai pelo Gateway (regra 8).
+      model: meu.modelo,
+      prompt,
+      temperature: 0,
+      // Sem `maxOutputTokens` — a medição que tirou o teto está no topo do arquivo.
+      // A espera longa daqui é a única camada de retry, como na resolução.
+      maxRetries: 0,
+    }),
+  );
 
-  let r = await chamar(MAX_TOKENS_SAIDA);
+  // Sem teto nosso, `length` quer dizer que o modelo bateu o teto DELE. Repetir
+  // com `temperature: 0` seria pagar duas vezes pela mesma falha.
   if (faltouOrcamento(r)) {
-    console.warn(
-      `[enriquecimento] ${e.nome}: o raciocínio comeu o orçamento; repetindo com teto de ` +
-        `${MAX_TOKENS_SAIDA * FATOR_DE_FOLGA}.`,
-      diagnostico(r),
+    throw new EnriquecimentoError(
+      `a resposta bateu o teto de saída do próprio modelo (${meu.modelo}): ${diagnostico(r)}`,
     );
-    r = await chamar(MAX_TOKENS_SAIDA * FATOR_DE_FOLGA);
   }
 
   if (veioDoPensamento(r)) {

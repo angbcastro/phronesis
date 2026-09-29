@@ -2018,6 +2018,20 @@ segurando o resto da corrente. O elo se autentica com o **meu próprio cookie**,
 repassado da requisição que o originou — a fila não abre porta nenhuma que já não
 estivesse aberta (§7).
 
+**Sem teto de saída (4.12.1).** A chamada do agente 4 não manda
+`maxOutputTokens`. Até a 4.12.1 ela mandava 4000, com uma segunda tentativa no
+dobro — o número dos agentes que leem **uma janela** —, e a primeira rodada de
+verdade (23/09) quebrou exatamente aí: o "eu", com 128 átomos e 14 mil tokens de
+entrada, gastou 3998 dos 4000 raciocinando e escreveu 2 de texto; a segunda
+tentativa ficou a ~200 tokens de fechar e cortou o JSON no meio do `resumo`. Com
+teto folgado, a mesma chamada fechou com 7392 de raciocínio e 400 de texto. Este
+agente lê **a vida inteira** de uma entidade, e o raciocínio cresce com o que ele
+lê: subir o número só empurraria a falha para quando a entidade crescer. O teto
+que sobra é o do próprio modelo (32.768 de saída para o padrão), e `length` sem
+teto nosso vira `EnriquecimentoError` com o `diagnostico()` no motivo — **sem
+repetir**, porque com `temperature: 0` repetir é pagar duas vezes pela mesma
+falha. O prompt não mudou, e `enriquecimento-1` também não.
+
 **Rate limit sem prazo.** `comEsperaDeLimite` é chamado **sem `ate`**: não há
 ninguém esperando do outro lado da tela, então a fila pode dormir o quanto o
 Gateway pedir. É a diferença entre este agente e os que rodam dentro da extração
@@ -6578,6 +6592,11 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   falha e não escreve nada (4.12). Sem tratamento, por escolha: dividir em partes
   e fundir as parciais é trabalho adiantado para um problema que este grafo não
   tem. O sinal é `falhou` com o motivo na linha dela.
+- **Sem teto de saída, o custo de uma ficha é o que o modelo decidir pensar**
+  (4.12.1). Para o "eu", em 23/09, ~8 mil tokens de saída por rodada, e cresce com
+  ele — centavos no preço daquele dia. O teto que sobra é o do modelo (32.768 de
+  saída para o padrão), e trocar `ENRIQUECIMENTO_MODEL` troca esse número junto.
+  Bater nele é `falhou` com `finishReason=length` no motivo.
 - **O custo do lote cresce com o quadrado do uso** (4.12): mais átomos por
   entidade, e mais entidades. Selecionar todas num grafo grande é uma conta que
   ninguém mede antes de disparar — a tela diz quantas foram marcadas, não quanto
