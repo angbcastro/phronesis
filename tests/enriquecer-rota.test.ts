@@ -101,6 +101,13 @@ describe("o encadeamento", () => {
     expect(linhasDeErro().some((l) => l.includes("não consegui chamar o elo seguinte"))).toBe(true);
   });
 
+  it("a retomada da tela é um elo comum, e diz no log de onde veio", async () => {
+    reivindicar.mockResolvedValue(null);
+    await elo({ elo: true, retomada: true });
+    expect(reivindicar).toHaveBeenCalledTimes(1);
+    expect(info.mock.calls.map((c) => String(c[0]))).toContain("[fila] retomada pela tela");
+  });
+
   it("fila vazia não encadeia", async () => {
     reivindicar.mockResolvedValue(null);
     await elo();

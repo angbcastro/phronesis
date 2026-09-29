@@ -33,7 +33,8 @@ export const maxDuration = 300;
  * ```
  * { chave }    uma entidade, agora, e a resposta espera        (passo 4)
  * { chaves }   põe todas na fila, responde na hora, e anda só  (passo 5)
- * { elo }      um elo da fila — quem chama é a própria fila
+ * { elo }      um elo da fila — quem chama é a própria fila, ou a tela
+ *              quando vê a fila parada ({ elo, retomada }, 4.12.1)
  * ```
  *
  * **Ela escreve conteúdo no grafo sem eu aprovar campo por campo**, e é a única
@@ -52,17 +53,23 @@ export const maxDuration = 300;
  * **O elo se autentica com o meu próprio cookie**, repassado da requisição que
  * o originou (§7): a fila não abre porta nenhuma que já não estivesse aberta, e
  * o middleware continua sendo a porta única. Cookie que expira no meio de uma
- * fila longa para o encadeamento — a entidade em `rodando` volta pela retomada
- * no próximo toque do botão.
+ * fila longa para o encadeamento — o que sobra é a retomada: a tela aberta
+ * empurra um elo quando vê a fila parada, e a batida de segunda-feira
+ * (`/api/cron/enriquecimento`) roda o que estiver esperando.
  */
 export async function POST(req: Request) {
   const corpo = (await req.json().catch(() => null)) as {
     chave?: unknown;
     chaves?: unknown;
     elo?: unknown;
+    retomada?: unknown;
   } | null;
 
-  if (corpo?.elo === true) return elo(req);
+  if (corpo?.elo === true) {
+    // A tela empurra um elo quando vê a fila parada em duas leituras (4.12.1).
+    if (corpo.retomada === true) console.log("[fila] retomada pela tela");
+    return elo(req);
+  }
 
   if (Array.isArray(corpo?.chaves)) return enfileirarTodas(req, corpo.chaves);
 

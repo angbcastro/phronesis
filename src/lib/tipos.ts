@@ -212,6 +212,18 @@ export type EstadoEnriquecimento = (typeof ESTADOS_ENRIQUECIMENTO)[number];
 export const ehEstadoEnriquecimento = (v: unknown): v is EstadoEnriquecimento =>
   typeof v === "string" && (ESTADOS_ENRIQUECIMENTO as readonly string[]).includes(v);
 
+/**
+ * Quanto vale a reivindicação de uma entidade na fila — o `LEASE_MS` de
+ * `enriquecimento.ts`, que é este número.
+ *
+ * Mora aqui, e não lá, porque a tela também o lê (4.12.1): `rodando` com
+ * carimbo mais velho que isto é o que `/entidades` trata como fila parada, e é
+ * exatamente o que `reivindicarProxima` devolve à fila. Dois números que
+ * divergissem calados fariam a tela retomar uma entidade que o servidor ainda
+ * não soltou, ou nunca retomar uma que ele já soltou.
+ */
+export const LEASE_ENRIQUECIMENTO_MS = 300_000;
+
 /** O que a linha de `/entidades` mostra sobre a última rodada do lote. */
 export interface Enriquecimento {
   /** `null` = nunca enriquecida. Não é erro: é o estado de toda entidade hoje. */

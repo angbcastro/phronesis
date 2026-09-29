@@ -48,7 +48,13 @@ import {
 import { query } from "./neo4j";
 import { carimbo, efetivo } from "./overrides";
 import { normalizarNome } from "./texto";
-import { CAMPOS_PERFIL, PERFIL_VAZIO, ROTULO_TIPO_ENTIDADE, TETO_RESUMO } from "./tipos";
+import {
+  CAMPOS_PERFIL,
+  LEASE_ENRIQUECIMENTO_MS,
+  PERFIL_VAZIO,
+  ROTULO_TIPO_ENTIDADE,
+  TETO_RESUMO,
+} from "./tipos";
 import type { EstadoEnriquecimento, Perfil } from "./tipos";
 
 /** Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7). */
@@ -553,8 +559,11 @@ export async function enriquecer(
  * **A retomada é isto, e não uma varredura à parte.** Entidade em `rodando` com
  * o carimbo velho volta a ser reivindicável pela própria consulta de
  * reivindicação — um lugar só decide quem é a próxima.
+ *
+ * O número mora em `tipos.ts` porque a tela o lê para saber se a fila parou
+ * (4.12.1).
  */
-export const LEASE_MS = 300_000;
+export const LEASE_MS = LEASE_ENRIQUECIMENTO_MS;
 
 /**
  * Põe as entidades na fila. Responde quantas de fato entraram.

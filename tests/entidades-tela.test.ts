@@ -15,11 +15,11 @@
  * a marcação.
  */
 import { describe, expect, it } from "vitest";
-import { candidatasParaFundir, peneirar, selo } from "@/components/Entidades";
+import { candidatasParaFundir, filaParada, peneirar, selo } from "@/components/Entidades";
 import type { Entidade } from "@/components/Entidades";
 import { normalizarNome } from "@/lib/texto";
-import { NUNCA_ENRIQUECIDA, PERFIL_VAZIO } from "@/lib/tipos";
-import type { TipoEntidade } from "@/lib/tipos";
+import { LEASE_ENRIQUECIMENTO_MS, NUNCA_ENRIQUECIDA, PERFIL_VAZIO } from "@/lib/tipos";
+import type { Enriquecimento, TipoEntidade } from "@/lib/tipos";
 
 const ent = (nome: string, extra: Partial<Entidade> = {}): Entidade => ({
   id: `id-${normalizarNome(nome)}`,
@@ -161,5 +161,38 @@ describe("o selo da fila, na linha", () => {
   it("a data sai em dia/mês/ano, que é como eu leio", () => {
     const s = selo({ ...NUNCA_ENRIQUECIDA, estado: "pronta", atomos: 2, em: "2026-09-14T10:00:00Z" });
     expect(s).toContain("14/09/2026");
+  });
+});
+
+describe("a fila parada (4.12.1)", () => {
+  const AGORA = Date.parse("2026-09-29T12:00:00.000Z");
+  const ha = (ms: number) => new Date(AGORA - ms).toISOString();
+  const est = (estado: Enriquecimento["estado"], em: string): Enriquecimento => ({
+    ...NUNCA_ENRIQUECIDA,
+    estado,
+    em,
+  });
+
+  it("na fila sem ninguém rodando é parada — é o 23/09", () => {
+    expect(filaParada([est("na_fila", ha(11 * 3600_000)), est("pronta", ha(1000))], AGORA)).toBe(true);
+  });
+
+  it("uma rodando fresca quer dizer que a corrente está viva", () => {
+    expect(filaParada([est("na_fila", ha(60_000)), est("rodando", ha(20_000))], AGORA)).toBe(false);
+  });
+
+  it("rodando mais velha que o lease não segura nada: a reivindicação já a devolve", () => {
+    const velha = est("rodando", ha(LEASE_ENRIQUECIMENTO_MS + 1));
+    expect(filaParada([velha], AGORA)).toBe(true);
+    expect(filaParada([est("na_fila", ha(60_000)), velha], AGORA)).toBe(true);
+  });
+
+  it("rodando um instante antes de o lease vencer ainda é corrente viva", () => {
+    expect(filaParada([est("rodando", ha(LEASE_ENRIQUECIMENTO_MS - 1))], AGORA)).toBe(false);
+  });
+
+  it("sem nada esperando não há o que retomar", () => {
+    expect(filaParada([est("pronta", ha(1000)), est("falhou", ha(1000)), { ...NUNCA_ENRIQUECIDA }], AGORA)).toBe(false);
+    expect(filaParada([], AGORA)).toBe(false);
   });
 });

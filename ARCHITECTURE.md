@@ -2050,6 +2050,20 @@ o mesmo teto de execução) volta a ser reivindicável — e isso mora **na pró
 consulta de reivindicação**, e não numa varredura à parte: um lugar só decide
 quem é a próxima.
 
+**A tela retoma a fila parada (4.12.1).** Retomar a entidade é a consulta de
+reivindicação; retomar a **corrente** é `/entidades`. No laço que já relê a cada
+4 s enquanto houver fila, `filaParada()` responde se há entidade esperando
+(`na_fila`, ou `rodando` com carimbo mais velho que o lease) e **nenhuma**
+`rodando` fresca. Parada em **duas leituras seguidas** — uma só não basta: entre
+gravar uma ficha e reivindicar a próxima há um instante sem `rodando` nenhuma, e
+ele não é quebra —, a tela faz `POST { elo: true, retomada: true }`, no máximo
+uma vez a cada 30 s, e o servidor loga `[fila] retomada pela tela`. O lease é
+`LEASE_ENRIQUECIMENTO_MS`, em `tipos.ts`, lido pelos dois lados: tela e
+reivindicação não podem discordar sobre quando uma entidade está solta. O custo
+declarado: se a corrente estiver viva e lenta sem ninguém em `rodando`, a
+retomada abre uma segunda, e as duas disputam a reivindicação — o caso que o §14
+já aceita, a uma ficha reescrita de distância.
+
 **Idempotência (regra 4):** a chave é a entidade. Rodar duas vezes a mesma
 entidade produz a mesma ficha a partir dos mesmos átomos, e o `_anterior` da
 segunda rodada é o resultado da primeira — que é o comportamento certo, e o custo
@@ -4668,7 +4682,7 @@ nova na mesma sessão — está no §14 como limite.
   repassa o `cookie` da requisição que o originou, e o middleware o valida como
   qualquer outra. Nenhuma porta nova, nenhum token de serviço, nenhuma exceção no
   `matcher`. O custo é que cookie expirado no meio de uma fila longa para o
-  encadeamento — declarado no §14, e o conserto é apertar o botão de novo.
+  encadeamento — declarado no §14; o que o retoma é `/entidades` aberta (§4.9).
 
 ## 8. Neo4j
 
@@ -5556,7 +5570,7 @@ número não vai bater com a tela.
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar — e, desde a 8.2, **crescer** enquanto o fim é extraído, com o confirmar travado e uma linha no rodapé até fechar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
-| `/entidades` | `Entidades` | o que está no grafo, buscável por nome e por grafia, filtrável por tipo e por "sem resumo", em ordem de mais falada. Cada linha é um nome e uma linha de meta; tocá-la abre a **ficha** num painel de tela cheia — tipo, renomear, canônica, resumo, grafias, os três campos de perfil, o enriquecer/desfazer e **fundir com…**, que funde duas entidades quaisquer à mão. O lote é modo: "enriquecer" acende os checkboxes e uma barra grudada no topo |
+| `/entidades` | `Entidades` | o que está no grafo, buscável por nome e por grafia, filtrável por tipo e por "sem resumo", em ordem de mais falada. Cada linha é um nome e uma linha de meta; tocá-la abre a **ficha** num painel de tela cheia — tipo, renomear, canônica, resumo, grafias, os três campos de perfil, o enriquecer/desfazer e **fundir com…**, que funde duas entidades quaisquer à mão. O lote é modo: "enriquecer" acende os checkboxes e uma barra grudada no topo. Enquanto houver fila, relê a cada 4 s e retoma a corrente quando a vê parada (§4.9) |
 | `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
 | `/agentes` | `Agentes` | **o que entra**: a espinha do áudio ao grafo — STT, extração (com resolução e desempate rodando dentro dela), a revisão e o leque dos seis que partem do grafo gravado. Clicar num agente abre o prompt, o modelo e (na resolução e no confronto) o limiar |
 | `/agentes/consulta` | `Agentes` | **o que sai**: pergunta, chat, resposta, título, conversa. Mesma gaveta de edição; nada nesta tela escreve no grafo |
@@ -6406,6 +6420,10 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - `tests/enriquecer-rota.test.ts` — a corrente da fila (4.12.1): o elo seguinte
   que responde 500 ou 401 deixa a linha `[fila]` com o status, o cookie é
   repassado, a exceção de rede não derruba a rota, e fila vazia não encadeia.
+  A retomada da tela é um elo comum, marcado no log.
+- `tests/entidades-tela.test.ts` também guarda `filaParada()` (4.12.1): `na_fila`
+  sem `rodando` fresca é parada, `rodando` mais velha que o lease não segura a
+  fila, e sem nada esperando não há o que retomar.
 - `tests/enriquecimento.test.ts` — o que impede uma resposta ruim de virar ficha,
   que é o que a 4.12 tem de mais caro: o parser recusa os quatro campos vazios e
   corta o `resumo` em 500; a entidade sem átomo não chega ao modelo; a gravação
@@ -6623,10 +6641,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - **Um elo que morre entre gravar a ficha e marcar `pronta`** deixa a entidade em
   `rodando` até a retomada. A ficha já está escrita, e a próxima rodada a
   reescreve a partir dos mesmos átomos: não há perda, só trabalho repetido.
-- **Se o encadeamento cair, a fila para calada.** O `waitUntil` do elo pode
-  morrer, e o cookie repassado pode expirar no meio de uma fila longa. O que
-  sobra é a linha `[fila]` no log e as entidades paradas em `na fila` na tela; o
-  conserto é apertar o botão de novo, e a retomada pega o que ficou em `rodando`.
+- **O encadeamento ainda pode cair, e a quebra de 23/09 continua sem causa
+  conhecida** (4.12.1). O `waitUntil` do elo pode morrer, e o cookie repassado
+  pode expirar no meio de uma fila longa. O que a 4.12.1 garante é que a próxima
+  quebra deixa a linha `[fila] o elo seguinte respondeu <status>` no log, e que
+  `/entidades` aberta retoma a corrente sozinha — não que ela não quebre. **Com a
+  aba fechada, uma corrente que cai espera** até eu abrir a tela.
   **Nenhum aviso mora fora de `/entidades`** — notificação de PWA seria o
   primeiro uso de push neste sistema, e foi recusada por agora.
 - **A fila é varrida sobre o catálogo inteiro em memória**, mesmo limite que a

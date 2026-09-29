@@ -81,6 +81,7 @@ import {
   TIPOS_ENTIDADE,
 } from "@/lib/tipos";
 import type { CampoPerfil, Enriquecimento, Perfil, TipoEntidade } from "@/lib/tipos";
+import { LEASE_ENRIQUECIMENTO_MS } from "@/lib/tipos";
 
 export interface Entidade {
   id: string;
@@ -138,6 +139,33 @@ const PERFIL_VAZIO: Perfil = { contexto: "", pode_ajudar_com: "", fizemos_juntos
 
 /** O mesmo do corredor: rápido o bastante para parecer vivo, e barato. */
 const INTERVALO_FILA_MS = 4000;
+
+/**
+ * O intervalo mínimo entre duas retomadas da fila pela tela (4.12.1). Um elo
+ * leva de segundos a um minuto; retomar a cada leitura abriria uma corrente
+ * nova a cada 4 s enquanto a primeira ainda nem reivindicou.
+ */
+const INTERVALO_RETOMADA_MS = 30_000;
+
+/**
+ * **A fila está parada?** — há entidade esperando (`na_fila`, ou `rodando` com
+ * o carimbo mais velho que o lease, que `reivindicarProxima` já devolve à fila)
+ * e **nenhuma** `rodando` com carimbo fresco.
+ *
+ * Uma leitura só não basta, e quem cobra a segunda é a tela: entre gravar uma
+ * ficha e reivindicar a próxima há um instante sem `rodando` nenhuma, e ele não
+ * é quebra. O relógio é o do navegador contra carimbos do servidor — uma
+ * diferença de alguns segundos só antecipa ou atrasa a retomada, que é
+ * idempotente.
+ */
+export function filaParada(estados: readonly Enriquecimento[], agora: number): boolean {
+  const limite = agora - LEASE_ENRIQUECIMENTO_MS;
+  const fresca = (e: Enriquecimento) => e.em !== "" && Date.parse(e.em) > limite;
+  const esperando = estados.some(
+    (e) => e.estado === "na_fila" || (e.estado === "rodando" && !fresca(e)),
+  );
+  return esperando && !estados.some((e) => e.estado === "rodando" && fresca(e));
+}
 
 /** O mesmo número da transição do painel no CSS. Ver `fechar()`. */
 const DURACAO_FICHA_MS = 220;
@@ -316,6 +344,44 @@ export function Entidades() {
     const t = setInterval(() => void carregar(), INTERVALO_FILA_MS);
     return () => clearInterval(t);
   }, [andando, carregar]);
+
+  /**
+   * **A tela retoma a fila sozinha (4.12.1).** Em 23/09 a corrente parou depois
+   * de quatro entidades e dez ficaram em `na fila` por onze horas, com esta tela
+   * relendo a cada 4 s sem perceber que nada andava. Parada em duas leituras
+   * seguidas, a tela empurra um elo — no máximo um a cada
+   * `INTERVALO_RETOMADA_MS`.
+   *
+   * O custo declarado: se a corrente estiver viva e lenta sem ninguém em
+   * `rodando`, isto abre uma segunda, e as duas disputam a reivindicação. É o
+   * caso que a fila já aceita (§14), e o preço é uma ficha escrita duas vezes a
+   * partir dos mesmos átomos.
+   */
+  const paradaNaLeituraAnterior = useRef(false);
+  const retomadaEm = useRef(0);
+
+  useEffect(() => {
+    if (!entidades) return;
+    const agora = Date.now();
+    const parada = filaParada(
+      entidades.map((e) => e.enriquecimento),
+      agora,
+    );
+    if (
+      parada &&
+      paradaNaLeituraAnterior.current &&
+      agora - retomadaEm.current >= INTERVALO_RETOMADA_MS
+    ) {
+      retomadaEm.current = agora;
+      console.info("[fila] parada em duas leituras seguidas — a tela retomou");
+      void fetch("/api/entidades/enriquecer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ elo: true, retomada: true }),
+      }).catch(() => null);
+    }
+    paradaNaLeituraAnterior.current = parada;
+  }, [entidades]);
 
   const todas = entidades ?? [];
   const mostradas = useMemo(
