@@ -77,22 +77,35 @@ export async function POST(req: Request) {
  * `new URL(..., req.url)` e não uma variável de ambiente: o endereço certo é o
  * da requisição que está sendo servida, e ele já está aqui — em produção, em
  * preview e em `pnpm dev`.
+ *
+ * **Olha a resposta, e não só a exceção (4.12.1).** Um 401 do middleware, um 500
+ * da função ou um 504 da borda são respostas, não exceções — até a 4.12.1 eles
+ * passavam como sucesso e a corrente acabava sem uma linha no log, que é como a
+ * fila de 23/09 parou sem que se saiba por quê. Não lança: quem chama está num
+ * `waitUntil`, e não há o que fazer com a exceção além do log.
  */
-function encadear(req: Request): Promise<unknown> {
+async function encadear(req: Request): Promise<void> {
   const cookie = req.headers.get("cookie");
-  return fetch(new URL("/api/entidades/enriquecer", req.url), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(cookie ? { cookie } : {}),
-    },
-    body: JSON.stringify({ elo: true }),
-  }).catch((e) => {
+  try {
+    const resp = await fetch(new URL("/api/entidades/enriquecer", req.url), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(cookie ? { cookie } : {}),
+      },
+      body: JSON.stringify({ elo: true }),
+    });
+    if (!resp.ok) {
+      const corpo = await resp.text().catch(() => "");
+      console.error(
+        `[fila] o elo seguinte respondeu ${resp.status}: ${corpo.slice(0, 200)} — a fila para aqui`,
+      );
+    }
+  } catch (e) {
     // O encadeamento é o que faz a fila andar; quando ele cai, o que sobra é a
-    // retomada — as entidades ficam em `na_fila` e o próximo toque no botão as
-    // pega. Dizer isso no log é a diferença entre "a fila parou" e "sumiu".
+    // retomada — pela tela aberta ou pela batida de segunda-feira.
     console.error("[fila] não consegui chamar o elo seguinte; a fila para aqui:", e);
-  });
+  }
 }
 
 /** `{ chaves }` — põe na fila, responde na hora, e dispara o primeiro elo. */

@@ -2018,6 +2018,14 @@ segurando o resto da corrente. O elo se autentica com o **meu próprio cookie**,
 repassado da requisição que o originou — a fila não abre porta nenhuma que já não
 estivesse aberta (§7).
 
+**A corrente diz quando quebra (4.12.1).** `encadear()` olha a resposta do elo
+seguinte, e não só a exceção de rede: fora de 2xx ele loga `[fila] o elo seguinte
+respondeu <status>: <até 200 caracteres do corpo> — a fila para aqui`, e segue
+sem lançar. Até a 4.12.1 um 401 do middleware, um 500 da função ou um 504 da
+borda passavam como sucesso — foi assim que a fila de 23/09 parou depois de
+quatro entidades sem deixar uma linha no log, e a causa daquela quebra continua
+desconhecida.
+
 **Sem teto de saída (4.12.1).** A chamada do agente 4 não manda
 `maxOutputTokens`. Até a 4.12.1 ela mandava 4000, com uma segunda tentativa no
 dobro — o número dos agentes que leem **uma janela** —, e a primeira rodada de
@@ -6395,6 +6403,9 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   três campos de perfil, sem teto, dos candidatos daquela menção), e o que ela faz
   quando o modelo não coopera: `duvida` ausente conta como dúvida, e falha devolve
   `null` em vez de estourar. A qualidade da decisão eu avalio à mão.
+- `tests/enriquecer-rota.test.ts` — a corrente da fila (4.12.1): o elo seguinte
+  que responde 500 ou 401 deixa a linha `[fila]` com o status, o cookie é
+  repassado, a exceção de rede não derruba a rota, e fila vazia não encadeia.
 - `tests/enriquecimento.test.ts` — o que impede uma resposta ruim de virar ficha,
   que é o que a 4.12 tem de mais caro: o parser recusa os quatro campos vazios e
   corta o `resumo` em 500; a entidade sem átomo não chega ao modelo; a gravação
