@@ -20,15 +20,15 @@ laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas)
 (o sistema se cronometra, e encolhe o que mede) e 8.2 (a revisão abre antes de a
 proposta fechar) construídas.**
 
-**A slice 4.12.1 está construída, e ainda não subiu.** A primeira rodada de
+**A slice 4.12.1 está no ar desde 29/09.** A primeira rodada de
 verdade do enriquecimento em lote (23/09) falhou de dois jeitos: o "eu" estourou
 o teto de saída, e a fila parou calada depois de quatro entidades. A fatia
 (`Specs/slice-4.12.1.md`) tira o teto de saída do agente 4, faz a corrente dizer
 o status HTTP quando quebra, faz `/entidades` retomar a fila parada, e dá à fila
 uma batida semanal para as canônicas com novidade (§4.9). O ritmo semanal
-reabre uma recusa da 4.12, por pedido meu. **Falta o deploy dizer se o Hobby
-aceita a terceira entrada de cron** (§12), e ver as dez entidades de 23/09
-saírem da fila em produção.
+reabre uma recusa da 4.12, por pedido meu. O Hobby aceitou a terceira entrada
+de cron (§12). **Falta ver as dez entidades de 23/09 saírem da fila em
+produção**, e a primeira batida de segunda rodar.
 
 **A slice 9 está construída, e sobe em partes.** A fatia (`Specs/slice-9.md`) é
 o miolo do chat — como a pergunta vira busca e como a busca vira resposta. Em
@@ -6248,10 +6248,10 @@ Query API, e região trocada multiplica isso por round-trip.
   ] }
 ```
 
-**A terceira entrada (4.12.1) ainda não foi aceita por um deploy.** O Hobby
-limita quantas tarefas agendadas um projeto tem; se ele recusar, o build falha
-antes de subir, e o que muda é dobrar a semanal dentro do `/cron/diario`,
-checando o dia da semana.
+**A terceira entrada (4.12.1) foi aceita pelo Hobby** no deploy de 29/09 —
+`vercel crons ls` lista as três. Se um dia o plano recusar uma quarta, o build
+falha antes de subir, e o caminho é dobrar a batida nova dentro do
+`/cron/diario`, checando o dia da semana.
 
 **A migration roda no build**, contra o banco do ambiente daquele deploy, e a
 aprovação passou a ser o ato de mandar buildar o commit que a contém (`CLAUDE.md`).
