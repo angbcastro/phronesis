@@ -3,6 +3,7 @@
   "buildCommand": "pnpm migrate && next build",
   "crons": [
     { "path": "/api/cron/diario", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/confronto", "schedule": "0 5 * * *" }
+    { "path": "/api/cron/confronto", "schedule": "0 5 * * *" },
+    { "path": "/api/cron/enriquecimento", "schedule": "0 7 * * 1" }
   ]
 }

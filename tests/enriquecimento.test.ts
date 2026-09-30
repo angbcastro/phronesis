@@ -30,6 +30,7 @@ import {
   enriquecer,
   escreverFicha,
   enfileirar,
+  enfileirarCanonicasComNovidade,
   gravarFicha,
   LEASE_MS,
   montarPrompt,
@@ -416,6 +417,52 @@ describe("enfileirar", () => {
   it("lista vazia não vai ao banco", async () => {
     expect(await enfileirar([])).toBe(0);
     expect(consulta).not.toHaveBeenCalled();
+  });
+});
+
+describe("a seleção da batida semanal (4.12.1)", () => {
+  const cypher = () => String(consulta.mock.calls[0][0]);
+
+  it("só canônicas, e nunca nó fundido", async () => {
+    await enfileirarCanonicasComNovidade();
+    expect(cypher()).toContain("coalesce(e.canonico, false) = true");
+    expect(cypher()).toContain("coalesce(e.status, 'ativa') <> 'fundida'");
+  });
+
+  it("entra quem nunca rodou ou falhou", async () => {
+    await enfileirarCanonicasComNovidade();
+    expect(cypher()).toContain("coalesce(e.enriquecimento_estado, '') <> 'pronta'");
+  });
+
+  it("entra quem mudou de contagem — átomo novo, rejeitado ou movido por fusão", async () => {
+    await enfileirarCanonicasComNovidade();
+    expect(cypher()).toMatch(/\(a:Atomo\)-\[:SOBRE\|MENCIONA\]->\(e\)/);
+    expect(cypher()).toContain("coalesce(a.status, 'ativo') = 'ativo'");
+    expect(cypher()).toContain("ativos <> coalesce(e.enriquecimento_atomos, 0)");
+  });
+
+  it("entra quem tem átomo mais novo que a última ficha", async () => {
+    await enfileirarCanonicasComNovidade();
+    expect(cypher()).toContain("ultimo > coalesce(e.enriquecimento_em, '')");
+  });
+
+  it("as três regras são alternativas, e não exigências somadas", async () => {
+    await enfileirarCanonicasComNovidade();
+    const depois = cypher().slice(cypher().indexOf("WITH e, count"));
+    expect(depois.match(/\n\s+OR /g)).toHaveLength(2);
+  });
+
+  it("não regrava quem já está na fila ou rodando — nem perde o lugar, nem roda duas vezes", async () => {
+    await enfileirarCanonicasComNovidade();
+    expect(cypher()).toContain("NOT (coalesce(e.enriquecimento_estado, '') IN ['na_fila', 'rodando'])");
+  });
+
+  it("marca `na_fila` com o carimbo, como o botão faz, e conta quem entrou", async () => {
+    consulta.mockResolvedValueOnce([{ chave: "eu" }, { chave: "adapta" }] as never);
+    const agora = new Date("2026-09-28T07:00:00.000Z");
+    expect(await enfileirarCanonicasComNovidade(agora)).toBe(2);
+    expect(cypher()).toContain("SET e.enriquecimento_estado = 'na_fila'");
+    expect(consulta.mock.calls[0][1]).toEqual({ agora: agora.toISOString() });
   });
 });
 

@@ -20,6 +20,16 @@ laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas)
 (o sistema se cronometra, e encolhe o que mede) e 8.2 (a revisão abre antes de a
 proposta fechar) construídas.**
 
+**A slice 4.12.1 está construída, e ainda não subiu.** A primeira rodada de
+verdade do enriquecimento em lote (23/09) falhou de dois jeitos: o "eu" estourou
+o teto de saída, e a fila parou calada depois de quatro entidades. A fatia
+(`Specs/slice-4.12.1.md`) tira o teto de saída do agente 4, faz a corrente dizer
+o status HTTP quando quebra, faz `/entidades` retomar a fila parada, e dá à fila
+uma batida semanal para as canônicas com novidade (§4.9). O ritmo semanal
+reabre uma recusa da 4.12, por pedido meu. **Falta o deploy dizer se o Hobby
+aceita a terceira entrada de cron** (§12), e ver as dez entidades de 23/09
+saírem da fila em produção.
+
 **A slice 9 está construída, e sobe em partes.** A fatia (`Specs/slice-9.md`) é
 o miolo do chat — como a pergunta vira busca e como a busca vira resposta. Em
 quatro commits, cada um ponto de retorno: o prompt responde antes de despejar e
@@ -318,7 +328,7 @@ slice 5 entrega.
 │ MediaRecorder + wakeLock│   │ middleware (auth)   │   │ Cloudflare R2        │
 │ IndexedDB (blocos)      │   │ App Router /api/*   │   │  áudio + JSON        │
 │ fila de upload          │   │ waitUntil (STT)     │   │  + backup/ do grafo  │
-│ React (11 telas)        │   │ 2 crons diários ────┼──▶│ Neo4j Aura (HTTP)    │
+│ React (11 telas)        │   │ 3 crons (2 diários) ┼──▶│ Neo4j Aura (HTTP)    │
 │ PWA instalado (sw.js)   │   │                     │   │  :Sessao + conteúdo  │
 └──────────┬──────────────┘   └──────────┬──────────┘   │ Vercel AI Gateway    │
            │                             │              │  → os doze agentes   │
@@ -331,7 +341,9 @@ O cron diário (§10) é a única coisa que entra sem eu abrir o app. Duas coisa
 saem de uma consulta só: o dump do grafo no R2, e manter a instância Aura Free
 acordada — ela é pausada após 72 h de silêncio, e pausada o hostname nem resolve.
 A terceira é R2 puro e não toca o grafo: fechar o resumo mensal das medidas
-(§4.17), engolindo a própria falha para não custar as outras duas.
+(§4.17), engolindo a própria falha para não custar as outras duas. Além dele
+entram sem mim a batida do confronto (diária, 05:00 UTC, §4.15) e, desde a
+4.12.1, a do enriquecimento (segunda, 07:00 UTC, §4.9).
 
 Três planos de dado, cada um com uma responsabilidade única:
 
@@ -2063,6 +2075,34 @@ reivindicação não podem discordar sobre quando uma entidade está solta. O cu
 declarado: se a corrente estiver viva e lenta sem ninguém em `rodando`, a
 retomada abre uma segunda, e as duas disputam a reivindicação — o caso que o §14
 já aceita, a uma ficha reescrita de distância.
+
+**A batida de segunda-feira (4.12.1).** `GET /api/cron/enriquecimento`, às 07:00
+UTC de segunda — depois do confronto (05:00) e do diário (06:00), para não
+disputar o Gateway com eles. Ela põe na fila as **canônicas com novidade**
+(`enfileirarCanonicasComNovidade`): `canonico = true`, não fundida, e uma de três
+— estado diferente de `pronta` (nunca rodou, ou falhou); contagem de átomos
+ativos por `:SOBRE|:MENCIONA` diferente de `enriquecimento_atomos` (átomo novo,
+rejeitado ou movido por fusão); ou átomo ativo com `criado_em` mais novo que
+`enriquecimento_em`. Quem já está em `na_fila` ou `rodando` não é regravado — nem
+perde o lugar na fila, nem roda duas vezes. Sem migration: são propriedades da
+009, da 010 e da 002.
+
+**Isto reabre uma recusa da 4.12**, que tinha rejeitado disparo automático ("o
+resumo mudaria sem eu ter pedido"). Reabriu por pedido meu: a ficha só vale se
+estiver em dia, e o botão virou esquecimento. O desfazer de um toque continua
+valendo, e só entram as canônicas — as que eu já declarei minhas.
+
+A batida não tem cookie, então a corrente de `/api/entidades/enriquecer` não
+serve. Ela responde na hora e trabalha em `waitUntil`, em laço — reivindicar,
+rodar, `passadaDeVetores` — e só **começa** entidade nova nos primeiros 180 s: a
+ficha do "eu" levou 62 s em 29/09, e começar uma aos 269 s mataria a função no
+meio dela, sem continuação. Sobrando fila, **chama a si mesma** com `Authorization:
+Bearer $CRON_SECRET` e `?continuacao=1`, que não enfileira de novo, só processa.
+Responder antes de trabalhar é o que mantém a corrente sequencial, e não
+aninhada. A continuação que responde fora de 2xx deixa o status no log, como o
+`encadear()`. Erro fora do agente (o grafo caiu) **para** a corrente, ao
+contrário do elo: com o grafo fora, cada continuação falharia na hora e chamaria
+a próxima, num laço de invocações sem fim.
 
 **Idempotência (regra 4):** a chave é a entidade. Rodar duas vezes a mesma
 entidade produz a mesma ficha a partir dos mesmos átomos, e o `_anterior` da
@@ -4652,7 +4692,7 @@ nova na mesma sessão — está no §14 como limite.
   credenciais. No corpo dele só `/entrar` e `/api/auth/*` passam sem nenhuma.
   Requisição a `/api/*` sem credencial recebe 401; navegação vai para `/entrar`.
   A segunda credencial é o header `Authorization: Bearer $CRON_SECRET` que a
-  Vercel manda na batida diária, e ela vale **só sob `/api/cron/`** — credencial
+  Vercel manda nas batidas agendadas, e ela vale **só sob `/api/cron/`** — credencial
   de máquina não abre o app. Mora no middleware, e não numa exceção do `matcher`,
   justamente para a resposta de "o que entra sem cookie" continuar cabendo num
   lugar só. `CRON_SECRET` é lido por `req()` e só quando há header para conferir:
@@ -4683,6 +4723,11 @@ nova na mesma sessão — está no §14 como limite.
   qualquer outra. Nenhuma porta nova, nenhum token de serviço, nenhuma exceção no
   `matcher`. O custo é que cookie expirado no meio de uma fila longa para o
   encadeamento — declarado no §14; o que o retoma é `/entidades` aberta (§4.9).
+- **A batida semanal chama a si mesma com a credencial do cron** (4.12.1):
+  `/api/cron/enriquecimento?continuacao=1` com `Authorization: Bearer
+  $CRON_SECRET`, servidor → servidor. É a mesma credencial, no mesmo prefixo, que
+  o middleware já aceita — nenhuma porta nova. O segredo sai de `env.ts` no
+  servidor e só viaja nesse header; o navegador nunca o vê.
 
 ## 8. Neo4j
 
@@ -5491,6 +5536,7 @@ sessão de teste que foi mal não pode sumir para melhorar a média (§4.17).
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
 | `GET /api/cron/diario` | o dump do grafo para o R2, a consulta que mantém a Aura acordada, e o resumo mensal das medidas | **não abre com cookie**: entra pelo header `Authorization: Bearer $CRON_SECRET`, conferido no middleware e só sob `/api/cron/` (§7). Uma vez por dia — é o que o Hobby dá, e é o que uma janela de 72 h pede |
 | `GET /api/cron/confronto` | a batida diária do confronto — processa a fila em loop até esvaziar ou o orçamento de tempo acabar | mesma credencial de cron; horário próprio, separado do `/cron/diario` (`vercel.json`) |
+| `GET /api/cron/enriquecimento` | a batida semanal (segunda, 07:00 UTC): enfileira as canônicas com novidade, responde na hora e anda a fila em `waitUntil`; `?continuacao=1` só processa | mesma credencial de cron, e é ela que a rota repassa quando chama a si mesma (§4.9, §7) |
 
 Todas com `runtime = "nodejs"`. `GET /api/sessoes`, `POST /api/sessoes`,
 `GET /api/sessoes/:id/extracao` e `GET /api/entidades` respondem **502** quando
@@ -5502,7 +5548,7 @@ detalhe de deploy: o teto de execução é o que decide se um `waitUntil` termin
 
 | `maxDuration` | Rotas |
 |---|---|
-| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/entidades/enriquecer`, `/confronto/rodar`, `/cron/confronto`, `/chat`, `/extracao/eventos` — as que chamam modelo dentro de `waitUntil`, correm a mesma fila em loop, encadeiam até oito chamadas antes de responder, ou **mantêm um fluxo aberto** |
+| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/entidades/enriquecer`, `/confronto/rodar`, `/cron/confronto`, `/cron/enriquecimento`, `/chat`, `/extracao/eventos` — as que chamam modelo dentro de `waitUntil`, correm a mesma fila em loop, encadeiam até oito chamadas antes de responder, ou **mantêm um fluxo aberto** |
 | 60 s | `/confirmar`, `/atomos/embutir`, `/entidades/embutir`, `/entidades/duplicatas`, `/entidades/fundir`, `/entidades/perfil/rascunho`, `/calibracao/rascunho` |
 | padrão | todo o resto |
 
@@ -6195,8 +6241,17 @@ Query API, e região trocada multiplica isso por round-trip.
 ```json
 // vercel.json
 { "buildCommand": "pnpm migrate && next build",
-  "crons": [{ "path": "/api/cron/diario", "schedule": "0 6 * * *" }] }
+  "crons": [
+    { "path": "/api/cron/diario", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/confronto", "schedule": "0 5 * * *" },
+    { "path": "/api/cron/enriquecimento", "schedule": "0 7 * * 1" }
+  ] }
 ```
+
+**A terceira entrada (4.12.1) ainda não foi aceita por um deploy.** O Hobby
+limita quantas tarefas agendadas um projeto tem; se ele recusar, o build falha
+antes de subir, e o que muda é dobrar a semanal dentro do `/cron/diario`,
+checando o dia da semana.
 
 **A migration roda no build**, contra o banco do ambiente daquele deploy, e a
 aprovação passou a ser o ato de mandar buildar o commit que a contém (`CLAUDE.md`).
@@ -6225,7 +6280,7 @@ R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
 AI_GATEWAY_API_KEY
 AUTH_SECRET, ALLOWED_EMAIL
 RESEND_API_KEY            entrega do magic link (§7) — não é chave de modelo
-CRON_SECRET               o header da batida diária (§7, §10)
+CRON_SECRET               o header das batidas agendadas, e o da continuação da semanal (§7, §10)
 ```
 
 ```
@@ -6421,6 +6476,12 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   que responde 500 ou 401 deixa a linha `[fila]` com o status, o cookie é
   repassado, a exceção de rede não derruba a rota, e fila vazia não encadeia.
   A retomada da tela é um elo comum, marcado no log.
+- `tests/cron-enriquecimento.test.ts` — a batida semanal (4.12.1): a batida
+  enfileira e a continuação não; a fila anda até esvaziar; o orçamento no fim
+  chama a própria rota com `Bearer $CRON_SECRET`, e o status de uma continuação
+  recusada vai ao log; o grafo caído para a corrente em vez de virar laço. A
+  seleção — quem entra pelas três regras e quem não é regravado — está em
+  `tests/enriquecimento.test.ts`.
 - `tests/entidades-tela.test.ts` também guarda `filaParada()` (4.12.1): `na_fila`
   sem `rodando` fresca é parada, `rodando` mais velha que o lease não segura a
   fila, e sem nada esperando não há o que retomar.
@@ -6646,7 +6707,18 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   pode expirar no meio de uma fila longa. O que a 4.12.1 garante é que a próxima
   quebra deixa a linha `[fila] o elo seguinte respondeu <status>` no log, e que
   `/entidades` aberta retoma a corrente sozinha — não que ela não quebre. **Com a
-  aba fechada, uma corrente que cai espera** até eu abrir a tela.
+  aba fechada, uma corrente que cai na terça espera** até eu abrir a tela ou até
+  a batida de segunda-feira.
+- **A batida semanal escreve fichas sem eu ter apertado nada** (4.12.1), que é a
+  recusa da 4.12 reaberta por pedido meu. A defesa é a mesma do lote — só
+  canônicas, desfazer de um toque —, e o custo que ela cria é este: a ficha que
+  eu edito à mão numa canônica é reescrita na segunda seguinte se ela ganhou
+  átomo. O desfazer traz a minha versão de volta; a próxima batida a sobrescreve
+  de novo.
+- **A primeira batida pega o atrasado inteiro.** Em 29/09 eram 28 canônicas: o
+  "eu" (falhou), Isinha e meu pai (ganharam átomo), e 25 que nunca rodaram —
+  mais as 10 que estão em `na_fila` desde 23/09. É uma rodada de ~40 fichas, e
+  só essa.
   **Nenhum aviso mora fora de `/entidades`** — notificação de PWA seria o
   primeiro uso de push neste sistema, e foi recusada por agora.
 - **A fila é varrida sobre o catálogo inteiro em memória**, mesmo limite que a

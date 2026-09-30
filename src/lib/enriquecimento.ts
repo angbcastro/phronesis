@@ -595,6 +595,54 @@ export async function enfileirar(
 }
 
 /**
+ * Põe na fila as canônicas que ganharam novidade desde a última ficha — a
+ * seleção da batida de segunda-feira (4.12.1). Responde quantas entraram.
+ *
+ * **Reabre uma recusa da 4.12**, que tinha rejeitado disparo automático ("o
+ * resumo mudaria sem eu ter pedido"). A decisão é minha, de 23/09: a ficha só
+ * vale se estiver em dia, e o botão virou esquecimento. O desfazer de um toque
+ * continua valendo, e **só `canonico = true` entra** — as que eu já declarei
+ * minhas.
+ *
+ * Entra quem cumpre uma de três:
+ *
+ *   - `enriquecimento_estado` diferente de `pronta` — nunca rodou, ou falhou;
+ *   - a contagem de átomos ativos por `:SOBRE|:MENCIONA` diferente de
+ *     `enriquecimento_atomos` — cobre átomo novo, rejeitado e movido por fusão;
+ *   - átomo ativo com `criado_em` mais novo que `enriquecimento_em`.
+ *
+ * **Quem já está em `na_fila` ou `rodando` não é regravado.** Regravar `na_fila`
+ * trocaria o carimbo e a tiraria do lugar na fila; regravar `rodando` fresca
+ * abriria uma segunda rodada da mesma entidade. As duas já vão ser
+ * reivindicadas — `rodando` velha pela própria retomada da reivindicação.
+ *
+ * Sem migration: `canonico` é da 009, `enriquecimento_*` da 010, e `criado_em`
+ * do átomo existe desde a 002 — ISO 8601, que compara como texto.
+ */
+export async function enfileirarCanonicasComNovidade(
+  agora: Date = new Date(),
+): Promise<number> {
+  const r = await query<{ chave: string }>(
+    `MATCH (e:Entidade)
+     WHERE coalesce(e.canonico, false) = true
+       AND coalesce(e.status, 'ativa') <> 'fundida'
+       AND NOT (coalesce(e.enriquecimento_estado, '') IN ['na_fila', 'rodando'])
+     OPTIONAL MATCH (a:Atomo)-[:SOBRE|MENCIONA]->(e)
+     WHERE coalesce(a.status, 'ativo') = 'ativo'
+     WITH e, count(DISTINCT a) AS ativos, max(a.criado_em) AS ultimo
+     WHERE coalesce(e.enriquecimento_estado, '') <> 'pronta'
+        OR ativos <> coalesce(e.enriquecimento_atomos, 0)
+        OR (ultimo IS NOT NULL AND ultimo > coalesce(e.enriquecimento_em, ''))
+     SET e.enriquecimento_estado = 'na_fila',
+         e.enriquecimento_em = $agora,
+         e.enriquecimento_motivo = ''
+     RETURN e.nome_normalizado AS chave`,
+    { agora: agora.toISOString() },
+  );
+  return r.length;
+}
+
+/**
  * Reivindica **uma** entidade: `na_fila` → `rodando`, numa escrita condicional.
  *
  * É a trava de concorrência da fila, na mesma ideia de `reivindicarJanela` — e
