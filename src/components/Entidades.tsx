@@ -82,6 +82,7 @@ import {
 } from "@/lib/tipos";
 import type { CampoPerfil, Enriquecimento, Perfil, TipoEntidade } from "@/lib/tipos";
 import { LEASE_ENRIQUECIMENTO_MS } from "@/lib/tipos";
+import { RetratoDoEu } from "./RetratoDoEu";
 
 export interface Entidade {
   id: string;
@@ -189,9 +190,12 @@ export function selo(e: Enriquecimento): string {
   if (e.estado === "rodando") return " · enriquecendo…";
   if (e.estado === "falhou") return ` · falhou: ${e.motivo || "sem motivo registrado"}`;
   if (e.estado === "pronta") {
+    // `pronta` com motivo é a falha parcial do retrato do "eu" (slice 10): a
+    // rodada valeu, e alguma seção ficou com o texto anterior.
+    const parcial = e.motivo === "" ? "" : ` — ${e.motivo}`;
     return e.atomos === 0
       ? ` · sem átomo para ler${e.em === "" ? "" : ` em ${dia(e.em)}`}`
-      : ` · ficha de ${e.atomos} átomo(s)${e.em === "" ? "" : ` em ${dia(e.em)}`}`;
+      : ` · ficha de ${e.atomos} átomo(s)${e.em === "" ? "" : ` em ${dia(e.em)}`}${parcial}`;
   }
   return "";
 }
@@ -1220,107 +1224,123 @@ export function Entidades() {
                   </div>
                 </div>
 
-                <div className="secao">
-                  {CAMPOS_PERFIL.map((campo) => {
-                    const id = `${chave}|${campo}`;
-                    const valor = textos[id] ?? perfil[campo];
-                    const proposta = propostas[id];
-                    const mexido = valor !== perfil[campo];
+                {/* O "eu" não tem ficha de quatro campos (slice 10): tem o
+                    retrato, que mora no R2 e se lê por dimensão. O resumo e as
+                    grafias acima continuam sendo do nó, como os de todo mundo. */}
+                {chave === "eu" ? (
+                  <RetratoDoEu
+                    enriquecimento={emFoco.enriquecimento}
+                    contexto={perfil.contexto}
+                    aoMudar={() => {
+                      setTextos({});
+                      void carregar();
+                    }}
+                  />
+                ) : (
+                  <>
+                    <div className="secao">
+                      {CAMPOS_PERFIL.map((campo) => {
+                        const id = `${chave}|${campo}`;
+                        const valor = textos[id] ?? perfil[campo];
+                        const proposta = propostas[id];
+                        const mexido = valor !== perfil[campo];
 
-                    return (
-                      <div className="campo-perfil" key={campo}>
-                        <label htmlFor={id}>
-                          {ROTULO[campo]} <span className="meta">{DICA[campo]}</span>
-                        </label>
-                        {/* Sem `maxLength` e sem contador desde a 4.11: o teto
-                            de 300 existia porque estes três campos entravam no
-                            prompt do agente 2 em toda chamada, e isso acabou. */}
-                        <textarea
-                          id={id}
-                          rows={2}
-                          value={valor}
-                          placeholder="—"
-                          onChange={(ev) => setTextos((t) => ({ ...t, [id]: ev.target.value }))}
-                        />
-                        <div className="acoes-sessao">
-                          <button
-                            className="reextrair"
-                            disabled={ocupado === id || !mexido}
-                            onClick={() => void salvarPerfil(chave, campo, valor)}
-                          >
-                            salvar
-                          </button>
-                          <button
-                            className="reextrair"
-                            disabled={ocupado === id}
-                            title="o agente propõe a partir dos átomos que marcaram este campo; nada é gravado"
-                            onClick={() => void pedirRascunho(chave, campo)}
-                          >
-                            {ocupado === id ? "pensando…" : "rascunhar"}
-                          </button>
-                        </div>
-
-                        {proposta && (
-                          // Ao lado, nunca por cima: o texto atual é meu, e o
-                          // agente 3 é quem mais pode contaminar a resolução.
-                          <div className="proposta-perfil">
-                            <p className="meta">
-                              proposto de {proposta.atomos} átomo(s) marcado(s) · {proposta.modelo}
-                            </p>
-                            <p>{proposta.texto}</p>
+                        return (
+                          <div className="campo-perfil" key={campo}>
+                            <label htmlFor={id}>
+                              {ROTULO[campo]} <span className="meta">{DICA[campo]}</span>
+                            </label>
+                            {/* Sem `maxLength` e sem contador desde a 4.11: o teto
+                                de 300 existia porque estes três campos entravam no
+                                prompt do agente 2 em toda chamada, e isso acabou. */}
+                            <textarea
+                              id={id}
+                              rows={2}
+                              value={valor}
+                              placeholder="—"
+                              onChange={(ev) => setTextos((t) => ({ ...t, [id]: ev.target.value }))}
+                            />
                             <div className="acoes-sessao">
                               <button
                                 className="reextrair"
-                                onClick={() => setTextos((t) => ({ ...t, [id]: proposta.texto }))}
+                                disabled={ocupado === id || !mexido}
+                                onClick={() => void salvarPerfil(chave, campo, valor)}
                               >
-                                usar este texto
+                                salvar
                               </button>
                               <button
                                 className="reextrair"
-                                onClick={() =>
-                                  setPropostas((p) => {
-                                    const { [id]: _fora, ...resto } = p;
-                                    return resto;
-                                  })
-                                }
+                                disabled={ocupado === id}
+                                title="o agente propõe a partir dos átomos que marcaram este campo; nada é gravado"
+                                onClick={() => void pedirRascunho(chave, campo)}
                               >
-                                descartar
+                                {ocupado === id ? "pensando…" : "rascunhar"}
                               </button>
                             </div>
+
+                            {proposta && (
+                              // Ao lado, nunca por cima: o texto atual é meu, e o
+                              // agente 3 é quem mais pode contaminar a resolução.
+                              <div className="proposta-perfil">
+                                <p className="meta">
+                                  proposto de {proposta.atomos} átomo(s) marcado(s) · {proposta.modelo}
+                                </p>
+                                <p>{proposta.texto}</p>
+                                <div className="acoes-sessao">
+                                  <button
+                                    className="reextrair"
+                                    onClick={() => setTextos((t) => ({ ...t, [id]: proposta.texto }))}
+                                  >
+                                    usar este texto
+                                  </button>
+                                  <button
+                                    className="reextrair"
+                                    onClick={() =>
+                                      setPropostas((p) => {
+                                        const { [id]: _fora, ...resto } = p;
+                                        return resto;
+                                      })
+                                    }
+                                  >
+                                    descartar
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* O agente 4, e o que o desfaz. O desfazer tem de estar à vista
+                        de quem acabou de ver a ficha mudar sem ter aprovado nada. */}
+                    <div className="secao">
+                      <p className="aguardando">
+                        o agente lê TODOS os átomos que falam dela e escreve a ficha inteira — e
+                        grava, sem eu aprovar campo a campo
+                      </p>
+                      <div className="acoes-sessao">
+                        <button
+                          className="reextrair"
+                          disabled={ocupado === `${chave}|enriquecer`}
+                          onClick={() => void enriquecerUma(chave)}
+                        >
+                          {ocupado === `${chave}|enriquecer` ? "escrevendo…" : "enriquecer esta"}
+                        </button>
+                        {emFoco.enriquecimento.tem_anterior && (
+                          <button
+                            className="reextrair"
+                            disabled={ocupado === `${chave}|desfazer`}
+                            title="volta os quatro campos para a geração anterior — outro toque traz de volta"
+                            onClick={() => void desfazer(chave)}
+                          >
+                            {ocupado === `${chave}|desfazer` ? "voltando…" : "desfazer"}
+                          </button>
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-
-                {/* O agente 4, e o que o desfaz. O desfazer tem de estar à vista
-                    de quem acabou de ver a ficha mudar sem ter aprovado nada. */}
-                <div className="secao">
-                  <p className="aguardando">
-                    o agente lê TODOS os átomos que falam dela e escreve a ficha inteira — e
-                    grava, sem eu aprovar campo a campo
-                  </p>
-                  <div className="acoes-sessao">
-                    <button
-                      className="reextrair"
-                      disabled={ocupado === `${chave}|enriquecer`}
-                      onClick={() => void enriquecerUma(chave)}
-                    >
-                      {ocupado === `${chave}|enriquecer` ? "escrevendo…" : "enriquecer esta"}
-                    </button>
-                    {emFoco.enriquecimento.tem_anterior && (
-                      <button
-                        className="reextrair"
-                        disabled={ocupado === `${chave}|desfazer`}
-                        title="volta os quatro campos para a geração anterior — outro toque traz de volta"
-                        onClick={() => void desfazer(chave)}
-                      >
-                        {ocupado === `${chave}|desfazer` ? "voltando…" : "desfazer"}
-                      </button>
-                    )}
-                  </div>
-                </div>
+                    </div>
+                  </>
+                )}
 
                 {/* Fundir fica por último: é a única coisa desta tela que não
                     tem volta. */}

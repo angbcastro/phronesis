@@ -91,8 +91,15 @@ export class EnriquecimentoError extends Error {
 
 // ──────────────────────── o que o modelo recebe ────────────────────────
 
-/** Um átomo como o lote o vê. Sem id: o agente não referencia átomo nenhum. */
+/**
+ * Um átomo como o lote o vê.
+ *
+ * O `id` entrou na slice 10 e **a ficha não o usa**: o agente 4 não referencia
+ * átomo nenhum, e `blocoDeAtomos` não o põe no prompt. Quem o lê é o retrato do
+ * "eu" (`retrato.ts`), que precisa voltar da fonte numerada ao átomo.
+ */
 export interface AtomoDaEntidade {
+  id: string;
   texto: string;
   tipo: string;
   valido_em: string;
@@ -118,6 +125,7 @@ export async function atomosDaEntidade(chaveOuNome: string): Promise<AtomoDaEnti
   if (chave === "") return [];
 
   const linhas = await query<{
+    id: string;
     texto: string;
     tipo: string;
     valido_em: string;
@@ -133,7 +141,7 @@ export async function atomosDaEntidade(chaveOuNome: string): Promise<AtomoDaEnti
      // agrupamento) a agregação no mesmo RETURN é ilegal em Cypher — o erro só
      // aparece contra o banco de verdade, como o de garantirEmbeddings.
      WITH a, collect(type(r)) AS papeis
-     RETURN a.texto AS texto, a.tipo AS tipo,
+     RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
             coalesce(a.valido_em, '') AS valido_em,
             'SOBRE' IN papeis AS sobre
      ORDER BY valido_em DESC`,
@@ -423,18 +431,27 @@ export async function gravarFicha(
   ficha: Ficha,
   atomos: number,
   agora: Date = new Date(),
+  { semEstado = false }: { semEstado?: boolean } = {},
 ): Promise<EntidadeEscrita> {
   const chave = normalizarNome(chaveOuNome);
   if (chave === "") throw new EnriquecimentoError("gravar ficha exige a entidade");
 
-  const r = await query<EntidadeEscrita>(
-    `${ACHAR_ALVO}
-     SET ${GUARDAR_ANTERIOR}
-     SET ${ESCREVER_FICHA}
+  // `semEstado` é do retrato do "eu" (slice 10): lá a ficha é a fase 1 de uma
+  // rodada de três, e marcar `pronta` aqui faria uma função morta na fase 2
+  // deixar o nó dizendo `pronta` com o retrato velho — e a retomada pelo lease
+  // só olha `rodando`. O caminho das outras entidades não muda.
+  const estado = semEstado
+    ? ""
+    : `
      SET alvo.enriquecimento_estado = 'pronta',
          alvo.enriquecimento_em = $agora,
          alvo.enriquecimento_atomos = $atomos,
-         alvo.enriquecimento_motivo = ''
+         alvo.enriquecimento_motivo = ''`;
+
+  const r = await query<EntidadeEscrita>(
+    `${ACHAR_ALVO}
+     SET ${GUARDAR_ANTERIOR}
+     SET ${ESCREVER_FICHA}${estado}
      RETURN alvo.id AS id, alvo.nome AS nome`,
     {
       chave,
@@ -475,6 +492,32 @@ export async function marcarEstado(
 }
 
 /**
+ * O fim de uma rodada que gravou a ficha com `semEstado` — hoje, só a do "eu"
+ * (slice 10), que marca `pronta` **depois** de o retrato estar no R2.
+ *
+ * `motivo` não vazio com `pronta` é a falha parcial: a rodada valeu, e uma seção
+ * ou outra ficou com o texto anterior. O motivo fica visível na linha.
+ */
+export async function marcarPronta(
+  chaveOuNome: string,
+  atomos: number,
+  motivo = "",
+  agora: Date = new Date(),
+): Promise<void> {
+  const chave = normalizarNome(chaveOuNome);
+  if (chave === "") return;
+
+  await query(
+    `${ACHAR_ALVO}
+     SET alvo.enriquecimento_estado = 'pronta',
+         alvo.enriquecimento_em = $agora,
+         alvo.enriquecimento_atomos = $atomos,
+         alvo.enriquecimento_motivo = $motivo`,
+    { chave, atomos, motivo: motivo.slice(0, TETO_MOTIVO), agora: agora.toISOString() },
+  );
+}
+
+/**
  * O desfazer: os quatro campos voltam de uma vez.
  *
  * **É uma troca, e não uma restauração.** O que estava na ficha vai para o
@@ -509,7 +552,17 @@ export async function desfazerFicha(chaveOuNome: string): Promise<EntidadeEscrit
 export interface Rodada {
   atomos: number;
   ficha: FichaEscrita | null;
+  /** Só na rodada do "eu" (slice 10): quantas seções saíram, e quantas falharam. */
+  retrato?: { secoes: number; falhas: number };
 }
+
+/**
+ * A chave do "eu" — o dono do diário, sujeito de quase todo átomo.
+ *
+ * É a mesma grafia que a guarda A2 da resolução prende por regra. Um lugar só
+ * para o teste que desvia a rodada, o desfazer e a ordem da fila (slice 10).
+ */
+export const CHAVE_EU = "eu";
 
 /**
  * O caminho de uma entidade do começo ao fim: ler os átomos, escrever a ficha,
@@ -534,6 +587,18 @@ export async function enriquecer(
     });
     console.log(`[enriquecimento] ${e.nome}: nenhum átomo fala dela — ficha intocada.`);
     return { atomos: 0, ficha: null };
+  }
+
+  // O "eu" não cabe na ficha de quatro campos (slice 10): 85% dos átomos são
+  // dele, e o perfil longo estouraria o vetor de todas as entidades. A rodada
+  // dele é o retrato, e os dois caminhos que chamam esta função — o `{ chave }`
+  // e o elo — passam por aqui.
+  //
+  // Import dinâmico, e não no topo: `retrato.ts` importa este módulo, e o ciclo
+  // estático com `const` no topo vira `undefined` em tempo de execução.
+  if (e.nome_normalizado === CHAVE_EU) {
+    const { rodadaDoEu } = await import("./retrato");
+    return rodadaDoEu(e, atomos);
   }
 
   const ficha = await escreverFicha(e, atomos);
@@ -659,15 +724,26 @@ export async function enfileirarCanonicasComNovidade(
  * simultâneas se eu apertar o botão duas vezes.
  *
  * A ordem é FIFO pelo carimbo, e `rodando` velho entra junto — é a retomada.
+ *
+ * **O "eu" vai na frente de todos (slice 10).** A rodada dele são duas fases —
+ * ~60 s, e depois a mais lenta de sete a treze chamadas paralelas — e não cabe
+ * na margem que a batida deixa para a última ficha. Na frente, ele sai na
+ * primeira volta da primeira invocação, com o orçamento inteiro. `semEu` o
+ * exclui: é o que a batida pede depois de 60 s de invocação, para ele ficar
+ * para a continuação, que começa do zero e o pega primeiro.
  */
-export async function reivindicarProxima(agora: Date = new Date()): Promise<string | null> {
+export async function reivindicarProxima(
+  agora: Date = new Date(),
+  { semEu = false }: { semEu?: boolean } = {},
+): Promise<string | null> {
   const r = await query<{ chave: string }>(
     `MATCH (e:Entidade)
-     WHERE coalesce(e.status, 'ativa') <> 'fundida'
+     WHERE coalesce(e.status, 'ativa') <> 'fundida'${semEu ? `\n       AND e.nome_normalizado <> '${CHAVE_EU}'` : ""}
        AND (e.enriquecimento_estado = 'na_fila'
             OR (e.enriquecimento_estado = 'rodando'
                 AND coalesce(e.enriquecimento_em, '') < $limite))
-     WITH e ORDER BY coalesce(e.enriquecimento_em, '') ASC LIMIT 1
+     WITH e ORDER BY e.nome_normalizado = '${CHAVE_EU}' DESC,
+                     coalesce(e.enriquecimento_em, '') ASC LIMIT 1
      SET e.enriquecimento_estado = 'rodando',
          e.enriquecimento_em = $agora
      RETURN e.nome_normalizado AS chave`,

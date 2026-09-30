@@ -19,6 +19,9 @@
  *   calibracao/regras-<hash>.json
  *   config/agentes.json
  *   config/prompt-<agente>-<hash>.json
+ *   config/retrato-eu.json
+ *   retrato/eu.json
+ *   retrato/eu.anterior.json
  *   backup/grafo-<dia do mês>.json
  */
 import { EXT_GRAVACAO, extensaoAceita } from "./audio";
@@ -145,6 +148,29 @@ export const chaveRegras = (hash: string) => `calibracao/regras-${hash}.json`;
  * material de calibração; é configuração.
  */
 export const chaveAgentes = () => `config/agentes.json`;
+
+/**
+ * As dimensões do retrato do "eu", e a proposta pendente (slice 10).
+ *
+ * **Caminho fixo, e nem a chave vai para o nó**: há um "eu" só, e o schema não
+ * muda por causa dele. Dois escritores — a tela e a proposta do agente —, e por
+ * isso escrito por etag (`atualizarJson`).
+ */
+export const chaveConfigRetrato = () => `config/retrato-eu.json`;
+
+/**
+ * O retrato do "eu": uma seção por dimensão, mais o Agora (slice 10).
+ *
+ * Texto longo vai para o R2 e o grafo guarda o curto — o espírito da regra 2.
+ * Os campos do nó "eu" continuam curtos, porque viram o vetor da entidade.
+ */
+export const chaveRetrato = () => `retrato/eu.json`;
+
+/**
+ * A geração anterior do retrato — **uma só**, como os `_anterior` do nó
+ * (migration 010). É o lado R2 do desfazer.
+ */
+export const chaveRetratoAnterior = () => `retrato/eu.anterior.json`;
 
 /**
  * Um prompt editado, **imutável para sempre** — o gêmeo de `chaveRegras`.

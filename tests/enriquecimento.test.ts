@@ -49,6 +49,7 @@ const chamar = vi.mocked(generateText);
 const RAPHA = { nome: "Rapha Bertoldo", tipo: "Pessoa" as const, aliases: ["Raffa"] };
 
 const atomo = (extra: Partial<AtomoDaEntidade> = {}): AtomoDaEntidade => ({
+  id: "a1",
   texto: "produziu o evento inteiro sozinho",
   tipo: "FATO",
   valido_em: "2026-08-01T00:00:00.000Z",
@@ -98,6 +99,11 @@ describe("os átomos que entram", () => {
     expect(consulta.mock.calls[0][1]).toEqual({ chave: "raffa" });
   });
 
+  it("devolve o id do átomo — o retrato do \"eu\" precisa dele para as fontes (slice 10)", async () => {
+    await atomosDaEntidade("rapha");
+    expect(String(consulta.mock.calls[0][0])).toContain("RETURN a.id AS id, a.texto AS texto");
+  });
+
   it("entidade sem nome não vai ao banco", async () => {
     expect(await atomosDaEntidade("   ")).toEqual([]);
     expect(consulta).not.toHaveBeenCalled();
@@ -122,6 +128,21 @@ describe("o prompt", () => {
 
   it("a menção de passagem é marcada como citada", () => {
     expect(blocoDeAtomos([atomo({ sobre: false })])).toContain("(citada)");
+  });
+
+  it("o id não entra no bloco da ficha: o prompt das outras entidades é o de antes (slice 10)", () => {
+    // Byte a byte: numerar ou pôr o id aqui mudaria o `enriquecimento-1` sem
+    // subir a versão. O retrato tem o bloco dele (`blocoNumerado`).
+    const bloco = blocoDeAtomos([atomo({ id: "mv9x0000abcd" }), atomo({ sobre: false })]);
+    expect(bloco).toBe(
+      "- [FATO 2026-08-01] produziu o evento inteiro sozinho\n" +
+        "- [FATO 2026-08-01] (citada) produziu o evento inteiro sozinho",
+    );
+    expect(montarPrompt(RAPHA, [atomo()])).toBe(
+      `${INSTRUCOES}\n\nENTIDADE: Rapha Bertoldo (pessoa)\nTAMBÉM ESCRITA: Raffa\n\n` +
+        `TUDO O QUE O DIÁRIO DIZ DELA (1 trecho(s), do mais novo para o mais velho):\n` +
+        `- [FATO 2026-08-01] produziu o evento inteiro sozinho`,
+    );
   });
 
   it("átomo sem data não inventa uma", () => {
@@ -312,6 +333,15 @@ describe("gravar a ficha", () => {
     expect(cypher()).toContain("alvo.enriquecimento_estado = 'pronta'");
   });
 
+  it("com `semEstado`, grava os campos e o `_anterior` sem tocar no estado (slice 10)", async () => {
+    // É a fase 1 da rodada do "eu": marcar `pronta` aqui deixaria uma função
+    // morta na fase 2 com o nó dizendo `pronta` e o retrato velho.
+    await gravarFicha("eu", ficha, 7, new Date(), { semEstado: true });
+    expect(cypher()).toContain("resumo_anterior = coalesce");
+    expect(cypher()).not.toContain("enriquecimento_estado");
+    expect(cypher().split("SET ").length - 1).toBe(2);
+  });
+
   it("corta o resumo no servidor, como gravarResumo — regra que só vale na tela não é regra", async () => {
     await gravarFicha("rapha", { ...ficha, resumo: "a".repeat(TETO_RESUMO + 50) }, 1);
     const p = consulta.mock.calls[0][1] as { resumo: string };
@@ -497,7 +527,24 @@ describe("reivindicar a próxima", () => {
   it("FIFO pelo carimbo: quem esperou mais vai primeiro", async () => {
     consulta.mockResolvedValue([] as never);
     await reivindicarProxima(AGORA);
-    expect(cypher()).toContain("ORDER BY coalesce(e.enriquecimento_em, '') ASC");
+    expect(cypher()).toMatch(/,\s+coalesce\(e\.enriquecimento_em, ''\) ASC LIMIT 1/);
+  });
+
+  it("o \"eu\" vai na frente de todos, antes do carimbo (slice 10)", async () => {
+    // A rodada dele não cabe na margem da última ficha: na batida, ele tem de
+    // sair na primeira volta, com o orçamento inteiro.
+    consulta.mockResolvedValue([] as never);
+    await reivindicarProxima(AGORA);
+    const c = cypher();
+    expect(c).toContain("ORDER BY e.nome_normalizado = 'eu' DESC");
+    expect(c.indexOf("= 'eu' DESC")).toBeLessThan(c.indexOf("enriquecimento_em, '') ASC"));
+    expect(c).not.toContain("<> 'eu'");
+  });
+
+  it("`semEu` tira o \"eu\" da reivindicação — fica para a continuação (slice 10)", async () => {
+    consulta.mockResolvedValue([] as never);
+    await reivindicarProxima(AGORA, { semEu: true });
+    expect(cypher()).toContain("AND e.nome_normalizado <> 'eu'");
   });
 
   it("fila vazia devolve null, e é isso que para o encadeamento", async () => {

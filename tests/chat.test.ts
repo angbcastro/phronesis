@@ -926,6 +926,7 @@ describe("o loop do agente", () => {
       "buscar_atomos",
       "historico_do_atomo",
       "buscar_entidades",
+      "ler_retrato",
     ]);
     // Id em string: é o que faz a chamada sair pelo Gateway (regra 8).
     expect(typeof pedido.model).toBe("string");

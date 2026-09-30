@@ -47,8 +47,18 @@ describe("o diagnóstico da resposta vazia", () => {
   it("campo que o provedor não mandou vira ?, e não derruba o log", () => {
     // Diagnóstico que estoura no meio de um erro é pior que diagnóstico nenhum.
     expect(diagnostico({})).toBe(
-      "finishReason=? entrada=? saida=? raciocinio=? texto=0 char pensamento=0 char",
+      "finishReason=? entrada=? cache=? saida=? raciocinio=? texto=0 char pensamento=0 char",
     );
+  });
+
+  it("diz quanto da entrada veio do cache do provedor (slice 10)", () => {
+    // É o número que responde se as chamadas paralelas do retrato leram o
+    // prefixo comum do cache — sem ele a verificação da fatia não tem onde olhar.
+    const d = diagnostico({
+      finishReason: "stop",
+      usage: { inputTokens: 14128, inputTokenDetails: { cacheReadTokens: 14080 } },
+    });
+    expect(d).toContain("entrada=14128 cache=14080");
   });
 });
 

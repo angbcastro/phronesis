@@ -40,7 +40,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { lerEventos, partirLinhas } from "@/client/ndjson";
 import { usaTransicao } from "@/client/transicao";
-import type { Conversa, Mensagem, PassoDeFerramenta } from "@/lib/tipos";
+import { mesAno, type Conversa, type Mensagem, type PassoDeFerramenta } from "@/lib/tipos";
 
 export { partirLinhas };
 
@@ -72,6 +72,7 @@ const nomeDoTipo = (t: unknown): string =>
  */
 export function frasePasso(p: PassoDeFerramenta): string {
   if (p.ferramenta === "buscar_entidades") return fraseEntidades(p);
+  if (p.ferramenta === "ler_retrato") return fraseRetrato(p);
   const n = p.achados.length;
   // "8 de 34" quando a busca contou mais do que mostrou (slice 9). Mensagem
   // gravada antes da 9 não tem recorte e continua dizendo só "8 trechos".
@@ -97,6 +98,22 @@ export function frasePasso(p: PassoDeFerramenta): string {
   else if (q.ate) partes.push(`até ${q.ate}`);
 
   return `buscou ${partes.length === 0 ? "o mais recente" : partes.join(" · ")} — ${quantos}`;
+}
+
+/**
+ * A frase do passo de `ler_retrato` (slice 10): **qual seção** foi lida. É o
+ * que deixa o (i) provar que a pergunta sobre o treino leu a dimensão do corpo,
+ * e só ela.
+ */
+function fraseRetrato(p: PassoDeFerramenta): string {
+  const r = p.retrato;
+  if (p.erro && !r?.texto) return `leu o retrato — ${p.erro}`;
+  if (!r || r.dimensao === null) {
+    const n = r?.dimensoes?.length ?? 0;
+    return `leu o Agora e a lista de dimensões — ${n} dimens${n === 1 ? "ão" : "ões"}`;
+  }
+  const n = p.achados.length;
+  return `leu a dimensão ${r.nome || r.dimensao} — ${n} fonte${n === 1 ? "" : "s"}`;
 }
 
 /** A frase do passo de `buscar_entidades` (slice 9): fichas, não trechos. */
@@ -743,6 +760,12 @@ function Rastro({ passos }: { passos: readonly PassoDeFerramenta[] }) {
           </p>
           {fraseRecorte(p) !== "" && <p className="meta">{fraseRecorte(p)}</p>}
           {p.erro && <p className="meta">{p.erro}</p>}
+          {p.retrato && p.retrato.texto !== "" && (
+            <p className="meta">
+              {p.retrato.nome}
+              {mesAno(p.retrato.ate) === "" ? "" : ` · até ${mesAno(p.retrato.ate)}`}: {p.retrato.texto}
+            </p>
+          )}
           <ul>
             {p.achados.map((a) => (
               <li key={a.id}>

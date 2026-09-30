@@ -2,7 +2,7 @@
 
 Como o Phronesis está construído hoje. Descreve o **sistema que existe**, não o
 que está planejado — para o produto ver `Specs/visao.md`, para as regras
-invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-8.2.md`.
+invioláveis `CLAUDE.md`, para o escopo da fatia atual `Specs/slice-10.md`.
 
 > **Este arquivo acompanha o código.** Toda mudança que altere fluxo, contrato,
 > layout de dado, dependência externa ou fronteira de segurança atualiza este
@@ -19,6 +19,20 @@ primeira revisão à mão), 6 (o chat: perguntar ao grafo em texto livre), 7 (o
 laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas), 8
 (o sistema se cronometra, e encolhe o que mede) e 8.2 (a revisão abre antes de a
 proposta fechar) construídas.**
+
+**A slice 10 está construída, e não verificada.** A fatia
+(`Specs/slice-10.md`) dá ao "eu" um **retrato** no lugar da ficha de quatro
+campos (§4.20): o Agora e uma seção por dimensão da minha vida, no R2, escritos
+por dois agentes novos (`retrato-1`, `retrato-dimensoes-1`) em duas fases sobre
+um prefixo comum; uma tela em `/entidades` para ler, aprovar as dimensões e
+desfazer os dois lados; e `ler_retrato`, a quarta ferramenta do chat (`chat-6`),
+que lê uma dimensão por vez. Sem migration. **O que falta, e é o ponto de
+retorno da spec:** rodar o "eu" contra o banco de desenvolvimento e ler no log o
+tempo das duas fases e o `cache=` de cada chamada paralela — se a rodada passar
+de 240 s, ou a fase 2 não ler o cache, a decisão volta para mim. Não foi feito
+nesta sessão porque não há `.env.development.local` neste checkout, e sem ele
+`pnpm dev` escreveria em produção (§12.1). O "eu" de desenvolvimento também
+precisa ser conferido como `canonico` antes da primeira batida.
 
 **A slice 4.12.1 está no ar desde 29/09.** A primeira rodada de
 verdade do enriquecimento em lote (23/09) falhou de dois jeitos: o "eu" estourou
@@ -401,12 +415,22 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   perfil.ts       os três campos de perfil: ler, gravar, e o agente 3 que rascunha
   enriquecimento.ts o agente 4 e a fila: lê TODOS os átomos de uma entidade,
                   escreve a ficha inteira e GRAVA — mais a reivindicação, o
-                  encadeamento e o desfazer de uma geração
+                  encadeamento e o desfazer de uma geração. O "eu" desvia daqui
+                  para o retrato (slice 10)
+  retrato.ts      o agente `retrato` (slice 10): o retrato do "eu" em duas
+                  fases — a ficha curta do nó, depois o Agora e uma seção por
+                  dimensão em paralelo, todas sobre o mesmo prefixo —, o bloco
+                  numerado, a escrita no R2, o desfazer dos dois lados e as
+                  fontes do (i)
+  retrato-dimensoes.ts o agente `retrato-dimensoes` (slice 10): propõe as
+                  dimensões, e o `config/retrato-eu.json` por etag. Não importa
+                  `retrato.ts` — recebe o prefixo pronto
   confronto.ts    o agente `confronto` (slice 5): candidatos por vetor entre
                   átomos, ATUALIZA/CONTRADIZ/CONFIRMA/COMPLEMENTA, e GRAVA —
                   mesmo padrão do enriquecimento, nunca em tempo real
-  chat.ts         o agente `chat` (slice 6): as três ferramentas só-leitura (a
-                  terceira, `buscar_entidades`, desde a slice 9), o loop com
+  chat.ts         o agente `chat` (slice 6): as quatro ferramentas só-leitura (a
+                  terceira, `buscar_entidades`, desde a slice 9; a quarta,
+                  `ler_retrato`, desde a 10), o loop com
                   teto de 8 chamadas, e o rastro que o botão (i) abre.
                   Não sabe que conversa existe
   conversas.ts    :Conversa, as mensagens no R2, arquivar e apagar — e o agente
@@ -429,7 +453,7 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   overrides.ts    o prompt e o modelo que eu editei na tela: leitura tolerante,
                   snapshot imutável por hash, e o carimbo. Não sabe quais
                   agentes existem — recebe o id e a base de quem chama
-  agentes.ts      o registro dos doze e o desenho do fluxo. Fica ACIMA dos
+  agentes.ts      o registro dos quinze e o desenho do fluxo. Fica ACIMA dos
                   agentes: importa os prompts deles, e nenhum deles o importa
   referencias.ts  lê os dois formatos de proposta (antes e depois da 4)  (client)
   catalogo.ts     busca de entidade no navegador: trecho, acento, alias (client)
@@ -487,11 +511,14 @@ src/components/   Marca (o canto superior esquerdo — volta ao início),
                   Sessoes (lista de sessões, o apagar de dois toques — e a cor
                     que diz o que falta revisar), Entidades (higiene do grafo: a
                     lista buscável, a ficha em painel e a fusão à mão),
+                  RetratoDoEu (o painel do "eu" no lugar da ficha: o Agora, as
+                    seções com o (i), e as dimensões — editar e aceitar a
+                    proposta),
                   Confronto (estado da varredura de relações, rodar e desfazer),
                   Chat (a barra, o painel, a lista de conversas, o progresso por
                     passo e o (i) com o rastro — nasce dentro da `Gravacao`),
                   ServiceWorker (registra `sw.js`; não desenha nada)
-src/app/api/      46 rotas em dez famílias — sessão, entidade, calibração,
+src/app/api/      51 rotas em dez famílias — sessão, entidade, calibração,
                   agentes, átomos, confronto, chat/conversas, medidas, as 2 de
                   auth e a do cron (seção 10)
 src/middleware.ts porta única: sem credencial válida nada responde — cookie de
@@ -746,12 +773,13 @@ painel de `/agentes` (§4.13):
 | `modeloDesempate()` | `desempate-1` | o da resolução |
 | `modeloPerfil()` | `perfil-1` | o da extração |
 | `modeloEnriquecimento()` | `enriquecimento-1` | o da extração |
+| `modeloRetrato()` | `retrato-1`, `retrato-dimensoes-1` | o do enriquecimento — um para os dois (slice 10, §4.20) |
 | `modeloCalibracao()` | `calibracao-2` | o da extração |
 | `modeloRedacao()` | `redacao-1` | o da calibração |
 | `modeloDuplicatas()` | `duplicatas-2` | `deepseek/deepseek-v4.1-flash` |
 | `modeloEmbedding()` | embedding | `openai/text-embedding-3-small` |
 | `modeloConfronto()` | `confronto-2` | o da extração |
-| `modeloChat()` | `chat-5` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |
+| `modeloChat()` | `chat-6` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |
 | `modeloTituloChat()` | `titulo-chat-1` | o do chat |
 
 A deduplicação de **entidade** chegou na slice 3 e é o `duplicatas-2`. O que
@@ -1902,6 +1930,11 @@ banco — consequência do laço, e não decisão.
 
 ### 4.9 A ficha, o agente 3 e o agente 4 (`perfil-1`, `enriquecimento-1`)
 
+> **O "eu" não tem esta ficha desde a slice 10.** `enriquecer()` desvia para o
+> retrato quando `nome_normalizado === "eu"`, e o nó dele guarda só `resumo` e
+> `contexto` curtos — ver §4.20. Tudo abaixo continua valendo para as outras
+> entidades, byte a byte.
+
 A ficha de uma entidade tem quatro campos de texto: o `resumo` (o retrato de
 identidade, teto de 500) e os três da 005 — `contexto`, `pode_ajudar_com`,
 `fizemos_juntos` —, **sem teto desde a 4.11**. O `TETO_PERFIL = 300` não era
@@ -2103,6 +2136,18 @@ aninhada. A continuação que responde fora de 2xx deixa o status no log, como o
 `encadear()`. Erro fora do agente (o grafo caiu) **para** a corrente, ao
 contrário do elo: com o grafo fora, cada continuação falharia na hora e chamaria
 a próxima, num laço de invocações sem fim.
+
+**O "eu" vai na frente, e só começa cedo (slice 10).** A rodada do "eu" é o
+retrato (§4.20): duas fases, ~60 s e depois a mais lenta de sete a treze chamadas
+paralelas — não cabe nos 120 s de margem da última ficha. Então
+`reivindicarProxima` ordena `e.nome_normalizado = 'eu' DESC` antes do carimbo:
+na batida ele entra no mesmo `SET` das outras canônicas e sai na primeira volta
+da primeira invocação, com o orçamento inteiro. Passados 60 s de invocação
+(`JANELA_DO_EU_MS`), a batida reivindica com `{ semEu: true }`: se ele entrar na
+fila no meio — pela tela, ou pelo lease —, fica para a continuação, que começa do
+zero e o pega primeiro. Vazio com `semEu` e fila ainda não vazia quer dizer
+"sobrou o eu", e aí a batida chama a continuação em vez de parar. O elo da tela
+não precisa disso: cada elo já é uma invocação nova com os 300 s inteiros.
 
 **Idempotência (regra 4):** a chave é a entidade. Rodar duas vezes a mesma
 entidade produz a mesma ficha a partir dos mesmos átomos, e o `_anterior` da
@@ -2715,8 +2760,9 @@ no rodapé — este só na extração, que é de quem ele é.
 
 ### 4.13 O painel dos agentes (slice 4.7)
 
-Treze pontos deste sistema falam com o Gateway — eram oito quando esta fatia
-nasceu, e o décimo terceiro é o `redacao-1` da slice 7. Até esta fatia, saber o
+Quinze pontos deste sistema falam com o Gateway — eram oito quando esta fatia
+nasceu; o décimo terceiro é o `redacao-1` da slice 7, e os dois últimos são os
+do retrato do "eu", da slice 10. Até esta fatia, saber o
 que cada um fazia exigia abrir cinco arquivos de
 `src/lib/`, e mudar qualquer coisa exigia um deploy. `/agentes` é onde eles
 passam a ter rosto: o fluxo desenhado em **duas telas** — `/agentes`, o que
@@ -2736,16 +2782,20 @@ prompt e o modelo que a comandam, e na resolução e no confronto o **limiar**
 | `duplicatas-2` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
 | embedding (sem prompt) | `embedding.ts` | automático, depois de gravar | `EMBEDDING_MODEL` | — |
 | `confronto-2` | `confronto.ts` | periódico: cron próprio e sob demanda em `/confronto` (slice 5) | `CONFRONTO_MODEL` | `relacoes`, `novo`, `velho` |
-| `chat-5` | `chat.ts` | sob demanda, a cada mensagem na barra de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo`, `buscar_entidades` |
+| `retrato-1` | `retrato.ts` | no lugar do enriquecimento quando a entidade é o "eu": botão em `/entidades` e batida semanal (slice 10) | `RETRATO_MODEL` | — (**vazio com prompt**: os formatos são sufixos fixos no código, §4.20) |
+| `retrato-dimensoes-1` | `retrato-dimensoes.ts` | sob demanda, "pedir nova proposta"; sozinha na primeira rodada do "eu" (slice 10) | `RETRATO_MODEL` | `dimensoes`, `nome`, `o_que_entra` |
+| `chat-6` | `chat.ts` | sob demanda, a cada mensagem na barra de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo`, `buscar_entidades`, `ler_retrato` |
 | `titulo-chat-1` | `conversas.ts` | sob demanda, uma vez por conversa nova (slice 6) | `CHAT_TITULO_MODEL` | `titulo` |
 
 **O `chat` é o único cujo envelope não são chaves de JSON**, e a diferença é
 real: o parser dele é o loop de *tool-calling*, não um `JSON.parse`. O que um
 prompt editado não pode perder é o nome do que ele pode chamar — um prompt que
 não cita `buscar_atomos` é um prompt que desliga a ferramenta, e a recusa diz
-isso antes de salvar. Desde a slice 9 o envelope tem os três nomes: um prompt
-editado antes dela, e salvo em `/agentes`, **não** cita `buscar_entidades` — a
-ferramenta continua oferecida ao modelo, mas sem a instrução de quando usá-la.
+isso antes de salvar. Desde a slice 9 o envelope tem os três nomes, e desde a 10
+os quatro: um prompt editado antes delas, e salvo em `/agentes`, **não** cita
+`buscar_entidades` nem `ler_retrato` — as ferramentas continuam oferecidas ao
+modelo, mas sem a instrução de quando usá-las, e salvar de novo esse prompt pede
+que ele passe a citá-las.
 
 **O limiar é o terceiro campo editável** (4.11), e desde a 5.1 são **dois** os
 agentes que têm um — e eles medem coisas diferentes: na resolução, abaixo dele
@@ -2885,7 +2935,7 @@ Agora são duas telas, cada uma com URL própria e uma aba no topo:
 
 | rota | tela | o que mostra |
 |---|---|---|
-| `/agentes` | **o que entra** | a espinha `áudio → STT → transcrição → extração → proposta → revisão → grafo`, e abaixo dela o leque dos seis que partem do grafo já gravado |
+| `/agentes` | **o que entra** | a espinha `áudio → STT → transcrição → extração → proposta → revisão → grafo`, e abaixo dela o leque dos sete que partem do grafo já gravado (o sétimo, desde a slice 10, é o `retrato`, com a proposta de dimensões rodando dentro dele) |
 | `/agentes/consulta` | **o que sai** | `pergunta → chat → resposta → título → conversa` |
 
 Quatro agentes na espinha de ingestão (`stt`, `extracao` e os dois que rodam
@@ -3737,6 +3787,38 @@ texto cortados em `TRECHO_NO_RASTRO`; `achados` fica vazio. O (i) mostra nome,
 tipo, quantos trechos, até quando, a similaridade quando houver, o resumo (ou o
 contexto, ou "ficha vazia") e com quem aparece.
 
+**O "eu" buscado pelo nome** (slice 10) volta com a ficha curta e uma `nota`
+**escrita pelo código** (`NOTA_DO_EU`): o retrato completo está em
+`ler_retrato`. Não pelo `contexto` da ficha — aquele é texto do modelo, e o
+próximo `retrato-1` editado no painel podia deixar de escrever a frase. A
+listagem continua sem o "eu".
+
+##### A quarta ferramenta: `ler_retrato` (slice 10, `chat-6`)
+
+```
+ler_retrato(dimensao?)
+  sem argumento → o Agora (com o "até"), e a lista de dimensões:
+                  id, nome, o_que_entra, e "(vazia)" quando a seção está
+  com argumento → só aquela seção, e as fontes: [id · tipo · data] trecho
+                  curto (160), com "(rejeitado depois)" quando o átomo saiu
+```
+
+**É isto que "consultas segregadas" quer dizer:** o chat lê a lista, escolhe a
+dimensão, e só ela entra no contexto. Pôr o retrato inteiro em toda pergunta foi
+recusado na entrevista — milhares de tokens, a maioria sem relação com ela.
+`dimensao` casa pelo id **ou** pelo nome normalizado; dimensão que saiu da lista
+não é alcançável, como na tela. Retrato não escrito, seção vazia e dimensão
+inexistente voltam como `aviso`, dizendo qual dos três — e o chat segue por
+`buscar_atomos`, como já faz com ficha vazia. Das fontes, o chat vai a
+`historico_do_atomo` pelo id, ou a `buscar_atomos`, quando a pergunta pede
+evidência ou data exata. Os ids das fontes entram na memória do turno (`vistos`).
+
+O `chat-6` manda pergunta sobre mim — quem eu sou, como estou, o que tenho
+feito numa área da vida — **começar por `ler_retrato`**: primeiro sem
+parâmetro, depois a dimensão que a pergunta pede, e só ela. O (i) mostra o passo
+como "leu a dimensão Corpo e treino — 2 fontes", com o texto da seção cortado e
+as fontes como achados; a leitura mora em `PassoDeFerramenta.retrato`.
+
 #### 4.16.3 Só leitura, e nem por ferramenta
 
 Uma ferramenta de escrita com confirmação — arquivar um átomo direto do chat —
@@ -4131,6 +4213,168 @@ que `tests/chat.test.ts` o importa, e é o mesmo parser. Pelo mesmo motivo
 não deve arrastar a primeira inteira para o bundle por causa de seis linhas puras
 (é a razão de `localizarNoAudio` morar em `transcricao.ts`, §4.5).
 
+
+### 4.20 O retrato do "eu" (slice 10, `retrato-1` e `retrato-dimensoes-1`)
+
+A ficha de quatro campos (§4.9) serve às outras entidades e **não serve ao
+"eu"**, e a rodada de 23/09 mostrou isso com número: 128 dos 151 átomos ativos
+(85%) são dele — sujeito de todo `SENTIMENTO`, `APRENDIZADO`, `HISTORIA` e
+`ROTINA` por regra da extração —, e a ficha saiu com 1391 caracteres a partir
+de ~49 mil, `fizemos_juntos` vazio. E os três campos de perfil viram o vetor da
+entidade (`fonteDaEntidade`): um retrato longo neles estouraria a entrada do
+modelo de embedding e derrubaria o lote de vetores de todas as entidades.
+
+O que existe no lugar é um **retrato por dimensões da minha vida**: o **Agora**
+no topo, e uma seção por dimensão, cada uma dizendo o que eu sou hoje naquela
+área e o que mudou, com mês e ano. Eu leio numa tela (`/entidades`, §11) e o
+chat consulta **uma dimensão por vez** (`ler_retrato`, §4.16.2).
+
+#### Onde mora — R2, e nenhuma migration
+
+```
+config/retrato-eu.json      { dimensoes: [{ id, nome, o_que_entra }],
+                              sugestao: [...] | null, atualizado_em }
+retrato/eu.json             { secoes: { agora: Secao, <id>: Secao, … },
+                              escrito_em, atomos, modelo }
+                            Secao = { texto, fontes: [atomo_id], atomos, ate,
+                                      prompt_version, modelo, escrito_em }
+retrato/eu.anterior.json    uma geração — o desfazer
+```
+
+Texto longo vai para o R2 e o grafo guarda o curto — o espírito da regra 2. O
+caminho é fixo (há um "eu" só), então **nem a chave vai para o nó**, e o schema
+não muda. As dimensões são escritas por etag (`atualizarJson`), porque têm dois
+escritores: a tela e a proposta do agente. O `id` de uma dimensão sai do código
+a partir do nome (`slugDimensao`), é **estável** — renomear troca o `nome` e
+mantém a seção — e **nunca é `agora`**, que é o id da seção fixa ("Agora" vira
+`agora-2`). Dimensão removida some na próxima rodada, e até lá a tela e o chat
+não mostram seção cujo `id` não está em `dimensoes`.
+
+**O nó "eu" continua com `resumo` e `contexto` curtos** (500 e 800 caracteres),
+escritos na fase 1 da mesma rodada: o vetor, a listagem de `/entidades` e o
+`buscar_entidades` do chat não mudam. `pode_ajudar_com` e `fizemos_juntos` do
+"eu" são gravados vazios, e o que estava lá vai para o `_anterior`.
+
+#### Dois agentes, um prefixo
+
+| id | versão | o prompt editável | envelope | módulo |
+|---|---|---|---|---|
+| `retrato` | `retrato-1` | as regras do prefixo comum | **vazio** | `retrato.ts` |
+| `retrato-dimensoes` | `retrato-dimensoes-1` | o sufixo da proposta, formato incluído | `dimensoes`, `nome`, `o_que_entra` | `retrato-dimensoes.ts` |
+
+Os dois leem `RETRATO_MODEL` (padrão: o do enriquecimento) — **uma variável
+para os dois**, porque a proposta tem de bater no mesmo cache do provedor, e
+cache é por modelo. O envelope vazio num agente **com** prompt é o único do
+painel: o que se edita no `retrato` são só as regras; os três formatos
+(`{resumo, contexto}`, `{texto, fontes}`, `{dimensoes}`) são sufixos fixos no
+código, porque três parsers dependem deles.
+
+**Dois módulos, e não um.** A spec pôs os dois agentes em `retrato.ts`;
+`tests/agentes.test.ts` cobra um módulo por agente (a varredura aponta cada
+`generateText` a um dono), e o teste venceu. A dependência vai num sentido só:
+`retrato.ts` importa `retrato-dimensoes.ts`, que recebe o prefixo pronto.
+
+```
+┌─ prefixo comum ────────────────────────────────┐
+│ as regras de escrita (o prompt do `retrato`)   │  igual em toda chamada
+│ TODOS os átomos do "eu", numerados             │  da mesma rodada
+└────────────────────────────────────────────────┘
+┌─ sufixo ───────────────────────────────────────┐
+│ a tarefa desta chamada E O FORMATO dela        │  muda por chamada
+└────────────────────────────────────────────────┘
+```
+
+**O formato mora no sufixo** porque qualquer coisa que muda entre chamadas antes
+dos átomos quebra o cache do provedor no primeiro byte diferente. Medido em
+23/09: a segunda chamada com o mesmo bloco leu 14.080 dos 14.128 tokens de
+entrada do cache, que custa ~40× menos.
+
+**O bloco é próprio do retrato** (`blocoNumerado`): linha `n` ↔ `ids[n-1]`, com o
+id fora do prompt. `atomosDaEntidade` passou a devolver `a.id` — campo a mais,
+que a ficha ignora —, e `blocoDeAtomos` não mudou: o prompt da ficha das outras
+entidades é byte a byte o de antes, e há teste cobrando.
+
+#### A rodada — duas fases, e `pronta` só no fim
+
+```
+enriquecer(eu)  →  rodadaDoEu
+  fase 1   {resumo, contexto}, sozinha — escreve o cache
+           gravarFicha(..., { semEstado: true })   ← os campos, com _anterior,
+                                                     SEM tocar no estado
+  fase 2   Agora + cada dimensão, em paralelo — todas leem o cache
+           (+ a proposta de dimensões, quando é a rodada que pede)
+           eu.anterior.json ← eu.json atual;  eu.json ← o novo
+  fim      marcarPronta(atomos, motivo)
+```
+
+`gravarFicha` marca `pronta` na mesma consulta que grava os campos, e isso não
+serve ao "eu": se a fase 1 marcasse e a função morresse na fase 2, o nó diria
+`pronta` com o `eu.json` velho, e o lease nunca o pegaria (ele só olha
+`rodando`). Por isso a fase 1 grava sem o estado, e morrer em qualquer ponto
+antes do fim deixa o "eu" em `rodando` — o lease o traz de volta. A rodada
+repetida reescreve os campos do nó, e o `_anterior` passa a ser o da fase 1 que
+morreu: o preço declarado da 010, uma geração. Morrer entre as duas escritas do
+R2 deixa as duas iguais ao antigo: nada perdido, e o desfazer vira no-op até a
+próxima rodada.
+
+**Falha parcial não derruba a rodada.** Uma seção que falha mantém o texto
+anterior, o motivo vai para o log e para `enriquecimento_motivo`, e o estado fica
+`pronta` com o motivo visível. **Falha da fase 1 é falha da rodada inteira**:
+sobe, `rodarElo` marca `falhou`, e nada é escrito no R2 — as seções não se
+escrevem sobre um nó que ficou para trás.
+
+**Cada seção** devolve `{ texto, fontes }`: o texto em terceira pessoa, o
+presente primeiro e a mudança depois, com mês e ano; as fontes são os números
+dos trechos **principais**, até 8, validados contra o bloco — número que não
+existe é descartado, e o log diz quantos. Sem material, texto vazio e fontes
+vazias. O **Agora** é a mesma forma, olhando as últimas ~4 semanas antes do átomo
+mais recente; o `ate` de toda seção é o `valido_em` desse átomo, e a tela o
+mostra ao lado do título ("até set/2026") — depois de três meses sem gravar, o
+Agora é de três meses atrás, e sem a data ele pareceria presente.
+
+**A proposta de dimensões** devolve 6 a 12, cada uma com `nome` e `o_que_entra`,
+e vai para `sugestao` — **nunca** para `dimensoes` sem eu aceitar. Nome que já
+existe na lista em vigor herda o id dela, então aceitar uma proposta que manteve
+"Corpo e treino" mantém a seção. Ela roda na fase 2, junto com as seções, quando
+não há dimensão aprovada **e** nenhuma sugestão esperando; ou sozinha, sobre o
+mesmo prefixo, quando eu peço pela tela. **A primeira rodada do "eu"** escreve a
+ficha curta e o Agora, pede a proposta, e a tela me chama para aprovar.
+
+Sem teto de saída (4.12.1), `length` é erro com diagnóstico e não segunda
+chamada, `comEsperaDeLimite` sem `ate` — a mesma disciplina do agente 4.
+
+**Paralelo não está medido, e é o ponto de retorno desta fatia.** Os 14.080
+tokens de cache de 23/09 vieram de duas chamadas **em sequência**. Com sete a
+treze ao mesmo tempo, o Gateway pode distribuí-las por backends diferentes do
+mesmo modelo, e o cache de um não serve ao outro. `diagnostico()` passou a
+mostrar `cache=` (`usage.inputTokenDetails.cacheReadTokens`) e cada chamada da
+rodada loga o seu, mais o tempo das duas fases. Se a fase 2 não ler o cache, o
+conserto previsto é fixar o provedor por `providerOptions.gateway` — ainda
+string pelo Gateway (regra 8). **Não está no código**: é decisão que depende da
+medida.
+
+#### O desfazer — um botão, os dois lados
+
+Os quatro `_anterior` do nó (`desfazerFicha`) e `eu.json` ↔ `eu.anterior.json`,
+com a semântica da 010: uma geração, e é uma troca — um toque acidental se
+conserta com outro. Uma rodada é uma coisa só, e desfazer meia deixaria o nó de
+uma geração e o retrato de outra. `POST /api/entidades/desfazer` com a chave do
+"eu" desvia para o mesmo desfazer, senão o botão genérico trocaria só o nó.
+
+Ordem: o R2 primeiro (`eu.json` com `If-Match`, depois `eu.anterior.json`), o nó
+depois. **A troca não é atômica**: se o nó falhar depois de o R2 trocar, a rota
+responde 502 dizendo qual lado trocou, e que um segundo toque não conserta
+(trocaria o R2 de volta e o nó para a frente) — §14. Com a rodada em `rodando`,
+409. Sem geração no R2 (a primeira rodada), troca só o nó e diz isso.
+
+#### A fila
+
+O "eu" entra na mesma fila, pelo mesmo `enriquecimento_estado` — os dois
+caminhos que chamam `enriquecer()`, o `{ chave }` e o elo, passam pelo desvio. A
+ordem da reivindicação e o `semEu` da batida estão em §4.9. **Precisa ser
+canônico** para a batida o pegar: em 29/09 o "eu" de produção estava `canonico =
+true` (e em `falhou`, da rodada de 23/09); o de desenvolvimento não foi
+conferido.
 
 ## 5. Estados da sessão
 
@@ -5407,6 +5651,9 @@ calibracao/regras-<hash>.json   uma composição de regras aprovada na 4.6 — i
                                 nada mais escreve um, e um átomo carimbado `+a<hash>` ainda resolve por ela
 config/agentes.json             o que eu editei de cada agente: hash do prompt e modelo (slice 4.7)
 config/prompt-<agente>-<hash>.json  um prompt editado — imutável para sempre; é o que o sufixo `+p<hash>` resolve
+config/retrato-eu.json          as dimensões do retrato do "eu" e a proposta pendente (slice 10): { dimensoes, sugestao, atualizado_em } — por etag
+retrato/eu.json                 o retrato do "eu": { secoes: { agora, <id da dimensão>: {texto, fontes, atomos, ate, prompt_version, modelo, escrito_em} }, escrito_em, atomos, modelo }
+retrato/eu.anterior.json        a geração anterior do retrato — o lado R2 do desfazer
 medidas/indice.json             uma linha por sessão: espera, fila, servidor, blocos, tempo por passo,
                                 chamadas, tokens e os códigos de falha (teto de 400, sem texto livre)
 medidas/<AAAA-MM>.json          o mês fechado: n, mediana, pior caso, por passo — escrito na batida diária
@@ -5435,12 +5682,16 @@ chave → nó é o dossiê, com o catálogo da hora. `semantico: false` marca o 
 cuja camada de vetor não trouxe nada, e é o que o catch-up do `/finalizar` refaz
 uma vez (§4.14).
 
-`calibracao/`, `config/`, `conversas/` e `medidas/` ficam **fora** do prefixo
-`sessoes/` de propósito: nem o índice de correções, nem a configuração dos
-agentes, nem uma conversa, nem a série de medidas são de sessão nenhuma. E são
-quatro prefixos e não um porque são quatro coisas: `calibracao/` é material que o
-sistema acumulou sozinho, `config/` é o que eu escrevi, `conversas/` é o que eu
-perguntei, e `medidas/` é o relógio do sistema sobre si mesmo (§4.17).
+`calibracao/`, `config/`, `conversas/`, `medidas/` e `retrato/` ficam **fora** do
+prefixo `sessoes/` de propósito: nem o índice de correções, nem a configuração
+dos agentes, nem uma conversa, nem a série de medidas, nem o retrato são de
+sessão nenhuma. E são cinco prefixos e não um porque são cinco coisas:
+`calibracao/` é material que o sistema acumulou sozinho, `config/` é o que eu
+escrevi — as dimensões do retrato inclusive, que eu aprovo —, `conversas/` é o
+que eu perguntei, `medidas/` é o relógio do sistema sobre si mesmo (§4.17), e
+`retrato/` é o texto longo que um agente escreveu sobre mim (§4.20), fora do nó
+pela regra 2 e para não estourar o vetor. Os três do retrato têm caminho fixo — há
+um "eu" só —, e nenhum deles aparece no Neo4j, nem a chave.
 
 `conversas/<id>/mensagens.json` é o gêmeo de `transcricao.json` na outra ponta do
 sistema: no Neo4j vai só a chave (regra 2), e o conteúdo — incluindo o rastro de
@@ -5518,7 +5769,12 @@ sessão de teste que foi mal não pode sumir para melhorar a média (§4.17).
 | `POST /api/entidades/canonico` | `{chave, canonico}` — marca a ficha oficial | reversível, sem consequência retroativa; não trava nada |
 | `POST /api/entidades/perfil/rascunho` | `{chave, campo}` — o agente 3 propõe | **não escreve nada**; é `POST` porque gasta chamada de modelo |
 | `POST /api/entidades/enriquecer` | `{chave}` uma agora; `{chaves}` põe na fila e responde na hora; `{elo:true}` um elo | a **única** rota que escreve conteúdo sem eu aprovar campo a campo (§4.9) — nenhum átomo entra por ela, e a regra 5 continua inteira. O elo se autentica com o meu cookie, repassado |
-| `POST /api/entidades/desfazer` | `{chave}` — os quatro campos da ficha voltam uma geração | é uma **troca**, não uma restauração: outro toque traz de volta. 400 quando não há geração guardada |
+| `POST /api/entidades/desfazer` | `{chave}` — os quatro campos da ficha voltam uma geração | é uma **troca**, não uma restauração: outro toque traz de volta. 400 quando não há geração guardada. **A chave do "eu" desvia** para o desfazer do retrato (slice 10) — senão trocaria só o nó |
+| `GET /api/entidades/retrato` | o retrato do "eu", as dimensões e se há geração anterior no R2 (slice 10) | só leitura; devolve todas as seções — quem esconde a de dimensão removida é a tela |
+| `POST /api/entidades/retrato/dimensoes` | `{dimensoes}` a lista inteira, na ordem; `{aceitar:true}`; `{descartar:true}` | quem dá id é o servidor: o que veio e casa com o formato fica, dimensão nova ganha pelo nome, nunca `agora`. Por etag. Não chama modelo |
+| `POST /api/entidades/retrato/proposta` | o agente `retrato-dimensoes` propõe a lista inteira | grava em `sugestao`, **nunca** em `dimensoes`; a resposta espera |
+| `POST /api/entidades/retrato/desfazer` | os dois lados do "eu": os `_anterior` do nó e `eu.json` ↔ `eu.anterior.json` | 409 com a rodada em `rodando`; 400 sem geração em nenhum dos lados; 502 quando o R2 trocou e o nó não, dizendo isso (§4.20) |
+| `POST /api/entidades/retrato/fontes` | `{ids}` — os átomos do (i) de uma seção, pelo id | lidos agora, com `status`: o que saiu depois volta, para a tela riscar; teto de 64 ids |
 | `POST /api/atomos/embutir` | dá vetor aos átomos que ainda não têm, em lote | retrofill e retry; 200 por chamada, `continua: true` enquanto sobrar; não toca no texto nem reextrai |
 | `POST /api/entidades/embutir` | põe em dia o vetor das entidades, comparando `embedding_fonte` | não editar nada devolve `embutidas: 0` |
 | `POST /api/chat` | `{conversa_id?, texto}` — a pergunta; devolve um **fluxo de NDJSON** com a conversa, um evento por chamada de ferramenta, a resposta e o título | cria a conversa quando não vem `conversa_id`; **409 em conversa arquivada**; grava a pergunta antes de o modelo começar, para o "parar" não perdê-la; sem chave de idempotência, e é a única assim (§4.16.7) |
@@ -5548,7 +5804,7 @@ detalhe de deploy: o teto de execução é o que decide se um `waitUntil` termin
 
 | `maxDuration` | Rotas |
 |---|---|
-| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/entidades/enriquecer`, `/confronto/rodar`, `/cron/confronto`, `/cron/enriquecimento`, `/chat`, `/extracao/eventos` — as que chamam modelo dentro de `waitUntil`, correm a mesma fila em loop, encadeiam até oito chamadas antes de responder, ou **mantêm um fluxo aberto** |
+| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/entidades/enriquecer`, `/entidades/retrato/proposta`, `/confronto/rodar`, `/cron/confronto`, `/cron/enriquecimento`, `/chat`, `/extracao/eventos` — as que chamam modelo dentro de `waitUntil`, correm a mesma fila em loop, encadeiam até oito chamadas antes de responder, ou **mantêm um fluxo aberto** |
 | 60 s | `/confirmar`, `/atomos/embutir`, `/entidades/embutir`, `/entidades/duplicatas`, `/entidades/fundir`, `/entidades/perfil/rascunho`, `/calibracao/rascunho` |
 | padrão | todo o resto |
 
@@ -5616,9 +5872,9 @@ número não vai bater com a tela.
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar — e, desde a 8.2, **crescer** enquanto o fim é extraído, com o confirmar travado e uma linha no rodapé até fechar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
-| `/entidades` | `Entidades` | o que está no grafo, buscável por nome e por grafia, filtrável por tipo e por "sem resumo", em ordem de mais falada. Cada linha é um nome e uma linha de meta; tocá-la abre a **ficha** num painel de tela cheia — tipo, renomear, canônica, resumo, grafias, os três campos de perfil, o enriquecer/desfazer e **fundir com…**, que funde duas entidades quaisquer à mão. O lote é modo: "enriquecer" acende os checkboxes e uma barra grudada no topo. Enquanto houver fila, relê a cada 4 s e retoma a corrente quando a vê parada (§4.9) |
+| `/entidades` | `Entidades` | o que está no grafo, buscável por nome e por grafia, filtrável por tipo e por "sem resumo", em ordem de mais falada. Cada linha é um nome e uma linha de meta; tocá-la abre a **ficha** num painel de tela cheia — tipo, renomear, canônica, resumo, grafias, os três campos de perfil, o enriquecer/desfazer e **fundir com…**, que funde duas entidades quaisquer à mão. **A ficha do "eu" é o retrato** (slice 10, `RetratoDoEu`): no lugar dos três campos e do enriquecer, o Agora com o "até", uma seção por dimensão com o (i) das fontes, reescrever/desfazer, e a lista de dimensões para editar, com a proposta do agente ao lado. O lote é modo: "enriquecer" acende os checkboxes e uma barra grudada no topo. Enquanto houver fila, relê a cada 4 s e retoma a corrente quando a vê parada (§4.9) |
 | `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
-| `/agentes` | `Agentes` | **o que entra**: a espinha do áudio ao grafo — STT, extração (com resolução e desempate rodando dentro dela), a revisão e o leque dos seis que partem do grafo gravado. Clicar num agente abre o prompt, o modelo e (na resolução e no confronto) o limiar |
+| `/agentes` | `Agentes` | **o que entra**: a espinha do áudio ao grafo — STT, extração (com resolução e desempate rodando dentro dela), a revisão e o leque dos sete que partem do grafo gravado. Clicar num agente abre o prompt, o modelo e (na resolução e no confronto) o limiar |
 | `/agentes/consulta` | `Agentes` | **o que sai**: pergunta, chat, resposta, título, conversa. Mesma gaveta de edição; nada nesta tela escreve no grafo |
 | `/confronto` | `Confronto` | quantos átomos esperam a varredura, o botão "rodar agora", e os últimos átomos tocados com as relações que ganharam e o desfazer por linha (slice 5) |
 | `/entrar` | página de login | pede o e-mail permitido |
@@ -6151,6 +6407,19 @@ fundir, o painel **reaponta para a vencedora**: a perdedora sai da listagem no
 mesmo instante (`status='fundida'`), e uma ficha aberta num nó que sumiu mentiria
 até eu fechá-la.
 
+**A ficha do "eu" é outro painel dentro do mesmo** (slice 10). Tipo, nome,
+canônica, resumo, grafias e fundir continuam lá, porque são do nó; os três campos
+de perfil e o "enriquecer esta" dão lugar a `RetratoDoEu`, que lê
+`/api/entidades/retrato` sozinho e relê quando o selo da rodada muda:
+
+| Peça | Como é | Por quê |
+|---|---|---|
+| **o Agora** | primeiro, com "até set/2026" ao lado do título | depois de três meses sem gravar, o Agora é de três meses atrás — sem a data ele pareceria presente |
+| **as seções** | uma por dimensão, na ordem aprovada; parágrafos do texto como vieram. Dimensão nova diz "aparece na próxima rodada"; seção vazia, "sem material nesta rodada". Seção de dimensão que saiu da lista **não aparece** | a lista aprovada é a forma do retrato, e o `eu.json` pode estar uma rodada atrás dela |
+| **o (i)** | um botão por seção que abre os trechos das `fontes` — tipo, data, texto —, lidos do grafo pelo id; o que foi rejeitado ou arquivado depois aparece **riscado** | o (i) diz o que sustentou a seção quando ela foi escrita, e sumir com o átomo reescreveria essa história. Citação por frase foi recusada: pesa a leitura |
+| **reescrever / desfazer** | a rodada inteira, e um desfazer que troca os dois lados | uma rodada é uma coisa só |
+| **as dimensões** | nome e `o_que_entra` editáveis, ↑ ↓ ×, "+ dimensão", "salvar dimensões"; "pedir nova proposta" traz a sugestão **ao lado**, com aceitar e descartar | o agente propõe, eu aprovo — e nada muda sem eu aceitar. Sem "juntar": é editar uma e tirar a outra |
+
 **A ficha é a terceira gaveta desta forma** — `.gaveta` (gestão, pela esquerda),
 `.editor-agente` (agentes, pela direita) e `.ficha`. As três repetem a mesma
 geometria, a mesma curva de 220 ms, o mesmo `env(safe-area-inset-*)` e o mesmo
@@ -6286,7 +6555,7 @@ CRON_SECRET               o header das batidas agendadas, e o da continuação d
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, deduplicação, embedding, calibração, confronto, chat, título
+AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, retrato, deduplicação, embedding, calibração, confronto, chat, título
 STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão deepseek/deepseek-v4.1-flash
 DUPLICATAS_MODEL          opcional; padrão deepseek/deepseek-v4.1-flash
@@ -6294,6 +6563,7 @@ RESOLUCAO_MODEL           opcional; padrão igual ao da extração
 DESEMPATE_MODEL           opcional; padrão igual ao da resolução
 PERFIL_MODEL              opcional; padrão igual ao da extração
 ENRIQUECIMENTO_MODEL      opcional; padrão igual ao da extração
+RETRATO_MODEL             opcional; padrão igual ao do enriquecimento — um para os dois agentes do retrato do "eu", porque o cache do provedor é por modelo (§4.20)
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
 CONFRONTO_MODEL           opcional; padrão igual ao da extração
 CHAT_MODEL                opcional; padrão deepseek/deepseek-v4.1-flash, próprio desde a slice 9 — é quem precisa de tool-calling multi-passo
@@ -6598,6 +6868,31 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   ```
 
 ## 14. Limites conhecidos
+
+- **Uma chamada por dimensão lê todos os átomos do "eu"** (10, §4.20). Cabe
+  enquanto o bloco couber no contexto do modelo — ~5 anos no ritmo de 23/09 para
+  o padrão de 1M. Trocar `RETRATO_MODEL` por um de contexto menor antecipa esse
+  dia. O conserto, quando vier, é capítulos por período.
+- **O cache do provedor é uma economia, não um contrato** (10, §4.20). Se o
+  provedor não cachear — ou se as chamadas paralelas da fase 2 caírem em
+  backends diferentes —, a rodada custa N vezes a entrada inteira: mais caro,
+  igualmente certo. **Ainda não medido em paralelo**; o `cache=` do log de cada
+  chamada é onde se olha.
+- **O retrato escreve sem eu revisar antes**, como a ficha da 4.12. A defesa é a
+  mesma: eu leio depois, e o desfazer está a um toque.
+- **O (i) do retrato mostra o que o modelo disse que usou**, não uma prova de que
+  cada frase está sustentada. Frase sem apoio só aparece quando eu leio.
+- **O desfazer do "eu" não é atômico** entre Neo4j e R2, nem dentro do R2 (dois
+  PUTs). Falha no meio deixa um lado trocado, a rota diz qual, e o conserto é à
+  mão — um segundo toque trocaria o R2 de volta e o nó para a frente.
+- **O "eu" na batida depende da ordem da reivindicação** (10, §4.9). Rodada que
+  cresça além de ~240 s não cabe numa invocação nem começando no segundo zero, e
+  aí a batida deixa de reescrever o retrato — em silêncio, a não ser pelo
+  `rodando` que volta pelo lease toda semana. **O tempo da rodada inteira ainda
+  não foi medido**; os 60 s de `JANELA_DO_EU_MS` pressupõem até 240 s.
+- **Um prompt do chat editado em `/agentes` antes da slice 10 não conhece
+  `ler_retrato`** — a ferramenta é oferecida, mas sem a instrução de começar por
+  ela nas perguntas sobre mim. Salvá-lo de novo pede que ele a cite (envelope).
 
 - **O penhasco virando erro troca uma proposta ruim por nenhuma proposta** (8,
   §4.18). Uma sessão que antes entregaria nove átomos por um passe único sobre a
@@ -7403,7 +7698,8 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   conserto é rodar o lote de enriquecimento em `/entidades` (4.12), não mexer
   na ferramenta; o agente 4 que escreve as fichas nunca foi medido numa sessão
   real.
-- **Três ferramentas disputam mais atenção do modelo que duas** (slice 9), e o
+- **Três ferramentas disputam mais atenção do modelo que duas** (slice 9) — e
+  desde a slice 10 são quatro —, e o
   `CHAT_MODEL` que as recebe é o `deepseek/deepseek-v4.1-flash`, escolhido sem
   medir tool-calling multi-passo. Se ele encadear mal, a ferramenta nova piora a
   resposta em vez de melhorar — e o conserto é o modelo ou o prompt, não remover

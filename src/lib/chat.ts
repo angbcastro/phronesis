@@ -11,7 +11,7 @@
  * ela na seguinte. Nenhum pipeline de passo fixo cobre isso sem virar, na
  * prática, um agente disfarçado; então ele é um agente declarado.
  *
- * **Três ferramentas, compostas.** Quatro ferramentas de dimensão única
+ * **Quatro ferramentas, compostas.** Quatro ferramentas de dimensão única
  * (semântica, entidade, período, confronto) foram desenhadas e recusadas: uma
  * pergunta composta — "o que eu fiz, aprendi e conquistei em agosto" — exigiria
  * encadear e cruzar à mão o que um parâmetro de lista resolve numa chamada só.
@@ -24,6 +24,8 @@
  *                        em volta de um átomo, nas duas direções
  *   buscar_entidades     nome, texto (vetor de perfil), tipo — a ficha, as
  *                        contagens e quem co-ocorre
+ *   ler_retrato          dimensao? — o retrato do "eu", uma seção por vez
+ *                        (slice 10): sem argumento, o Agora e a lista
  *
  * **Só leitura, e nem por ferramenta** (regra 5 do CLAUDE.md). Uma ferramenta
  * de escrita com confirmação — arquivar um átomo direto do chat — foi
@@ -56,10 +58,15 @@ import {
 import { query } from "./neo4j";
 import { carimbo, efetivo } from "./overrides";
 import { PISO_PERFIL } from "./resolucao";
+import { CHAVE_EU } from "./enriquecimento";
+import { lerFontes, lerRetrato } from "./retrato";
+import { lerConfigRetrato } from "./retrato-dimensoes";
 import { normalizarNome } from "./texto";
 import {
+  ID_AGORA,
   ROTULO_TIPO_ENTIDADE,
   TIPOS_ATOMO,
+  mesAno,
   TIPOS_ENTIDADE,
   ehTipoRelacaoConfronto,
   type AtomoAchado,
@@ -69,6 +76,7 @@ import {
   type EntidadeAchada,
   type TipoEntidade,
   type EloDoHistorico,
+  type LeituraDoRetrato,
   type Mensagem,
   type PassoDeFerramenta,
   type RecorteDaBusca,
@@ -76,7 +84,7 @@ import {
 } from "./tipos";
 
 /** Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7). */
-export const PROMPT_VERSION_CHAT = "chat-5";
+export const PROMPT_VERSION_CHAT = "chat-6";
 
 export class ChatError extends Error {
   constructor(message: string) {
@@ -165,7 +173,7 @@ const FATOR_DE_FOLGA = 2;
 
 export const INSTRUCOES = `Você responde perguntas sobre um diário pessoal falado. Quem pergunta é o dono do diário, falando de si mesmo: "eu" é sempre ele.
 
-O diário não está no seu contexto. Ele está num grafo, e você o alcança por três ferramentas:
+O diário não está no seu contexto. Ele está num grafo, e você o alcança por quatro ferramentas:
 
 buscar_atomos — procura trechos registrados. Todos os parâmetros são opcionais e se combinam:
   texto      busca por sentido, não por palavra exata. Escreva a ideia, não a pergunta.
@@ -179,9 +187,12 @@ buscar_entidades — procura a ficha de pessoas, projetos, objetivos e organiza�
   tipo       Pessoa, Projeto, Objetivo ou Organizacao.
   Sem nome nem texto, lista as mais faladas daquele tipo — é o que responde "quais são meus projetos".
   A ficha diz quem é, com o que pode ajudar, o que já fizemos juntos, quantos trechos há, de quando a quando, e com quem mais ela aparece nos mesmos trechos.
+ler_retrato — o retrato do dono do diário, escrito a partir de tudo o que ele registrou e dividido em dimensões da vida dele. Um parâmetro opcional:
+  dimensao   o id ou o nome de uma dimensão. Sem ele, devolve o Agora — o momento atual — e a lista de dimensões com o que entra em cada uma. Com ele, devolve só aquela seção e os trechos que a sustentaram.
 
 COMO BUSCAR
 Busque antes de responder. Você não sabe nada sobre esta pessoa que não tenha vindo de uma busca.
+Pergunta sobre mim — quem eu sou, como eu estou, o que tenho feito numa área da vida — começa por ler_retrato: primeiro sem parâmetro, para ver o Agora e as dimensões; depois a dimensão que a pergunta pede, e só ela. Não leia dimensões que a pergunta não pede. O retrato é resumo: data exata e evidência estão nos trechos — os ids das fontes vão direto a historico_do_atomo, e buscar_atomos acha o resto. Retrato vazio ou ainda não escrito não quer dizer que não há nada: siga por buscar_atomos.
 Pergunta sobre quem alguém é, com quem eu faço o quê, ou quem pode ajudar com algo começa pela ficha, não pelos trechos: ela já diz por escrito o que você levaria várias buscas para reconstruir. A ficha é resumo; data e evidência estão nos trechos — busque-os com buscar_atomos e o nome da entidade quando a pergunta pedir. Ficha vazia não quer dizer que não há nada: quer dizer que ninguém escreveu, e os trechos continuam lá.
 A maioria das perguntas se resolve em uma ou duas buscas. Mais que três é sinal de que você está varrendo em vez de procurar.
 Buscas que não dependem uma da outra vão juntas, no mesmo passo. "O que eu aprendi e o que eu conquistei em agosto" são duas buscas independentes: peça as duas de uma vez. Só espere o resultado quando a busca seguinte precisar dele.
@@ -594,7 +605,18 @@ export interface ResultadoDeEntidades {
   outras?: string[];
   recorte?: RecorteDaBusca;
   aviso?: string;
+  /**
+   * Uma linha escrita **pelo código**, que vai junto com as fichas — hoje, só a
+   * do "eu" (slice 10), dizendo que o retrato completo está em `ler_retrato`.
+   * Não pelo `contexto` da ficha: aquele é texto do modelo, e o próximo
+   * `retrato-1` editado no painel podia deixar de escrever a frase.
+   */
+  nota?: string;
 }
+
+/** O que `buscar_entidades` diz ao lado da ficha curta do "eu". */
+export const NOTA_DO_EU =
+  "esta é a ficha curta do dono do diário. O retrato completo dele, por dimensão da vida, está em ler_retrato.";
 
 interface LinhaDeFicha {
   id: string;
@@ -704,7 +726,10 @@ export async function buscarEntidades(
     const exata = acharPorChave(normalizarNome(nome), catalogo);
     if (exata && doTipo(exata)) {
       const fichas = await lerFichas([exata.id]);
-      return { entidades: [paraAchada(exata, fichas.get(exata.id))] };
+      return {
+        entidades: [paraAchada(exata, fichas.get(exata.id))],
+        ...(exata.nome_normalizado === CHAVE_EU ? { nota: NOTA_DO_EU } : {}),
+      };
     }
     const parecidas = parecidasPorNome(nome, catalogo.filter(doTipo), TETO_ENTIDADES);
     if (parecidas.length === 0) {
@@ -828,7 +853,10 @@ export function respostaDasEntidades(r: ResultadoDeEntidades): string {
   }
 
   const fichas = r.entidades.map(textoDaFicha).join("\n\n");
-  return [topo, fichas].filter((s) => s !== null && s !== "").join("\n\n") || "nenhuma entidade encontrada.";
+  return (
+    [topo, fichas, r.nota ?? null].filter((s) => s !== null && s !== "").join("\n\n") ||
+    "nenhuma entidade encontrada."
+  );
 }
 
 /**
@@ -867,6 +895,122 @@ export function parametrosDeEntidade(p: BuscaDeEntidades): Record<string, unknow
   if (tipo !== null) limpos.tipo = tipo;
   return limpos;
 }
+
+// ──────────────────── ferramenta 4: ler_retrato ────────────────────
+
+/** Quanto do texto de cada fonte entra na resposta de `ler_retrato`. */
+export const TRECHO_DA_FONTE = 160;
+
+export interface ResultadoDoRetrato {
+  /** O que vai ao modelo. */
+  resposta: string;
+  /** O que vai ao (i). */
+  leitura: LeituraDoRetrato;
+  /** As fontes da seção, já cortadas — o (i) as mostra como achados. */
+  fontes: AtomoAchado[];
+  /** Retrato não escrito, seção vazia, dimensão que não existe. */
+  aviso?: string;
+}
+
+const ate = (iso: string) => (mesAno(iso) === "" ? "" : ` (até ${mesAno(iso)})`);
+
+/**
+ * A ferramenta 4, por dentro (slice 10): o retrato do "eu", **uma dimensão por
+ * vez**. É isto que "consultas segregadas" quer dizer — o chat lê a lista,
+ * escolhe a dimensão, e só ela entra no contexto.
+ *
+ * - sem `dimensao` → o Agora, e a lista de dimensões com o `o_que_entra`;
+ * - com `dimensao` → só aquela seção, e as fontes (id, data, trecho curto). O id
+ *   vai para o chat poder seguir por `historico_do_atomo`.
+ *
+ * `dimensao` casa pelo id **ou** pelo nome normalizado: o modelo lê os dois na
+ * lista e pode devolver qualquer um. Seção de dimensão que saiu da lista não é
+ * alcançável, como na tela.
+ */
+export async function lerRetratoDoEu(dimensao?: unknown): Promise<ResultadoDoRetrato> {
+  const pedido = typeof dimensao === "string" ? dimensao.trim() : "";
+  const [retrato, config] = await Promise.all([lerRetrato(), lerConfigRetrato()]);
+
+  if (!retrato) {
+    const aviso =
+      "o retrato do dono do diário ainda não foi escrito. Siga por buscar_atomos — os trechos estão lá.";
+    return { resposta: aviso, aviso, fontes: [], leitura: { dimensao: pedido || null, nome: "", texto: "", ate: "" } };
+  }
+
+  const querAgora = pedido === "" || normalizarNome(pedido) === ID_AGORA;
+  if (querAgora) {
+    const s = retrato.secoes[ID_AGORA];
+    const lista = config.dimensoes.map(
+      (d) =>
+        `- ${d.id} — ${d.nome}: ${d.o_que_entra}${(retrato.secoes[d.id]?.texto ?? "") === "" ? " (vazia)" : ""}`,
+    );
+    const aviso = !s || s.texto === "" ? "a seção Agora está vazia." : undefined;
+    const partes = [
+      `AGORA${ate(s?.ate ?? "")}:\n${s?.texto || "(vazia)"}`,
+      lista.length === 0
+        ? "Nenhuma dimensão aprovada ainda: o retrato só tem o Agora. Para o resto, buscar_atomos."
+        : `DIMENSÕES — peça uma com ler_retrato(dimensao):\n${lista.join("\n")}`,
+    ];
+    return {
+      resposta: partes.join("\n\n"),
+      fontes: [],
+      ...(aviso ? { aviso } : {}),
+      leitura: {
+        dimensao: null,
+        nome: "Agora",
+        texto: corta(s?.texto ?? ""),
+        ate: s?.ate ?? "",
+        dimensoes: config.dimensoes.map((d) => d.nome),
+      },
+    };
+  }
+
+  const alvo = normalizarNome(pedido);
+  const d = config.dimensoes.find((x) => x.id === pedido || normalizarNome(x.nome) === alvo);
+  if (!d) {
+    const aviso = `não existe dimensão "${pedido}". As que existem: ${config.dimensoes.map((x) => `${x.id} (${x.nome})`).join(", ") || "nenhuma — só o Agora"}.`;
+    return { resposta: aviso, aviso, fontes: [], leitura: { dimensao: pedido, nome: "", texto: "", ate: "" } };
+  }
+
+  const s = retrato.secoes[d.id];
+  if (!s || s.texto === "") {
+    const aviso = !s
+      ? `a seção "${d.nome}" ainda não foi escrita — a dimensão é nova. Siga por buscar_atomos.`
+      : `a seção "${d.nome}" está vazia: a última rodada não achou material para ela. Siga por buscar_atomos.`;
+    return { resposta: aviso, aviso, fontes: [], leitura: { dimensao: d.id, nome: d.nome, texto: "", ate: s?.ate ?? "" } };
+  }
+
+  const lidas = await lerFontes(s.fontes);
+  const fontes = lidas.map(
+    (f): AtomoAchado => ({
+      id: f.id,
+      texto: f.texto.length > TRECHO_DA_FONTE ? `${f.texto.slice(0, TRECHO_DA_FONTE)}…` : f.texto,
+      tipo: f.tipo,
+      valido_em: f.valido_em,
+      sobre: [],
+      cita: [],
+    }),
+  );
+  // O átomo que saiu depois continua na lista, dito: ele sustentou a seção
+  // quando ela foi escrita, e o chat não pode citá-lo como se valesse hoje.
+  const linhas = fontes.map(
+    (f, i) => `${linhaDeAtomo(f)}${lidas[i].status === "ativo" ? "" : ` (${lidas[i].status} depois)`}`,
+  );
+
+  return {
+    resposta: [
+      `${d.nome.toUpperCase()}${ate(s.ate)}:\n${s.texto}`,
+      linhas.length === 0 ? "" : `FONTES (os trechos principais que sustentaram a seção):\n${linhas.join("\n")}`,
+    ]
+      .filter((p) => p !== "")
+      .join("\n\n"),
+    fontes,
+    leitura: { dimensao: d.id, nome: d.nome, texto: corta(s.texto), ate: s.ate },
+  };
+}
+
+/** O texto da seção cortado para o rastro do (i). */
+const corta = (t: string) => (t.length > TRECHO_NO_RASTRO ? `${t.slice(0, TRECHO_NO_RASTRO)}…` : t);
 
 // ──────────────────── ferramenta 2: historico_do_atomo ────────────────────
 
@@ -1076,6 +1220,17 @@ const ESQUEMA_ENTIDADES = jsonSchema<BuscaDeEntidades>({
   },
 });
 
+const ESQUEMA_RETRATO = jsonSchema<{ dimensao?: string }>({
+  type: "object",
+  properties: {
+    dimensao: {
+      type: "string",
+      description:
+        "o id ou o nome de uma dimensão, como aparecem na lista que ler_retrato devolve sem parâmetro. Sem ele: o Agora e a lista.",
+    },
+  },
+});
+
 export interface OpcoesResposta {
   /** Chamado assim que uma ferramenta termina — é o progresso na tela. */
   aoPasso?: (passo: PassoDeFerramenta) => void;
@@ -1215,6 +1370,41 @@ export function ferramentas(
             erro,
           });
           return `a busca falhou: ${erro}`;
+        }
+      },
+    }),
+
+    ler_retrato: tool({
+      description:
+        "Lê o retrato do dono do diário, uma seção por vez. Sem parâmetro: o Agora e a lista de dimensões da vida dele. Com dimensao: só aquela seção, e os trechos que a sustentaram.",
+      inputSchema: ESQUEMA_RETRATO,
+      execute: async (entrada: { dimensao?: string }) => {
+        const dimensao = typeof entrada?.dimensao === "string" ? entrada.dimensao.trim() : "";
+        const parametros = dimensao === "" ? {} : { dimensao };
+        const inicio = Date.now();
+        try {
+          const r = await lerRetratoDoEu(dimensao);
+          anunciar({
+            ferramenta: "ler_retrato",
+            parametros,
+            achados: r.fontes.map(paraRastro),
+            retrato: r.leitura,
+            duracao_ms: Date.now() - inicio,
+            ...(r.aviso ? { erro: r.aviso } : {}),
+          });
+          for (const f of r.fontes) vistos?.add(f.id);
+          return r.resposta;
+        } catch (e) {
+          const erro = e instanceof Error ? e.message : String(e);
+          console.error("[chat] ler_retrato falhou:", e);
+          anunciar({
+            ferramenta: "ler_retrato",
+            parametros,
+            achados: [],
+            duracao_ms: Date.now() - inicio,
+            erro,
+          });
+          return `a leitura do retrato falhou: ${erro}. Siga por buscar_atomos.`;
         }
       },
     }),

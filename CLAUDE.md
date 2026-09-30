@@ -149,7 +149,7 @@ o documento — conserte-o e me avise.
 ```
 NEO4J_QUERY_URL, NEO4J_USER, NEO4J_PASSWORD
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, deduplicação, calibração, redação, embedding, confronto, chat, título
+AI_GATEWAY_API_KEY        única chave de modelo — STT, extração, resolução, desempate, perfil, enriquecimento, retrato, deduplicação, calibração, redação, embedding, confronto, chat, título
 STT_MODEL                 opcional; padrão xai/grok-stt
 EXTRACAO_MODEL            opcional; padrão deepseek/deepseek-v4.1-flash
 DUPLICATAS_MODEL          opcional; padrão deepseek/deepseek-v4.1-flash
@@ -157,6 +157,7 @@ RESOLUCAO_MODEL           opcional; padrão igual ao da extração
 DESEMPATE_MODEL           opcional; padrão igual ao da resolução
 PERFIL_MODEL              opcional; padrão igual ao da extração
 ENRIQUECIMENTO_MODEL      opcional; padrão igual ao da extração
+RETRATO_MODEL             opcional; padrão igual ao do enriquecimento — um para os dois agentes do retrato do "eu"
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
 REDACAO_MODEL             opcional; padrão igual ao da calibração
 CONFRONTO_MODEL           opcional; padrão igual ao da extração

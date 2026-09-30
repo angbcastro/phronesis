@@ -5,6 +5,7 @@ import {
   enfileirarCanonicasComNovidade,
   reivindicarProxima,
   rodarElo,
+  tamanhoDaFila,
 } from "@/lib/enriquecimento";
 import { env } from "@/lib/env";
 import { erroDeInfra } from "@/lib/rotas";
@@ -25,6 +26,19 @@ export const maxDuration = 300;
  * semana seguinte (§14).
  */
 const ORCAMENTO_MS = 180_000;
+
+/**
+ * Até quando a invocação ainda **pode começar o "eu"** (slice 10).
+ *
+ * A rodada do "eu" são duas fases — a primeira sozinha, ~60 s; a segunda, a
+ * mais lenta de sete a treze chamadas paralelas — e não cabe nos 120 s de
+ * margem da última ficha. `reivindicarProxima` já o põe na frente de todos, e
+ * na batida ele sai na primeira volta. Este número cobre o outro caso: ele
+ * entrar na fila no meio de uma invocação (pela tela, ou pelo lease). Depois de
+ * 60 s ele fica para a continuação, que começa do zero e o pega primeiro. Os
+ * 60 s pressupõem rodada de até 240 s (§14).
+ */
+const JANELA_DO_EU_MS = 60_000;
 
 /**
  * A batida semanal do enriquecimento (slice 4.12.1). Segunda-feira, 07:00 UTC
@@ -68,8 +82,12 @@ async function processar(req: Request): Promise<void> {
 
   try {
     while (Date.now() - comeco < ORCAMENTO_MS) {
-      const chave = await reivindicarProxima();
+      const semEu = Date.now() - comeco > JANELA_DO_EU_MS;
+      const chave = await reivindicarProxima(new Date(), { semEu });
       if (!chave) {
+        // Com `semEu`, vazio pode ser só "sobrou o eu": sem esta checagem a
+        // corrente acabaria aqui e ele esperaria a tela ou a semana seguinte.
+        if (semEu && (await tamanhoDaFila()) > 0) break;
         console.log(`[cron-enriquecimento] fila vazia depois de ${feitas} ficha(s).`);
         return;
       }
@@ -89,7 +107,9 @@ async function processar(req: Request): Promise<void> {
     return;
   }
 
-  console.log(`[cron-enriquecimento] orçamento no fim depois de ${feitas} ficha(s); continuando.`);
+  console.log(
+    `[cron-enriquecimento] orçamento no fim (ou o "eu" esperando) depois de ${feitas} ficha(s); continuando.`,
+  );
   await continuar(req);
 }
 

@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
 import { passadaDeVetores } from "@/lib/entidades";
-import { EnriquecimentoError, desfazerFicha } from "@/lib/enriquecimento";
+import { CHAVE_EU, EnriquecimentoError, desfazerFicha } from "@/lib/enriquecimento";
 import { erro } from "@/lib/rotas";
+import { normalizarNome } from "@/lib/texto";
+import { responderDesfazerDoEu } from "../retrato/desfazer/resposta";
 
 export const runtime = "nodejs";
 
@@ -25,6 +27,10 @@ export async function POST(req: Request) {
   const corpo = (await req.json().catch(() => null)) as { chave?: unknown } | null;
   const chave = typeof corpo?.chave === "string" ? corpo.chave : "";
   if (chave === "") return erro("corpo inválido: espera { chave }", 400);
+
+  // O "eu" desfaz os dois lados — o nó e o retrato no R2 (slice 10). Pelo
+  // caminho de sempre, este botão trocaria só o nó e deixaria meia rodada.
+  if (normalizarNome(chave) === CHAVE_EU) return responderDesfazerDoEu();
 
   try {
     const r = await desfazerFicha(chave);

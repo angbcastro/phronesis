@@ -2427,3 +2427,54 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .palco { transition-duration: 1ms; }
   .chat .progresso .pensando { animation: none; opacity: 0.75; }
 }
+
+/* ── o retrato do "eu" (slice 10) ──
+
+   O painel da ficha do "eu" vira o retrato: o Agora no topo, uma seção por
+   dimensão, e o (i) de cada seção com os trechos que a sustentaram. Mesma
+   gramática da ficha — `.secao`, `.campo-perfil`, `.proposta-perfil` — e só o
+   que é novo mora aqui. */
+.retrato { display: flex; flex-direction: column; gap: 1rem; }
+.retrato-secao h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0 0 0.3rem;
+  font-size: 0.95rem;
+}
+.retrato-secao h3 .meta { font-size: 0.78rem; font-weight: normal; color: var(--texto-fraco); }
+.retrato-texto { margin: 0 0 0.45rem; font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
+.info-fontes {
+  margin-left: auto;
+  width: 1.6rem;
+  height: 1.6rem;
+  flex: none;
+  font: inherit;
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--texto-fraco);
+  background: none;
+  border: 1px solid var(--linha);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.info-fontes[aria-expanded="true"],
+.info-fontes:hover { color: var(--acento); border-color: var(--acento); }
+.retrato-fontes {
+  list-style: none;
+  margin: 0.2rem 0 0;
+  padding: 0 0 0 0.7rem;
+  border-left: 2px solid var(--linha);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.retrato-fontes li { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.85rem; }
+.retrato-fontes .meta { font-size: 0.75rem; color: var(--texto-fraco); }
+/* O átomo que saiu depois fica riscado, e não some: o (i) diz o que sustentou
+   a seção quando ela foi escrita. */
+.retrato-fontes li.saiu .texto-fonte { text-decoration: line-through; color: var(--texto-fraco); }
+.aviso-retrato { margin: 0; font-size: 0.85rem; color: var(--acento); }
+.campo-perfil.dimensao { padding-bottom: 0.5rem; border-bottom: 1px solid var(--linha); }
+.campo-perfil.dimensao .campo-nome { flex: 1; min-width: 0; }
+.sugestao-dimensoes { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.88rem; }

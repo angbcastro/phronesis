@@ -838,6 +838,8 @@ export const AGENTE_IDS = [
   "confronto",
   "chat",
   "titulo-chat",
+  "retrato",
+  "retrato-dimensoes",
 ] as const;
 
 export type AgenteId = (typeof AGENTE_IDS)[number];
@@ -1144,14 +1146,20 @@ export const ehPapelMensagem = (v: unknown): v is PapelMensagem =>
   typeof v === "string" && (PAPEIS_MENSAGEM as readonly string[]).includes(v);
 
 /**
- * As três ferramentas do agente `chat`. Só leitura, as três (regra 5).
+ * As quatro ferramentas do agente `chat`. Só leitura, as quatro (regra 5).
  *
  * A terceira (slice 9) é sobre um substantivo diferente — a entidade, com
  * ficha, índice e contagens próprios —, e por isso é ferramenta e não
  * parâmetro. Não reverte a decisão da slice 6, que recusou quatro fatias do
- * **mesmo** substantivo.
+ * **mesmo** substantivo. A quarta (slice 10) também é outro substantivo: o
+ * retrato do "eu", que mora no R2 e se lê uma dimensão por vez.
  */
-export const FERRAMENTAS_CHAT = ["buscar_atomos", "historico_do_atomo", "buscar_entidades"] as const;
+export const FERRAMENTAS_CHAT = [
+  "buscar_atomos",
+  "historico_do_atomo",
+  "buscar_entidades",
+  "ler_retrato",
+] as const;
 
 export type FerramentaChat = (typeof FERRAMENTAS_CHAT)[number];
 
@@ -1286,6 +1294,11 @@ export interface PassoDeFerramenta {
   elos?: EloDoHistorico[];
   /** Só de `buscar_entidades`: as fichas achadas (slice 9). */
   entidades?: EntidadeAchada[];
+  /**
+   * Só de `ler_retrato` (slice 10): o que foi lido do retrato do "eu". É o que
+   * deixa o (i) dizer "leu a dimensão do corpo — e só ela".
+   */
+  retrato?: LeituraDoRetrato;
   /**
    * Quanto a busca achou e quanto mostrou (slice 9). Opcional como os dois
    * abaixo: mensagem gravada antes da slice 9 continua legível sem retrofill.
@@ -1543,4 +1556,89 @@ export interface ResumoMensal {
   passos: Partial<Record<PassoMedido, Resumo>>;
   falhas: number;
   codigos: Partial<Record<CodigoDeFalha, number>>;
+}
+
+// ─────────────────────────── o retrato do "eu" (slice 10) ───────────────────────────
+
+/**
+ * O id reservado da seção fixa. **Nunca sai do gerador de id** (`slugDimensao`):
+ * uma dimensão chamada "Agora" vira `agora-2`, e não pisa a seção fixa.
+ */
+export const ID_AGORA = "agora";
+
+/**
+ * Uma dimensão da minha vida, como eu a aprovei.
+ *
+ * **O `id` é estável.** Renomear troca o `nome` e mantém o `id`, e a seção do
+ * retrato continua a mesma. É gerado pelo código a partir do nome, na primeira
+ * vez que a dimensão aparece — nunca pelo modelo, nunca pelo cliente.
+ */
+export interface DimensaoDoRetrato {
+  id: string;
+  nome: string;
+  /** Uma frase que diz que átomos pertencem a ela. Vai no sufixo da chamada. */
+  o_que_entra: string;
+}
+
+/**
+ * `config/retrato-eu.json` — as dimensões aprovadas e a proposta pendente.
+ *
+ * Dois escritores (a tela e a proposta do agente), e por isso escrito por etag
+ * (`atualizarJson`). `sugestao` **nunca** vira `dimensoes` sem eu aceitar.
+ */
+export interface ConfigRetrato {
+  dimensoes: DimensaoDoRetrato[];
+  sugestao: DimensaoDoRetrato[] | null;
+  atualizado_em: string;
+}
+
+/** Uma seção do retrato — o Agora, ou uma dimensão. */
+export interface SecaoDoRetrato {
+  /** O que eu sou agora nesta dimensão, e o que mudou, com mês e ano. Pode ser "". */
+  texto: string;
+  /** Os ids dos átomos que o modelo disse que sustentaram a seção — é o (i). */
+  fontes: string[];
+  /** Quantos átomos a chamada leu. */
+  atomos: number;
+  /** `valido_em` do átomo mais recente que a chamada leu. É o "até set/2026". */
+  ate: string;
+  prompt_version: string;
+  modelo: string;
+  escrito_em: string;
+}
+
+/** `retrato/eu.json` (e `retrato/eu.anterior.json`, a geração do desfazer). */
+export interface RetratoDoEu {
+  /** `agora` sempre; o resto, pelo `id` da dimensão. */
+  secoes: Record<string, SecaoDoRetrato>;
+  escrito_em: string;
+  atomos: number;
+  modelo: string;
+}
+
+/** O que `ler_retrato` leu, para o rastro do (i). */
+export interface LeituraDoRetrato {
+  /** A dimensão pedida, ou `null` quando o chat pediu a visão geral. */
+  dimensao: string | null;
+  /** O nome da seção lida — "Agora", ou o nome da dimensão. */
+  nome: string;
+  /** O texto da seção, cortado para caber no (i). "" quando vazia. */
+  texto: string;
+  ate: string;
+  /** Na visão geral: os nomes das dimensões que o chat pôde escolher. */
+  dimensoes?: string[];
+}
+
+const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+/**
+ * `2026-09-21T…` → `set/2026`. É o "até" ao lado do título de cada seção do
+ * retrato: depois de três meses sem gravar, o Agora é de três meses atrás, e
+ * sem a data ele pareceria presente. Data que não parece data vira "".
+ */
+export function mesAno(iso: string): string {
+  const m = /^(\d{4})-(\d{2})/.exec(typeof iso === "string" ? iso : "");
+  if (!m) return "";
+  const mes = MESES[Number(m[2]) - 1];
+  return mes ? `${mes}/${m[1]}` : "";
 }

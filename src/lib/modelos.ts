@@ -141,6 +141,19 @@ export function modeloEnriquecimento(): string {
 }
 
 /**
+ * Modelo do retrato do "eu" — as seções **e** a proposta de dimensões (slice 10).
+ *
+ * **Uma variável para os dois agentes**, e o motivo é o cache do provedor: todas
+ * as chamadas de uma rodada começam pelo mesmo prefixo (as regras e todos os
+ * átomos do "eu"), e o cache é por modelo. A proposta num modelo diferente
+ * pagaria a entrada inteira de novo. Padrão é o do enriquecimento, porque é o
+ * mesmo tipo de trabalho sobre a mesma entrada — a mais longa do sistema.
+ */
+export function modeloRetrato(): string {
+  return validarIdDeModelo(process.env.RETRATO_MODEL || modeloEnriquecimento());
+}
+
+/**
  * Modelo que lê as minhas correções de um agente e enxerga o padrão nelas
  * (slice 4.6, generalizado na 7). Mesma regra dos outros: padrão é o da
  * extração, e `CALIBRACAO_MODEL` separa sem tocar em código.
@@ -214,16 +227,24 @@ export interface RespostaDoModelo {
     inputTokens?: number;
     outputTokens?: number;
     totalTokens?: number;
+    inputTokenDetails?: { cacheReadTokens?: number; noCacheTokens?: number };
     outputTokenDetails?: { reasoningTokens?: number; textTokens?: number };
   };
 }
 
+/**
+ * `cache` é quanto da entrada saiu do cache do provedor (slice 10). Entrou
+ * porque o retrato do "eu" faz sete a treze chamadas com o mesmo prefixo, e a
+ * única forma de saber se elas leram o cache — que custa ~40× menos — é este
+ * número, chamada por chamada, no log.
+ */
 export function diagnostico(r: RespostaDoModelo): string {
   const n = (v: number | undefined) => (typeof v === "number" ? String(v) : "?");
   const u = r.usage;
   return [
     `finishReason=${r.finishReason ?? "?"}`,
     `entrada=${n(u?.inputTokens)}`,
+    `cache=${n(u?.inputTokenDetails?.cacheReadTokens)}`,
     `saida=${n(u?.outputTokens)}`,
     `raciocinio=${n(u?.outputTokenDetails?.reasoningTokens)}`,
     `texto=${(r.text ?? "").length} char`,

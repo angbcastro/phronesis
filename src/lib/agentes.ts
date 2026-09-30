@@ -24,6 +24,11 @@ import {
   INSTRUCOES as BASE_ENRIQUECIMENTO,
   PROMPT_VERSION_ENRIQUECIMENTO,
 } from "./enriquecimento";
+import { INSTRUCOES as BASE_RETRATO, PROMPT_VERSION_RETRATO } from "./retrato";
+import {
+  INSTRUCOES as BASE_RETRATO_DIMENSOES,
+  PROMPT_VERSION_RETRATO_DIMENSOES,
+} from "./retrato-dimensoes";
 import { INSTRUCOES as BASE_CALIBRACAO, PROMPT_VERSION_CALIBRACAO } from "./calibracao";
 import { INSTRUCOES as BASE_REDACAO, PROMPT_VERSION_REDACAO } from "./redacao";
 import { INSTRUCOES as BASE_DUPLICATAS, PROMPT_VERSION_DUPLICATAS } from "./duplicatas";
@@ -50,6 +55,7 @@ import {
   modeloPerfil,
   modeloRedacao,
   modeloResolucao,
+  modeloRetrato,
   modeloStt,
   modeloTituloChat,
   provedorAceitaVocabulario,
@@ -110,7 +116,7 @@ export interface Agente {
 }
 
 /**
- * Os doze. A ordem é a do fluxo, e é a que a tela usa quando lista em vez de
+ * Os quinze. A ordem é a do fluxo, e é a que a tela usa quando lista em vez de
  * desenhar.
  */
 export const AGENTES: readonly Agente[] = [
@@ -239,6 +245,43 @@ export const AGENTES: readonly Agente[] = [
     envelope: ["resumo", "contexto", "pode_ajudar_com", "fizemos_juntos"],
   },
   {
+    id: "retrato",
+    versao: PROMPT_VERSION_RETRATO,
+    rotulo: "retrato",
+    papel:
+      "escreve o retrato do \"eu\" — a ficha curta do nó, o Agora e uma seção por dimensão, cada chamada lendo TODOS os átomos dele — e grava sozinho",
+    quando: "periodico",
+    gatilho:
+      "no lugar do enriquecimento quando a entidade é o \"eu\": o botão em /entidades e a batida semanal das canônicas com novidade",
+    base: BASE_RETRATO,
+    padrao: modeloRetrato,
+    variavel: "RETRATO_MODEL",
+    modulo: "src/lib/retrato.ts",
+    modeloEditavel: true,
+    // Vazio num agente COM prompt, e é o único: o que se edita aqui são só as
+    // regras do prefixo comum. Os três formatos (`{resumo, contexto}`,
+    // `{texto, fontes}`, `{dimensoes}`) são sufixos fixos no código, porque três
+    // parsers dependem deles e porque o formato mora depois dos átomos para não
+    // quebrar o cache do provedor.
+    envelope: [],
+  },
+  {
+    id: "retrato-dimensoes",
+    versao: PROMPT_VERSION_RETRATO_DIMENSOES,
+    rotulo: "dimensões do retrato",
+    papel:
+      "propõe as dimensões em que a minha vida se divide, lendo os mesmos átomos do retrato — e só propõe: nada muda sem eu aceitar",
+    quando: "sob_demanda",
+    gatilho:
+      "\"pedir nova proposta\" no retrato do \"eu\", e sozinha na primeira rodada, quando ainda não há dimensão aprovada",
+    base: BASE_RETRATO_DIMENSOES,
+    padrao: modeloRetrato,
+    variavel: "RETRATO_MODEL",
+    modulo: "src/lib/retrato-dimensoes.ts",
+    modeloEditavel: true,
+    envelope: ["dimensoes", "nome", "o_que_entra"],
+  },
+  {
     id: "duplicatas",
     versao: PROMPT_VERSION_DUPLICATAS,
     rotulo: "duplicatas",
@@ -297,10 +340,10 @@ export const AGENTES: readonly Agente[] = [
     variavel: "CHAT_MODEL",
     modulo: "src/lib/chat.ts",
     modeloEditavel: true,
-    // As três ferramentas, e não chaves de JSON: este é o único agente cujo
+    // As quatro ferramentas, e não chaves de JSON: este é o único agente cujo
     // parser é o loop de tool-calling. O que um prompt editado não pode perder
     // é justamente o nome do que ele pode chamar.
-    envelope: ["buscar_atomos", "historico_do_atomo", "buscar_entidades"],
+    envelope: ["buscar_atomos", "historico_do_atomo", "buscar_entidades", "ler_retrato"],
   },
   {
     id: "titulo-chat",
@@ -519,6 +562,23 @@ export const TELAS: readonly Tela[] = [
             volta: { para: "grafo", rotulo: "escreve a ficha sozinho" },
           },
           {
+            id: "retrato",
+            rotulo: "retrato",
+            tipo: "agente",
+            agente: "retrato",
+            nota: "só o \"eu\": o Agora e uma seção por dimensão, no R2",
+            dentro: [
+              {
+                id: "retrato-dimensoes",
+                rotulo: "dimensões",
+                tipo: "agente",
+                agente: "retrato-dimensoes",
+                nota: "propõe; quem aprova sou eu",
+              },
+            ],
+            volta: { para: "grafo", rotulo: "escreve o retrato sozinho" },
+          },
+          {
             id: "embedding",
             rotulo: "embedding",
             tipo: "agente",
@@ -559,7 +619,7 @@ export const TELAS: readonly Tela[] = [
     fluxo: "consulta",
     aba: "o que sai",
     titulo: "da minha pergunta até a resposta",
-    legenda: "nada nesta tela escreve no grafo: as duas ferramentas do chat são só de leitura",
+    legenda: "nada nesta tela escreve no grafo: as ferramentas do chat são só de leitura",
     secoes: [
       {
         id: "perguntar",
@@ -582,7 +642,7 @@ export const TELAS: readonly Tela[] = [
             entradas: [
               {
                 rotulo: "grafo",
-                nota: "as três buscas, só de leitura: buscar_atomos, historico_do_atomo e buscar_entidades",
+                nota: "as quatro buscas, só de leitura: buscar_atomos, historico_do_atomo, buscar_entidades e ler_retrato",
               },
             ],
           },
