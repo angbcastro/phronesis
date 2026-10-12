@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  entradasLocais,
   FRASE_DA_CAMADA,
   faltamTrechos,
   herdadasDoAtomo,
@@ -17,15 +18,19 @@ import {
   localizarNoAudio,
   mesclarProposta,
   montarCorpoDoConfirmar,
+  montarGestos,
+  nomeOriginalEm,
   ondeEstaA,
   referenciasDoAtomo,
 } from "@/components/Revisao";
 import { CATALOGO_VAZIO, montarCatalogo } from "@/lib/catalogo";
+import { normalizarNome, reescreverNomes } from "@/lib/texto";
 import { CAMADAS_DE_CANDIDATO } from "@/lib/tipos";
 import type { AtomoEditado, Proposta } from "@/components/Revisao";
 import type {
   AtomoProposto,
   BlocoAbsoluto,
+  EntidadeCandidata,
   Evidencia,
   ReferenciaResolvida,
   TipoEntidade,
@@ -436,5 +441,103 @@ describe("a linha do rodapé", () => {
     // Proposta montada por uma versão anterior, ou parcial sem janela: a tela
     // fica sem a linha, e o confirmar continua travado por `crescendo`.
     expect(faltamTrechos(proposta({ crescendo: true }))).toBeNull();
+  });
+});
+
+describe("a entidade criada na revisão", () => {
+  // O caminho da tela, sem render: crio "Nic Salgado" no átomo 0, escolho a
+  // mesma no átomo 1 pela barra, e renomeio no rodapé. Os dois átomos — refs e
+  // texto — têm de sair com o nome final, e o rodapé não vira correção.
+  const grafo = montarCatalogo([
+    {
+      nome: "Nicolle Borsato",
+      nome_normalizado: "nicolle borsato",
+      chaves: ["nicolle borsato"],
+      tipo: "Pessoa",
+      sessoes: 4,
+      aliases: [],
+    },
+  ]);
+  const candidata = (nome: string, extra: Partial<EntidadeCandidata> = {}): EntidadeCandidata => ({
+    nome,
+    nome_normalizado: normalizarNome(nome),
+    tipo: "Pessoa",
+    conhecida: false,
+    id: null,
+    ocorrencias: 0,
+    sessoes: 0,
+    precisa_nome: false,
+    ...extra,
+  });
+
+  const criada = candidata("Nic Salgado");
+  const renomes: Record<string, { nome: string; tipo: TipoEntidade }> = {
+    "nic salgado": { nome: "Nicolle Salgado", tipo: "Pessoa" },
+  };
+  const finalDe = (e: EntidadeCandidata) => renomes[e.nome_normalizado] ?? { nome: e.nome, tipo: e.tipo };
+  const nomeFinal = (n: string) =>
+    n === criada.nome || normalizarNome(n) === criada.nome_normalizado ? finalDe(criada).nome : n;
+
+  it("aparece na barra dos outros átomos, com o nome final", () => {
+    const linhas = entradasLocais([criada], finalDe, grafo);
+    expect(linhas.map((e) => e.nome)).toEqual(["Nicolle Salgado"]);
+  });
+
+  it("a que foi re-apontada para um nó, ou ainda é pronome, não vira linha", () => {
+    const linhas = entradasLocais(
+      [candidata("nicolle borsato"), candidata("ela", { precisa_nome: true }), candidata("Nicolle Borsato", { conhecida: true })],
+      (e) => ({ nome: e.nome, tipo: e.tipo }),
+      grafo,
+    );
+    expect(linhas).toEqual([]);
+  });
+
+  it("escolher o nome final guarda o original — o próximo renome segue o átomo", () => {
+    expect(nomeOriginalEm([criada], finalDe, "nicolle salgado")).toBe("Nic Salgado");
+    expect(nomeOriginalEm([criada], finalDe, "Nicolle Borsato")).toBe("Nicolle Borsato");
+  });
+
+  it("os dois átomos saem com o nome final, nas refs e no texto", () => {
+    const propostos = [
+      { indice: 0, texto: "Nicolle Borsato topou revisar o deck", sobre: "Nicolle Borsato" },
+      { indice: 1, texto: "Almocei com Nicolle Borsato", sobre: "eu", menciona: ["Nicolle Borsato"] },
+    ];
+    // O que a tela guardou: o nome original da criada, nos dois átomos.
+    const editados = [
+      { sobre: "Nic Salgado", menciona: [] as string[] },
+      { sobre: "eu", menciona: ["Nic Salgado"] },
+    ];
+    const aprovados = propostos.map((p, i) => {
+      const sobre = nomeFinal(editados[i].sobre);
+      const menciona = editados[i].menciona.map(nomeFinal);
+      return {
+        indice: p.indice,
+        texto: reescreverNomes(p.texto, { sobre: p.sobre, menciona: p.menciona ?? [] }, { sobre, menciona }),
+        tipo: "FATO" as const,
+        sobre,
+        menciona,
+        perfila: [],
+      };
+    });
+    const corpo = montarCorpoDoConfirmar({
+      aprovados,
+      entidades: [{ nome: "eu", tipo: "Pessoa" }, finalDe(criada)],
+      recusadas: new Set(),
+      catalogo: grafo,
+    });
+
+    expect(corpo.aprovados.map((a) => a.texto)).toEqual([
+      "Nicolle Salgado topou revisar o deck",
+      "Almocei com Nicolle Salgado",
+    ]);
+    expect(corpo.aprovados[0].sobre).toBe("Nicolle Salgado");
+    expect(corpo.aprovados[1].menciona).toEqual(["Nicolle Salgado"]);
+    expect(corpo.entidades.map((e) => e.nome).sort()).toEqual(["Nicolle Salgado", "eu"]);
+  });
+
+  it("renomear a criada no rodapé não vira gesto de renome", () => {
+    // A tela passa só as candidatas da proposta: a criada não é do extrator.
+    const g = montarGestos({ edicoes: {}, entidades: [], finalDe, recusadas: new Set() });
+    expect(g.renomes).toEqual([]);
   });
 });

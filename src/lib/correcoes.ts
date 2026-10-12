@@ -25,7 +25,7 @@
  * grafo já ter recebido os átomos.
  */
 import { mencoesDe, sobreDe } from "./referencias";
-import { ehPronome, normalizarNome } from "./texto";
+import { ehPronome, normalizarNome, reescreverNomes } from "./texto";
 import { AGENTE_IDS, CAMPOS_GESTO, ehAgenteId, GESTOS_VAZIOS, TETO_CORRECOES } from "./tipos";
 import type {
   AgenteCorrecao,
@@ -276,7 +276,16 @@ export function apurarCorrecoes(entrada: EntradaApuracao): Correcao[] {
       continue;
     }
 
-    if (a.texto.trim() !== confirmado.texto.trim()) {
+    // A base é o texto proposto **já com o nome trocado**: trocar a entidade
+    // reescreve o nome dentro do texto (`reescreverNomes`), e essa troca já é
+    // a correção de `sujeito`/`mencao_*` abaixo. Medir contra o texto cru a
+    // contaria uma segunda vez, contra a extração. O que sobra é edição minha.
+    const esperado = reescreverNomes(
+      a.texto,
+      { sobre: ref.entidade, menciona: mencoesDe(a, conhecidas).map((m) => m.entidade) },
+      { sobre: confirmado.sobre, menciona: confirmado.menciona },
+    );
+    if (esperado.trim() !== confirmado.texto.trim()) {
       registrar({
         ...base,
         id: chaveDeAtomo(a.id, "texto"),

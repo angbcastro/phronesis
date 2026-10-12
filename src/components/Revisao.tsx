@@ -54,7 +54,7 @@ import { SeletorEntidade } from "@/components/SeletorEntidade";
 import { CATALOGO_VAZIO, montarCatalogo, resolver } from "@/lib/catalogo";
 import { mencoesDe, sobreDe } from "@/lib/referencias";
 import { localizarNoAudio } from "@/lib/transcricao";
-import { ehPronome, normalizarNome } from "@/lib/texto";
+import { ehPronome, normalizarNome, reescreverNomes } from "@/lib/texto";
 import { CAMPOS_GESTO, ROTULO_TIPO_ENTIDADE, TIPOS_ATOMO, TIPOS_ENTIDADE } from "@/lib/tipos";
 import type { Catalogo, EntidadeDoCatalogo } from "@/lib/catalogo";
 import type { EventoDaProposta } from "@/lib/pipeline";
@@ -332,6 +332,51 @@ export function montarGestos(entrada: {
 }
 
 /**
+ * As entidades que só existem nesta revisão, como linhas do seletor.
+ *
+ * São as candidatas novas da proposta e as que eu criei pela linha `+ criar`
+ * — com o nome **final**, o que o rodapé fez delas. Sem isto a barra de um
+ * átomo só via o grafo, e a entidade que eu acabei de criar no átomo 1 não
+ * existia para o átomo 2. Ficam de fora a que já casa com um nó (foi
+ * re-apontada para ele, e a linha do grafo já está na lista) e a que ainda é
+ * pronome: "ela" não é escolha que se ofereça.
+ */
+export function entradasLocais(
+  entidades: EntidadeCandidata[],
+  finalDe: (e: EntidadeCandidata) => { nome: string; tipo: TipoEntidade },
+  grafo: Catalogo,
+): EntidadeDoCatalogo[] {
+  const vistas = new Set<string>();
+  return entidades.flatMap((e) => {
+    if (e.conhecida) return [];
+    const f = finalDe(e);
+    const chave = normalizarNome(f.nome);
+    if (chave === "" || vistas.has(chave) || ehPronome(f.nome) || resolver(grafo, f.nome)) return [];
+    vistas.add(chave);
+    return [{ nome: f.nome.trim(), nome_normalizado: chave, chaves: [chave], tipo: f.tipo, sessoes: 0, aliases: [] }];
+  });
+}
+
+/**
+ * O caminho de volta de `nomeFinal`: o nome que eu escolhi na barra, se for o
+ * nome final de uma candidata local, vira o nome **original** dela.
+ *
+ * É o que guarda no átomo a identidade da candidata e não a grafia do momento:
+ * o renome seguinte no rodapé continua seguindo este átomo, porque `nomeFinal`
+ * traduz pela chave original.
+ */
+export function nomeOriginalEm(
+  entidades: EntidadeCandidata[],
+  finalDe: (e: EntidadeCandidata) => { nome: string },
+  nome: string,
+): string {
+  const chave = normalizarNome(nome);
+  if (chave === "") return nome;
+  const dona = entidades.find((e) => !e.conhecida && normalizarNome(finalDe(e).nome) === chave);
+  return dona ? dona.nome : nome;
+}
+
+/**
  * O corpo de `POST /confirmar`, montado fora do componente porque é a lógica
  * mais fácil de quebrar em silêncio da tela inteira.
  *
@@ -486,6 +531,12 @@ export function Revisao({ id }: { id: string }) {
   const [rejeitados, setRejeitados] = useState<Set<number>>(new Set());
   const [semEntidade, setSemEntidade] = useState<Set<string>>(new Set());
   const [renomes, setRenomes] = useState<Record<string, Renome>>({});
+  /**
+   * As entidades que eu criei pela linha `+ criar` de um átomo. Existem na
+   * tela — no rodapé e nas barras de todos os átomos — e só viram nó no
+   * confirmar, como qualquer candidata nova (regra 5).
+   */
+  const [criadas, setCriadas] = useState<EntidadeCandidata[]>([]);
   const [edicoes, setEdicoes] = useState<Record<number, Edicao>>({});
   const [abertos, setAbertos] = useState<Set<number>>(new Set());
   const [editandoTexto, setEditandoTexto] = useState<Set<number>>(new Set());
@@ -647,7 +698,17 @@ export function Revisao({ id }: { id: string }) {
   );
 
   const atomos = proposta?.extracao.atomos ?? [];
-  const entidades = proposta?.extracao.entidades ?? [];
+  const daProposta = useMemo(() => proposta?.extracao.entidades ?? [], [proposta]);
+
+  /**
+   * As candidatas da proposta mais as que eu criei. A da proposta vence a
+   * colisão: uma janela nova pode trazer a mesma entidade que eu já tinha
+   * criado à mão, e as duas são a mesma chave.
+   */
+  const entidades = useMemo(() => {
+    const chaves = new Set(daProposta.map((e) => e.nome_normalizado));
+    return [...daProposta, ...criadas.filter((e) => !chaves.has(e.nome_normalizado))];
+  }, [daProposta, criadas]);
 
   /**
    * As chaves que já existiam no grafo quando a proposta foi montada. Serve à
@@ -698,6 +759,53 @@ export function Revisao({ id }: { id: string }) {
     [entidades, finalDe],
   );
 
+  /**
+   * O catálogo que as barras dos átomos veem: o grafo, e depois o que só
+   * existe nesta revisão. O grafo vem primeiro e vence a colisão de chave.
+   * `montarCorpoDoConfirmar` continua canonizando contra `catalogo` puro —
+   * canonizar contra uma linha local não mudaria nada, e o grafo é a fonte.
+   */
+  const catalogoDaTela = useMemo(
+    () => montarCatalogo([...catalogo.lista, ...entradasLocais(entidades, finalDe, catalogo)]),
+    [catalogo, entidades, finalDe],
+  );
+
+  const nomeOriginal = useCallback(
+    (nome: string) => nomeOriginalEm(entidades, finalDe, nome),
+    [entidades, finalDe],
+  );
+
+  /**
+   * A linha `+ criar` de um átomo: a entidade passa a existir na tela, para
+   * os outros átomos e para o rodapé. O tipo é o do filtro daquele átomo,
+   * quando há um — escolher "projetos" e criar é dizer que é projeto.
+   */
+  const criar = useCallback(
+    (nome: string, filtro: TipoEntidade | "todas") => {
+      const chave = normalizarNome(nome);
+      if (chave === "" || resolver(catalogoDaTela, nome)) return;
+      setCriadas((s) =>
+        s.some((e) => e.nome_normalizado === chave)
+          ? s
+          : [
+              ...s,
+              {
+                nome: nome.trim(),
+                nome_normalizado: chave,
+                tipo: filtro === "todas" ? "Pessoa" : filtro,
+                conhecida: false,
+                id: null,
+                ocorrencias: 0,
+                sessoes: 0,
+                // Criar "ela" é possível, e cai na mesma trava do pronome.
+                precisa_nome: ehPronome(nome),
+              },
+            ],
+      );
+    },
+    [catalogoDaTela],
+  );
+
   const aprovados = atomos.filter((a) => !rejeitados.has(a.indice));
 
   /** A proposta ainda vai crescer — o confirmar espera (decisão 3). */
@@ -717,6 +825,59 @@ export function Revisao({ id }: { id: string }) {
 
   const usada = (e: EntidadeCandidata) =>
     !semEntidade.has(e.nome_normalizado) || travadas.has(e.nome_normalizado);
+
+  /**
+   * As chaves que algum átomo cita hoje, com as minhas edições. A entidade
+   * que eu criei só aparece no rodapé enquanto alguém a usa: criei, troquei de
+   * ideia no átomo, e ela some — não há nada a renomear numa entidade órfã.
+   */
+  const emUso = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of atomos) {
+      const v = valorDe(a);
+      for (const n of [v.sobre, ...v.menciona]) s.add(normalizarNome(n));
+    }
+    return s;
+  }, [atomos, valorDe]);
+
+  /**
+   * O texto do átomo como a tela o mostra e o confirmar o manda: com o nome
+   * da entidade antiga trocado pelo da nova (`reescreverNomes`).
+   *
+   * Derivado, e não gravado em `edicoes`: a troca não é um gesto meu sobre o
+   * texto, e gravá-la marcaria `texto` como tocado. As listas de depois saem
+   * como o corpo as manda — nome final, grafia do grafo, sem menção vazia,
+   * repetida do sujeito ou desmarcada no rodapé —, porque `correcoes.ts` refaz
+   * esta mesma conta com o que chegou, para saber o que foi edição minha.
+   */
+  const textoDe = useCallback(
+    (a: AtomoProposto): string => {
+      const v = valorDe(a);
+      const canon = (n: string) => {
+        const f = nomeFinal(n);
+        return resolver(catalogo, f)?.nome ?? f.trim();
+      };
+      const recusadas = new Set(
+        entidades.filter((e) => !usada(e)).map((e) => normalizarNome(finalDe(e).nome)),
+      );
+      const sobre = canon(v.sobre);
+      const menciona = v.menciona.map(canon).filter((n) => {
+        const k = normalizarNome(n);
+        return k !== "" && k !== normalizarNome(sobre) && !recusadas.has(k);
+      });
+      return reescreverNomes(
+        v.texto,
+        {
+          sobre: referenciaDe(a).entidade,
+          menciona: mencoesDe(a, conhecidas).map((m) => m.entidade),
+        },
+        { sobre, menciona },
+      );
+    },
+    // `usada` é recriada a cada render e lê o mesmo estado que já está aqui.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [valorDe, nomeFinal, catalogo, entidades, finalDe, semEntidade, travadas, referenciaDe, conhecidas],
+  );
 
   /** Ainda é pronome, e algum átomo aprovado depende dela. */
   const pendentes = entidades.filter(
@@ -768,8 +929,11 @@ export function Revisao({ id }: { id: string }) {
 
   /** Pendente primeiro: é o que precisa da minha atenção. */
   const ordenadas = useMemo(
-    () => [...entidades].sort((a, b) => Number(b.precisa_nome) - Number(a.precisa_nome)),
-    [entidades],
+    () =>
+      entidades
+        .filter((e) => daProposta.includes(e) || emUso.has(e.nome_normalizado))
+        .sort((a, b) => Number(b.precisa_nome) - Number(a.precisa_nome)),
+    [entidades, daProposta, emUso],
   );
 
   function editarEntidade(e: EntidadeCandidata, mudanca: Partial<Renome>) {
@@ -804,7 +968,7 @@ export function Revisao({ id }: { id: string }) {
           const v = valorDe(a);
           return {
             indice: a.indice,
-            texto: v.texto,
+            texto: textoDe(a),
             tipo: v.tipo,
             sobre: nomeFinal(v.sobre),
             menciona: v.menciona.map(nomeFinal),
@@ -821,11 +985,15 @@ export function Revisao({ id }: { id: string }) {
       // A chave aqui é a **da proposta**, e não a do nome final: é por ela que
       // o servidor acha a candidata que eu recusei e tira aquela entidade da
       // conta das menções.
+      // Só as candidatas **da proposta**: renomear ou recusar uma entidade que
+      // eu mesmo criei não é correção de agente nenhum.
       gestos: montarGestos({
         edicoes,
-        entidades,
+        entidades: daProposta,
         finalDe,
-        recusadas: new Set(naoUsadas.map((e) => e.nome_normalizado)),
+        recusadas: new Set(
+          naoUsadas.filter((e) => daProposta.includes(e)).map((e) => e.nome_normalizado),
+        ),
       }),
     };
 
@@ -894,6 +1062,7 @@ export function Revisao({ id }: { id: string }) {
           const rejeitado = rejeitados.has(a.indice);
           const aberto = abertos.has(a.indice);
           const v = valorDe(a);
+          const texto = textoDe(a);
           const ref = referenciaDe(a);
           const sobre = nomeFinal(v.sobre);
           // As referências desta lista casam com a posição **por índice**, e a
@@ -940,7 +1109,7 @@ export function Revisao({ id }: { id: string }) {
                   {editandoTexto.has(a.indice) ? (
                     <textarea
                       className="texto-atomo editando"
-                      value={v.texto}
+                      value={texto}
                       autoFocus
                       aria-label="texto do átomo"
                       // Sem `rows` fixo: a altura segue o conteúdo, do mesmo
@@ -980,7 +1149,7 @@ export function Revisao({ id }: { id: string }) {
                         }
                       }}
                     >
-                      {v.texto}
+                      {texto}
                     </p>
                   )}
                   <p className="meta">
@@ -1108,10 +1277,14 @@ export function Revisao({ id }: { id: string }) {
 
                     <div className="campo">
                       <span>sobre</span>
+                      {/* A barra mostra o nome final e guarda o original:
+                          renomear no rodapé aparece aqui, e o renome
+                          seguinte continua seguindo este átomo. */}
                       <SeletorEntidade
-                        valor={v.sobre}
-                        aoMudar={(nome) => editarAtomo(a.indice, { sobre: nome })}
-                        catalogo={catalogo}
+                        valor={nomeFinal(v.sobre)}
+                        aoMudar={(nome) => editarAtomo(a.indice, { sobre: nomeOriginal(nome) })}
+                        aoCriar={(nome) => criar(nome, filtros[a.indice] ?? "todas")}
+                        catalogo={catalogoDaTela}
                         filtro={filtros[a.indice] ?? "todas"}
                         sugestoes={ref.alternativas}
                         rotulo="sobre quem"
@@ -1126,18 +1299,21 @@ export function Revisao({ id }: { id: string }) {
                             // O índice é a identidade aqui de propósito: a
                             // linha é a posição, e o nome muda enquanto digito.
                             key={k}
-                            valor={m}
+                            valor={nomeFinal(m)}
                             aoMudar={(nome) =>
                               editarAtomo(a.indice, {
-                                menciona: v.menciona.map((antigo, j) => (j === k ? nome : antigo)),
+                                menciona: v.menciona.map((antigo, j) =>
+                                  j === k ? nomeOriginal(nome) : antigo,
+                                ),
                               })
                             }
+                            aoCriar={(nome) => criar(nome, filtros[a.indice] ?? "todas")}
                             aoRemover={() =>
                               editarAtomo(a.indice, {
                                 menciona: v.menciona.filter((_, j) => j !== k),
                               })
                             }
-                            catalogo={catalogo}
+                            catalogo={catalogoDaTela}
                             filtro={filtros[a.indice] ?? "todas"}
                             // As alternativas **daquela** menção (4.8.1). A
                             // lista é a da proposta enquanto eu não mexi nela;
@@ -1277,7 +1453,9 @@ export function Revisao({ id }: { id: string }) {
                   ? `quem é "${e.nome}"? · ${e.ocorrencias} menção(ões)`
                   : e.conhecida
                     ? `${ROTULO_TIPO_ENTIDADE[e.tipo]} · conhecida (${e.sessoes} sessões)`
-                    : `nova, citada ${e.ocorrencias}x`}
+                    : daProposta.includes(e)
+                      ? `nova, citada ${e.ocorrencias}x`
+                      : "nova, criada aqui"}
               </span>
             </div>
           );

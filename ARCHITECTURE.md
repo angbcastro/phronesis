@@ -1468,7 +1468,8 @@ mais apertada do sistema.
 Dentro do átomo, no bloco "entidades" do editor, eu troco o sujeito e as menções
 **daquele** átomo. No painel do rodapé eu troco o nome de uma candidata e
 **todos** os átomos que a citam seguem junto — a tradução acontece em
-`nomeFinal()`, na hora de montar o payload, e nenhum átomo é reescrito. Os dois
+`nomeFinal()`, na hora de montar o payload, e nenhuma edição de átomo é
+gravada — o nome dentro do texto segue junto, derivado (ver abaixo). Os dois
 usam a mesma barra: `SeletorEntidade`.
 
 **A barra é uma lista pesquisável sobre o grafo inteiro.** Foco abre a lista;
@@ -1489,8 +1490,42 @@ os tokens de `globals.css`; nenhuma dependência entrou.
 que decide entre reusar um nó e criar outro é o **casamento exato** de
 `catalogo.resolver` na montagem do payload: casou (por caixa, por acento ou por
 alias), vai a grafia canônica do grafo e o tipo do nó; não casou, nasce entidade
-nova com o que eu escrevi. A linha `+ criar "X"` existe só para eu ver de que
-lado eu estou antes de confirmar.
+nova com o que eu escrevi.
+
+**A linha `+ criar "X"` cria — na tela, não no grafo.** Até aqui ela só escrevia
+o nome naquela barra: a entidade não existia para o átomo seguinte nem aparecia
+no rodapé, e não havia como renomeá-la de uma vez. Agora escolhê-la (clique ou
+Enter) chama `aoCriar` do `SeletorEntidade`, e a `Revisao` guarda a entidade em
+`criadas`, com o tipo do filtro daquele átomo (`Pessoa` em "todas"). Ela passa a
+contar como candidata para `finalDe`, `nomeFinal`, `usada` e o rodapé — onde
+aparece como "nova, criada aqui" enquanto algum átomo a usa —, e o nó só nasce
+no confirmar, como qualquer candidata nova: a regra 5 não tem exceção para isto.
+Digitar e sair sem escolher a linha continua sendo texto livre.
+
+As barras dos átomos leem `catalogoDaTela`: o grafo, e depois as entradas locais
+(`entradasLocais`) — as candidatas novas da proposta e as criadas, **com o nome
+final**, sem a que já casa com um nó e sem pronome. O confirmar continua
+canonizando contra o catálogo do grafo puro. A barra mostra `nomeFinal` e guarda
+o nome **original** (`nomeOriginalEm`): é isso que faz o renome seguinte no
+rodapé continuar seguindo o átomo, já que `nomeFinal` traduz pela chave
+original. Até aqui a barra do átomo mostrava o nome cru, e um renome no rodapé
+não aparecia nela. `montarGestos` recebe só as candidatas da proposta: renomear
+ou recusar uma entidade que eu criei não é correção de agente nenhum.
+
+**O nome dentro do texto acompanha a entidade.** O `extracao-9` escreve o nome
+gravado do nó dentro do texto (§4.14); se a resolução pendurou "a Nic" na
+Nicolle Borsato, o texto diz "Nicolle Borsato", e corrigir a aresta deixava o
+texto dizendo a pessoa errada. `reescreverNomes` (`texto.ts`) troca o nome
+**antigo da entidade** pelo novo — sem caixa nem acento, palavra inteira —, nos
+dois alcances: a troca dentro do átomo e o renome no rodapé. Só par
+inequívoco: o sujeito, e nas menções apenas quando saiu exatamente uma e entrou
+exatamente uma. A grafia falada ("Nic") não é tocada, nem `eu` ou pronome, e
+nome que não aparece inteiro no texto (só "Nicolle") deixa o texto como está.
+O texto reescrito é **derivado** (`textoDe`), não gravado em `edicoes`: é o que
+a tela mostra, o que o campo edita e o que o corpo manda, e a troca não vira o
+gesto "texto". Limite: depois de uma edição à mão, uma troca seguinte só
+substitui o nome da proposta — um nome intermediário que já estava no texto
+editado fica.
 
 O catálogo vem de `GET /api/entidades`, rota que já existia — **rota nova
 nenhuma, migration nenhuma**. Se ela falhar, as barras voltam a ser texto livre,
@@ -2418,6 +2453,13 @@ apagando a anterior em silêncio:
 entidade  entidade_recusada|renomeada|tipo           -> `${sessao_id}|${tipo}|${chave}`
 faltou                                               -> `${sessao_id}|faltou|${chave40}`
 ```
+
+**A correção `texto` mede contra o texto com o nome já trocado.** Trocar a
+entidade na revisão reescreve o nome dentro do texto (§4.7, `reescreverNomes`),
+e essa troca já é a correção de `sujeito`/`mencao_*`. Medida contra o texto cru,
+ela viraria também uma correção de `texto` contra a extração, e a culpa contaria
+duas vezes. `apurarCorrecoes` refaz a mesma conta com as referências da
+proposta e as confirmadas; o que sobra de diferença é edição minha.
 
 `mencao_adicionada` e `mencao_removida` são dois tipos e não um: com um só,
 acrescentar e tirar menção no mesmo átomo colapsariam num registro, e o segundo

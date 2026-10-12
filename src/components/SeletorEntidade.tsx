@@ -12,8 +12,13 @@
  *
  * **Continua aceitando nome que não existe.** O campo é de texto livre; a lista
  * é ajuda, não trava. O que decide entre reusar um nó e criar outro é o
- * casamento exato de `catalogo.resolver`, na hora de montar o payload — a linha
- * `+ criar "X"` existe só para eu ver de que lado eu estou antes de confirmar.
+ * casamento exato de `catalogo.resolver`, na hora de montar o payload.
+ *
+ * **A linha `+ criar "X"` cria** — na tela, não no grafo (regra 5). Escolhê-la
+ * chama `aoCriar`, e a revisão passa a ter a entidade: ela aparece nas barras
+ * dos outros átomos e no rodapé, onde um renome vale para todos que a usam.
+ * Digitar e sair do campo sem escolher a linha continua sendo texto livre, que
+ * nasce no confirmar como antes.
  *
  * Não há biblioteca de UI neste projeto (seis dependências no total), e não é
  * este componente que vai introduzir uma.
@@ -35,6 +40,11 @@ interface Props {
   /** As alternativas do agente de resolução: vão para o topo da lista. */
   sugestoes?: string[];
   placeholder?: string;
+  /**
+   * Chamado, além de `aoMudar`, quando eu escolho a linha `+ criar`. Só as
+   * barras dos átomos passam isto: no rodapé o nome já é de uma candidata.
+   */
+  aoCriar?: (nome: string) => void;
   /** Quando presente, a barra ganha um `✕`. Só as menções passam isto. */
   aoRemover?: () => void;
   /** Marca de erro — a entidade ainda é um pronome. */
@@ -53,6 +63,7 @@ export function SeletorEntidade({
   sugestoes = [],
   placeholder,
   aoRemover,
+  aoCriar,
   pedindo,
 }: Props) {
   const [aberto, setAberto] = useState(false);
@@ -94,6 +105,7 @@ export function SeletorEntidade({
   function escolher(indice: number) {
     const e = opcoes[indice];
     aoMudar(e ? e.nome : escrito);
+    if (!e && criando) aoCriar?.(escrito);
     fechar();
   }
 

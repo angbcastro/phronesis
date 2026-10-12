@@ -158,6 +158,45 @@ function apurar(entrada: {
 const tipos = (cs: Correcao[]) => cs.map((c) => c.tipo).sort();
 const doTipo = (cs: Correcao[], tipo: string) => cs.filter((c) => c.tipo === tipo);
 
+describe("o nome trocado dentro do texto não é correção de texto", () => {
+  // `reescreverNomes`: trocar a entidade reescreve o nome no texto, e essa
+  // troca já é a correção de `sujeito`. Contá-la de novo como `texto` culparia
+  // a extração duas vezes pelo mesmo erro.
+  const p = () =>
+    proposta(
+      [atomo(0, { texto: "Nicolle Borsato topou revisar o deck", sobre: "Nicolle Borsato", conhecida: true })],
+      [candidata("Nicolle Borsato", { conhecida: true })],
+    );
+
+  it("só o nome trocado: sai `sujeito`, e `texto` não", () => {
+    const cs = apurar({
+      proposta: p(),
+      confirmados: [
+        confirmado(0, { texto: "Nicolle Salgado topou revisar o deck", sobre: "Nicolle Salgado" }),
+      ],
+      entidades: [entidade("Nicolle Salgado")],
+      gestos: gestos({ atomos: [{ indice: 0, campos: ["sobre"] }] }),
+    });
+    expect(tipos(cs)).toEqual(["sujeito"]);
+  });
+
+  it("o nome trocado e uma edição minha: saem as duas", () => {
+    const cs = apurar({
+      proposta: p(),
+      confirmados: [
+        confirmado(0, { texto: "Nicolle Salgado topou revisar o deck amanhã", sobre: "Nicolle Salgado" }),
+      ],
+      entidades: [entidade("Nicolle Salgado")],
+      gestos: gestos({ atomos: [{ indice: 0, campos: ["sobre", "texto"] }] }),
+    });
+    expect(tipos(cs)).toEqual(["sujeito", "texto"]);
+    expect(doTipo(cs, "texto")[0]).toMatchObject({
+      antes: "Nicolle Borsato topou revisar o deck",
+      depois: "Nicolle Salgado topou revisar o deck amanhã",
+    });
+  });
+});
+
 describe("correção de átomo (critério 1)", () => {
   it("desmarcar um átomo registra o texto que foi rejeitado", () => {
     const p = proposta([atomo(0, { texto: "O texto é confuso e circular" }), atomo(1)]);
