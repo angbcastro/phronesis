@@ -6,7 +6,7 @@ import { atualizarManifest, registrarChunk } from "@/lib/manifest";
 import { comInvocacao } from "@/lib/invocacao";
 import { comMedicao } from "@/lib/medidas";
 import { existe } from "@/lib/r2";
-import { avancarJanelas, transcreverBloco } from "@/lib/pipeline";
+import { avancarJanelas, PRAZO_DA_FUNCAO_MS, transcreverBloco } from "@/lib/pipeline";
 import { recuperarCandidatas } from "@/lib/recuperacao";
 import { atualizarSessao } from "@/lib/sessoes";
 import { erro, erroDeInfra, parametros } from "@/lib/rotas";
@@ -30,6 +30,11 @@ export const maxDuration = 300;
  * entrada no manifest nem retranscreve o que já está pronto.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string; i: string }> }) {
+  // O relógio da função. Com `TETO_CHAMADA_MS` em 180 s, extração e resolução em
+  // série passariam dos 300 s do `maxDuration`: o prazo da função é o que
+  // garante que a chamada é cortada e a falha gravada antes de a plataforma
+  // matar tudo (`limite.ts`, 30/09).
+  const ate = Date.now() + PRAZO_DA_FUNCAO_MS;
   const p = parametros(await ctx.params);
   if (!p.ok) return p.resposta;
   const { id, i } = p;
@@ -93,14 +98,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; i:
         id,
         "pronto",
         () =>
-          transcreverBloco(id, i)
+          transcreverBloco(id, i, { ate })
             .then(() =>
               recuperarCandidatas(id, i).catch((e) => {
                 console.error(`[candidatas] sessão ${id} bloco ${i}:`, e);
                 return null;
               }),
             )
-            .then(() => avancarJanelas(id)),
+            .then(() => avancarJanelas(id, { ate })),
         { caminho: ext === EXT_GRAVACAO ? "gravacao" : "importacao" },
       ),
     ).catch((e) => {

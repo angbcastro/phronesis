@@ -82,6 +82,13 @@ Confirme antes de gastar uma sessão com eles.
       lista (§14).
 - [ ] Ler o `medidas.json` de sessões reais depois dos seis consertos e ver se
       a espera caiu. Quem fecha a fatia 8 é a leitura, não o código.
+- [ ] O prazo das janelas do fim virou o da função (`PRAZO_DA_FUNCAO_MS`, 280 s)
+      em 30/09, e a resolução ganhou teto de 100 mil sem segunda tentativa.
+      Conferir numa sessão real: `falhas` sem `janela_presa`, nenhuma linha
+      `[resolucao] o agente falhou` com `finishReason=length`, e o re-extrair
+      da `muo7wzdf656z3d07713z` chegando a `em_revisao`. Se ainda aparecer
+      `a chamada não voltou em 180s`, quem corta é o `TETO_CHAMADA_MS` (subiu
+      de 90 s para 180 s no mesmo dia, e o `/pronto` passou a ter prazo).
 
 ## Slice 7 — o laço de calibração
 

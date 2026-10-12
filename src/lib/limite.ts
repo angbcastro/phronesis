@@ -91,21 +91,25 @@ export const ESPERAS_TRANSITORIA_MS = [1_000, 3_000];
 export const TENTATIVAS_TRANSITORIA = ESPERAS_TRANSITORIA_MS.length + 1;
 
 /**
- * Quanto uma única chamada de modelo pode custar quando quem chama não tem prazo.
+ * Quanto uma única chamada de modelo pode custar, no máximo.
  *
- * O caso é a janela que fecha **durante a fala**, em `/chunks/:i/pronto`: ali
- * `avancarJanelas` vai sem `ate` de propósito, porque esperar o rate limit passar
- * é de graça enquanto eu ainda estou falando (§5.3). Só que "esperar é de graça"
- * vale para a espera **entre** tentativas, não para uma chamada pendurada: a rota
- * tem 300 s de `maxDuration` do mesmo jeito, e uma chamada só nunca pode comer a
- * função inteira — foi exatamente o que aconteceu em 18/09.
+ * Uma chamada só nunca pode comer a função inteira — foi exatamente o que
+ * aconteceu em 18/09, quando uma extração ficou 300 s pendurada e a função morreu
+ * antes do `catch`. O prazo de cada tentativa é o menor entre este teto e o que
+ * sobra do `ate` de quem chamou (`prazoDaChamada`).
  *
- * **90 s, e o número vem da aritmética do orçamento.** Fica abaixo dos 120 s de
- * `ORCAMENTO_JANELAS_MS`, então na janela do fim quem manda continua sendo o
- * orçamento de quem chamou; e no `/pronto` deixa a corrente daquela passada —
- * STT, extração, resolução, os desempates em paralelo — caber nos 300 s.
+ * **Eram 90 s, e subiram para 180 s em 30/09.** Com o `deepseek/deepseek-v4.1-flash`
+ * a extração leva 35–65 s em média e passa de 90 s na cauda, e a resolução ganhou
+ * teto de 100 mil tokens: a ~240 tokens/s, 90 s cortava a chamada por volta de 20
+ * mil tokens, antes do limite do próprio modelo (32.768).
+ *
+ * **O que segura a função agora é o `ate`, não este número.** Com 90 s, a
+ * corrente do `/pronto` — extração e resolução em série — cabia nos 300 s mesmo
+ * sem prazo; com 180 s, 180 + 180 passaria. Por isso o `/pronto` também passa o
+ * prazo da função (`PRAZO_DA_FUNCAO_MS`) desde 30/09, e quem chama sem `ate`
+ * precisa garantir sozinho que duas chamadas destas cabem no seu `maxDuration`.
  */
-export const TETO_CHAMADA_MS = 90_000;
+export const TETO_CHAMADA_MS = 180_000;
 
 /**
  * O que fica reservado, dentro do `ate`, para o `catch` de quem chamou gravar.

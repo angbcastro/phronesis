@@ -46,7 +46,7 @@ vi.mock("@/lib/sessoes", () => ({
   atualizarSessao: vi.fn(async () => null),
 }));
 
-import { avancarJanelas, extrairSessao, ORCAMENTO_JANELAS_MS } from "@/lib/pipeline";
+import { avancarJanelas, extrairSessao, PRAZO_DA_FUNCAO_MS } from "@/lib/pipeline";
 import { extrair, extrairJanela } from "@/lib/extracao";
 import { listarEntidades } from "@/lib/entidades";
 import { carregarManifest } from "@/lib/manifest";
@@ -458,11 +458,10 @@ describe("a janela que falha ganha uma segunda tentativa, e só ela", () => {
   /**
    * O ponto mais fácil de errar desta decisão.
    *
-   * `finalizarSessao` já pode ter gasto até `ESPERA_MAX_MS` (150 s) esperando
-   * blocos antes de chegar aqui, e `150 + 120 = 270 s` cabe de propósito sob o
-   * `maxDuration` de 300 s. Dar 120 s novos à segunda tentativa levaria o pior
-   * caso a 390 s: a função morreria no meio, que é pior que a falha que a
-   * segunda tentativa existe para consertar.
+   * O prazo é o da função (`PRAZO_DA_FUNCAO_MS`, 280 s sob o `maxDuration` de
+   * 300 s). Dar um prazo novo à segunda tentativa passaria do `maxDuration`: a
+   * função morreria no meio, que é pior que a falha que a segunda tentativa
+   * existe para consertar.
    */
   it("as duas tentativas dividem o mesmo prazo, e não ganham um cada", async () => {
     const t0 = 1_700_000_000_000;
@@ -476,7 +475,24 @@ describe("a janela que falha ganha uma segunda tentativa, e só ela", () => {
     const prazos = vi
       .mocked(extrairJanela)
       .mock.calls.map(([, opcoes]) => (opcoes as { ate?: number }).ate);
-    expect(prazos[0]).toBe(t0 + ORCAMENTO_JANELAS_MS);
+    expect(prazos[0]).toBe(t0 + PRAZO_DA_FUNCAO_MS);
     expect(prazos[1]).toBe(prazos[0]);
+  });
+
+  /**
+   * `finalizarSessao` pode ter gasto até 150 s esperando blocos antes de chegar
+   * aqui. O prazo conta do começo da função, e não da chegada: a extração fica
+   * com o que sobrou, e a soma nunca passa do `maxDuration`.
+   */
+  it("conta o prazo do começo da função, não da chegada à extração", async () => {
+    const t0 = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(t0);
+    vi.mocked(extrairJanela).mockResolvedValue(resultado(1) as never);
+
+    const inicio = t0 - 150_000;
+    await extrairSessao("s1", { inicio });
+
+    const [, opcoes] = vi.mocked(extrairJanela).mock.calls[0];
+    expect((opcoes as { ate?: number }).ate).toBe(inicio + PRAZO_DA_FUNCAO_MS);
   });
 });

@@ -186,10 +186,12 @@ export async function transcricaoParcial(sessao_id: string): Promise<{ texto: st
  *
  * Chamada de dois lugares, e a diferença entre eles é o prazo:
  *
- *   `/chunks/:i/pronto`  depois de transcrever o bloco, **sem prazo** — a
- *                        gravação continua, e esperar o rate limit ali é de
- *                        graça (§5.3)
- *   `extrairSessao`      com `fechando: true` e um orçamento, para a janela do
+ *   `/chunks/:i/pronto`  depois de transcrever o bloco, com o prazo da função
+ *                        (`PRAZO_DA_FUNCAO_MS`) — a gravação continua e esperar o
+ *                        rate limit ali é de graça (§5.3), mas desde 30/09 uma
+ *                        chamada pode durar 180 s, e duas em série passariam
+ *                        do `maxDuration` sem ele
+ *   `extrairSessao`      com `fechando: true` e o mesmo prazo, para a janela do
  *                        fim, que divide o `waitUntil` com o resto do finalizar
  *
  * **Em ordem, e parando na primeira janela que não fechar.** A janela `n`
@@ -423,6 +425,9 @@ export async function finalizarSessao(sessao_id: string): Promise<{
   transcricao?: Transcricao;
   faltando?: number[];
 }> {
+  // O relógio da função, anotado antes de qualquer espera: é dele que a
+  // extração lá embaixo desconta o que a espera pelos blocos já gastou.
+  const inicio = Date.now();
   const sessao = await buscarSessao(sessao_id);
   if (!sessao) throw new Error(`Sessão ${sessao_id} não existe`);
 
@@ -431,7 +436,7 @@ export async function finalizarSessao(sessao_id: string): Promise<{
     // A transcrição já está gravada; o que pode faltar é a extração. Chamar
     // de novo é o retry do caminho que o `waitUntil` pode ter perdido.
     if (pronta) {
-      const { status } = await extrairSessao(sessao_id);
+      const { status } = await extrairSessao(sessao_id, { inicio });
       return { status, transcricao: pronta.valor };
     }
   }
@@ -512,7 +517,7 @@ export async function finalizarSessao(sessao_id: string): Promise<{
   // Emenda direto na extração, no mesmo waitUntil (aceite 1 da slice 2: eu não
   // aperto nada entre parar de falar e ver a lista). Falhar aqui não desfaz a
   // transcrição, que já está no R2 e no estado da sessão.
-  const { status } = await extrairSessao(sessao_id);
+  const { status } = await extrairSessao(sessao_id, { inicio });
   return { status, transcricao };
 }
 
@@ -534,7 +539,14 @@ export async function finalizarSessao(sessao_id: string): Promise<{
  */
 export async function extrairSessao(
   sessao_id: string,
-  { forcar = false }: { forcar?: boolean } = {},
+  {
+    forcar = false,
+    inicio = Date.now(),
+  }: {
+    forcar?: boolean;
+    /** Quando a função que me chama começou; o prazo é contado dali (`PRAZO_DA_FUNCAO_MS`). */
+    inicio?: number;
+  } = {},
 ): Promise<{ status: "em_revisao" | "erro"; extracao?: Extracao }> {
   const key = chaveExtracao(sessao_id);
 
@@ -563,12 +575,12 @@ export async function extrairSessao(
     // fechar e a montagem da proposta depois delas (slice 8).
     const catalogo = catalogoUmaVez();
 
-    // As duas tentativas dividem **um** orçamento, e isso não é economia: é o
-    // que mantém a finalização inteira dentro dos 270 s que cabem sob o
-    // `maxDuration` de 300 s (ver `ORCAMENTO_JANELAS_MS`). Dar 120 s novos à
-    // segunda levaria o pior caso a 390 s — a função morreria no meio, que é
-    // pior que a falha que a segunda tentativa existe para consertar.
-    const ate = Date.now() + ORCAMENTO_JANELAS_MS;
+    // As duas tentativas dividem **um** prazo, e ele é o da função, não um
+    // pedaço dela: tudo o que sobra até o `maxDuration`, menos a folga de
+    // gravar (ver `PRAZO_DA_FUNCAO_MS`). Dar um prazo novo à segunda passaria
+    // do `maxDuration` — a função morreria no meio, que é pior que a falha que
+    // a segunda tentativa existe para consertar.
+    const ate = inicio + PRAZO_DA_FUNCAO_MS;
     await avancarJanelas(sessao_id, { fechando: true, ate, catalogo });
     await segundaChance(sessao_id, { ate, catalogo });
 
@@ -642,21 +654,31 @@ async function segundaChance(
 }
 
 /**
- * Quanto tempo a finalização dá às janelas que faltam fechar.
+ * Até quando, contado do começo da função, a extração pode chamar modelo.
  *
- * O teto de cima é o `maxDuration` de 300 s da rota, dos quais até 150 s já
- * podem ter ido nos blocos pendentes (`ESPERA_MAX_MS`). No caminho normal isto
- * cobre uma janela de menos de dois minutos de fala e sobra; o número existe
- * para o caso ruim, em que ele decide **quando desistir e cair no passe único**
- * em vez de o `waitUntil` morrer sem deixar proposta nenhuma.
+ * **Eram 120 s fixos para as janelas (`ORCAMENTO_JANELAS_MS`), e caíram em
+ * 30/09.** O número foi escrito quando uma janela custava menos de 30 s; com o
+ * `deepseek/deepseek-v4.1-flash` ela custa 60–100 s (extração ~50 s, resolução
+ * 15–30 s, desempates), e cabia uma janela no orçamento, às vezes nenhuma. Das
+ * 19 sessões medidas no R2, 22 falhas foram `janela_presa` e 27 foram extração
+ * "sem orçamento" ou cortada — e o re-extrair, que refaz tudo do zero, nunca
+ * fechava uma sessão de três janelas.
  *
- * **As duas passadas dividem este orçamento** (`segundaChance`, slice 8.2), e
- * não ganham um cada: `150 + 120 = 270 s` cabe de propósito sob os 300 s, e
- * `150 + 120 + 120 = 390 s` não caberia. No pior caso a segunda tentativa
- * recebe pouco ou nenhum tempo, e `avancarJanelas` já sabe desistir
- * educadamente quando o relógio acabou.
+ * O teto que existe de verdade é o `maxDuration` de 300 s — o plano é Hobby, e
+ * 300 s é o máximo dele. Daí 280 s, a mesma folga de 20 s do `TETO_STREAM_MS`:
+ * a do `FOLGA_PARA_GRAVAR_MS` dentro de cada chamada mais a volta do `catch`,
+ * que ainda grava `parcial.json`, as medidas e o estado da sessão.
+ *
+ * **Contado do começo da função, e não da chegada aqui.** `finalizarSessao` pode
+ * ter gasto até `ESPERA_MAX_MS` (150 s) esperando blocos: é ela quem passa o
+ * `inicio`, e a extração fica com o que sobrou. No `/extrair` não há espera
+ * antes, e as janelas ficam com os 280 s inteiros.
+ *
+ * **As duas passadas dividem este prazo** (`segundaChance`, slice 8.2): no pior
+ * caso a segunda recebe pouco ou nenhum tempo, e `avancarJanelas` já sabe
+ * desistir educadamente quando o relógio acabou.
  */
-export const ORCAMENTO_JANELAS_MS = 120_000;
+export const PRAZO_DA_FUNCAO_MS = 280_000;
 
 /**
  * Uma janela não fechou, e a sessão não tem proposta por causa disso.

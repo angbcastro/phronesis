@@ -1165,7 +1165,7 @@ código repetia a mesma chamada nos dois casos:
 
 | O que o diagnóstico mostra | O que aconteceu | Quem cuida |
 |---|---|---|
-| `finishReason=length`, `raciocinio` no teto | o raciocínio comeu o orçamento e a resposta foi cortada no meio dele | `faltouOrcamento()` → segunda tentativa com o dobro de teto |
+| `finishReason=length`, `raciocinio` no teto | o raciocínio comeu o orçamento e a resposta foi cortada no meio dele | na extração, `faltouOrcamento()` → segunda tentativa com o dobro de teto. A resolução não repete desde 30/09: o teto dela (100 mil) já passa do `max_out` do modelo |
 | `finishReason=stop`, saída sobrando, `pensamento` grande e `texto=0` | o modelo escreveu a resposta na parte de raciocínio, não na de texto | `textoDaResposta()` → lê o `reasoningText` |
 
 A distinção não é acadêmica. Com `temperature: 0`, repetir a mesma chamada
@@ -4189,11 +4189,12 @@ apareceria sem botão de escutar justamente enquanto eu o estou julgando.
 **A segunda chance da janela não é código novo de retry.** `avancarJanelas` já
 pula janela `pronta` e já reivindica de novo a que está `falhou`; chamá-la uma
 segunda vez reprocessa exclusivamente o que falta, na ordem, sem tocar no que
-fechou. **As duas passadas dividem um orçamento só** (`ORCAMENTO_JANELAS_MS`), e
-isso não é economia: `finalizarSessao` já pode ter gasto até `ESPERA_MAX_MS`
-(150 s) esperando blocos, e `150 + 120 = 270 s` cabe de propósito sob o
-`maxDuration` de 300 s. Dar 120 s novos à segunda levaria o pior caso a 390 s — a
-função morreria no meio, que é pior que a falha que ela existe para consertar. Se
+fechou. **As duas passadas dividem um prazo só** (`PRAZO_DA_FUNCAO_MS`, 280 s
+contados do começo da função), e isso não é economia: é o `maxDuration` de 300 s
+menos a folga de gravar. `finalizarSessao` passa o seu `inicio`, então o que ela
+gastou esperando blocos (até `ESPERA_MAX_MS`, 150 s) sai do prazo das janelas.
+Dar um prazo novo à segunda passaria do `maxDuration` — a função morreria no
+meio, que é pior que a falha que ela existe para consertar. Se
 a segunda também falhar, a sessão vai para `erro`, como a decisão 5 da slice 8
 manda: a coerência entre as duas fatias é deliberada.
 
@@ -4650,12 +4651,15 @@ modelo inexistente, prompt que estoura o contexto e JSON inválido falham igual 
 segunda vez.
 
 Quem chama dentro de um prazo passa o seu (`ate`): `finalizarSessao` tem 150 s
-para os blocos que faltam, e a janela do fim tem os 120 s de
-`ORCAMENTO_JANELAS_MS`. Uma espera que não caiba nesse orçamento é pior que não
-esperar — o `waitUntil` morre antes de a chamada voltar, e a falha fica sem nem
-o log. **Onde não há prazo não se passa nada**, e desde a 4.8 esse caso é o que
-mais importa: as janelas que fecham durante a gravação vão sem `ate`, porque ali
-esperar o limite passar é de graça — eu ainda estou falando.
+para os blocos que faltam, e as janelas do fim ficam com o que sobrar até
+`PRAZO_DA_FUNCAO_MS` (280 s contados do começo da função). Uma espera que não
+caiba nesse orçamento é pior que não esperar — o `waitUntil` morre antes de a
+chamada voltar, e a falha fica sem nem o log. **Desde 30/09 o `/pronto` também
+passa `ate`**, o mesmo `PRAZO_DA_FUNCAO_MS` contado da chegada do pedido. As
+janelas que fecham durante a gravação iam sem prazo porque ali esperar o limite
+passar é de graça — eu ainda estou falando —, e continua sendo, dentro da vida
+da função. O que mudou é que uma chamada agora pode durar 180 s, e extração e
+resolução em série passariam do `maxDuration` sem ele.
 
 Os dois pontos que falam com modelo no caminho automático estão cobertos:
 `stt.ts` e `extracao.ts`. A extração era a mais exposta das duas justamente por
@@ -4712,13 +4716,17 @@ mesmo teto direto, sem a escada, porque quem o chama já engole a falha.
 
 | | Prazo da chamada |
 |---|---|
-| quem passa `ate` | o que sobra do orçamento, menos `FOLGA_PARA_GRAVAR_MS` (5 s) |
-| quem não passa (`/pronto`) | `TETO_CHAMADA_MS`, 90 s |
+| quem passa `ate` (`/pronto`, `/finalizar`, `/extrair`) | o menor entre `TETO_CHAMADA_MS` (180 s) e o que sobra do prazo, menos `FOLGA_PARA_GRAVAR_MS` (5 s) |
+| quem não passa | `TETO_CHAMADA_MS`, 180 s |
 
-Os 90 s são aritmética de orçamento, não gosto: ficam abaixo dos 120 s de
-`ORCAMENTO_JANELAS_MS`, então na janela do fim quem manda continua sendo o
-orçamento de quem chamou; e no `/pronto` deixam a corrente daquela passada — STT,
-extração, resolução, os desempates em paralelo — caber nos 300 s. A folga de 5 s
+`TETO_CHAMADA_MS` era 90 s e subiu para 180 s em 30/09: com o
+`deepseek/deepseek-v4.1-flash` a extração passa de 90 s na cauda, e a resolução
+ganhou teto de 100 mil tokens — a ~240 tokens/s, 90 s cortava por volta de 20
+mil, antes do limite do próprio modelo (32.768). Com 90 s, a corrente do
+`/pronto` cabia nos 300 s mesmo sem prazo; com 180 s não cabe, e quem segura a
+função agora é o `ate`, que as quatro chamadas do caminho automático recebem
+todas. Os agentes fora dele (chat, confronto, enriquecimento, retrato) não
+repassam o sinal e não são afetados. A folga de 5 s
 existe porque prazo que termina junto com o orçamento é o mesmo defeito outra
 vez, só que menor: quando a chamada é cortada ainda falta escrever
 `parcial.json`, o objeto de medidas e o estado da sessão, e os três são laços por
@@ -6647,8 +6655,8 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   ficam no parcial. E a segunda chance da 8.2: falhou uma vez e passou na segunda
   abre a revisão, falhou as duas ainda vai para `erro`, janela já pronta não é
   refeita na segunda passada, e — o ponto mais fácil de errar — **as duas
-  tentativas dividem o mesmo `ate`**, porque dar 120 s novos à segunda levaria o
-  pior caso a 390 s sob um `maxDuration` de 300 s.
+  tentativas dividem o mesmo `ate`**, contado do começo da função, porque dar um
+  prazo novo à segunda passaria do `maxDuration` de 300 s.
 - `tests/recuperacao.test.ts` — o RAG por bloco (4.14) sem rede nenhuma: que
   "giam" alcança "Giampaolo Lepore" pela camada `prefixo`, que grafo vazio devolve
   dossiê vazio (e aí a extração sai como na 4.8), que o arquivo do bloco é a
@@ -7304,13 +7312,18 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   a janela (`orcamentoDaJanela`), o que troca uma aposta por outra: oito janelas
   pedindo de 1 a 3 dão de 8 a 24, e é o `estende` que tem de puxar o número para
   baixo. Mais um motivo para a primeira sessão longa ser a medição que importa.
-- **A janela do fim tem 120 s (`ORCAMENTO_JANELAS_MS`) para fechar**, dentro do
-  `maxDuration` de 300 s de `/finalizar`, dos quais até 150 s podem ter ido nos
-  blocos pendentes. Estourado o orçamento, a sessão vai para `erro` desde a slice
-  8 — antes ela caía no passe único, que então rodava com pouco tempo sobrando e
-  em silêncio. Continua sendo o caso ruim de um caso já raro (as janelas
-  anteriores já fecharam durante a gravação), e o retry continua sendo chamar
-  `/finalizar` — ou `/extrair` — de novo.
+- **As janelas do fim têm até 280 s (`PRAZO_DA_FUNCAO_MS`) contados do começo
+  da função**, sob o `maxDuration` de 300 s — o máximo do plano Hobby. Eram 120 s
+  fixos (`ORCAMENTO_JANELAS_MS`) até 30/09, e com o `deepseek/deepseek-v4.1-flash`
+  cabia uma janela neles, às vezes nenhuma: uma janela custa 60–100 s (extração
+  ~50 s, resolução 15–30 s), e das 19 sessões medidas no R2 saíram 22 falhas
+  `janela_presa`. Não era "o caso ruim de um caso raro": a extração não alcança a
+  fala durante a gravação, e o `/finalizar` herda uma ou duas janelas quase
+  sempre. O re-extrair (`forcar`, que refaz tudo do zero) nunca fechava uma
+  sessão de três janelas nos 120 s. Estourado o prazo, a sessão continua indo
+  para `erro`, e o retry continua sendo `/finalizar` ou `/extrair`. **O que ainda
+  limita é o relógio**: `TETO_CHAMADA_MS` corta cada chamada em 180 s (eram 90 s
+  até 30/09), e três janelas lentas ainda podem não caber em 280 s.
 - **O `estende` é a única coisa que segura o volume da lista, e ele é uma
   instrução de prompt** (slice 4.8). Sem passada de costura no fim, a janela que
   ignorar "não repita, estenda" produz um segundo átomo sobre o mesmo assunto —

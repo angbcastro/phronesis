@@ -45,7 +45,6 @@ import type { CandidatoSemantico, EntidadeDoGrafo } from "./entidades";
 import { comEsperaDeLimite } from "./limite";
 import {
   diagnostico,
-  faltouOrcamento,
   garantirGateway,
   modeloResolucao,
   textoDaResposta,
@@ -181,11 +180,23 @@ export function confiancaDe(j: { confianca?: unknown } | undefined): number {
   return typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
 }
 
-/** Como a extração: modelo de raciocínio come orçamento antes de escrever JSON. */
-const MAX_TOKENS_SAIDA = 4000;
-
-/** Como em `extracao.ts`: o que a segunda tentativa ganha quando foi cortada. */
-const FATOR_DE_FOLGA = 2;
+/**
+ * Teto de saída, e ele é para não morder: 100 mil (decisão de 30/09).
+ *
+ * Eram 4000, com uma segunda tentativa no dobro. Com o `deepseek/deepseek-v4.1-flash`
+ * as duas não bastavam: na `munj1ae66e1s61641d34` a primeira gastou 4001 só
+ * pensando, a segunda gastou 7656 pensando e cortou o JSON na posição 1070 — nove
+ * menções em dúvida, depois de pagar duas chamadas e ~35 s do prazo da janela. O
+ * deepseek custa centavos, e o teto baixo só empurrava a falha para a tela.
+ *
+ * **100 mil passa do que o modelo entrega**: o Gateway declara `max_out` de
+ * 32.768 para o `deepseek-v4.1-flash`, e aceita o pedido maior sem erro (sonda
+ * de 30/09) — quem para é o modelo. Por isso não há mais segunda tentativa com
+ * teto dobrado: acima do limite do modelo, ela seria a mesma chamada outra vez,
+ * determinística com `temperature: 0`. Na prática quem limita agora é o relógio
+ * (`TETO_CHAMADA_MS`, `limite.ts`), não o número de tokens.
+ */
+const MAX_TOKENS_SAIDA = 100_000;
 
 /** Quanto da resposta crua entra no log quando o parse falha. */
 const AMOSTRA_ERRO = 400;
@@ -950,19 +961,10 @@ export async function resolverReferencias(
           { ate },
         );
 
-      let r = await chamar(MAX_TOKENS_SAIDA);
-      // Cortado no meio do pensamento, repetir igual seria determinístico
-      // (`temperature: 0`). A segunda vai com o dobro de orçamento porque a
-      // alternativa é a janela inteira virar dúvida — a degradação cara que o
-      // comentário acima descreve, paga por uma resposta que nem chegou a sair.
-      if (faltouOrcamento(r)) {
-        console.warn(
-          `[resolucao] o raciocínio comeu o orçamento; repetindo com teto de ` +
-            `${MAX_TOKENS_SAIDA * FATOR_DE_FOLGA}.`,
-          diagnostico(r),
-        );
-        r = await chamar(MAX_TOKENS_SAIDA * FATOR_DE_FOLGA);
-      }
+      const r = await chamar(MAX_TOKENS_SAIDA);
+      // Sem segunda tentativa: o teto já passa do limite do modelo, e repetir
+      // seria determinístico (`temperature: 0`). Se ainda assim vier cortado, o
+      // parse falha e o `diagnostico` no `catch` mostra `finishReason=length`.
 
       resposta = r;
       // Antes do parse: o modelo que de fato atendeu é procedência, e vale
