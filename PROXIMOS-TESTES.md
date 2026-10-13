@@ -14,6 +14,31 @@ Confirme antes de gastar uma sessão com eles.
       do Neo4j e o `R2_BUCKET`). Sem ele o `pnpm dev` escreve em produção
       (§12.1), e os testes em dev da slice 10 não podem rodar.
 
+## Slice 5.2 — o confronto amplo (`Specs/slice-5.2.md`)
+
+O modelo já foi escolhido (`deepseek-v4.1-flash`, comparação de 13/10) e o
+painel de produção não tem override do `confronto`. Na ordem:
+
+- [ ] Mandar buildar o commit da migration 013 (no-op, só documentação).
+- [ ] "Reprocessar tudo" e deixar a fila andar. Ler no log `[confronto] elo de
+      …`: quantas relações, quantas rebaixadas, quantas cortadas, quantas falhas.
+      Na comparação, um átomo em quinze passou dos 180 s: contar quantos saem
+      `falhou` por prazo e se voltam a falhar na varredura seguinte (§14).
+- [ ] Abrir o radial de átomos que eu sei que se relacionam (um sentimento e o
+      fato da mesma gravação; uma expectativa e o que aconteceu dias depois) e
+      julgar: veio? Em que camada? A seta aponta o mais antigo?
+- [ ] Corrigir algumas relações (tipo, camada, motivo, apagar) e conferir em
+      `/calibracao`, sob `confronto`, que as correções aparecem com o par. Rodar
+      o átomo de novo ("desfazer" na lista e "rodar agora") e ver que a editada
+      ficou e a apagada não voltou.
+- [ ] Confirmar uma sessão e ver o confronto dela rodar de fundo sem eu tocar em
+      nada — e não abrir segunda corrente se a fila já estiver andando.
+- [ ] Chat: uma pergunta de "depois de quê" sobre um átomo com relação sutil. O
+      (i) mostra `(sutil)` no histórico, e a resposta diz "parece ligado a", não
+      afirma.
+- [ ] No celular: o radial cabe na largura sem rolagem horizontal, e os rótulos
+      das arestas são tocáveis.
+
 ## Slice 10 — o retrato do "eu" (`Specs/slice-10.md`)
 
 - [ ] Conferir se o "eu" do banco **de desenvolvimento** está `canonico = true`.

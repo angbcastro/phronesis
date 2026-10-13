@@ -2478,3 +2478,110 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .campo-perfil.dimensao { padding-bottom: 0.5rem; border-bottom: 1px solid var(--linha); }
 .campo-perfil.dimensao .campo-nome { flex: 1; min-width: 0; }
 .sugestao-dimensoes { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.88rem; }
+
+/* ---- slice 5.2: o radial do confronto ----
+
+   As quatro relações ganham cor, e as quatro saem dos tokens do tema: contradiz
+   é o vermelho de gravar, confirma o verde de "salvo", atualiza é o acento
+   clareado, e complementa — o tipo mais comum e o mais fraco — é cinza. Cada
+   tipo vira `--cor` numa classe, e quem desenha (aresta, seta, nó, sigla,
+   legenda) lê `--cor`: um lugar só para trocar. */
+.confronto {
+  --rel-atualiza: color-mix(in srgb, var(--acento) 55%, var(--texto));
+  --rel-contradiz: var(--rec);
+  --rel-confirma: var(--ok);
+  --rel-complementa: color-mix(in srgb, var(--texto) 62%, var(--fundo));
+}
+.rel-ATUALIZA { --cor: var(--rel-atualiza); }
+.rel-CONTRADIZ { --cor: var(--rel-contradiz); }
+.rel-CONFIRMA { --cor: var(--rel-confirma); }
+.rel-COMPLEMENTA { --cor: var(--rel-complementa); }
+
+.busca-confronto { display: flex; gap: 0.4rem; align-items: center; }
+.busca-confronto .campo-nome { flex: 1; width: auto; padding: 0.35rem 0.6rem; }
+
+/* A linha da lista abre o radial: é um botão vestido de link, como `.quando`. */
+.abre-radial {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.radial-topo { display: flex; gap: 0.4rem; }
+.radial-centro { display: flex; flex-direction: column; gap: 0.25rem; }
+.radial-centro p { margin: 0; line-height: 1.45; }
+
+.radial { width: 100%; max-width: 26rem; height: auto; align-self: center; }
+.radial .aresta { stroke: var(--cor); stroke-width: 1.5; fill: none; }
+/* Sutil é pontilhado e um pouco apagado: ligação provável, e a tela diz isso
+   do mesmo jeito que o chat diz "parece ligado a". */
+.radial .aresta.sutil { stroke-dasharray: 4 4; opacity: 0.8; }
+.radial .aresta.ativa { stroke-width: 3; opacity: 1; }
+.radial marker path { fill: var(--cor); }
+.radial .no-centro { fill: var(--acento); }
+.radial .rotulo-centro { fill: var(--sobre-acento); font-size: 10px; text-anchor: middle; }
+.radial .no-vizinho { cursor: pointer; }
+.radial .no-vizinho circle { fill: var(--fundo-alto); stroke: var(--cor); stroke-width: 1.5; }
+/* Cheio é "editada por mim": congelada, o agente não a toca mais. */
+.radial .no-vizinho.minha circle { fill: var(--cor); }
+.radial .no-vizinho text { fill: var(--texto-fraco); font-size: 9.5px; }
+.radial .sigla { cursor: pointer; }
+.radial .sigla circle { fill: var(--fundo); stroke: var(--cor); stroke-width: 1; }
+.radial .sigla text { fill: var(--cor); font-size: 11px; font-weight: 600; text-anchor: middle; }
+.radial .sigla.ativa circle { fill: var(--cor); }
+.radial .sigla.ativa text { fill: var(--fundo); }
+.radial g:focus-visible { outline: none; }
+.radial g:focus-visible circle { stroke-width: 3; }
+
+.legenda {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.8rem;
+  font-size: 0.75rem;
+  color: var(--texto-fraco);
+}
+.chave { color: var(--cor); font-weight: 600; }
+
+.painel-relacao {
+  border: 1px solid var(--linha);
+  border-radius: 0.6rem;
+  padding: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.painel-relacao p { margin: 0; }
+.cabecalho-relacao { display: flex; align-items: center; gap: 0.5rem; }
+.cabecalho-relacao > span:nth-child(2) { flex: 1; }
+.vizinho-relacao {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.gestos-relacao { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+/* O valor atual: desabilitado porque escolher de novo não muda nada, mas lido
+   como escolha, não como botão morto. */
+.reextrair.escolhido,
+.reextrair.escolhido:disabled { color: var(--texto); border-color: var(--texto-fraco); opacity: 1; }
+.motivo-relacao {
+  background: none;
+  border: 1px solid var(--linha);
+  border-radius: 0.3rem;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--texto);
+  resize: vertical;
+}
+.relacoes-do-radial li.ativa { border-bottom-color: var(--texto-fraco); }

@@ -15,7 +15,8 @@
     "migrate": "node --env-file-if-exists=.env.local scripts/migrate.ts",
     "migrate:dev": "node --env-file-if-exists=.env.development.local scripts/migrate.ts",
     "smoke": "node --env-file-if-exists=.env.local scripts/smoke.ts",
-    "probe:raciocinio": "node --env-file-if-exists=.env.local scripts/raciocinio.ts"
+    "probe:raciocinio": "node --env-file-if-exists=.env.local scripts/raciocinio.ts",
+    "comparar:confronto": "node --env-file-if-exists=.env.local --experimental-transform-types --disable-warning=ExperimentalWarning --import ./scripts/gancho-src.mjs scripts/comparar-confronto.ts"
   },
   "dependencies": {
     "@vercel/functions": "^2.0.0",

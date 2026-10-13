@@ -37,6 +37,8 @@ import type {
   Gestos,
   IndiceCalibracao,
   ReferenciaResolvida,
+  AcaoNaRelacao,
+  RelacaoLida,
   TipoAtomo,
   TipoCorrecao,
   TipoEntidade,
@@ -549,6 +551,110 @@ export function juntarNoIndice(
   return {
     ...indice,
     correcoes: podarIndice([...entrando, ...indice.correcoes]),
+    atualizado_em: agora,
+  };
+}
+
+// ─────────────────── a correção de uma relação (slice 5.2) ───────────────────
+
+/** Quanto de cada trecho do par vai para a correção — o mesmo corte da calibração. */
+export const TRECHO_NA_CORRECAO = 400;
+
+const TIPO_DA_ACAO: Record<AcaoNaRelacao, TipoCorrecao> = {
+  tipo: "relacao_tipo",
+  camada: "relacao_camada",
+  motivo: "relacao_motivo",
+  recusar: "relacao_recusada",
+};
+
+const cortaTrecho = (t: string) =>
+  t.length <= TRECHO_NA_CORRECAO ? t : `${t.slice(0, TRECHO_NA_CORRECAO)}…`;
+
+/**
+ * Uma edição minha em `/confronto` como correção do agente `confronto`.
+ *
+ * **O `antes` é sempre o que o agente gravou** (`original`, migration 013), não
+ * o que estava na aresta quando eu toquei: corrigir duas vezes continua
+ * ensinando contra o agente. `voltou` diz que eu desfiz a minha própria
+ * correção — o valor final é o do agente —, e aí não há o que ensinar.
+ *
+ * `texto_proposto` leva os dois trechos e a relação como o agente a gravou:
+ * "COMPLEMENTA virou CONFIRMA" só se julga lendo o par.
+ */
+export function correcaoDeRelacao(
+  antes: RelacaoLida,
+  depois: RelacaoLida | null,
+  acao: AcaoNaRelacao,
+  em: string,
+): { correcao: Correcao; voltou: boolean } {
+  const o = antes.original;
+  const [de, para] =
+    acao === "tipo"
+      ? [o.tipo, depois?.tipo ?? ""]
+      : acao === "camada"
+        ? [o.camada, depois?.camada ?? ""]
+        : acao === "motivo"
+          ? [o.motivo, depois?.motivo ?? ""]
+          : [`${o.tipo} · ${o.camada} — ${o.motivo}`, ""];
+
+  const tipo = TIPO_DA_ACAO[acao];
+  const data = (iso: string) => (iso === "" ? "sem data" : iso.slice(0, 10));
+
+  return {
+    voltou: acao !== "recusar" && de === para,
+    correcao: {
+      id: `${antes.novo_id}|${antes.velho_id}|${tipo}`,
+      sessao_id: antes.novo.sessao_id,
+      atomo_id: antes.novo_id,
+      entidade_chave: null,
+      agente: "confronto",
+      tipo,
+      antes: de,
+      depois: para,
+      tipo_atomo: null,
+      texto_proposto: [
+        `mais novo [${antes.novo.tipo} ${data(antes.novo.valido_em)}]: ${cortaTrecho(antes.novo.texto)}`,
+        `mais antigo [${antes.velho.tipo} ${data(antes.velho.valido_em)}]: ${cortaTrecho(antes.velho.texto)}`,
+        `o agente gravou: ${o.tipo} · ${o.camada} — ${o.motivo}`,
+      ].join("\n"),
+      // As âncoras do mais novo: é o áudio que a tela de calibração toca.
+      inicios_s: antes.novo.inicios_s,
+      prompt_version: antes.prompt_version,
+      modelo: antes.modelo,
+      tocado: true,
+      em,
+      incorporada_em: null,
+    },
+  };
+}
+
+/**
+ * Põe a correção de uma relação no índice. Diferente de `juntarNoIndice`, que
+ * nunca sobrescreve: uma relação se edita várias vezes, e a correção em aberto
+ * acompanha a última — com o mesmo `antes`, porque ele é o do agente.
+ *
+ * - em aberto, e eu voltei ao valor do agente: sai do índice;
+ * - em aberto: é substituída pela nova;
+ * - já incorporada a uma emenda: fica como está — ela já ensinou, e a edição
+ *   de agora é refinamento meu sobre o meu próprio valor;
+ * - nova e voltou: nada a fazer.
+ *
+ * Puro, como `juntarNoIndice`: roda dentro do retry condicional.
+ */
+export function registrarCorrecaoDeRelacao(
+  indice: IndiceCalibracao,
+  correcao: Correcao,
+  voltou: boolean,
+  agora: string,
+): IndiceCalibracao {
+  const existente = indice.correcoes.find((c) => c.id === correcao.id);
+  if (existente && existente.incorporada_em !== null) return indice;
+  if (!existente && voltou) return indice;
+
+  const outras = indice.correcoes.filter((c) => c.id !== correcao.id);
+  return {
+    ...indice,
+    correcoes: voltou ? outras : podarIndice([correcao, ...outras]),
     atualizado_em: agora,
   };
 }

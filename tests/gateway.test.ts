@@ -18,9 +18,11 @@ import { describe, expect, it } from "vitest";
 import {
   MODELO_EMBEDDING_PADRAO,
   MODELO_CHAT_PADRAO,
+  MODELO_CONFRONTO_PADRAO,
   MODELO_EXTRACAO_PADRAO,
   MODELO_STT_PADRAO,
   modeloChat,
+  modeloConfronto,
   modeloEmbedding,
   modeloExtracao,
   modeloPerfil,
@@ -208,6 +210,29 @@ describe("endereçamento de modelo", () => {
     } finally {
       if (antes === undefined) delete process.env.CHAT_MODEL;
       else process.env.CHAT_MODEL = antes;
+      if (antesExtracao === undefined) delete process.env.EXTRACAO_MODEL;
+      else process.env.EXTRACAO_MODEL = antesExtracao;
+    }
+  });
+
+  /**
+   * O confronto deixou de herdar o padrão da extração na slice 5.2, quando o
+   * modelo dele passou a ser escolhido por comparação. Mesma guarda do chat.
+   */
+  it("CONFRONTO_MODEL tem padrão próprio, e a extração não o arrasta", () => {
+    const antes = process.env.CONFRONTO_MODEL;
+    const antesExtracao = process.env.EXTRACAO_MODEL;
+    try {
+      delete process.env.CONFRONTO_MODEL;
+      process.env.EXTRACAO_MODEL = "openai/gpt-4o-mini";
+      expect(modeloConfronto()).toBe(MODELO_CONFRONTO_PADRAO);
+      expect(MODELO_CONFRONTO_PADRAO).toBe("deepseek/deepseek-v4.1-flash");
+
+      process.env.CONFRONTO_MODEL = "zai/glm-5.3-air";
+      expect(modeloConfronto()).toBe("zai/glm-5.3-air");
+    } finally {
+      if (antes === undefined) delete process.env.CONFRONTO_MODEL;
+      else process.env.CONFRONTO_MODEL = antes;
       if (antesExtracao === undefined) delete process.env.EXTRACAO_MODEL;
       else process.env.EXTRACAO_MODEL = antesExtracao;
     }

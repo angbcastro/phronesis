@@ -33,6 +33,7 @@ import {
   marcarVisitaDe,
   normalizarIndice,
   paraCalibrar,
+  registrarCorrecaoDeRelacao,
 } from "./correcoes";
 import {
   garantirGateway,
@@ -91,6 +92,20 @@ export async function atualizarIndice(
     { rotulo: "o índice de calibração" },
   );
   return valor;
+}
+
+/**
+ * Uma edição minha em `/confronto` entra no laço (slice 5.2) — a "7.2 do
+ * confronto" que a slice 7 deixou para depois: o gesto existia na tela, e nada
+ * era gravado. Mesmo read-modify-write por etag de todo o resto do índice.
+ */
+export async function registrarCorrecaoDaRelacao(
+  correcao: Correcao,
+  voltou: boolean,
+): Promise<void> {
+  await atualizarIndice((i) =>
+    registrarCorrecaoDeRelacao(i, correcao, voltou, new Date().toISOString()),
+  );
 }
 
 /**
@@ -243,6 +258,10 @@ const ROTULO_CORRECAO: Record<string, string> = {
   entidade_recusada: "recusei uma entidade que o agente listou",
   entidade_tipo: "corrigi o tipo proposto para a entidade",
   faltou: "isto foi dito e nenhum átomo cobriu",
+  relacao_tipo: "troquei o tipo da relação entre os dois trechos",
+  relacao_camada: "troquei a camada da relação (forte/sutil)",
+  relacao_motivo: "reescrevi o motivo da relação",
+  relacao_recusada: "apaguei a relação: estes dois trechos não se relacionam",
 };
 
 const corta = (t: string) => (t.length <= TETO_TEXTO ? t : `${t.slice(0, TETO_TEXTO)}…`);
@@ -251,6 +270,12 @@ const corta = (t: string) => (t.length <= TETO_TEXTO ? t : `${t.slice(0, TETO_TE
 export function descreverCorrecao(c: Correcao): string {
   const partes = [`[${c.id}] ${ROTULO_CORRECAO[c.tipo] ?? c.tipo}`];
   if (c.tipo_atomo) partes.push(`tipo do átomo: ${c.tipo_atomo}`);
+  // Correção de relação (slice 5.2) sem os dois trechos não ensina nada:
+  // "COMPLEMENTA virou CONFIRMA" só se julga lendo o par. Cada lado já foi
+  // cortado em `TETO_TEXTO` quando a correção nasceu (`correcaoDeRelacao`).
+  if (c.tipo.startsWith("relacao_") && c.texto_proposto !== "") {
+    partes.push(`o par:\n    ${c.texto_proposto.split("\n").join("\n    ")}`);
+  }
   if (c.antes !== "") partes.push(`veio: "${corta(c.antes)}"`);
   partes.push(c.depois !== "" ? `ficou: "${corta(c.depois)}"` : "ficou: (nada — foi removido)");
   return partes.join("\n  ");

@@ -13,9 +13,11 @@ import { normalizarNome } from "@/lib/texto";
 import {
   apurarCorrecoes,
   indiceVazio,
+  correcaoDeRelacao,
   juntarNoIndice,
   normalizarGestos,
   podarIndice,
+  registrarCorrecaoDeRelacao,
 } from "@/lib/correcoes";
 import type { AtomoConfirmado, EntidadeConfirmada } from "@/lib/correcoes";
 import type {
@@ -24,6 +26,7 @@ import type {
   EntidadeCandidata,
   Extracao,
   Gestos,
+  RelacaoLida,
   TipoAtomo,
   TipoEntidade,
 } from "@/lib/tipos";
@@ -739,5 +742,137 @@ describe("o índice acumula", () => {
   it("dentro do teto, nada é cortado", () => {
     const lista = [correcao("a"), correcao("b")];
     expect(podarIndice(lista, 500)).toHaveLength(2);
+  });
+});
+
+// ─────────────────── a correção de uma relação (slice 5.2) ───────────────────
+
+/**
+ * O gesto de `/confronto` vira correção do agente `confronto`. O que se protege
+ * aqui é que o `antes` seja sempre o que o **agente** gravou — corrigir duas
+ * vezes não pode ensinar contra o meu próprio valor — e que desfazer a minha
+ * correção a tire do índice em vez de deixá-la ensinando o contrário.
+ */
+describe("correcaoDeRelacao", () => {
+  const relacao = (extra: Partial<RelacaoLida> = {}): RelacaoLida => ({
+    novo_id: "n",
+    velho_id: "v",
+    tipo: "COMPLEMENTA",
+    camada: "sutil",
+    origem: "agente",
+    confianca: 0.6,
+    motivo: "aqui: travado; ali: remarcada",
+    modelo: "deepseek/deepseek-v4.1-flash",
+    prompt_version: "confronto-3",
+    criado_em: "",
+    editado_em: "",
+    original: { tipo: "COMPLEMENTA", camada: "sutil", motivo: "aqui: travado; ali: remarcada" },
+    novo: { id: "n", texto: "fiquei travado", tipo: "SENTIMENTO", valido_em: "2026-08-10T20:00:00.000Z", sessao_id: "s1", inicios_s: [30] },
+    velho: { id: "v", texto: "a reunião foi remarcada", tipo: "FATO", valido_em: "2026-08-07T20:00:00.000Z" },
+    ...extra,
+  });
+
+  it("troca de tipo: chave do par, agente confronto, os dois trechos e o que o agente gravou", () => {
+    const { correcao, voltou } = correcaoDeRelacao(
+      relacao(),
+      relacao({ tipo: "CONFIRMA", origem: "eu" }),
+      "tipo",
+      EM,
+    );
+    expect(voltou).toBe(false);
+    expect(correcao).toMatchObject({
+      id: "n|v|relacao_tipo",
+      agente: "confronto",
+      tipo: "relacao_tipo",
+      sessao_id: "s1",
+      atomo_id: "n",
+      antes: "COMPLEMENTA",
+      depois: "CONFIRMA",
+      inicios_s: [30],
+      prompt_version: "confronto-3",
+      tocado: true,
+      incorporada_em: null,
+    });
+    expect(correcao.texto_proposto).toContain("mais novo [SENTIMENTO 2026-08-10]: fiquei travado");
+    expect(correcao.texto_proposto).toContain("mais antigo [FATO 2026-08-07]: a reunião foi remarcada");
+    expect(correcao.texto_proposto).toContain("o agente gravou: COMPLEMENTA · sutil");
+  });
+
+  it("o antes é o do agente mesmo quando eu já tinha mexido", () => {
+    const jaMexida = relacao({ tipo: "CONFIRMA", origem: "eu" });
+    const { correcao } = correcaoDeRelacao(jaMexida, relacao({ tipo: "CONTRADIZ" }), "tipo", EM);
+    expect(correcao.antes).toBe("COMPLEMENTA");
+    expect(correcao.depois).toBe("CONTRADIZ");
+  });
+
+  it("voltar ao valor do agente é desfazer a correção", () => {
+    const { voltou } = correcaoDeRelacao(relacao({ camada: "forte" }), relacao(), "camada", EM);
+    expect(voltou).toBe(true);
+  });
+
+  it("apagar leva a relação inteira no antes, e nada no depois", () => {
+    const { correcao, voltou } = correcaoDeRelacao(relacao(), null, "recusar", EM);
+    expect(voltou).toBe(false);
+    expect(correcao.tipo).toBe("relacao_recusada");
+    expect(correcao.antes).toBe("COMPLEMENTA · sutil — aqui: travado; ali: remarcada");
+    expect(correcao.depois).toBe("");
+  });
+
+  it("corta cada trecho do par", () => {
+    const longa = relacao({ novo: { ...relacao().novo, texto: "x".repeat(900) } });
+    const { correcao } = correcaoDeRelacao(longa, relacao({ camada: "forte" }), "camada", EM);
+    expect(correcao.texto_proposto.split("\n")[0].length).toBeLessThan(450);
+  });
+});
+
+describe("registrarCorrecaoDeRelacao", () => {
+  const base = (id: string, extra: Partial<Correcao> = {}): Correcao =>
+    ({
+      id,
+      sessao_id: SESSAO,
+      atomo_id: "n",
+      entidade_chave: null,
+      agente: "confronto",
+      tipo: "relacao_tipo",
+      antes: "COMPLEMENTA",
+      depois: "CONFIRMA",
+      tipo_atomo: null,
+      texto_proposto: "",
+      inicios_s: [],
+      prompt_version: "confronto-3",
+      modelo: "m",
+      tocado: true,
+      em: EM,
+      incorporada_em: null,
+      ...extra,
+    }) as Correcao;
+
+  it("nova entra na frente", () => {
+    const i = registrarCorrecaoDeRelacao(indiceVazio(EM), base("n|v|relacao_tipo"), false, EM);
+    expect(i.correcoes.map((c) => c.id)).toEqual(["n|v|relacao_tipo"]);
+  });
+
+  it("a segunda edição substitui a em aberto, em vez de abrir outra", () => {
+    const um = registrarCorrecaoDeRelacao(indiceVazio(EM), base("n|v|relacao_tipo"), false, EM);
+    const dois = registrarCorrecaoDeRelacao(um, base("n|v|relacao_tipo", { depois: "CONTRADIZ" }), false, EM);
+    expect(dois.correcoes).toHaveLength(1);
+    expect(dois.correcoes[0].depois).toBe("CONTRADIZ");
+  });
+
+  it("voltar ao valor do agente tira a em aberto do índice", () => {
+    const um = registrarCorrecaoDeRelacao(indiceVazio(EM), base("n|v|relacao_tipo"), false, EM);
+    const dois = registrarCorrecaoDeRelacao(um, base("n|v|relacao_tipo", { depois: "COMPLEMENTA" }), true, EM);
+    expect(dois.correcoes).toEqual([]);
+  });
+
+  it("a que já virou emenda não é tocada", () => {
+    const fechada = { ...indiceVazio(EM), correcoes: [base("n|v|relacao_tipo", { incorporada_em: "a3f91c7d" })] };
+    const depois = registrarCorrecaoDeRelacao(fechada, base("n|v|relacao_tipo", { depois: "ATUALIZA" }), false, EM);
+    expect(depois).toBe(fechada);
+  });
+
+  it("voltar sem nada em aberto não escreve", () => {
+    const vazio = indiceVazio(EM);
+    expect(registrarCorrecaoDeRelacao(vazio, base("n|v|relacao_camada"), true, EM)).toBe(vazio);
   });
 });

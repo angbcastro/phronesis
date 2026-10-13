@@ -57,6 +57,11 @@ Contrato resumido (referência rápida, não substitui a leitura):
 (:Atomo)-[:MENCIONA]->(:Entidade)       // 0..n
 (:Atomo)-[:PERFILA { campo }]->(:Entidade)  // campo ∈ contexto|pode_ajudar_com|fizemos_juntos
 (:Atomo)-[:ATUALIZA|:CONTRADIZ|:CONFIRMA|:COMPLEMENTA]->(:Atomo)
+                                        // sempre do mais novo para o mais antigo
+                                        // camada ∈ forte|sutil (ausente = forte)
+                                        // origem ∈ agente|eu ('eu' = congelada)
+                                        // dono = átomo cuja rodada a escreveu (013)
+(:Atomo)-[:CONFRONTO_RECUSADO]->(:Atomo) // recusa minha do par: não propor de novo
 (:Entidade)-[:FUNDIDA_EM]->(:Entidade)  // fusão de duas entidades REAIS
                                         // grafia de STT é item de `aliases`
 (:Entidade)-[:DISTINTA_DE]->(:Entidade) // recusa minha: não propor de novo
@@ -160,7 +165,7 @@ ENRIQUECIMENTO_MODEL      opcional; padrão igual ao da extração
 RETRATO_MODEL             opcional; padrão igual ao do enriquecimento — um para os dois agentes do retrato do "eu"
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
 REDACAO_MODEL             opcional; padrão igual ao da calibração
-CONFRONTO_MODEL           opcional; padrão igual ao da extração
+CONFRONTO_MODEL           opcional; padrão deepseek/deepseek-v4.1-flash, próprio desde a slice 5.2
 CHAT_MODEL                opcional; padrão deepseek/deepseek-v4.1-flash, próprio desde a slice 9
 CHAT_TITULO_MODEL         opcional; padrão igual ao do chat
 EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões

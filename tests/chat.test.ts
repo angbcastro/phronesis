@@ -479,6 +479,23 @@ describe("historico_do_atomo", () => {
     expect(cypher).toContain("ORDER BY valido_em ASC");
   });
 
+  /**
+   * Slice 5.2: a camada sutil é ligação provável, e uma cadeia de prováveis
+   * não é história. O caminho longo só atravessa aresta forte; a sutil entra
+   * um salto, a partir do átomo dado.
+   */
+  it("o caminho longo só atravessa aresta forte, e a sutil anda um salto", async () => {
+    await historicoDoAtomo("a1");
+    const cypher = String(consulta.mock.calls[0][0]);
+    expect(cypher).toContain(
+      "all(r IN relationships(p) WHERE coalesce(r.camada, 'forte') = 'forte')",
+    );
+    expect(cypher).toContain(
+      "OPTIONAL MATCH (raiz)-[s1:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA]-(v:Atomo)",
+    );
+    expect(cypher).toContain("s1.camada = 'sutil'");
+  });
+
   it("átomo que não existe volta com aviso, e não busca aresta nenhuma", async () => {
     const r = await historicoDoAtomo("sumido");
     expect(r.achados).toEqual([]);
@@ -513,8 +530,8 @@ describe("historico_do_atomo", () => {
       [
         /UNWIND \$ids AS x/,
         [
-          { de: "a2", para: "a1", tipo: "ATUALIZA", motivo: "mudou de ideia", confianca: 0.8 },
-          { de: "a2", para: "a1", tipo: "INVENTADA", motivo: "", confianca: 0.9 },
+          { de: "a2", para: "a1", tipo: "ATUALIZA", camada: "forte", motivo: "mudou de ideia", confianca: 0.8 },
+          { de: "a2", para: "a1", tipo: "INVENTADA", camada: "forte", motivo: "", confianca: 0.9 },
         ],
       ],
       [
@@ -532,8 +549,9 @@ describe("historico_do_atomo", () => {
     expect(consulta.mock.calls[1][1]).toEqual({ ids: ["a1", "a2"] });
     // Tipo que não é um dos quatro é descartado em silêncio, como no confronto.
     expect(r.elos).toEqual([
-      { de: "a2", para: "a1", tipo: "ATUALIZA", motivo: "mudou de ideia", confianca: 0.8 },
+      { de: "a2", para: "a1", tipo: "ATUALIZA", camada: "forte", motivo: "mudou de ideia", confianca: 0.8 },
     ]);
+    expect(String(consulta.mock.calls[1][0])).toContain("coalesce(r.camada, 'forte') AS camada");
   });
 });
 
@@ -748,10 +766,21 @@ describe("o texto que a ferramenta devolve", () => {
   it("o histórico separa os trechos das relações", () => {
     const s = respostaDoHistorico({
       achados: [atomo({ id: "a1" }), atomo({ id: "a2" })],
-      elos: [{ de: "a2", para: "a1", tipo: "ATUALIZA", motivo: "mudou", confianca: 0.8 }],
+      elos: [{ de: "a2", para: "a1", tipo: "ATUALIZA", camada: "forte", motivo: "mudou", confianca: 0.8 }],
     });
-    expect(s).toContain("RELAÇÕES (o mais novo → o mais antigo):");
+    expect(s).toContain("RELAÇÕES (o mais novo → o mais antigo;");
     expect(s).toContain("a2 ATUALIZA a1 — mudou");
+  });
+
+  it("a relação sutil vem marcada, para o modelo a dizer como provável", () => {
+    const s = respostaDoHistorico({
+      achados: [atomo({ id: "a1" }), atomo({ id: "a2" })],
+      elos: [
+        { de: "a2", para: "a1", tipo: "COMPLEMENTA", camada: "sutil", motivo: "aqui: x; ali: y", confianca: 0.6 },
+      ],
+    });
+    expect(s).toContain("a2 COMPLEMENTA (sutil) a1 — aqui: x; ali: y");
+    expect(s).toContain('"sutil" é ligação provável');
   });
 });
 
@@ -782,7 +811,7 @@ describe("o mesmo átomo não volta inteiro duas vezes", () => {
     const historico = respostaDoHistorico(
       {
         achados: [atomo({ id: "a1" }), atomo({ id: "a2", texto: "voltei a falar com ela" })],
-        elos: [{ de: "a2", para: "a1", tipo: "ATUALIZA", motivo: "mudou", confianca: 0.8 }],
+        elos: [{ de: "a2", para: "a1", tipo: "ATUALIZA", camada: "forte", motivo: "mudou", confianca: 0.8 }],
       },
       vistos,
     );

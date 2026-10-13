@@ -256,6 +256,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   waitUntil(passadaDeVetores(`confirmar ${id}`));
 
+  // O confronto do que eu acabei de gravar (slice 5.2), de fundo: a resposta
+  // não espera nada. Os átomos já saíram de `gravarAtomos` com vetor, que é o
+  // que a fila do confronto exige. Pela rota, e não chamando `rodarElo` aqui:
+  // o elo leva minutos e se autoencadeia, e esta função tem 60 s. `se_parado`
+  // não abre uma segunda corrente se a fila já estiver andando — ela vai
+  // chegar nestes átomos sozinha.
+  waitUntil(dispararConfronto(req, id));
+
   waitUntil(
     capturarCorrecoes({
       proposta: proposta.valor,
@@ -278,6 +286,23 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     perfila: atomos.reduce((n, a) => n + a.perfila.length, 0),
     rejeitados: proposta.valor.atomos.length - atomos.length,
   });
+}
+
+/**
+ * Chama `POST /api/confronto/rodar?se_parado=1` com o meu cookie — o mesmo
+ * jeito de a fila do confronto se autoencadear. Best-effort: falhar aqui só
+ * adia as relações destes átomos para a batida diária.
+ */
+async function dispararConfronto(req: Request, id: string): Promise<void> {
+  const cookie = req.headers.get("cookie");
+  try {
+    await fetch(new URL("/api/confronto/rodar?se_parado=1", req.url), {
+      method: "POST",
+      headers: cookie ? { cookie } : {},
+    });
+  } catch (e) {
+    console.error(`[confronto] sessão ${id}: não consegui disparar a fila; fica para a batida:`, e);
+  }
 }
 
 /**

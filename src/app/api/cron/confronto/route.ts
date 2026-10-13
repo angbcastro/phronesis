@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
-import { rodarElo } from "@/lib/confronto";
+import { PRAZO_DO_ELO_MS, rodarElo } from "@/lib/confronto";
 import { erroDeInfra } from "@/lib/rotas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-/** Margem antes do teto de execução da função — parar aqui, não morrer no meio de um elo. */
-const ORCAMENTO_MS = 270_000;
+/**
+ * Até quando a batida começa um elo novo. Depois disto, um elo começado já não
+ * teria tempo de chamar o modelo (a chamada pode levar até `TETO_CHAMADA_MS`,
+ * 180 s) — e o que sobrar fica para a próxima batida, para o disparo do
+ * confirmar ou para `POST /api/confronto/rodar`.
+ */
+const COMECA_ELO_ATE_MS = 120_000;
 
 /**
  * A batida do confronto. Disparada pelo cron da Vercel (`vercel.json`),
@@ -15,25 +20,24 @@ const ORCAMENTO_MS = 270_000;
  * $CRON_SECRET` sob `/api/cron/`, autorizada pelo middleware, nunca checada
  * aqui).
  *
- * É a única porta periódica da fatia 5: o confronto nunca roda em tempo real,
- * amarrado à confirmação de um átomo — decisão da entrevista. Processa a fila
- * em elos sequenciais até ela esvaziar ou o orçamento de tempo acabar; o que
- * sobrar fica pendente para a próxima batida ou para
- * `POST /api/confronto/rodar`.
+ * Processa a fila em elos sequenciais. **Todos os elos dividem o mesmo prazo**,
+ * contado do começo da batida (5.2): cada elo agora tem chamadas de até três
+ * minutos, e um prazo por elo deixaria o último passar dos 300 s da função.
  */
 export async function GET() {
   const comeco = Date.now();
+  const ate = comeco + PRAZO_DO_ELO_MS;
   let processados = 0;
-  let lotes = 0;
+  let elos = 0;
 
   try {
-    while (Date.now() - comeco < ORCAMENTO_MS) {
-      const r = await rodarElo();
+    while (Date.now() - comeco < COMECA_ELO_ATE_MS) {
+      const r = await rodarElo(new Date(), ate);
       if (!r) break; // fila vazia
       processados += r.ids.length;
-      lotes++;
+      elos++;
     }
-    return NextResponse.json({ ok: true, processados, lotes });
+    return NextResponse.json({ ok: true, processados, elos });
   } catch (e) {
     return erroDeInfra("cron-confronto", e);
   }

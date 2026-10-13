@@ -560,6 +560,14 @@ export const TIPOS_CORRECAO = [
   "entidade_renomeada",
   "entidade_tipo",
   "faltou",
+  // Slice 5.2: os gestos de `/confronto` sobre uma relação entre dois átomos.
+  // Quatro e não um `relacao_*` genérico pela mesma razão das duas menções: a
+  // chave é `${novo}|${velho}|${tipo}`, e trocar o tipo e depois o motivo do
+  // mesmo par colapsaria num registro só.
+  "relacao_tipo",
+  "relacao_camada",
+  "relacao_motivo",
+  "relacao_recusada",
 ] as const;
 
 export type TipoCorrecao = (typeof TIPOS_CORRECAO)[number];
@@ -1046,6 +1054,11 @@ export interface Extensao {
  * `COMPLEMENTA` acrescenta informação nova e compatível sem mudar nem repetir
  * o que já estava dito — é o meio-termo que faltava entre os três primeiros,
  * que só nomeiam "igual", "oposto" e "substituído".
+ *
+ * **Os mesmos quatro desde a 5.2, mais largos**: `COMPLEMENTA` cobre também o
+ * fato que explica um sentimento e as partes do mesmo episódio; `CONFIRMA` e
+ * `CONTRADIZ`, o que aconteceu cumprindo ou desmentindo um medo, expectativa ou
+ * plano. Tipos novos foram desenhados e adiados (`Specs/slice-5.2.md`).
  */
 export const TIPOS_RELACAO_CONFRONTO = ["ATUALIZA", "CONTRADIZ", "CONFIRMA", "COMPLEMENTA"] as const;
 
@@ -1087,9 +1100,15 @@ export interface EntidadesDoAtomo {
 }
 
 /**
- * Um átomo como o acervo numerado do lote o apresenta — a mesma forma para o
- * que está sendo julgado e para o que serve de candidato, porque no acervo os
- * dois papéis se misturam: um alvo de hoje é candidato do alvo de amanhã.
+ * Um átomo como o juiz do confronto o lê — a mesma forma para o que está sendo
+ * julgado e para o que serve de candidato, porque os papéis se misturam: um
+ * alvo de hoje é candidato do alvo de amanhã.
+ *
+ * **Dado, não id** (slice 5.2): o juiz não lê o grafo, e é isso que o deixa
+ * pronto para julgar, numa fatia futura, um átomo da proposta que ainda não foi
+ * gravado. `sessao_id` e `inicio_s` existem para a ordem do par
+ * (`maisNovo`, confronto.ts): dois átomos da mesma sessão têm o mesmo
+ * `valido_em`, e quem foi dito depois é o mais novo.
  */
 export interface AtomoNoAcervo {
   id: string;
@@ -1097,23 +1116,119 @@ export interface AtomoNoAcervo {
   tipo: TipoAtomo;
   valido_em: string;
   entidades: EntidadesDoAtomo;
+  /** "" quando o átomo não tem sessão — o caso de nenhum átomo gravado hoje. */
+  sessao_id: string;
+  /** O segundo do áudio em que ele começa; `null` quando não há âncora. */
+  inicio_s: number | null;
 }
 
 /**
- * Um átomo mais antigo, candidato a se relacionar com o que está sendo
- * processado — o resultado cru da busca vetorial, antes do agente decidir.
+ * Um átomo candidato a se relacionar com o que está sendo processado — o
+ * resultado cru da busca vetorial, antes do agente decidir. Desde a 5.2 ele
+ * pode ser mais antigo **ou** mais novo que o alvo; quem diz qual é é o código.
  */
 export interface CandidatoDeConfronto extends AtomoNoAcervo {
   similaridade: number;
 }
 
-/** O que o agente decidiu para um candidato — `null` quando decidiu "nenhuma". */
+/**
+ * As duas camadas de uma relação (slice 5.2, migration 013).
+ *
+ * `forte` passa pelo portão da 5.1 — a afirmação comum se escreve com palavras
+ * dos dois trechos. `sutil` é ligação real que pede uma inferência, e o chat a
+ * cita como ligação provável, nunca como fato. Ausente no grafo = `forte`: tudo
+ * o que a 5 e a 5.1 gravaram passou pelo portão.
+ */
+export const CAMADAS_CONFRONTO = ["forte", "sutil"] as const;
+
+export type CamadaConfronto = (typeof CAMADAS_CONFRONTO)[number];
+
+export const ehCamadaConfronto = (v: unknown): v is CamadaConfronto =>
+  typeof v === "string" && (CAMADAS_CONFRONTO as readonly string[]).includes(v);
+
+/**
+ * Quem escreveu a relação por último. `eu` é a relação que eu editei em
+ * `/confronto`, e ela fica **congelada**: o agente nunca a apaga nem a reescreve.
+ * Ausente no grafo = `agente`.
+ */
+export const ORIGENS_RELACAO = ["agente", "eu"] as const;
+
+export type OrigemRelacao = (typeof ORIGENS_RELACAO)[number];
+
+/**
+ * O que o agente decidiu para um par. A direção já vem resolvida pelo código —
+ * `novo_id` é sempre o mais novo dos dois, seja ele o alvo ou o candidato.
+ */
 export interface RelacaoDecidida {
-  candidato_id: string;
+  novo_id: string;
+  velho_id: string;
   tipo: TipoRelacaoConfronto;
+  camada: CamadaConfronto;
   confianca: number;
   motivo: string;
 }
+
+/** Uma relação como a tela do radial a mostra (`GET /api/confronto/atomo/[id]`). */
+export interface RelacaoNoRadial {
+  novo_id: string;
+  velho_id: string;
+  tipo: TipoRelacaoConfronto;
+  camada: CamadaConfronto;
+  origem: OrigemRelacao;
+  confianca: number;
+  motivo: string;
+  modelo: string;
+  prompt_version: string;
+  criado_em: string;
+  /** "" quando eu nunca editei. */
+  editado_em: string;
+}
+
+/**
+ * A relação entre dois átomos, inteira — o que a minha edição precisa para
+ * saber o que mudou e a correção precisa para ensinar (slice 5.2).
+ *
+ * `original` é o que o **agente** gravou, guardado na aresta na minha primeira
+ * edição (`original_*`, migration 013). É o `antes` de toda correção: corrigir
+ * duas vezes a mesma relação continua ensinando contra o que o agente fez, e
+ * não contra o que eu tinha deixado.
+ */
+export interface RelacaoLida extends RelacaoNoRadial {
+  original: { tipo: TipoRelacaoConfronto; camada: CamadaConfronto; motivo: string };
+  novo: {
+    id: string;
+    texto: string;
+    tipo: TipoAtomo;
+    valido_em: string;
+    sessao_id: string;
+    inicios_s: number[];
+  };
+  velho: { id: string; texto: string; tipo: TipoAtomo; valido_em: string };
+}
+
+/** Um átomo como o radial o desenha — o centro ou um vizinho. */
+export interface AtomoNoRadial {
+  id: string;
+  texto: string;
+  tipo: TipoAtomo;
+  valido_em: string;
+  sessao_id: string;
+}
+
+/** O que `GET /api/confronto/atomo/[id]` devolve. */
+export interface RadialDeAtomo {
+  centro: AtomoNoRadial & { estado: EstadoConfronto | null; em: string; motivo_falha: string };
+  vizinhos: AtomoNoRadial[];
+  relacoes: RelacaoNoRadial[];
+}
+
+/** Os gestos da tela sobre uma relação (`POST /api/confronto/relacao`). */
+export const ACOES_NA_RELACAO = ["tipo", "camada", "motivo", "recusar"] as const;
+
+export type AcaoNaRelacao = (typeof ACOES_NA_RELACAO)[number];
+
+export const ehAcaoNaRelacao = (v: unknown): v is AcaoNaRelacao =>
+  typeof v === "string" && (ACOES_NA_RELACAO as readonly string[]).includes(v);
 
 // ─────────────── Slice 6: o chat — a conversa, e o rastro da resposta ───────────────
 
@@ -1272,6 +1387,8 @@ export interface EloDoHistorico {
   de: string;
   para: string;
   tipo: TipoRelacaoConfronto;
+  /** Desde a 5.2. O chat cita a sutil como ligação provável, nunca como fato. */
+  camada: CamadaConfronto;
   motivo: string;
   confianca: number;
 }

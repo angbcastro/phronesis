@@ -108,8 +108,8 @@ export interface Agente {
    * O limiar da base do git, para os agentes que têm um (slice 4.11).
    *
    * São dois, e eles medem coisas diferentes: na resolução, abaixo dele a
-   * menção vai à segunda passada; no confronto (5.1), abaixo dele a relação
-   * `COMPLEMENTA` é descartada em vez de gravada. Ausente em todos os outros,
+   * menção vai à segunda passada; no confronto, abaixo dele a relação
+   * `COMPLEMENTA` forte desce para a camada sutil (5.2 — até lá, era descartada). Ausente em todos os outros,
    * e é essa ausência que faz a tela não desenhar um campo morto.
    */
   limiarPadrao?: number;
@@ -315,15 +315,15 @@ export const AGENTES: readonly Agente[] = [
     versao: PROMPT_VERSION_CONFRONTO,
     rotulo: "confronto",
     papel:
-      "julga um lote de átomos contra os mais antigos parecidos por vetor, com as entidades de cada um à vista, e decide se ATUALIZA, CONTRADIZ, CONFIRMA ou COMPLEMENTA — e grava sozinho",
+      "julga cada átomo contra os cem mais parecidos do grafo inteiro — mais antigos, mais novos e da mesma sessão —, decide se o mais novo ATUALIZA, CONTRADIZ, CONFIRMA ou COMPLEMENTA o mais antigo, em camada forte ou sutil, e grava sozinho; o que eu edito em /confronto fica congelado e vira correção",
     quando: "periodico",
-    gatilho: "cron próprio (`/api/cron/confronto`) e botão \"rodar agora\" em /confronto — nunca em tempo real",
+    gatilho: "cron próprio (`/api/cron/confronto`), botão \"rodar agora\" em /confronto, e de fundo quando eu confirmo uma sessão — nunca no caminho da resposta",
     base: BASE_CONFRONTO,
     padrao: modeloConfronto,
     variavel: "CONFRONTO_MODEL",
     modulo: "src/lib/confronto.ts",
     modeloEditavel: true,
-    envelope: ["relacoes", "novo", "velho"],
+    envelope: ["relacoes", "camada", "confianca"],
     limiarPadrao: LIMIAR_COMPLEMENTA,
   },
   {

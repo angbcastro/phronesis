@@ -92,6 +92,41 @@ beforeEach(() => {
   vi.mocked(gravarEntidades).mockReset().mockResolvedValue(undefined);
   vi.mocked(passadaDeVetores).mockClear();
   vi.mocked(registrarGrafia).mockClear();
+  // O disparo de fundo do confronto (slice 5.2) é um `fetch` para a própria
+  // API; aqui ele só é anotado.
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("{}")));
+});
+
+/**
+ * O confronto do que eu acabei de gravar (slice 5.2): de fundo, pela rota, e
+ * só se a fila não estiver andando — senão cada sessão confirmada durante um
+ * reprocessar abriria mais uma corrente.
+ */
+describe("o confirmar dispara o confronto de fundo", () => {
+  it("chama a fila com o meu cookie e o modo se_parado", async () => {
+    await POST(
+      new Request(`http://localhost/api/sessoes/${SESSAO}/confirmar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", cookie: "sessao=abc" },
+        body: JSON.stringify({
+          aprovados: [{ indice: 0, texto: "t", tipo: "FATO", sobre: "Marina", menciona: [] }],
+          entidades: [{ nome: "Marina", tipo: "Pessoa" }],
+        }),
+      }),
+      ctx,
+    );
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toBe("http://localhost/api/confronto/rodar?se_parado=1");
+    expect(init).toMatchObject({ method: "POST", headers: { cookie: "sessao=abc" } });
+  });
+
+  it("não dispara quando a requisição foi recusada", async () => {
+    await chamar({
+      aprovados: [{ indice: 0, texto: "t", tipo: "FATO", sobre: "ela", menciona: [] }],
+      entidades: [{ nome: "ela", tipo: "Pessoa" }],
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });
 
 /**

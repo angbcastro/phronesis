@@ -20,6 +20,18 @@ laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas)
 (o sistema se cronometra, e encolhe o que mede) e 8.2 (a revisão abre antes de a
 proposta fechar) construídas.**
 
+**A slice 5.2 está construída, e não verificada.** A fatia
+(`Specs/slice-5.2.md`) alarga o confronto (§4.15.3): cada átomo é julgado contra
+os cem mais parecidos do grafo inteiro — mais antigos, mais novos e da mesma
+sessão —, a direção da aresta é decidida pelo código, e toda relação ganha uma
+**camada**, forte ou sutil, que o chat (`chat-7`) lê com ressalva. A tela
+`/confronto` ganhou busca e um radial onde eu corrijo relação por relação; a
+edição congela a relação, apagar vira recusa do par, e cada gesto vira correção
+em `/calibracao`. Migration 013, sem statement. O modelo foi escolhido pela
+comparação de 13/10 (`deepseek/deepseek-v4.1-flash`, agora padrão próprio), e o
+painel de produção não tem override do `confronto` nem do `chat` (conferido no
+mesmo dia). **O que falta:** buildar o commit da 013 e reprocessar tudo.
+
 **A slice 10 está construída, e não verificada.** A fatia
 (`Specs/slice-10.md`) dá ao "eu" um **retrato** no lugar da ficha de quatro
 campos (§4.20): o Agora e uma seção por dimensão da minha vida, no R2, escritos
@@ -425,9 +437,12 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   retrato-dimensoes.ts o agente `retrato-dimensoes` (slice 10): propõe as
                   dimensões, e o `config/retrato-eu.json` por etag. Não importa
                   `retrato.ts` — recebe o prefixo pronto
-  confronto.ts    o agente `confronto` (slice 5): candidatos por vetor entre
-                  átomos, ATUALIZA/CONTRADIZ/CONFIRMA/COMPLEMENTA, e GRAVA —
-                  mesmo padrão do enriquecimento, nunca em tempo real
+  confronto.ts    o agente `confronto` (slice 5, alargado na 5.2): os cem
+                  candidatos por vetor no grafo inteiro, a ordem do par,
+                  ATUALIZA/CONTRADIZ/CONFIRMA/COMPLEMENTA em camada forte ou
+                  sutil, e GRAVA — mesmo padrão do enriquecimento, nunca no
+                  caminho da resposta. Também o radial de `/confronto` e a
+                  minha edição, que congela a relação ou deixa a recusa
   chat.ts         o agente `chat` (slice 6): as quatro ferramentas só-leitura (a
                   terceira, `buscar_entidades`, desde a slice 9; a quarta,
                   `ler_retrato`, desde a 10), o loop com
@@ -528,7 +543,10 @@ public/           manifest.webmanifest, icone.svg, os 4 PNG (192/512, cada um
                   Android oferecer a instalação. `sw.js` não cacheia nada
 db/migrations/    definição canônica do schema
 scripts/          migrate.ts (aplica migrations), smoke.ts (confere externos),
-                  raciocinio.ts (mede como pedir ao modelo para pensar menos)
+                  raciocinio.ts (mede como pedir ao modelo para pensar menos),
+                  comparar-confronto.ts (os mesmos átomos em vários modelos,
+                  lado a lado — o único que importa de `src/`, pelo
+                  gancho-src.mjs; §4.15.3)
 tests/            vitest sobre a lógica pura — nenhuma credencial, nenhuma rede
 ```
 
@@ -778,8 +796,8 @@ painel de `/agentes` (§4.13):
 | `modeloRedacao()` | `redacao-1` | o da calibração |
 | `modeloDuplicatas()` | `duplicatas-2` | `deepseek/deepseek-v4.1-flash` |
 | `modeloEmbedding()` | embedding | `openai/text-embedding-3-small` |
-| `modeloConfronto()` | `confronto-2` | o da extração |
-| `modeloChat()` | `chat-6` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |
+| `modeloConfronto()` | `confronto-3` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 5.2, escolhido pela comparação de 13/10 (§4.15.3) |
+| `modeloChat()` | `chat-7` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |
 | `modeloTituloChat()` | `titulo-chat-1` | o do chat |
 
 A deduplicação de **entidade** chegou na slice 3 e é o `duplicatas-2`. O que
@@ -2823,10 +2841,10 @@ prompt e o modelo que a comandam, e na resolução e no confronto o **limiar**
 | `perfil-1` | `perfil.ts` | sob demanda, em `/entidades` | `PERFIL_MODEL` | `texto` |
 | `duplicatas-2` | `duplicatas.ts` | sob demanda, em `/entidades` | `DUPLICATAS_MODEL` | `mesma`, `explicacao` |
 | embedding (sem prompt) | `embedding.ts` | automático, depois de gravar | `EMBEDDING_MODEL` | — |
-| `confronto-2` | `confronto.ts` | periódico: cron próprio e sob demanda em `/confronto` (slice 5) | `CONFRONTO_MODEL` | `relacoes`, `novo`, `velho` |
+| `confronto-3` | `confronto.ts` | periódico: cron próprio, sob demanda em `/confronto` e de fundo ao confirmar uma sessão (slice 5, 5.2) | `CONFRONTO_MODEL` | `relacoes`, `camada`, `confianca` |
 | `retrato-1` | `retrato.ts` | no lugar do enriquecimento quando a entidade é o "eu": botão em `/entidades` e batida semanal (slice 10) | `RETRATO_MODEL` | — (**vazio com prompt**: os formatos são sufixos fixos no código, §4.20) |
 | `retrato-dimensoes-1` | `retrato-dimensoes.ts` | sob demanda, "pedir nova proposta"; sozinha na primeira rodada do "eu" (slice 10) | `RETRATO_MODEL` | `dimensoes`, `nome`, `o_que_entra` |
-| `chat-6` | `chat.ts` | sob demanda, a cada mensagem na barra de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo`, `buscar_entidades`, `ler_retrato` |
+| `chat-7` | `chat.ts` | sob demanda, a cada mensagem na barra de `/` (slice 6) | `CHAT_MODEL` | `buscar_atomos`, `historico_do_atomo`, `buscar_entidades`, `ler_retrato` |
 | `titulo-chat-1` | `conversas.ts` | sob demanda, uma vez por conversa nova (slice 6) | `CHAT_TITULO_MODEL` | `titulo` |
 
 **O `chat` é o único cujo envelope não são chaves de JSON**, e a diferença é
@@ -3294,7 +3312,7 @@ nome dito **depois** da janela — a janela 1 continua sem saber o nome que só
 aparece no minuto 10, e o conserto é o de sempre: o painel de entidades da
 revisão, num gesto.
 
-### 4.15 Confrontar: relações entre átomos ao longo do tempo (slice 5, calibrada na 5.1)
+### 4.15 Confrontar: relações entre átomos ao longo do tempo (slice 5, calibrada na 5.1, alargada na 5.2)
 
 O pilar "Confrontar" que `Specs/visao.md` sempre descreveu, e que este arquivo
 listava como não existente desde a slice 2: perceber que uma posição mudou.
@@ -3302,18 +3320,24 @@ Nasceu de um pedido de chat/GraphRAG que a entrevista de alinhamento desviou —
 responder "como minha opinião sobre X mudou" pede comparar átomos ao longo do
 tempo, e a peça que faz isso nunca tinha sido construída (`Specs/slice-5.md`).
 
-**Nunca em tempo real.** O agente `confronto` (`src/lib/confronto.ts`) não roda
-quando um átomo é confirmado — só por cron próprio (`GET /api/cron/confronto`,
-separado do `cron/diario`, §10) e sob demanda (`POST /api/confronto/rodar`,
-botão em `/confronto`). É decisão da entrevista: comparar um átomo contra o
-grafo inteiro é trabalho de fundo, não parte do caminho crítico da gravação.
+**Nunca no caminho da resposta.** O agente `confronto` (`src/lib/confronto.ts`)
+roda por cron próprio (`GET /api/cron/confronto`, separado do `cron/diario`,
+§10), sob demanda (`POST /api/confronto/rodar`, botão em `/confronto`) e, desde
+a 5.2, **disparado de fundo quando eu confirmo uma sessão** — em `waitUntil`,
+sem a revisão esperar nada (§4.15.3). É decisão da entrevista: comparar um
+átomo contra o grafo inteiro é trabalho de fundo, não parte do caminho crítico
+da gravação.
 
 **Quatro relações, sempre do mais novo para o mais antigo:**
 
 ```
 (:Atomo mais_novo)-[:ATUALIZA|:CONTRADIZ|:CONFIRMA|:COMPLEMENTA {
-  execucao, motivo, confianca, criado_em, modelo, prompt_version
+  execucao, motivo, confianca, criado_em, modelo, prompt_version,   (011)
+  camada, origem, dono, editado_em,                                 (013)
+  original_tipo, original_camada, original_motivo                   (013)
 }]->(:Atomo mais_antigo)
+
+(:Atomo)-[:CONFRONTO_RECUSADO { em, tipo }]->(:Atomo)               (013)
 ```
 
 `ATUALIZA` substitui a mesma afirmação específica; `CONTRADIZ` se opõe a ela;
@@ -3329,54 +3353,52 @@ próprio agente decide caso a caso se a comparação vale a pena.
 
 **Candidatos, pelo mesmo mecanismo vetorial da 4.5.**
 `db.index.vector.queryNodes('atomo_embedding', …)` a partir do vetor do átomo
-sendo processado, restrito a `valido_em` estritamente anterior (comparação
-lexicográfica de ISO 8601 — átomo sem data nunca é candidato de ninguém) e
-acima de `PISO_CONFRONTO` — ponto de partida igual ao `PISO_VIZINHOS` da
-resolução, mas uma constante própria e independente, porque aqui o texto
-inteiro do candidato entra no prompt e um piso frouxo custa tokens, não só
-ruído. Sem candidato acima do piso, o átomo não vai ao modelo — mesmo
+sendo processado. **Até a 5.2** eram os oito mais parecidos, só com `valido_em`
+estritamente anterior e acima de `PISO_CONFRONTO`; **hoje** são os cem mais
+parecidos do grafo inteiro, mais antigos e mais novos, sem piso — e o código
+decide a direção (§4.15.3). Átomo sem data continua fora: sem data não há como
+dizer quem é o mais novo. Sem candidato, o átomo não vai ao modelo — mesmo
 espírito custo-consciente de `decidir()` em `resolucao.ts`.
 
 **Uma geração, sem precisar casar `execucao`.** Ao contrário da ficha da
 entidade (que sobrescreve um campo e por isso guarda um `_anterior` para
 restaurar), uma relação é uma aresta que só existe se for escrita.
-`gravarRelacoes` apaga **todas** as relações de saída do átomo antes de
+`gravarRelacoes` apaga as arestas **do agente** cujo `dono` é o átomo antes de
 escrever as novas, toda vez que roda — nunca há mais de uma geração viva ao
 mesmo tempo, e o desfazer (`POST /api/confronto/desfazer`) apaga o que existe
-agora, porque "o que existe agora" já é a última geração. Isso também cobre de
+agora, porque "o que existe agora" já é a última geração. (Até a 5.2 a geração
+era "as relações de saída"; desde que o átomo é comparado também com os mais
+novos, a rodada escreve aresta que chega a ele, e quem diz de qual rodada ela é
+é o `dono` — §4.15.3.) Isso também cobre de
 graça uma rodada que morreu entre gravar e marcar `processado`: a tentativa
 seguinte substitui, nunca duplica. `execucao` continua gravado, em cada
 relação e no átomo (`confronto_execucao`) — é rastro de auditoria, não trava.
 
 **A fila é o mesmo mecanismo da 4.12: estado idempotente mais `waitUntil`.**
-Um **lote** por vez (`reivindicarProximosAtomos`, até `ALVOS_POR_LOTE` = 10
-átomos), do `valido_em` mais antigo para o mais novo — processar nessa ordem
-evita avaliar um átomo recente antes de um antigo do qual ele dependeria, e de
-quebra faz os alvos de um lote serem vizinhos no tempo, que é quando eles
-compartilham candidato —, com o mesmo *lease* de retomada de
-`reivindicarProxima`. `POST /api/confronto/rodar` não distingue "começar" de
-"elo seguinte" como `enriquecer` faz — não há passo de escolher o que entra:
-todo POST reivindica um lote pendente e se autoencadeia. O cron corre a mesma
-fila num loop simples, até ela esvaziar ou o orçamento de tempo acabar.
+Um **elo** por vez (`reivindicarProximosAtomos`, até `ALVOS_POR_ELO` = 5
+átomos, julgados em paralelo desde a 5.2), do `valido_em` mais antigo para o
+mais novo, com o mesmo *lease* de retomada de `reivindicarProxima`.
+`POST /api/confronto/rodar` não distingue "começar" de "elo seguinte" como
+`enriquecer` faz — não há passo de escolher o que entra: todo POST reivindica
+os pendentes e se autoencadeia. O cron corre a mesma fila num loop simples, até
+ela esvaziar ou o orçamento de tempo acabar.
 
-**A falha é do lote inteiro** (`marcarFalhaEmLote`), e por escolha: tentar
-salvar individualmente os alvos que vieram no JSON complicaria o parser para
-cobrir um caso que a retentativa já cobre de graça (regra 4). Ela só marca quem
-ainda está `rodando`, então um alvo que já saiu `processado` antes de o lote
-morrer não é rejulgado — e dez linhas com o mesmo motivo em `/confronto` são
-uma falha, não dez.
+**A falha é do alvo** desde a 5.2: cada átomo tem a sua chamada, e um que cai
+sai `falhou` com o motivo na linha enquanto os outros quatro gravam. Só o que
+quebra antes de os alvos se separarem — a busca de candidatos, o Aura fora —
+marca o elo inteiro. `marcarFalhaEmLote` só marca quem ainda está `rodando`.
 
 **Ele escreve sozinho, sem tela de aprovação** — mesmo padrão do agente 4
 (enriquecimento, §4.9/§4.14). A regra 5 do `CLAUDE.md` continua inteira: ela
 fala de átomo e da tela de revisão, e nenhum átomo entra no grafo por aqui — o
 que entra é a relação **entre** átomos já confirmados.
 
-**`/confronto`** (`src/components/Confronto.tsx`) é manutenção mínima, não
-navegação: botão "rodar agora", botão "reprocessar tudo" (dois toques), quantos
-átomos ainda esperam (a tela relê sozinha a cada 4 s enquanto houver fila,
-mesma decisão de `/entidades`), e a lista dos últimos átomos tocados com as
-relações que ganharam e um desfazer por linha. Uma tela de navegar relação por
-relação fica para quando o chat precisar mostrar isso como procedência.
+**`/confronto`** (`src/components/Confronto.tsx`): botão "rodar agora", botão
+"reprocessar tudo" (dois toques), quantos átomos ainda esperam (a tela relê
+sozinha a cada 4 s enquanto houver fila, mesma decisão de `/entidades`), a
+lista dos últimos átomos tocados com quantas relações fortes e sutis cada um
+tem e um desfazer por linha — e, desde a 5.2, a busca por texto e o **radial**
+de um átomo, onde eu corrijo relação por relação (§4.15.3).
 
 Décimo agente do registro (`src/lib/agentes.ts`); no desenho de `/agentes` ele
 é um dos seis do leque que parte do grafo gravado. (Quando esta fatia nasceu, o
@@ -3420,7 +3442,9 @@ justificar ligação: dois dos falsos positivos eram pares em que um lado é
 era um par que **compartilha** duas pessoas e mesmo assim não tem relação — daí
 a regra de que entidade em comum não é motivo estar escrita no prompt.
 
-**O lote com acervo numerado compartilhado** substituiu uma chamada por átomo.
+**O lote com acervo numerado compartilhado** substituiu uma chamada por átomo
+(e foi substituído de volta na 5.2, quando cada átomo passou a ter cem
+candidatos — §4.15.3).
 A medição: numa varredura completa o desenho antigo gastava 39 chamadas e
 mandava 47.322 chars de candidato para 14.431 distintos — o mesmo texto **3,3
 vezes**. Agora cada átomo envolvido entra uma vez só num acervo numerado, e a
@@ -3432,9 +3456,11 @@ antigo era dimensionado para um alvo.
 **O `COMPLEMENTA` ganhou piso de confiança próprio** (`LIMIAR_COMPLEMENTA`,
 0,7), e é o `limiarPadrao` do agente — o mesmo campo que a resolução usa desde
 a 4.11, editável em `/agentes` sem deploy, que é o que uma calibração precisa
-ser. Os outros três tipos não têm piso.
+ser. Os outros três tipos não têm piso. Desde a 5.2, abaixo dele a relação
+**desce para a camada sutil** em vez de ser descartada.
 
-**`POST /api/confronto/reprocessar`** apaga todas as relações e devolve o grafo
+**`POST /api/confronto/reprocessar`** apaga todas as relações **do agente** (as
+que eu editei e as minhas recusas ficam, desde a 5.2) e devolve o grafo
 inteiro à fila. Existe porque trocar o prompt é o trabalho normal desta fatia:
 sem ele, `confronto-2` só alcançaria átomo novo e o gabarito — as relações já
 julgadas à mão — ficaria congelado no prompt que as produziu. É destrutivo e
@@ -3466,6 +3492,124 @@ ajudar — e as duas alavancas de recuperação (afrouxar "mesma pessoa"/"mesmo
 padrão", baixar o limiar) trariam ruído junto. Ligar o átomo órfão à entidade
 certa continua sendo o conserto honesto quando o caso voltar: ele arruma o
 dado, não o prompt.
+
+#### 4.15.3 O horizonte largo, as duas camadas e a minha correção (slice 5.2)
+
+A 5.1 deixou o confronto preciso e estreito, e a estreiteza estava no código,
+não no prompt: oito candidatos por vetor, só contra data **estritamente
+anterior** — e como `valido_em` é o `iniciada_em` da sessão, dois átomos da
+mesma gravação nunca se comparavam; o sentimento e o fato que o explica, ditos
+juntos, nunca chegavam a ser um par. A entrevista de 12/10 pediu o contrário
+sem abrir mão da precisão: sentimentos complementados por fatos, relações entre
+os dias, ligações sutis — e o chat sem citar interpretação como registro
+(`Specs/slice-5.2.md` tem as decisões e o que foi recusado em cada uma).
+
+**Os cem mais parecidos, do grafo inteiro.** `candidatosDeLote` pede
+`K_CANDIDATOS + 1` (o próprio alvo volta no topo), sem piso e **sem filtro de
+data**: o alvo é comparado com o que é mais antigo, com o que é mais novo e com
+o que foi dito na mesma sessão. Ficam de fora, antes de o modelo ver, o par com
+recusa minha, o par com aresta que eu congelei e o par com aresta viva de
+**outra** rodada — um par, um julgamento vivo.
+
+**A direção é do código.** `ehMaisNovo` decide: `valido_em` maior; com o mesmo
+`valido_em` (mesma sessão), quem foi dito depois — `inicios_s[0]`; empate final
+pelo id. O prompt mostra cada candidato já orientado ("mais antigo · 3 dias
+antes", "mais novo · mesma sessão, dito depois" — `distancia`) e pede a relação
+do ponto de vista do mais novo. O parser grava `(mais_novo)-[:TIPO]->(mais_antigo)`
+seja o alvo um ou outro; o modelo nunca escolhe a direção.
+
+**Os mesmos quatro tipos, mais largos.** `COMPLEMENTA` passou a cobrir o fato que
+explica ou contextualiza um sentimento e as partes do mesmo episódio; `CONFIRMA`
+e `CONTRADIZ`, o que aconteceu cumprindo ou desmentindo um medo, expectativa ou
+plano registrado antes. Tipos novos (`EXPLICA`, `MESMO_EPISODIO`, `DESFECHO`,
+`VIRADA`) foram desenhados e adiados — a virada já se compõe de `ATUALIZA` mais
+o fato que a `COMPLEMENTA`.
+
+**Duas camadas.** `forte` é o portão da 5.1: a afirmação comum se escreve com
+palavras dos dois trechos. `sutil` é a ligação real que pede uma inferência — o
+sentimento e o fato que não se citam, a mesma pessoa e o mesmo comportamento
+dela. O sutil **liga e nunca nomeia**: o motivo aponta o que cada trecho diz e
+não dá nome a padrão, traço ou diagnóstico (visão §7). O que a 5.1 descartava
+por "mesma pessoa, mesmo padrão" agora tem para onde ir sem contaminar a
+resposta. Camada inválida ou ausente na resposta do modelo vira sutil; no grafo,
+ausente é forte (tudo o que a 5 e a 5.1 gravaram passou pelo portão).
+
+**Um alvo por chamada, cinco em paralelo, no máximo sete relações.** O acervo
+compartilhado não escala para cem candidatos por alvo. Cada elo julga até
+`ALVOS_POR_ELO` = 5 átomos em paralelo (`processarElo`), e dois alvos do mesmo
+elo que se têm como candidato ficam com o par só no primeiro
+(`repartirPares`). O parser corta em `TETO_RELACOES_POR_ATOMO` = 7, forte
+primeiro e depois por confiança, descontadas as relações que eu já congelei no
+átomo; com o teto já cheio de relações minhas, o átomo nem vai ao modelo. O
+teto de saída é 100 mil tokens, sem segunda tentativa dobrada — a decisão da
+resolução em 30/09 —, e cada chamada leva o prazo do elo (`PRAZO_DO_ELO_MS`).
+
+**Uma geração por `dono`.** A rodada de um átomo agora escreve aresta que chega
+a ele — o par com um átomo mais novo. `dono` (migration 013) é o átomo cuja
+rodada escreveu a aresta; `gravarRelacoes` e `desfazerConfronto` apagam só as
+do agente cujo dono é o alvo, e a escrita confere de novo, no Cypher, que o par
+não ganhou recusa nem aresta de outra rodada enquanto o modelo pensava.
+
+**O disparo ao confirmar.** `POST /api/sessoes/[id]/confirmar`, depois de
+gravar os átomos (que já saem de `gravarAtomos` com vetor), chama
+`POST /api/confronto/rodar?se_parado=1` em `waitUntil`, com o meu cookie.
+`se_parado` só começa uma corrente se nenhum átomo estiver `rodando` com o lease
+em dia (`haEloRodando`) — sem isso, cada sessão confirmada durante um
+reprocessar grande abriria mais uma corrente de cinco chamadas paralelas. A fila
+anda do mais antigo pendente para o mais novo, como sempre: o que eu acabei de
+gravar entra atrás do que já esperava.
+
+**O radial e a minha correção.** Em `/confronto`, tocar num átomo (dos recentes
+ou da busca, `GET /api/confronto/busca`, que é a `buscarAtomos` do chat) abre o
+radial dele (`GET /api/confronto/atomo/:id`, `lerRadial`): o átomo no centro,
+os vizinhos em volta num quadrante por tipo, traço cheio para forte e
+pontilhado para sutil, a seta apontando o mais antigo, e o nó cheio quando a
+relação é minha. Tocar num vizinho recentra; "voltar" refaz o caminho. Tocar no
+rótulo da aresta abre a relação e os gestos (`POST /api/confronto/relacao`,
+`editarRelacao`):
+
+| Gesto | No grafo | Na calibração |
+|---|---|---|
+| trocar tipo | apaga e recria a aresta com as propriedades, `origem: 'eu'` | `relacao_tipo` |
+| trocar camada | `camada`, `origem: 'eu'` | `relacao_camada` |
+| reescrever motivo | `motivo`, `origem: 'eu'` | `relacao_motivo` |
+| apagar (dois toques) | apaga a aresta e cria `CONFRONTO_RECUSADO` | `relacao_recusada` |
+
+A relação editada fica **congelada**: o agente não a apaga nem a reescreve, nem
+na rodada, nem no desfazer, nem no reprocessar. A recusa é do par, e o agente
+nunca mais o propõe. Na primeira edição, a aresta guarda o que o agente tinha
+gravado (`original_*`), e é isso que vai no `antes` da correção — corrigir duas
+vezes a mesma relação continua ensinando contra o agente, não contra o que eu
+tinha deixado. A segunda edição atualiza a correção em aberto em vez de abrir
+outra (`registrarCorrecaoDeRelacao`); voltar ao valor do agente a tira do
+índice; editar depois de a correção já ter virado emenda não gera outra. A
+correção leva os dois trechos e a relação como o agente a gravou
+(`texto_proposto`), e `descreverCorrecao` os mostra ao `calibracao-2` — é a
+"7.2 do confronto" que a slice 7 deixou para depois: o gesto agora existe, e o
+laço já existia.
+
+**A comparação de modelos** (`scripts/comparar-confronto.ts`,
+`pnpm comparar:confronto`) roda o mesmo `decidirAlvo` com cada modelo de
+`COMPARAR_MODELOS`, sobre uma amostra determinística de átomos reais, e escreve
+uma página lado a lado com relações, tempo e tokens. Só lê o grafo. Com o
+`modelo` dado direto, o juiz usa o prompt e o limiar da base e não lê o painel
+— a comparação mede o git, não um override. É o único script que importa de
+`src/`: `scripts/gancho-src.mjs` resolve o `@/` e o import sem extensão, e
+`--experimental-transform-types` cobre o que o node não sabe só apagar.
+
+**A primeira comparação (13/10)**, 15 átomos com cem candidatos cada:
+
+| Modelo | Fortes | Sutis | Tempo médio | Tokens de saída | Falhas |
+|---|---|---|---|---|---|
+| `deepseek/deepseek-v4.1-flash` | 17 | 28 | 54,4 s | 260.681 | 1 (cortado nos 180 s) |
+| `google/gemini-3.8-flash` | 6 | 8 | 26,4 s | 43.940 | 0 |
+| `anthropic/claude-sonnet-5.5` | 13 | 21 | 4,1 s | 5.483 | 0 |
+
+O `deepseek/deepseek-v4-pro` entrou e saiu: o primeiro átomo não voltou em 180 s.
+O escolhido foi o `deepseek-v4.1-flash`, e ele virou `MODELO_CONFRONTO_PADRAO` —
+constante própria, para uma troca de modelo da extração não trocar o confronto,
+o mesmo motivo do chat na slice 9. O preço declarado é o tempo: quase toda a
+saída dele é raciocínio, e um em quinze passou do `TETO_CHAMADA_MS` (§14).
 
 ### 4.16 O chat: perguntar ao grafo (slice 6)
 
@@ -3740,6 +3884,13 @@ pergunta "como minha opinião mudou" quer os dois lados do ponto onde eu parei.
 São duas consultas e não uma (os átomos, depois as arestas entre eles): todo o
 resto do sistema conversa com o Neo4j em escalar e mapa, e é o que mantém
 `linhas<T>` simples.
+
+**Forte até quatro saltos, sutil um só** (slice 5.2, `chat-7`). O caminho longo
+só atravessa aresta de camada forte; a sutil entra quando toca o átomo dado.
+Com até sete relações por átomo, quatro saltos pelas duas camadas trariam
+centenas de trechos — e uma cadeia de ligações prováveis não é história. Cada
+elo volta com a camada, a linha da relação sutil sai marcada `(sutil)`, e o
+prompt manda dizê-la como "parece ligado a", nunca afirmá-la.
 
 **Átomo sem vizinho devolve um aviso, não uma lista de um item.** Um item só não
 é "não mudou": é "a varredura do confronto ainda não passou por aqui", e as duas
@@ -5678,6 +5829,48 @@ muda:
              arquivada_em, mensagens_key })                              (012)
 ```
 
+### 8.7 As duas camadas, a minha edição e a recusa (migration 013)
+
+Slice 5.2. Sem statement, como a 011: propriedade de relação e relação nova não
+se declaram no Aura Free, e não há índice novo — a busca de candidatos é a mesma
+`atomo_embedding` (006). `:Atomo` não ganha nada.
+
+As quatro relações de confronto ganham:
+
+```
+camada      'forte' | 'sutil'       ausente = forte (tudo o que a 5 e a 5.1 gravaram)
+origem      'agente' | 'eu'         ausente = agente; 'eu' = congelada — o agente
+                                    não a apaga nem reescreve, em nenhum caminho
+dono        id do átomo cuja rodada escreveu a aresta
+                                    ausente = o átomo de onde ela sai
+editado_em  ISO 8601                ausente = nunca editei
+original_tipo, original_camada, original_motivo
+            o que o agente gravou, guardado na minha primeira edição — é o
+            `antes` da correção que vai para /calibracao
+```
+
+E uma relação nova, a recusa do par — tipo próprio para nenhum leitor que casa
+as quatro a enxergar por engano, mesmo espírito do `DISTINTA_DE`:
+
+```
+(:Atomo)-[:CONFRONTO_RECUSADO { em, tipo }]->(:Atomo)                   (013)
+```
+
+`dono` é o que mantém "uma geração" verdadeira (§4.15.3): desde que o átomo é
+comparado também com os mais novos, a rodada dele escreve aresta que **chega**
+a ele, e "apagar as de saída" deixaria de apagar o que ela escreveu.
+
+Contrato completo depois desta migration:
+
+```
+(:Atomo mais_novo)-[:ATUALIZA|:CONTRADIZ|:CONFIRMA|:COMPLEMENTA
+  { execucao, motivo, confianca, criado_em, modelo, prompt_version,     (011)
+    camada, origem, dono, editado_em,                                   (013)
+    original_tipo, original_camada, original_motivo }]->(:Atomo mais_antigo)
+
+(:Atomo)-[:CONFRONTO_RECUSADO { em, tipo }]->(:Atomo)                   (013)
+```
+
 
 ## 9. Layout do R2
 
@@ -5834,14 +6027,17 @@ sessão de teste que foi mal não pode sumir para melhorar a média (§4.17).
 | `DELETE /api/conversas/:id` | apaga de vez — o objeto no R2 **e** o nó | a **única deleção de verdade** do sistema, e a exceção declarada à regra 6 (§4.16.5, migration 012). R2 antes do nó, sempre |
 | `GET /api/agentes` | `{agentes, telas, atualizado_em}` — os doze com o que está em vigor, mais **as duas telas** do fluxo (`/agentes` e `/agentes/consulta` escolhem a sua por `fluxo`) | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
 | `POST /api/agentes/:id` | `{prompt?, modelo?}` — o que passa a valer | o **único** lugar que escreve configuração de agente; `null` revoga o campo e volta à base; recusa prompt que quebre o envelope e id de modelo fora do formato |
-| `GET /api/confronto` | quantos átomos esperam, e os últimos que a varredura tocou | só leitura; alimenta a tela `/confronto` |
-| `POST /api/confronto/rodar` | reivindica um átomo pendente e roda; se autoencadeia em `waitUntil` até a fila esvaziar | mesmo cookie repassado do elo de enriquecimento; sem distinção entre "começar" e "elo seguinte" — não há passo de escolher o que entra |
-| `POST /api/confronto/desfazer` | `{atomo_id}` — apaga as relações de saída daquele átomo e limpa o estado | uma **troca** para "nunca tentado", não uma restauração de conteúdo; 400 quando o átomo nunca foi tocado |
-| `POST /api/confronto/reprocessar` | apaga **todas** as relações de confronto e devolve o grafo inteiro à fila (5.1) | é como um prompt novo alcança o que já foi julgado. Não roda a fila — a tela chama `rodar` em seguida; destrutivo e sem desfazer, por isso dois toques na tela |
+| `GET /api/confronto` | quantos átomos esperam, e os últimos que a varredura tocou, com quantas relações fortes e sutis cada um tem | só leitura; alimenta a tela `/confronto` |
+| `POST /api/confronto/rodar` | reivindica até cinco átomos pendentes e os julga em paralelo; se autoencadeia em `waitUntil` até a fila esvaziar. `?se_parado=1` (o disparo do confirmar, 5.2) só começa se nenhum elo estiver rodando | mesmo cookie repassado do elo de enriquecimento; sem distinção entre "começar" e "elo seguinte" — não há passo de escolher o que entra |
+| `POST /api/confronto/desfazer` | `{atomo_id}` — apaga as relações que a rodada daquele átomo escreveu (as do agente cujo `dono` é ele) e limpa o estado | uma **troca** para "nunca tentado", não uma restauração de conteúdo; as que eu editei ficam; 400 quando o átomo nunca foi tocado |
+| `POST /api/confronto/reprocessar` | apaga todas as relações **do agente** e devolve o grafo inteiro à fila (5.1; as minhas e as recusas ficam desde a 5.2) | é como um prompt novo alcança o que já foi julgado. Não roda a fila — a tela chama `rodar` em seguida; destrutivo e sem desfazer, por isso dois toques na tela |
+| `GET /api/confronto/atomo/:id` | o radial (5.2): o átomo, todas as relações dele nas duas direções, e os vizinhos ativos | só leitura; 404 quando o átomo não existe |
+| `POST /api/confronto/relacao` | `{novo_id, velho_id, acao, valor}`, `acao ∈ tipo\|camada\|motivo\|recusar` — a minha edição: congela a relação (`origem: 'eu'`) ou a apaga deixando `CONFRONTO_RECUSADO`; a correção vai ao índice de calibração em `waitUntil` | 400 para tipo, camada ou motivo inválidos e para relação que não existe mais; apagar não tem desfazer, e é a tela que pede dois toques |
+| `GET /api/confronto/busca?q=` | a `buscarAtomos` do chat por texto, os doze mais parecidos — para achar o átomo cujo radial abrir | só leitura |
 | `POST /api/auth/link` | pede o magic link, e o Resend entrega | resposta idêntica nos três caminhos em produção — e-mail errado, entregue, falhou (§7). Fora de produção o link volta no corpo |
 | `GET /api/auth/entrar?token=` | troca o link pelo cookie | |
 | `GET /api/cron/diario` | o dump do grafo para o R2, a consulta que mantém a Aura acordada, e o resumo mensal das medidas | **não abre com cookie**: entra pelo header `Authorization: Bearer $CRON_SECRET`, conferido no middleware e só sob `/api/cron/` (§7). Uma vez por dia — é o que o Hobby dá, e é o que uma janela de 72 h pede |
-| `GET /api/cron/confronto` | a batida diária do confronto — processa a fila em loop até esvaziar ou o orçamento de tempo acabar | mesma credencial de cron; horário próprio, separado do `/cron/diario` (`vercel.json`) |
+| `GET /api/cron/confronto` | a batida diária do confronto — processa a fila em elos sequenciais, começando elo novo só nos primeiros 120 s; todos dividem o prazo contado do começo da batida (5.2) | mesma credencial de cron; horário próprio, separado do `/cron/diario` (`vercel.json`) |
 | `GET /api/cron/enriquecimento` | a batida semanal (segunda, 07:00 UTC): enfileira as canônicas com novidade, responde na hora e anda a fila em `waitUntil`; `?continuacao=1` só processa | mesma credencial de cron, e é ela que a rota repassa quando chama a si mesma (§4.9, §7) |
 
 Todas com `runtime = "nodejs"`. `GET /api/sessoes`, `POST /api/sessoes`,
@@ -5926,7 +6122,7 @@ número não vai bater com a tela.
 | `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
 | `/agentes` | `Agentes` | **o que entra**: a espinha do áudio ao grafo — STT, extração (com resolução e desempate rodando dentro dela), a revisão e o leque dos sete que partem do grafo gravado. Clicar num agente abre o prompt, o modelo e (na resolução e no confronto) o limiar |
 | `/agentes/consulta` | `Agentes` | **o que sai**: pergunta, chat, resposta, título, conversa. Mesma gaveta de edição; nada nesta tela escreve no grafo |
-| `/confronto` | `Confronto` | quantos átomos esperam a varredura, o botão "rodar agora", e os últimos átomos tocados com as relações que ganharam e o desfazer por linha (slice 5) |
+| `/confronto` | `Confronto` | quantos átomos esperam a varredura, o botão "rodar agora", a busca, os últimos átomos tocados com o desfazer por linha (slice 5) — e o radial de um átomo, onde eu corrijo relação por relação (slice 5.2, §4.15.3) |
 | `/entrar` | página de login | pede o e-mail permitido |
 
 **Clicar na sessão leva sempre para onde ainda há o que fazer.** Proposta
@@ -6615,7 +6811,7 @@ PERFIL_MODEL              opcional; padrão igual ao da extração
 ENRIQUECIMENTO_MODEL      opcional; padrão igual ao da extração
 RETRATO_MODEL             opcional; padrão igual ao do enriquecimento — um para os dois agentes do retrato do "eu", porque o cache do provedor é por modelo (§4.20)
 CALIBRACAO_MODEL          opcional; padrão igual ao da extração
-CONFRONTO_MODEL           opcional; padrão igual ao da extração
+CONFRONTO_MODEL           opcional; padrão deepseek/deepseek-v4.1-flash, próprio desde a slice 5.2
 CHAT_MODEL                opcional; padrão deepseek/deepseek-v4.1-flash, próprio desde a slice 9 — é quem precisa de tool-calling multi-passo
 CHAT_TITULO_MODEL         opcional; padrão igual ao do chat
 EMBEDDING_MODEL           opcional; padrão openai/text-embedding-3-small — TEM que ser de 1536 dimensões
@@ -6871,6 +7067,15 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
   trocar o sujeito viram correção (critério 1); que dois renomes na mesma sessão
   não colapsam num id só (critério 2); e que canonização **não** produz correção
   nenhuma (critério 3), que é o teste que impede o corpus de nascer envenenado.
+  Desde a 5.2, também a correção de relação: o `antes` é sempre o do agente, a
+  segunda edição substitui a em aberto, e voltar ao valor do agente a tira.
+- `tests/confronto.test.ts` — o que impede uma resposta ruim de virar relação
+  (número fora da lista, tipo inventado, camada inválida virando sutil, o teto de
+  sete, `COMPLEMENTA` forte abaixo do limiar descendo para sutil) e o que a 5.2
+  trouxe: **a direção decidida pelo código** quando o candidato é mais novo que
+  o alvo, o `dono` na gravação e no desfazer, a recusa e a aresta congelada fora
+  dos candidatos, a falha por alvo, e a minha edição congelando e guardando o
+  original só na primeira vez.
 - `tests/chat.test.ts` — o que erraria **calado** na slice 6, que é quase tudo o
   que ela tem: o período comparando data com data (sem `left(valido_em, 10)` um
   `<= '2026-08-31'` exclui o próprio dia 31), o átomo sem data saindo de qualquer
@@ -7648,52 +7853,77 @@ Não há chave de provedor (`OPENAI_API_KEY`, `XAI_API_KEY`, `STT_API_KEY`,
 - `scripts/smoke.ts` roda solto no node e não importa de `src/`, então repete o
   id de modelo padrão. O teste "o smoke usa o mesmo modelo padrão que a lib"
   existe para as duas cópias não divergirem.
-- **`PISO_CONFRONTO` está medido como inerte** (slice 5.1), e continua lá: o par
-  menos parecido das 21 primeiras relações tinha 0,728, contra um piso de 0,45.
-  Quem seleciona é o top-`K_CANDIDATOS` do índice; o piso só pegaria se subisse
-  a ponto de cortar `CONTRADIZ` boa junto. Mantido como rede, não como
-  calibração.
-- **O piso do `COMPLEMENTA` (0,7) sobreviveu à primeira rodada e ficou** (slice
-  5.1). Ele mora em `/agentes`, e é ali que se ajusta. São **dois números de
-  calibração no mesmo agente**, um em código (similaridade) e um no painel
-  (confiança).
-- **O confronto perde ligação verdadeira de propósito** (§4.15.2): ele está
-  calibrado para precisão, e a segunda rodada custou oito relações aprovadas
-  para consertar cinco erradas. A decisão é essa mesma — falso positivo
-  contamina resposta, falso negativo só deixa de ajudar.
+- **O confronto não tem mais piso de similaridade** (slice 5.2): `PISO_CONFRONTO`
+  foi medido inerte na 5.1 (o par menos parecido das 21 primeiras relações tinha
+  0,728) e saiu quando os candidatos passaram a ser cem. O corte é o ranking do
+  índice e mais nada.
+- **O piso do `COMPLEMENTA` (0,7) ficou, e mudou de efeito** (slice 5.1, 5.2):
+  abaixo dele a relação forte desce para sutil, em vez de sumir. Mora em
+  `/agentes`, e é ali que se ajusta.
+- **A camada forte continua calibrada para precisão** (§4.15.2); a cobertura
+  que a 5.1 cortou foi para a camada **sutil**, rotulada (§4.15.3). O preço que
+  sobra é que a camada sutil é, por definição, a que mais erra — o que a segura
+  é o rótulo no chat e a minha correção no radial, não o prompt.
+- **O custo por átomo multiplicou** (slice 5.2): cem trechos por chamada, uma
+  chamada por átomo, onde a 5.1 dividia uma chamada entre dez. Centavos no
+  deepseek, mas uma varredura completa — o reprocessar — fica mais lenta e mais
+  cara, e cinco chamadas paralelas por elo chegam mais perto do rate limit da
+  conta.
+- **O teto de sete é da rodada do átomo** (slice 5.2): as arestas que rodadas
+  de outros átomos apontam para ele não contam, então um átomo muito citado pode
+  ter mais de sete relações.
+- **Relação congelada nunca é revisitada** (slice 5.2), nem quando o prompt
+  melhora. E **a recusa não tem desfazer na tela**: apagar uma relação é para
+  sempre até eu pedir outra coisa.
+- **Par julgado `NENHUMA` não deixa rastro** (slice 5.2): pode ser julgado de
+  novo quando o outro átomo for alvo, e a leitura é paga duas vezes.
+- **Prompt editado no painel sombreia a base**: um override do `confronto`
+  salvo antes da 5.2 pediria o envelope velho (`novo`/`velho`), e o parser novo
+  não o leria — toda resposta viraria "nenhuma relação". Em 13/10 o painel de
+  produção não tinha override nenhum do `confronto`; o risco volta se um prompt
+  antigo for restaurado de lá.
+- **O modelo do confronto passa do teto de chamada às vezes** (slice 5.2): na
+  comparação de 13/10 o `deepseek-v4.1-flash` levou 54 s em média com cem
+  candidatos, e um átomo em quinze não voltou em 180 s (`TETO_CHAMADA_MS`). Esse
+  átomo sai `falhou` e volta na varredura seguinte — com a mesma entrada, então
+  pode falhar de novo. Se a fila acumular `falhou` por prazo, o conserto é
+  menos candidatos ou outro modelo, não um teto maior: a função tem 300 s.
 - **A regra de referente cobra caro quando o átomo antigo não tem entidade
   ligada**: um `FATO` que diz "uma menina que eu conheci na festa" nunca vai se
   ligar a um átomo que nomeia a pessoa, porque o agente se recusa a presumir. O
   conserto é ligar a entidade ao átomo — dado, não prompt —, e hoje não há tela
   que faça isso num átomo já confirmado.
 - **O custo do confronto cresce com o volume de átomos**: cada um pendente paga
-  uma busca vetorial e, havendo candidato acima do piso, uma fração de chamada
-  de modelo — o lote de 10 dilui, não elimina. Sem teto de quantos processar por
-  rodada além do orçamento de tempo da função: um grafo com anos de histórico
-  leva várias rodadas (cron diário, ou vários toques em "rodar agora") para
-  terminar de cobrir o retroativo.
-- **O acervo compartilhado acopla os alvos de um lote** (slice 5.1): um texto
-  muito longo — uma `HISTORIA` de 2.000 chars — entra uma vez só, que é o ganho,
-  mas o lote inteiro cresce com ele. `ALVOS_POR_LOTE` conta alvos, não
-  caracteres, e não há teto de tamanho.
+  uma busca vetorial e, havendo candidato, uma chamada de modelo. Sem teto de
+  quantos processar por rodada além do orçamento de tempo da função: um grafo
+  com anos de histórico leva várias rodadas (cron diário, o disparo do
+  confirmar, ou vários toques em "rodar agora") para terminar de cobrir o
+  retroativo.
+- **Cem candidatos não têm teto de tamanho** (slice 5.2): `K_CANDIDATOS` conta
+  átomos, não caracteres, e uma vizinhança de `HISTORIA`s longas faz o prompt
+  daquele alvo crescer junto.
 - **`reprocessar` é destrutivo e não tem desfazer** (slice 5.1): apaga as
-  relações de todos os átomos de uma vez. O contrapeso é a varredura
+  relações do agente de todos os átomos de uma vez. O contrapeso é a varredura
   reconstruir, e os dois toques na tela.
-- **Átomo sem `valido_em` nunca é candidato de ninguém** (slice 5): a
-  comparação de data usa string ISO, e string vazia nunca é "anterior" a nada.
-  Ele ainda é processado normalmente — só não entra na lista de candidatos de
-  outro átomo.
-- **Nenhuma segunda passada para relação de baixa confiança.** Desde a 5.1 o
-  número é lido — mas só para **descartar** `COMPLEMENTA` abaixo do limiar, e
-  não para mandar o par a uma segunda leitura como o `desempate-1` faz na
-  resolução. Nos outros três tipos, `confianca` continua sendo só auditoria.
+- **Átomo sem `valido_em` nunca é candidato de ninguém** (slice 5): sem data não
+  há como dizer quem é o mais novo. Ele ainda passa pela fila — e sai sem
+  relação nenhuma, sem ir ao modelo.
+- **Nenhuma segunda passada para relação de baixa confiança.** O número é lido
+  só para rebaixar `COMPLEMENTA` forte abaixo do limiar e para o teto de sete
+  escolher entre as sutis — não para mandar o par a uma segunda leitura como o
+  `desempate-1` faz na resolução.
+- **Duas correntes do confronto podem nascer juntas** (slice 5.2): `se_parado`
+  olha se há átomo `rodando`, e entre um elo e o seguinte há um instante sem
+  ninguém. O preço é pagar em dobro por um tempo, nunca gravar em dobro — o
+  lease separa os alvos.
 - **O chat assume que a slice 5 funciona bem** (slice 6). `historico_do_atomo`
   lê as relações da migration 011, e se a varredura não tiver passado — ou tiver
   passado e descartado o par certo — ele volta sistematicamente com "este átomo
   ainda não tem nenhuma relação de confronto registrada", e perguntas de "como
   mudei de opinião" ficam sem resposta real. Não é bug desta fatia, e o conserto
   não mora nela: é o prompt do confronto, ou ligar o átomo órfão à entidade certa
-  (§4.15.2).
+  (§4.15.2). Desde a 5.2 o confronto cobre bem mais — e o chat passou a depender
+  também de respeitar o rótulo `(sutil)`, que só o prompt dele garante.
 - **O custo cresce com o teto de oito chamadas por pergunta** (slice 6). Uma
   pergunta composta paga até oito idas ao Gateway antes da síntese, mais a
   síntese em si — e, quando o loop para no teto, mais uma. Não há orçamento por

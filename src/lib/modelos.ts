@@ -396,12 +396,21 @@ export function modeloEmbedding(): string {
  * Modelo que decide se dois átomos se relacionam — `ATUALIZA`, `CONTRADIZ`,
  * `CONFIRMA` ou `COMPLEMENTA` (slice 5, agente `confronto`).
  *
- * Mesma família de trabalho da extração e da resolução: ler português e
- * devolver JSON curto. Padrão é a extração, como a maioria dos outros;
- * `CONFRONTO_MODEL` separa sem tocar em código.
+ * **Constante própria desde a slice 5.2, e escolhida por medição.** Até ali o
+ * padrão era o da extração. A comparação de 13/10
+ * (`scripts/comparar-confronto.ts`, 15 átomos reais, cem candidatos cada) pôs
+ * o `deepseek-v4.1-flash` contra o `gemini-3.8-flash` e o `claude-sonnet-5.5`,
+ * e eu escolhi ele depois de ver a página: foi o que mais ligou (17 fortes, 28
+ * sutis, contra 13/21 do sonnet e 6/8 do gemini), ao preço de ser o mais lento
+ * (54 s de média, e um corte nos 180 s de `TETO_CHAMADA_MS`). Fixo aqui para uma troca de
+ * modelo da extração não trocar o confronto num commit que não fala dele — o
+ * mesmo motivo do chat. `CONFRONTO_MODEL` ou o painel de `/agentes` trocam sem
+ * deploy.
  */
+export const MODELO_CONFRONTO_PADRAO = "deepseek/deepseek-v4.1-flash";
+
 export function modeloConfronto(): string {
-  return validarIdDeModelo(process.env.CONFRONTO_MODEL || modeloExtracao());
+  return validarIdDeModelo(process.env.CONFRONTO_MODEL || MODELO_CONFRONTO_PADRAO);
 }
 
 /**

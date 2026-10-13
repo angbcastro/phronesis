@@ -229,6 +229,15 @@ export function idValido(id: string): boolean {
 }
 
 /**
+ * O id de um átomo é `${sessao_id}-${ordem}` (`extracao.ts`). Não vira chave de
+ * R2, mas vai para o Cypher como parâmetro vindo da URL e do corpo das rotas de
+ * `/confronto` (slice 5.2) — e o que não tem o formato não tem por que chegar lá.
+ */
+export function idDeAtomoValido(id: unknown): id is string {
+  return typeof id === "string" && /^[0-9a-z]{8,40}-\d{1,7}$/.test(id);
+}
+
+/**
  * As candidatas que o grafo aponta para um bloco (slice 4.9).
  *
  * **Espelho exato de `chunk_NNN.json`**, e de propósito: a existência do objeto

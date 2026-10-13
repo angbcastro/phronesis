@@ -49,6 +49,10 @@ const ROTULO: Record<TipoCorrecao, string> = {
   entidade_renomeada: "renomeei a entidade",
   entidade_tipo: "troquei o tipo da entidade",
   faltou: "faltou isto",
+  relacao_tipo: "troquei o tipo da relação",
+  relacao_camada: "troquei a camada da relação",
+  relacao_motivo: "reescrevi o motivo da relação",
+  relacao_recusada: "apaguei a relação",
 };
 
 /** O que o redator fez com a seção, dito como eu leria. */

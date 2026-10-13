@@ -24,7 +24,13 @@ vi.mock("@/lib/r2", () => {
   };
 });
 
-import { atualizarIndice, capturarCorrecoes, carregarIndice } from "@/lib/calibracao";
+import {
+  atualizarIndice,
+  capturarCorrecoes,
+  carregarIndice,
+  descreverCorrecao,
+  registrarCorrecaoDaRelacao,
+} from "@/lib/calibracao";
 import { indiceVazio, juntarNoIndice } from "@/lib/correcoes";
 import { ConflitoR2Error, getJson, putJson } from "@/lib/r2";
 import type { Correcao, Extracao, IndiceCalibracao } from "@/lib/tipos";
@@ -239,5 +245,38 @@ describe("capturar as correções de uma revisão", () => {
 
     const registro = putEm("correcoes.json")[0].valor as { correcoes: Correcao[] };
     expect(registro.correcoes[0]).toMatchObject({ tipo: "faltou", inicios_s: [400] });
+  });
+});
+
+// ─────────────────── a correção de relação (slice 5.2) ───────────────────
+
+describe("a correção de relação no laço", () => {
+  const daRelacao = {
+    ...correcao("n|v|relacao_tipo"),
+    agente: "confronto",
+    tipo: "relacao_tipo",
+    antes: "COMPLEMENTA",
+    depois: "CONFIRMA",
+    texto_proposto: "mais novo [SENTIMENTO 2026-08-10]: fiquei travado\nmais antigo [FATO 2026-08-07]: remarcada",
+  } as Correcao;
+
+  it("a descrição leva os dois trechos — sem eles, a troca de tipo não ensina nada", () => {
+    const d = descreverCorrecao(daRelacao);
+    expect(d).toContain("troquei o tipo da relação");
+    expect(d).toContain("o par:");
+    expect(d).toContain("mais novo [SENTIMENTO 2026-08-10]: fiquei travado");
+    expect(d).toContain("mais antigo [FATO 2026-08-07]: remarcada");
+    expect(d).toContain('veio: "COMPLEMENTA"');
+  });
+
+  it("a correção de átomo continua sem o par", () => {
+    expect(descreverCorrecao(correcao("x"))).not.toContain("o par:");
+  });
+
+  it("registrar grava no índice pelo mesmo caminho condicional", async () => {
+    vi.mocked(getJson).mockResolvedValue(null as never);
+    await registrarCorrecaoDaRelacao(daRelacao, false);
+    const gravado = vi.mocked(putJson).mock.calls.at(-1)?.[1] as IndiceCalibracao;
+    expect(gravado.correcoes.map((c) => c.id)).toEqual(["n|v|relacao_tipo"]);
   });
 });

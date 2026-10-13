@@ -1,35 +1,40 @@
 import { NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
-import { rodarElo } from "@/lib/confronto";
+import { haEloRodando, rodarElo } from "@/lib/confronto";
 
 export const runtime = "nodejs";
 
 /**
  * O mesmo teto das rotas que chamam modelo dentro de `waitUntil` (§10 do
- * ARCHITECTURE.md) — a espera de rate limit do Gateway não tem prazo, por
- * decisão da fatia: ninguém está esperando do outro lado da tela.
+ * ARCHITECTURE.md). Cada elo leva o seu prazo (`PRAZO_DO_ELO_MS`) para uma
+ * chamada lenta não comer a função inteira.
  */
 export const maxDuration = 300;
 
 /**
- * POST /api/confronto/rodar — sob demanda.
+ * POST /api/confronto/rodar — sob demanda, e desde a 5.2 também o disparo de
+ * fundo do confirmar.
  *
- * **Sem distinção entre "começar" e "elo seguinte"**, ao contrário de
- * `POST /api/entidades/enriquecer`: lá existe um passo de escolher quais
- * entidades entram na fila; aqui não — todo POST faz a mesma coisa,
- * reivindica o próximo átomo pendente (`confronto_estado` ausente ou
- * `'falhou'`, migration 011) e processa.
+ * **Sem distinção entre "começar" e "elo seguinte"**: todo POST reivindica os
+ * próximos átomos pendentes (`confronto_estado` ausente ou `'falhou'`,
+ * migration 011) e processa.
+ *
+ * **`?se_parado=1`** é o modo do confirmar: só começa se nenhum elo estiver
+ * rodando. Sem ele, cada sessão confirmada durante um reprocessar grande
+ * abriria mais uma corrente de cinco chamadas paralelas. O botão da tela não
+ * manda o parâmetro — tocar "rodar agora" é pedir explicitamente.
  *
  * **Como a fila anda sem janela aberta.** O estado mora no átomo, não no
- * navegador: cada elo reivindica **um** átomo, roda, grava, e chama esta
- * mesma rota de novo em `waitUntil`. Fila vazia, o encadeamento para. Mesmo
- * mecanismo da fila de enriquecimento, que é o da transcrição por blocos.
+ * navegador: cada elo reivindica, roda, grava, e chama esta mesma rota de novo
+ * em `waitUntil`. Fila vazia, o encadeamento para.
  *
- * **O elo se autentica com o meu próprio cookie**, repassado da requisição
- * que o originou: a fila não abre porta nenhuma que já não estivesse aberta,
- * e o middleware continua sendo a porta única.
+ * **O elo se autentica com o meu próprio cookie**, repassado da requisição que
+ * o originou: a fila não abre porta nenhuma que já não estivesse aberta.
  */
 export async function POST(req: Request) {
+  if (new URL(req.url).searchParams.get("se_parado") === "1" && (await haEloRodando())) {
+    return NextResponse.json({ ok: true, ja_rodando: true });
+  }
   waitUntil(processarUmEEncadear(req));
   return NextResponse.json({ ok: true });
 }
@@ -37,7 +42,8 @@ export async function POST(req: Request) {
 /**
  * `new URL(..., req.url)` e não uma variável de ambiente: o endereço certo é
  * o da requisição que está sendo servida, em produção, em preview e em
- * `pnpm dev`.
+ * `pnpm dev`. O elo seguinte nunca leva `se_parado` — ele é a corrente que está
+ * rodando.
  */
 function encadear(req: Request): Promise<unknown> {
   const cookie = req.headers.get("cookie");
@@ -60,7 +66,7 @@ async function processarUmEEncadear(req: Request) {
       return;
     }
   } catch (e) {
-    // Falhar aqui não derruba a fila — `rodarElo` já marca o átomo `falhou`
+    // Falhar aqui não derruba a fila — `rodarElo` já marca os átomos `falhou`
     // por dentro; isto é só o caso de algo quebrar fora dele.
     console.error("[confronto] elo falhou fora do agente:", e);
   }

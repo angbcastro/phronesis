@@ -84,7 +84,7 @@ import {
 } from "./tipos";
 
 /** Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7). */
-export const PROMPT_VERSION_CHAT = "chat-6";
+export const PROMPT_VERSION_CHAT = "chat-7";
 
 export class ChatError extends Error {
   constructor(message: string) {
@@ -156,6 +156,11 @@ export const PISO_BUSCA = 0.45;
  * ilimitado porque `COMPLEMENTA` liga assunto vizinho, e sem teto uma cadeia
  * longa arrastaria meio grafo para dentro de uma resposta.
  *
+ * **Vale só para a camada forte** (slice 5.2). A sutil anda um salto, a partir
+ * do átomo dado: com até sete relações por átomo, quatro saltos pelas duas
+ * camadas trariam centenas de trechos — e uma cadeia de inferências encadeadas
+ * é exatamente o que o chat não pode apresentar como história.
+ *
  * Vai **literal** na consulta: Neo4j não aceita limite de caminho de tamanho
  * variável vindo de parâmetro. Mesmo motivo do tipo de relação em
  * `gravarRelacoes` (confronto.ts), e mesma defesa — o número sai daqui, nunca
@@ -180,7 +185,7 @@ buscar_atomos — procura trechos registrados. Todos os parâmetros são opciona
   entidade   o nome de uma pessoa, projeto, objetivo ou organização.
   tipo       um ou mais de: FATO, OPINIAO, SENTIMENTO, APRENDIZADO, CONQUISTA, DECISAO, HISTORIA, ROTINA.
   desde/ate  datas AAAA-MM-DD.
-historico_do_atomo — dado o id de um trecho, devolve a cadeia de trechos ligados a ele no tempo: o que o atualizou, o que o contradisse, o que o confirmou, o que o complementou. É o que responde "como isso mudou".
+historico_do_atomo — dado o id de um trecho, devolve a cadeia de trechos ligados a ele no tempo: o que o atualizou, o que o contradisse, o que o confirmou, o que o complementou — inclusive o fato que explica um sentimento e o que aconteceu depois de um medo ou plano. É o que responde "como isso mudou" e "depois de quê". Cada relação vem marcada forte ou sutil: forte é ligação que os dois trechos afirmam; sutil é ligação provável, que só aparece juntando os dois.
 buscar_entidades — procura a ficha de pessoas, projetos, objetivos e organizações. Todos os parâmetros são opcionais:
   nome       nome ou apelido; sem casamento exato, devolve as de nome parecido.
   texto      busca por sentido na ficha: "quem entende de contabilidade".
@@ -212,7 +217,8 @@ Sobrou coisa boa de fora? Diga em uma frase o que ficou, com o número que a bus
 Você é um bibliotecário atento, não um coach. Devolve o que está registrado; não dá conselho que ninguém pediu, não anima, não interpreta sentimento além do que o texto diz.
 Português, segunda pessoa ("você"), do jeito que eu falo: direto, sem formalidade.
 Não invente. Nada que não tenha vindo de uma busca entra na resposta. Se o que você achou não responde a pergunta, diga isso em uma frase — é uma resposta melhor que uma inventada.
-Se os trechos se contradizem, é isso que a resposta é: diga que mudou, quando, e para o quê. Não escolha um lado e não esconda o outro.`;
+Se os trechos se contradizem, é isso que a resposta é: diga que mudou, quando, e para o quê. Não escolha um lado e não esconda o outro.
+Relação sutil é ligação provável, não registro. Diga "parece ligado a", "pode ter a ver com" — nunca afirme que um trecho causou ou explica o outro quando a relação entre eles é sutil, e nunca dê nome ao que liga os dois.`;
 
 /**
  * O sistema que de fato vai ao modelo: o prompt (editável em `/agentes`) mais a
@@ -1033,6 +1039,10 @@ export interface ResultadoDeHistorico {
  * entre eles. Uma consulta só devolveria objetos de relação, e todo o resto
  * deste sistema conversa com o Neo4j em escalar e mapa — é o que mantém
  * `linhas<T>` (neo4j.ts) simples.
+ *
+ * **Forte até `PROFUNDIDADE_HISTORICO`, sutil um salto só** (slice 5.2). O
+ * caminho forte não atravessa aresta sutil; a sutil só entra quando toca o
+ * átomo dado. Ausente no grafo = forte, como tudo o que a 5 e a 5.1 gravaram.
  */
 export async function historicoDoAtomo(atomoId: string): Promise<ResultadoDeHistorico> {
   const id = typeof atomoId === "string" ? atomoId.trim() : "";
@@ -1041,9 +1051,14 @@ export async function historicoDoAtomo(atomoId: string): Promise<ResultadoDeHist
   const salto = `*1..${PROFUNDIDADE_HISTORICO}`;
   const linhas = await query<LinhaDeAtomo>(
     `MATCH (raiz:Atomo { id: $id })
-     OPTIONAL MATCH (raiz)-[:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA${salto}]-(o:Atomo)
+     OPTIONAL MATCH p = (raiz)-[:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA${salto}]-(o:Atomo)
      WHERE coalesce(o.status, 'ativo') = 'ativo'
-     WITH collect(DISTINCT o) + collect(DISTINCT raiz) AS todos
+       AND all(r IN relationships(p) WHERE coalesce(r.camada, 'forte') = 'forte')
+     WITH raiz, collect(DISTINCT o) AS fortes
+     OPTIONAL MATCH (raiz)-[s1:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA]-(v:Atomo)
+     WHERE coalesce(v.status, 'ativo') = 'ativo' AND s1.camada = 'sutil'
+     WITH raiz, fortes, collect(DISTINCT v) AS sutis
+     WITH fortes + sutis + [raiz] AS todos
      UNWIND todos AS a
      WITH DISTINCT a${ENTIDADES_DE("a")}
      WITH a, collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
@@ -1075,11 +1090,18 @@ export async function historicoDoAtomo(atomoId: string): Promise<ResultadoDeHist
      MATCH (a:Atomo { id: x })-[r:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA]->(b:Atomo)
      WHERE b.id IN $ids
      RETURN a.id AS de, b.id AS para, type(r) AS tipo,
+            coalesce(r.camada, 'forte') AS camada,
             coalesce(r.motivo, '') AS motivo, coalesce(r.confianca, 0) AS confianca`,
     { ids },
   );
 
-  return { achados, elos: arestas.filter((e) => ehTipoRelacaoConfronto(e.tipo)) };
+  return {
+    achados,
+    elos: arestas
+      .filter((e) => ehTipoRelacaoConfronto(e.tipo))
+      // Camada desconhecida é lida como sutil: na dúvida, a ressalva.
+      .map((e) => ({ ...e, camada: e.camada === "forte" ? "forte" : "sutil" })),
+  };
 }
 
 // ──────────────────────── o loop ────────────────────────
@@ -1143,9 +1165,13 @@ export function respostaDoHistorico(r: ResultadoDeHistorico, vistos?: Set<string
     r.elos.length === 0
       ? (r.aviso ?? "sem relação registrada entre eles.")
       : r.elos
-          .map((e) => `${e.de} ${e.tipo} ${e.para}${e.motivo === "" ? "" : ` — ${e.motivo}`}`)
+          .map(
+            (e) =>
+              `${e.de} ${e.tipo}${e.camada === "sutil" ? " (sutil)" : ""} ${e.para}` +
+              (e.motivo === "" ? "" : ` — ${e.motivo}`),
+          )
           .join("\n");
-  return `${trechos}\n\nRELAÇÕES (o mais novo → o mais antigo):\n${elos}`;
+  return `${trechos}\n\nRELAÇÕES (o mais novo → o mais antigo; "sutil" é ligação provável, não afirmada pelos dois trechos):\n${elos}`;
 }
 
 /** O átomo cortado para o rastro: o (i) mostra uma linha, não o átomo inteiro. */
