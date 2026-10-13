@@ -102,10 +102,13 @@ desenvolvimento, e `pnpm migrate` a saída de emergência contra produção.
 4. Todo passo do pipeline é idempotente, chaveado por `sessao_id` (+ `chunk_index` quando aplicável). Retry não pode duplicar átomo.
 5. Nada é gravado no grafo antes da minha confirmação na tela de revisão.
 6. Deleção é soft: `status = 'rejeitado' | 'arquivado'`. Nunca `DELETE` em átomo.
-   **A única exceção é `:Conversa`** (slice 6): ela não é conhecimento, é a
+   **A primeira exceção é `:Conversa`** (slice 6): ela não é conhecimento, é a
    transcrição de uma pergunta que eu fiz a uma tela, nada do grafo depende dela,
    e o chat tem as duas ações por pedido meu — arquivar congela, apagar apaga o nó
-   e o objeto no R2. Nenhum outro label ganha essa exceção sem eu aprovar.
+   e o objeto no R2. **A segunda é `:Entidade`**, aprovada por mim: o botão
+   "excluir entidade" em `/entidades` faz `DETACH DELETE` no nó, e só quando
+   ela não é sujeito de átomo nenhum — `:SOBRE` é obrigatório, e o caminho
+   para essa é fundir. Nenhum outro label ganha essa exceção sem eu aprovar.
 7. Todo átomo gravado carrega `prompt_version` e `modelo`.
 8. **Todo tráfego de modelo sai pelo Vercel AI Gateway.** Nenhum pacote de provedor nas dependências (`@ai-sdk/openai`, `openai`, `groq-sdk`…), nenhum endpoint de provedor escrito à mão, nenhuma chave de provedor além de `AI_GATEWAY_API_KEY`. Modelo se referencia por string `provedor/modelo`, sempre por `src/lib/modelos.ts` — passar objeto de provedor fura a porta e o Gateway não vê a chamada. `tests/gateway.test.ts` falha quando alguém fura; o conserto é usar a porta, não afrouxar o teste.
 

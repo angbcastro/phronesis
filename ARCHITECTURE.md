@@ -139,7 +139,7 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   rede.ts         retry de conexão: o que dá para repetir sem duplicar efeito
   limite.ts       o rate limit do Gateway: reconhecer e esperar passar
   neo4j.ts        HTTP Query API (nunca driver Bolt)
-  fusao.ts        fundir, renomear, recusar — a escrita de higiene no grafo
+  fusao.ts        fundir, renomear, recusar, excluir — a escrita de higiene no grafo
   duplicatas.ts   quem parece ser a mesma coisa: string + o modelo, só propõem
   sessoes.ts      repositório de :Sessao (criar, buscar, atualizar com guarda,
                   descartar)

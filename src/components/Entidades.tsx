@@ -303,6 +303,16 @@ export function Entidades() {
   const [grafiaNova, setGrafiaNova] = useState<Record<string, string>>({});
   /** A fusão à mão em curso, se houver. */
   const [fusao, setFusao] = useState<Fusao | null>(null);
+  /** Excluir é de dois toques, como o apagar de sessão: o primeiro só arma. */
+  const [armadoExcluir, setArmadoExcluir] = useState<string | null>(null);
+  /**
+   * Por que a exclusão foi recusada. Mora na ficha, e não no aviso do topo: o
+   * aviso fica atrás do véu, e a recusa mais comum — "é sujeito de 4 átomos"
+   * — é justamente a que eu preciso ler para saber o que fazer.
+   */
+  const [recusaExcluir, setRecusaExcluir] = useState<{ chave: string; motivo: string } | null>(
+    null,
+  );
 
   const idBusca = useId();
   const idFusao = useId();
@@ -405,9 +415,12 @@ export function Entidades() {
     linhaTocada.current = botao;
     setFoco(chave);
     setAberta(true);
-    // A fusão e o renomear de uma ficha anterior não atravessam para a próxima.
+    // A fusão, o renomear e o excluir armado de uma ficha anterior não
+    // atravessam para a próxima.
     setFusao(null);
     setEditando(null);
+    setArmadoExcluir(null);
+    setRecusaExcluir(null);
   }
 
   /** O painel sobrevive ao fechar pela duração da transição — ver `foco`. */
@@ -415,6 +428,8 @@ export function Entidades() {
     setAberta(false);
     setFusao(null);
     setEditando(null);
+    setArmadoExcluir(null);
+    setRecusaExcluir(null);
     setTimeout(() => setFoco(null), DURACAO_FICHA_MS);
   }, []);
 
@@ -520,6 +535,35 @@ export function Entidades() {
       setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
       return;
     }
+    void carregar();
+  }
+
+  /**
+   * Apaga o nó de vez (`excluirEntidade`) — sem desfazer, e por isso de dois
+   * toques. Entidade que é sujeito de átomo o servidor recusa, e a recusa
+   * aparece dentro da ficha: diz quantos átomos e manda fundir.
+   */
+  async function excluir(chave: string) {
+    if (armadoExcluir !== chave) {
+      setArmadoExcluir(chave);
+      return;
+    }
+    setArmadoExcluir(null);
+    setOcupado(`${chave}|excluir`);
+    setRecusaExcluir(null);
+    const r = await fetch("/api/entidades/excluir", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chave }),
+    }).catch(() => null);
+    setOcupado(null);
+    if (!r?.ok) {
+      const motivo = r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta";
+      setRecusaExcluir({ chave, motivo });
+      return;
+    }
+    // A ficha fecha: ela mostraria um nó que não existe mais.
+    fechar();
     void carregar();
   }
 
@@ -1433,6 +1477,34 @@ export function Entidades() {
                       </div>
                     </>
                   )}
+                </div>
+
+                {/* Excluir mora depois de fundir, e é o fim da ficha: as duas
+                    não têm volta, e esta não deixa nem a grafia. Quem é sujeito
+                    de átomo não sai por aqui — o servidor recusa e manda fundir. */}
+                <div className="secao excluir">
+                  <p className="aguardando">
+                    apaga a entidade do grafo, sem volta — as menções saem dos átomos, o texto
+                    deles fica. Só sai quem não é o sujeito de nenhum átomo.
+                  </p>
+                  {recusaExcluir?.chave === chave && (
+                    <p className="aviso">{recusaExcluir.motivo}</p>
+                  )}
+                  <div className="acoes-sessao">
+                    <button
+                      className={armadoExcluir === chave ? "reextrair armado" : "reextrair"}
+                      disabled={chave === "eu" || ocupado === `${chave}|excluir`}
+                      title={chave === "eu" ? "o dono do diário não se exclui" : undefined}
+                      onClick={() => void excluir(chave)}
+                      onBlur={() => armadoExcluir === chave && setArmadoExcluir(null)}
+                    >
+                      {ocupado === `${chave}|excluir`
+                        ? "excluindo…"
+                        : armadoExcluir === chave
+                          ? `excluir ${emFoco.nome}? sem volta`
+                          : "excluir entidade"}
+                    </button>
+                  </div>
                 </div>
               </>
             );

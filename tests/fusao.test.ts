@@ -13,6 +13,8 @@ import { query } from "@/lib/neo4j";
 import {
   chaveDoPar,
   criarEntidade,
+  ExclusaoBloqueada,
+  excluirEntidade,
   fundir,
   FusaoError,
   gravarResumo,
@@ -586,5 +588,53 @@ describe("tirar uma grafia à mão", () => {
   it("entidade que não existe é erro", async () => {
     consulta.mockResolvedValue([] as never);
     await expect(removerGrafia("fantasma", "Jean")).rejects.toThrow(/não está no grafo/);
+  });
+});
+
+describe("excluir entidade — a segunda exceção à regra 6", () => {
+  /** A leitura responde `sujeito`; a escrita responde se apagou. */
+  function grafo(sujeito: number, apagou = true) {
+    consulta.mockImplementation(async (statement: string) => {
+      if (statement.includes("count(a) AS sujeito")) return [{ nome: "Nicolle Borsato", sujeito }] as never;
+      if (statement.includes("DETACH DELETE e")) return (apagou ? [{ mencoes: 3, fundidas: 1 }] : []) as never;
+      return [] as never;
+    });
+  }
+
+  it("apaga o nó, as perdedoras de fusão antigas, e devolve quantas menções saíram", async () => {
+    grafo(0);
+    await expect(excluirEntidade("Nicolle Borsato")).resolves.toEqual({
+      nome: "Nicolle Borsato",
+      mencoes: 3,
+      fundidas: 1,
+    });
+    const cypher = todoCypher();
+    expect(cypher).toContain("DETACH DELETE e");
+    expect(cypher).toContain("FOREACH (x IN perdedoras | DETACH DELETE x)");
+  });
+
+  it("sujeito de algum átomo não sai — e a escrita nem é tentada", async () => {
+    grafo(4);
+    const promessa = excluirEntidade("Nicolle Borsato");
+    await expect(promessa).rejects.toBeInstanceOf(ExclusaoBloqueada);
+    await expect(promessa).rejects.toThrow(/sujeito de 4 átomo/);
+    expect(todoCypher()).not.toContain("DETACH DELETE");
+  });
+
+  it("a trava vale também no WHERE da escrita, contra um confirmar no meio do caminho", async () => {
+    grafo(0, false);
+    await expect(excluirEntidade("Nicolle Borsato")).rejects.toBeInstanceOf(ExclusaoBloqueada);
+    expect(todoCypher()).toContain("NOT EXISTS { MATCH (:Atomo)-[:SOBRE]->(e) }");
+  });
+
+  it("o eu não se exclui, e nem chega ao banco", async () => {
+    await expect(excluirEntidade("Eu")).rejects.toBeInstanceOf(FusaoError);
+    expect(consulta).not.toHaveBeenCalled();
+  });
+
+  it("entidade que não existe, ou que já foi fundida, é recusada", async () => {
+    consulta.mockResolvedValue([{ nome: null, sujeito: 0 }] as never);
+    await expect(excluirEntidade("ninguém")).rejects.toThrow(/não está no grafo/);
+    expect(todoCypher()).not.toContain("DETACH DELETE");
   });
 });

@@ -81,7 +81,7 @@ inteiro. `scripts/migrate.ts` conta 0 statement(s) e segue.
 |---|---|---|
 | `sessoes.ts` | `:Sessao` — cria, atualiza com guarda de status, marca `descartada_em` | as rotas de `/api/sessoes` e o pipeline |
 | `atomos.ts` | `:Atomo`, `:Entidade` e `:PERFILA` | **só o confirmar** — nenhum átomo entra antes da revisão (regra 5) |
-| `fusao.ts` | `:Entidade` — funde, renomeia, troca tipo, cria, escreve `resumo`, edita `aliases`, marca `canonico` | as rotas de `/entidades`, com um toque meu em cada uma — e `registrarGrafia`, que o confirmar chama sozinho (§4.14) |
+| `fusao.ts` | `:Entidade` — funde, renomeia, troca tipo, cria, exclui, escreve `resumo`, edita `aliases`, marca `canonico` | as rotas de `/entidades`, com um toque meu em cada uma — e `registrarGrafia`, que o confirmar chama sozinho (§4.14) |
 | `perfil.ts` | `:Entidade` — os três campos de perfil (8.3) | só `POST /api/entidades/perfil`, com um toque meu |
 | `entidades.ts` | `:Entidade` — `embedding`, `embedding_modelo` e `embedding_fonte` (8.4) | `passadaDeVetores()` em `waitUntil`, nos pontos da tabela do §8.4, mais `POST /api/entidades/embutir` para o retrofill; o módulo que lê o catálogo é o mesmo que põe o vetor em dia |
 | `enriquecimento.ts` | `:Entidade` — a ficha inteira, os `_anterior` e o estado da fila (8.3.2) | a fila do agente 4, a batida semanal e o retrato do "eu" (§4.9, §4.20) |
@@ -591,8 +591,8 @@ gasta por simetria.
 razão: a defesa vale para o nó que um deploy antigo criar amanhã, não só para os
 que existem hoje.
 
-**Esta é a única exceção à regra 6 do `CLAUDE.md` em todo o sistema**, e ela é
-deliberada. A regra 6 fala de átomo: "deleção é soft, nunca `DELETE` em átomo".
+**Esta foi a primeira exceção à regra 6 do `CLAUDE.md`**, e ela é deliberada (a
+segunda veio depois, sem migration: a exclusão de entidade, §11). A regra 6 fala de átomo: "deleção é soft, nunca `DELETE` em átomo".
 Conversa não é átomo — não é conhecimento, é a transcrição de uma pergunta que
 eu fiz a uma tela. Nada do grafo depende dela, nenhum átomo perde procedência
 quando ela some, e o pedido da entrevista foi explícito em ter as **duas** ações

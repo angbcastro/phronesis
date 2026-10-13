@@ -496,6 +496,19 @@ fundir, o painel **reaponta para a vencedora**: a perdedora sai da listagem no
 mesmo instante (`status='fundida'`), e uma ficha aberta num nó que sumiu mentiria
 até eu fechá-la.
 
+**Excluir é o fim da ficha, depois de fundir, e é de dois toques** — o primeiro
+arma ("excluir X? sem volta"), como o apagar de sessão. Apaga o nó de vez
+(`excluirEntidade`, `DETACH DELETE`): as `:MENCIONA` e `:PERFILA` saem dos
+átomos sem tocar no texto deles, a `:DISTINTA_DE` vai junto, e as perdedoras de
+fusões antigas também — sem o vencedor, a chave delas ficaria pendurada num nó
+que nenhuma leitura mostra, e o `MERGE` do confirmar reencontraria o morto. Por
+isso **o nome pode voltar**: dito outra vez, aparece na revisão como candidata
+nova. Entidade que é **sujeito** de algum átomo não sai — `:SOBRE` é
+obrigatório —, e a recusa aparece dentro da ficha, e não no aviso do topo, que
+fica atrás do véu: ela diz quantos átomos e manda fundir com a entidade certa.
+O "eu" não tem o botão. É a segunda exceção à regra 6, aprovada no pedido, e não
+pediu migration: nenhum label, propriedade ou valor de `status` mudou.
+
 **A ficha do "eu" é outro painel dentro do mesmo** (slice 10). Tipo, nome,
 canônica, resumo, grafias e fundir continuam lá, porque são do nó; os três campos
 de perfil e o "enriquecer esta" dão lugar a `RetratoDoEu`, que lê

@@ -1,7 +1,7 @@
 /**
  * Escrita de manutenção de entidade: fundir, renomear, trocar tipo, criar,
- * recusar, e — desde a 4.11 — escrever o resumo, editar as grafias e marcar a
- * ficha oficial. É o par de `atomos.ts` — lá o grafo recebe o que a revisão
+ * recusar, excluir, e — desde a 4.11 — escrever o resumo, editar as grafias e
+ * marcar a ficha oficial. É o par de `atomos.ts` — lá o grafo recebe o que a revisão
  * aprovou, aqui ele recebe as correções que eu faço depois, em `/entidades`.
  *
  * **Fundir é criar alias, não apagar** (regra 6). O nó perdedor fica, ganha
@@ -683,4 +683,90 @@ export async function registrarGrafia(
   );
 
   return { criada: true, motivo: "" };
+}
+
+/** A exclusão esbarrou em átomo que tem a entidade como sujeito. Vira 409. */
+export class ExclusaoBloqueada extends FusaoError {
+  constructor(message: string) {
+    super(message);
+    this.name = "ExclusaoBloqueada";
+  }
+}
+
+export interface ResultadoExclusao {
+  nome: string;
+  /** Átomos que perderam a aresta `:MENCIONA` para ela. O texto deles fica. */
+  mencoes: number;
+  /** Perdedoras de fusões antigas, apagadas junto — eram grafias dela. */
+  fundidas: number;
+}
+
+/**
+ * Exclui uma entidade de vez: `DETACH DELETE`, sem volta.
+ *
+ * **É a segunda exceção à regra 6**, aprovada por mim (CLAUDE.md), e tem o
+ * tamanho de uma trava só: **entidade que é sujeito de algum átomo não sai.**
+ * `:SOBRE` é obrigatório, e apagar o nó deixaria átomo sem sujeito — o que o
+ * schema não admite. O caminho para ela é fundir com a entidade certa, que leva
+ * os átomos junto. A trava conta átomo de qualquer status, e não só os ativos:
+ * um átomo arquivado sem sujeito continua sendo um contrato quebrado, só que
+ * invisível.
+ *
+ * O que vai junto:
+ *
+ *   :MENCIONA, :PERFILA   saem do átomo; o texto dele não muda
+ *   :DISTINTA_DE          some — a recusa era sobre um par que deixou de existir
+ *   perdedoras de fusão   apagadas: elas só seguram a chave de uma grafia que
+ *                         apontava para cá, e sem o vencedor a chave ficaria
+ *                         pendurada num nó que nenhuma leitura mostra, e o
+ *                         `MERGE` do confirmar reencontraria o morto em vez de
+ *                         criar o nome de novo
+ *
+ * **O nome pode voltar.** Sem nó nem alias, dito outra vez ele aparece na
+ * revisão como candidata nova, e eu decido de novo.
+ *
+ * O `eu` não sai: é o dono do diário, o sujeito de todo sentimento, e o
+ * retrato mora nele.
+ *
+ * A trava é conferida duas vezes — na leitura, para dizer quantos átomos, e no
+ * `WHERE` da escrita, para que um confirmar no meio do caminho não deixe o
+ * átomo novo sem sujeito.
+ */
+export async function excluirEntidade(chaveOuNome: string): Promise<ResultadoExclusao> {
+  const chave = normalizarNome(chaveOuNome);
+  if (chave === "") throw new FusaoError("excluir exige a entidade");
+  if (chave === "eu") throw new FusaoError(`o "eu" não se exclui — é o dono do diário`);
+
+  const [l] = await query<{ nome: string | null; sujeito: number }>(
+    `OPTIONAL MATCH (e:Entidade { nome_normalizado: $chave })
+     WHERE coalesce(e.status, $ativa) <> $fundida
+     OPTIONAL MATCH (a:Atomo)-[:SOBRE]->(e)
+     RETURN e.nome AS nome, count(a) AS sujeito`,
+    { chave, ativa: STATUS_ENTIDADE_ATIVA, fundida: STATUS_ENTIDADE_FUNDIDA },
+  );
+  if (!l || typeof l.nome !== "string") throw new FusaoError(`"${chaveOuNome}" não está no grafo`);
+  if (l.sujeito > 0) {
+    throw new ExclusaoBloqueada(
+      `"${l.nome}" é o sujeito de ${l.sujeito} átomo(s) — funda com a entidade certa, que leva ` +
+        `os átomos junto`,
+    );
+  }
+
+  const r = await query<{ mencoes: number; fundidas: number }>(
+    `MATCH (e:Entidade { nome_normalizado: $chave })
+     WHERE coalesce(e.status, $ativa) <> $fundida
+       AND NOT EXISTS { MATCH (:Atomo)-[:SOBRE]->(e) }
+     OPTIONAL MATCH (m:Atomo)-[:MENCIONA]->(e)
+     WITH e, count(DISTINCT m) AS mencoes
+     OPTIONAL MATCH (p:Entidade)-[:FUNDIDA_EM]->(e)
+     WITH e, mencoes, collect(p) AS perdedoras
+     FOREACH (x IN perdedoras | DETACH DELETE x)
+     DETACH DELETE e
+     RETURN mencoes, size(perdedoras) AS fundidas`,
+    { chave, ativa: STATUS_ENTIDADE_ATIVA, fundida: STATUS_ENTIDADE_FUNDIDA },
+  );
+  if (r.length === 0) {
+    throw new ExclusaoBloqueada(`"${l.nome}" ganhou um átomo agora há pouco — recarregue e veja`);
+  }
+  return { nome: l.nome, mencoes: r[0].mencoes, fundidas: r[0].fundidas };
 }

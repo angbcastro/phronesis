@@ -29,6 +29,7 @@
 | `POST /api/entidades/renomear` | `{chave, nome}` — grafia velha entra em `aliases` | recusa pronome, como o confirmar; recusa nome que já é grafia de outro nó |
 | `POST /api/entidades/tipo` | `{chave, tipo}` — troca o label | na revisão, o tipo só é editável enquanto a entidade é nova |
 | `POST /api/entidades/criar` | `{nome, tipo}` — semeia um nome antes de falá-lo | cria nó órfão de propósito |
+| `POST /api/entidades/excluir` | `{chave}` — `DETACH DELETE` no nó, e nas perdedoras de fusão que apontavam para ele | a segunda exceção à regra 6. **409 quando ela é sujeito de algum átomo**, de qualquer status — o conserto é fundir; a trava vale também no `WHERE` da escrita. Recusa o "eu". Devolve quantas menções saíram |
 | `POST /api/entidades/perfil` | `{chave, campo, texto}` — grava um dos três campos | o único lugar que escreve perfil; **sem teto** |
 | `POST /api/entidades/resumo` | `{chave, texto}` — grava o retrato de identidade | o único lugar que o escreve; corta em `TETO_RESUMO` (500) no servidor; texto vazio limpa |
 | `POST /api/entidades/aliases` | `{chave, grafia, acao}` — acrescenta ou tira uma grafia | um item por chamada: a lista na tela é a união de duas fontes, e mandá-la de volta gravaria uma na outra. Acrescentar reusa `registrarGrafia`, com as quatro recusas |
@@ -47,7 +48,7 @@
 | `GET /api/chat?conversa_id=` | as mensagens de uma conversa, com o rastro de cada resposta | mora aqui, e não em `/api/conversas/:id`, porque é a leitura do mesmo objeto do R2 que o `POST` escreve |
 | `GET /api/conversas` | a lista, ativas e arquivadas juntas, por `atualizada_em` desc | quem separa é a tela. **Sem `POST`**: conversa nasce da primeira pergunta, não de um botão — assim a lista nunca acumula conversa vazia |
 | `PATCH /api/conversas/:id` | `{arquivada: boolean}` — congela ou descongela | um booleano e não duas rotas: as duas direções são a mesma decisão |
-| `DELETE /api/conversas/:id` | apaga de vez — o objeto no R2 **e** o nó | a **única deleção de verdade** do sistema, e a exceção declarada à regra 6 (§4.16.5, migration 012). R2 antes do nó, sempre |
+| `DELETE /api/conversas/:id` | apaga de vez — o objeto no R2 **e** o nó | uma das **duas deleções de verdade** do sistema, exceção declarada à regra 6 (§4.16.5, migration 012). R2 antes do nó, sempre |
 | `GET /api/agentes` | `{agentes, telas, atualizado_em}` — os quinze com o que está em vigor, mais **as duas telas** do fluxo (`/agentes` e `/agentes/consulta` escolhem a sua por `fluxo`) | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
 | `POST /api/agentes/:id` | `{prompt?, modelo?}` — o que passa a valer | o **único** lugar que escreve configuração de agente; `null` revoga o campo e volta à base; recusa prompt que quebre o envelope e id de modelo fora do formato |
 | `GET /api/confronto` | quantos átomos esperam, e os últimos que a varredura tocou, com quantas relações fortes e sutis cada um tem | só leitura; alimenta a tela `/confronto` |
