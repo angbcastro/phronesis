@@ -3,25 +3,24 @@
 | Rota | Componente | O que mostra |
 |---|---|---|
 | `/` | `Gravacao` + `BotaoGravar` + `Gestao` + `Chat` | o círculo "Como foi seu dia?", uma engrenagem discreta na borda esquerda e a barra do chat no rodapé, centralizada — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo", e nem a engrenagem nem a barra |
-| `/sessao/:id` | `Processando` | o corredor, e desde a 8.2 uma **ponte curta**: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e sai para a revisão no primeiro átomo que existir |
-| `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar — e, desde a 8.2, **crescer** enquanto o fim é extraído, com o confirmar travado e uma linha no rodapé até fechar |
+| `/sessao/:id` | `Processando` | o corredor, uma **ponte curta**: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e sai para a revisão no primeiro átomo que existir |
+| `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar — e **crescer** enquanto o fim é extraído, com o confirmar travado e uma linha no rodapé até fechar |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
 | `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
 | `/entidades` | `Entidades` | o que está no grafo, buscável por nome e por grafia, filtrável por tipo e por "sem resumo", em ordem de mais falada. Cada linha é um nome e uma linha de meta; tocá-la abre a **ficha** num painel de tela cheia — tipo, renomear, canônica, resumo, grafias, os três campos de perfil, o enriquecer/desfazer e **fundir com…**, que funde duas entidades quaisquer à mão. **A ficha do "eu" é o retrato** (slice 10, `RetratoDoEu`): no lugar dos três campos e do enriquecer, o Agora com o "até", uma seção por dimensão com o (i) das fontes, reescrever/desfazer, e a lista de dimensões para editar, com a proposta do agente ao lado. O lote é modo: "enriquecer" acende os checkboxes e uma barra grudada no topo. Enquanto houver fila, relê a cada 4 s e retoma a corrente quando a vê parada (§4.9) |
-| `/calibracao` | `Calibracao` | as regras em vigor (editáveis) e o que eu já corrigi, com o selo do agente, o `antes → depois` e o áudio à mão |
+| `/calibracao` | `Calibracao` | os agentes com material parado; em cada um, o que eu já corrigi — com o `antes → depois` e o áudio à mão —, a pauta de padrões e a emenda, seção por seção |
 | `/agentes` | `Agentes` | **o que entra**: a espinha do áudio ao grafo — STT, extração (com resolução e desempate rodando dentro dela), a revisão e o leque dos sete que partem do grafo gravado. Clicar num agente abre o prompt, o modelo e (na resolução e no confronto) o limiar |
 | `/agentes/consulta` | `Agentes` | **o que sai**: pergunta, chat, resposta, título, conversa. Mesma gaveta de edição; nada nesta tela escreve no grafo |
 | `/confronto` | `Confronto` | quantos átomos esperam a varredura, o botão "rodar agora", a busca, os últimos átomos tocados com o desfazer por linha (slice 5) — e o radial de um átomo, onde eu corrijo relação por relação (slice 5.2, §4.15.3) |
 | `/entrar` | página de login | pede o e-mail permitido |
 
-**Clicar na sessão leva sempre para onde ainda há o que fazer.** Proposta
-esperando abre na revisão; sessão `confirmada` abre no texto literal, que é o
-que sobrou dela; **todo o resto vai para o corredor**, e é ele quem chama
-`/finalizar` na sessão parada. `transcrito` levava ao texto literal e o corredor
-não a empurrava — uma sessão que transcreveu e nunca extraiu (`waitUntil`
-perdido, extração que morreu) ficava sem caminho nenhum até a revisão, com o
-texto no R2 e nenhuma proposta. Ler a transcrição continua a um toque, no botão
-ao lado, que é onde essa porta de serviço deve estar.
+**Clicar na sessão leva sempre para onde ainda há o que fazer** (`destino()`,
+em `Sessoes`). Proposta esperando abre na revisão; sessão `confirmada` abre no
+texto literal, que é o que sobrou dela; **todo o resto vai para o corredor**, e é
+ele quem chama `/finalizar` na sessão parada — inclusive a que transcreveu e
+nunca extraiu (`waitUntil` perdido, extração que morreu), que sem isso ficaria
+sem caminho até a revisão. Ler a transcrição fica a um toque, no botão ao lado,
+que é onde essa porta de serviço deve estar.
 
 O corredor empurra `gravando`, `transcrito` e `erro` — os três estados que
 ficariam parados para sempre —, e não toca em `finalizando`, `transcrevendo` nem
@@ -29,26 +28,23 @@ ficariam parados para sempre —, e não toca em `finalizando`, `transcrevendo` 
 (regra 4: proposta que existe não rechama o modelo) e acontece uma vez por
 visita.
 
-**E ele tem teto desde 18/09.** O laço não tinha nenhum, e a tela só sabia falar
-em falha quando o **status** dizia `erro` — mas sessão cuja função morreu no
-`maxDuration` nunca chega a `erro`: ela fica em `extraindo` no grafo (§5.3), e a
-tela ficava em "lendo o que você disse…" indefinidamente. É o que faz uma trava
-parecer lentidão. Passados `TETO_DA_ESPERA_MS` (6 min) o corredor para de
-perguntar e diz o que aconteceu, apontando o reextrair da lista. O relógio é o da
-**visita**: abrir a sessão de novo recomeça a contagem, que é o que se quer ao
-voltar para conferir.
+**E ele tem teto.** A tela só sabe falar em falha quando o **status** diz
+`erro` — mas sessão cuja função morreu no `maxDuration` nunca chega a `erro`:
+ela fica em `extraindo` no grafo (§5.3), e sem teto a tela ficaria em "lendo o
+que você disse…" indefinidamente. É o que faz uma trava parecer lentidão.
+Passados `TETO_DA_ESPERA_MS` (6 min) o corredor para de perguntar e diz o que
+aconteceu, apontando o reextrair da lista. O relógio é o da **visita**: abrir a
+sessão de novo recomeça a contagem, que é o que se quer ao voltar para conferir.
 
 **Em `/` a porta de serviço inteira é uma engrenagem no meio da borda
 esquerda** — sessões, entidades, agentes, calibração e subir um áudio, num menu
 lateral (`Gestao`).
 Ela fica na altura do círculo, na margem, e **não** no canto superior esquerdo:
 aquele canto é da `Marca`, a volta ao início. Um segundo significado ali faria o
-canto querer dizer duas coisas conforme a tela. Eram
-três controles soltos na tela — o link de importar logo abaixo do círculo e as
-duas portas no rodapé —, e três coisas para ler antes de falar. Virar um
-**aproxima** a tela do "um botão, um timer, um jeito de parar — idealmente nada
-mais" da visão §6, em vez de afastá-la: o que sobra no caminho do olho é o
-círculo.
+canto querer dizer duas coisas conforme a tela. Um controle só, e não três
+soltos na tela antes de falar, **aproxima** a tela do "um botão, um timer, um
+jeito de parar — idealmente nada mais" da visão §6: o que sobra no caminho do
+olho é o círculo.
 
 A gaveta entra pela esquerda em 220 ms na mesma curva das ondas, fecha no véu, no
 `Esc` e ao navegar, e o foco entra nela ao abrir e volta para a engrenagem ao
@@ -63,9 +59,8 @@ slice 5, o chat não é uma rota. Ele mora na própria tela inicial.
 
 #### A barra do chat, e o círculo que minimiza (slice 6)
 
-Uma rota própria e de destaque — `/chat`, ao lado de Gravar/Revisar — foi a
-primeira ideia levada à entrevista, e caiu assim que ficou claro que a
-integração era com a tela de gravar. O que existe é uma barra:
+Uma rota própria e de destaque — `/chat`, ao lado de Gravar/Revisar — foi
+recusada: a integração é com a tela de gravar. O que existe é uma barra:
 
 | estado da tela | o que aparece |
 |---|---|
@@ -73,33 +68,26 @@ integração era com a tela de gravar. O que existe é uma barra:
 | **chat aberto** | o painel toma o centro; o círculo encolhe, sobe para o topo e fica semitransparente — periférico, como a barra era |
 | **gravando** | só círculo, timer, ponto de salvo e "parar". A barra **some inteira**, como a engrenagem |
 
-**Era uma bolha de balão no canto de baixo à direita.** Ela caiu no primeiro uso
-de verdade: um ícone de balão periférico lê como símbolo de suporte, não como
-lugar de perguntar. A barra **não** aceita texto — tocar nela abre o painel e o
-foco vai para o campo de dentro. Um `<input>` no estado fechado que não
-recebesse o que eu digitasse mentiria, então o que está ali é um botão com cara
-de campo.
+**Uma bolha de balão no canto de baixo à direita foi recusada**: um ícone de
+balão periférico lê como símbolo de suporte, não como lugar de perguntar. A
+barra **não** aceita texto — tocar nela abre o painel e o foco vai para o campo
+de dentro. Um `<input>` no estado fechado que não recebesse o que eu digitasse
+mentiria, então o que está ali é um botão com cara de campo.
 
 A barra e o painel são o **mesmo elemento** — uma `<section class="chat">` que
 cresce —, pela mesma razão que o `BotaoGravar` é o mesmo nó do DOM parado e
 gravando: sem isso não há o que transicionar, só um corte.
 
-##### As duas animações, e por que a primeira versão não era uma
+##### As duas animações, nos dois sentidos
 
-Até o primeiro uso isso era só o que o documento dizia. Na prática o componente
-voltava cedo com uma árvore diferente, e o que existia era um `@keyframes` de
-entrada — **sem simétrico nenhum na saída**. Fechar era um corte, e a bola
-minimizando era um pulo. Duas causas, as duas mecânicas:
+A animação mora nas regras **base**, e não em `@keyframes` nem em regra
+condicionada à classe: `@keyframes` não tem volta, e uma transição que more
+**dentro** de `.tela.com-chat` some junto com a classe — o retorno seria um
+corte. E a bola não pode encolher por `--circulo` nem por `justify-content`:
+propriedade personalizada não registrada **não interpola**, e
+`justify-content`, `gap` e `padding` não interpolam nunca.
 
-- **a caixa** tinha a animação em `@keyframes`, que não tem volta, e a transição
-  de opacidade do círculo morava **dentro** da regra `.tela.com-chat` — some
-  junto com a classe, e o retorno é instantâneo por construção;
-- **a bola** mudava `--circulo` de `min(72vw, 264px)` para `84px` e virava
-  `justify-content` de `center` para `flex-start`. Propriedade personalizada não
-  registrada **não interpola**, e `justify-content`, `gap` e `padding` não
-  interpolam nunca.
-
-O que existe agora, e vale nos dois sentidos porque mora nas regras **base**:
+O que existe vale nos dois sentidos:
 
 - **a caixa** transiciona geometria — os quatro `inset`, `max-width`, o raio e a
   opacidade. É por isso que a barra fechada declara um `top` numérico
@@ -132,16 +120,14 @@ pela razão que a seção seguinte explica.
 
 ##### A View Transition, e por que a de CSS continua aí
 
-A transição acima é correta e simétrica, e ainda assim não era fluida. A caixa ia
-do rodapé ao centro interpolando seis propriedades de **layout** — os quatro
-`inset`, o `max-width` e o raio —, recalculadas a cada quadro, com uma lista
-rolável dentro; e a bola e a caixa começavam juntas por coincidência de número
-(320 ms cada), não por construção.
+A transição acima é correta e simétrica, e ainda assim não seria fluida sozinha:
+a caixa vai do rodapé ao centro interpolando seis propriedades de **layout** — os
+quatro `inset`, o `max-width` e o raio —, recalculadas a cada quadro, com uma
+lista rolável dentro.
 
-**Os números abaixo são 384 ms e 216 ms — 20% mais devagar que os 320 ms e
-180 ms da primeira versão, a meu pedido.** O fator é o mesmo nos dois caminhos
-da troca de modo (View Transition e o fallback de CSS) e em `DURACAO_CAIXA`:
-os três precisam continuar lendo como um gesto só.
+**As durações são 384 ms e 216 ms, a meu pedido**, e o fator é o mesmo nos dois
+caminhos da troca de modo (View Transition e o fallback de CSS) e em
+`DURACAO_CAIXA`: os três precisam ler como um gesto só.
 
 Onde o navegador tem a **View Transitions API**, a troca de `chatAberto` passa por
 `src/client/transicao.ts`: o navegador fotografa o antes e o depois e morfa os
@@ -196,21 +182,16 @@ com as mensagens, o campo de texto, e o "parar" no lugar do enviar enquanto o
 agente trabalha.
 
 **Abrir a barra é sempre começar do zero** — conversa nova, campo vazio, foco no
-campo. **A slice 6 decidia o contrário** (abrir a conversa ativa mais recente na
-primeira abertura de cada visita, para "toco de novo e continuo de onde parei"
-ser verdade) e a **8.1 reverteu**: no uso deu o oposto, porque eu abro o chat
-para perguntar uma coisa nova e caía no meio da conversa de ontem, com uma saída
-a mais para dar antes de escrever. A decisão antiga nem se cumpria como
-escrita — ela morava numa `useRef` por montagem do componente, e o `<Chat>` é
-desmontado ao gravar e ao navegar, então "só na primeira abertura" virava "toda
-vez". O que defende a conversa longa fechada sem querer é a lista, a um toque no
-ícone do cabeçalho. Abrir e fechar sem perguntar não grava nada: o nó
-`:Conversa` nasce no `POST /api/chat`, com a primeira pergunta.
+campo: eu abro o chat para perguntar uma coisa nova, e cair no meio da conversa
+de ontem seria uma saída a mais para dar antes de escrever. O que defende a
+conversa longa fechada sem querer é a lista, a um toque no ícone do cabeçalho.
+Abrir e fechar sem perguntar não grava nada: o nó `:Conversa` nasce no
+`POST /api/chat`, com a primeira pergunta.
 
 **O teclado virtual encolhe a caixa do chat por baixo, e só ela** (8.1).
 `.chat.aberto` é `position: fixed`, e fixed se posiciona contra o viewport de
-**layout**, que o teclado do Android não encolhe — a caixa de escrever ficava
-debaixo do teclado e eu digitava sem ver. `Chat.tsx` escuta `visualViewport` e
+**layout**, que o teclado do Android não encolhe — sem isso a caixa de escrever
+ficaria debaixo do teclado. `Chat.tsx` escuta `visualViewport` e
 escreve `--teclado` **no nó da caixa**, e o `bottom` de `.chat.aberto` o soma ao
 recuo seguro. A alternativa era `interactiveWidget: "resizes-content"` no
 `layout.tsx`: uma linha, e consertaria os campos da revisão de brinde. Perdeu no
@@ -235,13 +216,14 @@ os átomos que voltaram, com tipo, data, entidades e similaridade.
 
 | Peça | Onde | O que dá |
 |---|---|---|
-| `public/manifest.webmanifest` | `display: standalone`, `start_url: "/"`, `theme_color: #0d0d0d`, ícone `/icone.svg` | o "adicionar à tela de início", e o app abrindo sem barra |
+| `public/manifest.webmanifest` | `display: standalone`, `start_url: "/"`, `theme_color: #0d0d0d`, `icone.svg` e os quatro PNG (192/512, cada um também `maskable`) | o "adicionar à tela de início", e o app abrindo sem barra |
+| `public/sw.js` + `ServiceWorker` | registrado no layout | o Chrome no Android só monta o app instalado com um service worker que tenha handler de `fetch` |
 | `metadata.manifest` | `layout.tsx` | é o que põe o `<link rel="manifest">` no HTML |
 | `viewport.viewportFit: "cover"` | `layout.tsx` | a tela chega até a borda no iPhone, por baixo do notch |
-| `matcher` do middleware | `src/middleware.ts` | manifest e ícone respondem sem cookie, senão o navegador não os busca (§7) |
+| `matcher` do middleware | `src/middleware.ts` | manifest, ícones e `sw.js` respondem sem cookie, senão o navegador não os busca (§7) |
 
-**Não há service worker, não há cache offline e não há instalação promovida.**
-Gravar sem rede não funciona: o `getUserMedia` até abre, mas o bloco não sobe e
+**O service worker não cacheia nada, e não há instalação promovida.** Gravar sem
+rede não funciona: o `getUserMedia` até abre, mas o bloco não sobe e
 `Processando` não fecha a sessão. O que protege a fala nesse caso é o IndexedDB
 (§3.2), que segura o bloco até a rede voltar — proteção da fila, não do app.
 Quem lê "PWA" em `CLAUDE.md` e espera funcionar no avião vai encontrar menos do
@@ -255,11 +237,10 @@ de celular.
 
 ### 11.1 O botão de gravar
 
-`BotaoGravar` é **um nó do DOM só**, parado e gravando. Antes eram duas árvores
-diferentes — a de gravar trocava a tela inteira pelo timer — e por isso não
-havia o que transicionar entre elas, só um corte. Agora o círculo permanece e o
-que muda é o que o cerca: parado, as portas de serviço;
-gravando, o timer, o "salvo" e o "parar".
+`BotaoGravar` é **um nó do DOM só**, parado e gravando — sem isso não haveria o
+que transicionar entre os dois estados, só um corte. O círculo permanece, e o que
+muda é o que o cerca: parado, as portas de serviço; gravando, o timer, o "salvo"
+e o "parar".
 
 O palco é um grid de uma célula com tudo empilhado (`.palco > * { grid-area: 1/1 }`):
 
@@ -289,24 +270,13 @@ dizer que a escala do disco não é o que se vê: o que se vê é a largura do a
 que sobra para fora do botão, e ela só existe acima de `scale(1)`. Abaixo disso
 o disco está inteiro escondido, e a animação continua rodando sem pintar nada.
 
-Foi o defeito que a respiração teve entre os commits `659073e` e este. O pedido
-de então era 30% menos área no fundo e 30% mais no topo; a conversão por área
-(√0,7 e √1,3, porque área cresce com o quadrado da escala) deu `scale(0,837) →
-scale(1,181)` e estava certa na aritmética. Só que ela foi aplicada à área do
-**disco**, e o que a pessoa vê é a área do **anel**. Resultado medido na régua
-do próprio keyframe: **47% de cada meia-volta acontecia com o disco invisível**,
-e a `ease-in-out` — que espalha a fase lenta pelo intervalo inteiro — gastava
-justamente a parte devagar lá dentro, atravessando depressa a faixa visível. O
-`box-shadow` (24 px → 42 px) saiu de fase junto: metade do crescimento do glow
-já tinha acontecido quando o disco assomava. Não respirava, piscava.
-
-O conserto é o piso: `--respiracao-min: 1` põe o fundo do ciclo exatamente onde
-o anel tem largura zero, e o ciclo inteiro passa a ser faixa visível. A amplitude
-que era invisível virou amplitude de verdade, `1 → 1,2`, e o ciclo alongou para
-~7 s para caber nela sem pressa. **O botão encolheu junto**, de 264 px para
-220 px: no auge a respiração chega a 264 px, que é o tamanho que o círculo tinha
-parado antes — o gesto ocupa o mesmo espaço de tela, e é o círculo em repouso que
-ficou menor.
+Por isso o piso é 1: `--respiracao-min: 1` põe o fundo do ciclo exatamente onde
+o anel tem largura zero, e o ciclo inteiro é faixa visível. Uma escala abaixo de
+1 gastaria parte de cada meia-volta com o disco invisível — e a `ease-in-out`,
+que espalha a fase lenta pelo intervalo inteiro, gastaria justamente a parte
+devagar lá dentro, atravessando depressa a faixa visível, com o `box-shadow`
+fora de fase: não respiraria, piscaria. A amplitude é `1 → 1,2`, num ciclo de
+~7 s; no auge a respiração chega a 264 px.
 
 **O `72vw` continua sendo guarda, e não tamanho.** Num aparelho de 320 px é ele
 quem impede o círculo de encostar nas bordas; lá o alvo de 220 px não é
@@ -327,29 +297,24 @@ a cor do sistema saem dele:
 | `--respiracao-rpm` | `8.6` | ciclos inteiros por minuto (8,6 ≈ 7 s) |
 | `--circulo-tamanho` / `--circulo-guarda` | `220px` / `72vw` | o alvo, e o teto em aparelho estreito |
 
-`--glow` e `--circulo` deixaram de ser valores e viraram derivados: o primeiro é
-`color-mix()` de `--acento` com `--halo-intensidade`, o segundo é o `min()` dos
-dois últimos. O glow era o **único** ponto do CSS onde o terracota estava escrito
-duas vezes (`rgba(214, 90, 49, .55)`), e com ele derivado trocar `--acento` leva
-o halo junto.
+`--glow` e `--circulo` são derivados: o primeiro é `color-mix()` de `--acento`
+com `--halo-intensidade`, o segundo é o `min()` dos dois últimos. Com o glow
+derivado, trocar `--acento` leva o halo junto.
 
 A duração sai do rpm por `calc(30s / var(--respiracao-rpm))` — 30 s e não 60 s
 porque `alternate` faz um ciclo inteiro valer duas durações. A folga vertical do
-`.palco`, que era `1.5rem` escolhido à mão para a amplitude de então, virou
-`max(1.5rem, calc(var(--circulo) * (var(--respiracao-max) - 1) / 2))`: subir a
-amplitude deixou de poder decepar o halo no overflow.
+`.palco` é `max(1.5rem, calc(var(--circulo) * (var(--respiracao-max) - 1) / 2))`:
+subir a amplitude não decepa o halo no overflow.
 
-**Limite resolvido de graça:** as ondas nascem na borda do círculo e correm até a
-borda da tela (`percurso = largura / 2 - raio`), e o círculo de 264 px havia
-encurtado a corrida delas para ~43 px num celular de 390 px. Com 220 px o percurso
-volta a ~65 px. O `raio` é medido em tempo de execução
-(`circulo.current.offsetWidth / 2`), então `onda.ts` nunca precisou saber de nada
-disso.
+As ondas nascem na borda do círculo e correm até a borda da tela (`percurso =
+largura / 2 - raio`): com 220 px, ~65 px num celular de 390 px. O `raio` é
+medido em tempo de execução (`circulo.current.offsetWidth / 2`), então `onda.ts`
+não precisa saber de nada disso.
 
 **Canvas, e não SVG animado**, porque a onda segue o microfone a 60 quadros por
 segundo e reconstruir um path do DOM nessa cadência engasga no celular — que é
 onde este botão vive. O `AnalyserNode` sai do `MediaStream` que o `Gravador`
-agora expõe em `faixa`, e **não se liga ao destino**: ligar devolveria o próprio
+expõe em `faixa`, e **não se liga ao destino**: ligar devolveria o próprio
 microfone pelo alto-falante, que é microfonia na cara de quem está falando. Sem
 Web Audio disponível, `nivelSimulado()` mantém a onda viva com duas senoides de
 períodos incomensuráveis.
@@ -375,17 +340,14 @@ nesses números sem perceber.
 
 `prefers-reduced-motion` para o halo no estado médio e tira o deslize do selo.
 A onda continua, porque ali ela não é enfeite: é o retorno de que o microfone
-está ouvindo. **"Estado médio" passou a custar uma linha a mais.** Enquanto a
-amplitude era de 3,6%, `animation: none` bastava: sem animação o disco fica na
-escala natural, que é 1. Com o piso da respiração agora em 1 e o teto em 1,2,
-escala natural é o fundo do ciclo — o ponto onde o halo não existe —, e a regra
-prometia um estado médio que entregava halo nenhum. Ela passa a calcular a média
-dos dois extremos, na escala e no raio da sombra, a partir dos mesmos controles.
+está ouvindo. Como a escala natural (1) é o fundo do ciclo — o ponto onde o halo
+não existe —, `animation: none` sozinho daria halo nenhum; a regra calcula a
+média dos dois extremos, na escala e no raio da sombra, a partir dos mesmos
+controles.
 
-**O timer deixou de ser o herói.** Ele era `clamp(3rem, 16vw, 5rem)` porque era
-o centro da tela; com o círculo nesse posto, ficou em 1,5 rem, tabular, no tom
-de texto fraco. Continua na tela porque é informação real — quanto tempo eu já
-falei.
+**O timer não é o herói**: 1,5 rem, tabular, no tom de texto fraco, porque o
+centro da tela é do círculo. Está na tela porque é informação real — quanto tempo
+eu já falei.
 
 ### 11.2 Tokens de cor
 
@@ -411,14 +373,8 @@ deles governa. Aqui ficam os tokens de superfície e os dois derivados:
 | `--glow` | *derivado* de `--acento` + `--halo-intensidade` | o halo do botão de gravar |
 | `--circulo` | *derivado* de `--circulo-tamanho` + `--circulo-guarda` | diâmetro do botão de gravar |
 
-`--acento` governa ~45 regras, todas por `var()` ou `color-mix()`. O único lugar
-do CSS onde a cor estava escrita uma segunda vez era `--glow`
-(`rgba(214, 90, 49, .55)` é o mesmo `#d65a31` em decimal), e trocar o acento
-deixava o halo para trás — daí ele ter virado derivado.
-
-`--fundo` e `--acento` mudaram de `#0f0f10` e `#d8613c` para os valores acima
-quando o botão foi redesenhado; a diferença é pequena, e manter dois terracotas
-quase iguais no mesmo sistema seria pior que trocar o antigo.
+`--acento` governa ~45 regras, todas por `var()` ou `color-mix()`, e o `--glow`
+deriva dele: a cor está escrita uma vez só.
 
 #### O tema fora do CSS
 
@@ -442,7 +398,7 @@ sobre a cor que estiver embaixo, e embaixo dela está o acento, qualquer que ele
 seja. Derivá-la de um token mudaria o resultado em vez de preservá-lo, então ela
 fica — e fica anotada, para não parecer descuido.
 
-**Phronesis é escuro, e só.** O bloco `prefers-color-scheme: light` saiu: um
+**Phronesis é escuro, e só.** Não há bloco `prefers-color-scheme: light`: um
 segundo tema é uma segunda tela para manter certa a cada mudança, e o botão de
 gravar foi desenhado sobre `#0d0d0d` — halo terracota sobre papel é outro
 efeito, não o mesmo mais claro. `:root` declara `color-scheme: dark`, sem o que
@@ -463,9 +419,9 @@ manutenção, e a transcrição literal está com ela de propósito: é porta de
 serviço, não parte do ritual.
 
 **`RITUAL` é allowlist, e é por isso que a tabela cresce sozinha do lado da
-gestão.** `/calibracao` e `/agentes` nasceram nas fatias 4.6 e 4.7 e caíram em
-Inter sem ninguém marcar nada, que é o comportamento certo: manutenção é
-gestão, e uma tela nova que fosse ritual é que teria de ser declarada.
+gestão.** Tela nova cai em Inter sem ninguém marcar nada, que é o comportamento
+certo: manutenção é gestão, e uma tela nova que fosse ritual é que teria de ser
+declarada.
 
 **A regra é por rota, não por classe CSS** (`src/lib/tipografia.ts`,
 `ehRitual`). Não é preferência: `Processando` e a `Revisao` ainda carregando
@@ -486,8 +442,8 @@ próprio domínio**: nenhuma requisição a terceiros em tempo de execução, na
 acrescentar na fronteira de segurança, e nenhum salto de layout. O stack do
 sistema, que era a fonte do `body`, virou `--sistema` e é o fallback das duas.
 
-`/entidades` é a única janela para dentro do grafo — até ela existir, saber o
-que tinha lá dentro exigia rodar Cypher por fora. Procurar duplicatas e rascunhar
+`/entidades` é a única janela para dentro do grafo — sem ela, saber o que tem
+lá dentro exigiria rodar Cypher por fora. Procurar duplicatas e rascunhar
 um perfil são botões, não coisas que acontecem ao abrir: a camada de string é de
 graça, a que julga e a que escreve são chamadas de modelo, e manutenção que cobra
 sozinha vira cobrança.
@@ -496,19 +452,17 @@ sessão atual, e o orçamento dela é 60 s (visão §8).
 
 #### A linha, a ficha e a fusão à mão
 
-Cada linha carregava **nove controles**: a caixa do lote, o nome, a estrela de
-canônica, uma meta de até seis fatos, o `select` de tipo, renomear, canônica e
-ficha — num `flex` sem `wrap`. A ficha abria como acordeão dentro da própria
-linha, empurrando a lista para baixo. Num aparelho de 390 px, que é onde este app
-vive, nada disso se lê nem se acerta com o dedo. O que existe agora:
+Num aparelho de 390 px, que é onde este app vive, uma linha com nove controles
+não se lê nem se acerta com o dedo, e um acordeão dentro da linha empurra a
+lista para baixo. Por isso:
 
 | Peça | Como é | Por quê |
 |---|---|---|
 | **a linha** | um nome (com a estrela) e uma linha de meta — átomos, sessões, "sem resumo" e o selo da fila. A linha inteira é o botão | um alvo só, grande, e nenhuma decisão a tomar antes de tocar |
 | **a ficha** | painel `position: fixed` entrando pela **direita**, tela cheia no celular (`min(100vw, 34rem)`), fechando no `←`, no véu e no `Esc` | é o detalhe do que eu acabei de tocar, não navegação — mesma razão e mesmo lado do `.editor-agente` |
 | **o topo** | busca, filtro de tipo e "sem resumo" | a lista vem inteira do grafo, e sem busca achar uma entidade é rolar |
-| **o lote** | "enriquecer" é um **modo**: só nele existem checkboxes, e a barra de "selecionar todas" fica `sticky` | os checkboxes eram permanentes, e uma coluna deles em toda linha cobra uma decisão que eu quase nunca tomo |
-| **fundir** | `fundir com…` dentro da ficha: escolher, comparar lado a lado, escolher quem sobrevive | a rota sempre aceitou qualquer par; era a tela que só sabia propor o que a distância de string tinha aproximado |
+| **o lote** | "enriquecer" é um **modo**: só nele existem checkboxes, e a barra de "selecionar todas" fica `sticky` | uma coluna de checkboxes em toda linha cobraria uma decisão que eu quase nunca tomo |
+| **fundir** | `fundir com…` dentro da ficha: escolher, comparar lado a lado, escolher quem sobrevive | a rota aceita qualquer par, e a tela não se limita ao que a distância de string aproximou |
 
 **A busca é a de `src/lib/catalogo.ts`, e não uma segunda.** `peneirar()` chama
 `montarCatalogo` + `buscar` e depois reencontra o objeto inteiro por
@@ -559,13 +513,13 @@ de perfil e o "enriquecer esta" dão lugar a `RetratoDoEu`, que lê
 `.editor-agente` (agentes, pela direita) e `.ficha`. As três repetem a mesma
 geometria, a mesma curva de 220 ms, o mesmo `env(safe-area-inset-*)` e o mesmo
 `.veu` (esse já é compartilhado). **Consolidá-las numa `.gaveta-lateral` é dívida
-conhecida**, e não foi feita aqui porque mexeria em `Gestao.tsx` e em
-`Agentes.tsx`, fora do escopo desta mudança.
+conhecida**: as três gavetas mudariam junto, em `Gestao.tsx`, `Agentes.tsx` e
+`Entidades.tsx`.
 
 O painel fica **montado sempre**, com a classe `.aberta` ligando e desligando, e
 o React segura o conteúdo por `DURACAO_FICHA_MS` (220 ms, o mesmo número da
 transição) depois de fechar. Desmontar junto com a classe esvaziaria a caixa no
-meio do caminho de volta — é o mesmo erro que o `.chat` cometeu e consertou.
+meio do caminho de volta — o mesmo cuidado do `.chat`.
 
 **A volta ao início é a marca, no canto superior esquerdo.** `Marca` mora no
 layout raiz — nenhuma tela nova nasce sem caminho de volta — e é ela que decide
@@ -573,32 +527,27 @@ onde não aparecer: em `/`, que já *é* o início e é a tela de gravar, onde n
 crônico entra (visão §6), e em `/entrar`, que é anterior à sessão. `mostraMarca()`
 é a regra, e `tests/marca.test.ts` a fixa. Ela é `position: fixed`: numa revisão
 longa ou numa lista grande de entidades, um "voltar" de rodapé só existe depois
-de rolar a tela inteira. Os "voltar → `/`" que ficavam no fim de `Sessoes`,
-`Entidades`, `Processando` e da falha da `Revisao` saíram, por duplicarem a
-marca. Ficaram os dois que não são ela: o "voltar" da `Leitura`, que vai para
-`/sessoes` (de onde se chega), e o "depois" no rodapé da `Revisao`, que é adiar
-a revisão, não navegar.
+de rolar a tela inteira. Não há "voltar → `/`" no fim das telas, porque
+duplicaria a marca; os dois "voltar" que existem não são ela: o da `Leitura`, que
+vai para `/sessoes` (de onde se chega), e o "depois" no rodapé da `Revisao`,
+que é adiar a revisão, não navegar.
 
 `Processando` é quem dispara `finalizar`, uma vez só (`useRef`), depois de
-garantir a fila vazia; faz o polling de 2 s e, ao ver `em_revisao`, troca a URL
-por `/sessao/:id/revisar` com `replace` — voltar de um corredor já atravessado
-não faz sentido, o botão de voltar tem que sair da sessão.
+garantir a fila vazia; abre o fluxo de `/extracao/eventos` e confere o status a
+cada 750 ms, e sai para `/sessao/:id/revisar` com `replace` no primeiro átomo
+que chegar ou quando o status vira `em_revisao` — voltar de um corredor já
+atravessado não faz sentido, o botão de voltar tem que sair da sessão.
 
-**A transcrição saiu da jornada.** Ela era a tela que a gravação abria, com o
-texto inteiro e um link para revisar; agora é `/sessao/:id/transcricao`, sem
-finalizar nada e sem redirecionar, alcançável pelo botão "transcrição" na lista
-de sessões, ao lado de "reextrair". Serve para conferir o literal — um nome que o
-STT grafou errado, um trecho que ele comeu. `destino()` em `Sessoes` manda cada
-linha para onde ainda há o que fazer: revisão se há proposta esperando,
-transcrição se o texto já está inteiro, processamento no resto.
+**A transcrição não está na jornada.** Ela mora em `/sessao/:id/transcricao`,
+sem finalizar nada e sem redirecionar, alcançável pelo botão "transcrição" na
+lista de sessões, ao lado de "reextrair". Serve para conferir o literal — um
+nome que o STT grafou errado, um trecho que ele comeu.
 
-**A home não avisa nada, e a lista avisa pela cor.** Havia um `ChipRecuperacao`
-na tela de gravar que aparecia sempre que existia sessão aberta e, num dos seus
-dois estados, cobrava: "sessão de 12 min esperando revisão". Cobrança na tela
-onde eu passo o tempo é a forma de morte da visão §6, e o chip era o único
-elemento crônico que restava ali. Ele saiu inteiro.
+**A home não avisa nada, e a lista avisa pela cor.** Cobrança na tela onde eu
+passo o tempo é a forma de morte da visão §6, e a tela de gravar não tem elemento
+crônico nenhum.
 
-O que ficou no lugar é `jaRevisada(s)` em `Sessoes`: a linha de uma sessão
+O aviso é `jaRevisada(s)` em `Sessoes`: a linha de uma sessão
 `confirmada` sai em `--ok`, o mesmo verde do ponto de "salvo" da gravação, e o
 resto da lista fica no branco de `--texto`. Não há classe para "falta revisar" —
 uma marca em cada linha não marca nada —, e a legenda vai no cabeçalho, senão a
@@ -607,7 +556,7 @@ que faz o verde querer dizer exatamente uma coisa; `tests/sessoes-lista.test.ts`
 fixa isso, porque pintar de verde uma sessão que ainda tem trabalho é pior que
 não pintar nada.
 
-O nome da porta acompanhou: "áudios" virou **"sessões"**, que é como a coisa se
-chama no resto do sistema (`:Sessao`, `/sessoes`, `sessao_id`). Áudio é o
-arquivo; sessão é o que eu abro ali.
+A porta se chama **"sessões"**, como a coisa se chama no resto do sistema
+(`:Sessao`, `/sessoes`, `sessao_id`). Áudio é o arquivo; sessão é o que eu
+abro ali.
 

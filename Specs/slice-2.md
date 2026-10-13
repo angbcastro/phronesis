@@ -243,3 +243,112 @@ o corpo manda `entidades: [{ nome, tipo }]` com os nomes finais, e o cliente
 acrescenta qualquer sujeito que eu tenha escrito à mão. Duas guardas no servidor,
 porque a regra não pode depender da UI: nome que caia na lista de pronomes é
 recusado com 400, e `tipo` é validado contra `TIPOS_ENTIDADE`.
+
+### Do §11 (telas)
+
+*Fora de fatia, no mesmo período (31/08): o círculo vira o centro da tela.*
+
+`BotaoGravar` é **um nó do DOM só**, parado e gravando. Antes eram duas árvores
+diferentes — a de gravar trocava a tela inteira pelo timer — e por isso não
+havia o que transicionar entre elas, só um corte. Agora o círculo permanece e o
+que muda é o que o cerca: parado, as portas de serviço;
+gravando, o timer, o "salvo" e o "parar".
+
+Foi o defeito que a respiração teve entre os commits `659073e` e este. O pedido
+de então era 30% menos área no fundo e 30% mais no topo; a conversão por área
+(√0,7 e √1,3, porque área cresce com o quadrado da escala) deu `scale(0,837) →
+scale(1,181)` e estava certa na aritmética. Só que ela foi aplicada à área do
+**disco**, e o que a pessoa vê é a área do **anel**. Resultado medido na régua
+do próprio keyframe: **47% de cada meia-volta acontecia com o disco invisível**,
+e a `ease-in-out` — que espalha a fase lenta pelo intervalo inteiro — gastava
+justamente a parte devagar lá dentro, atravessando depressa a faixa visível. O
+`box-shadow` (24 px → 42 px) saiu de fase junto: metade do crescimento do glow
+já tinha acontecido quando o disco assomava. Não respirava, piscava.
+
+O conserto é o piso: `--respiracao-min: 1` põe o fundo do ciclo exatamente onde
+o anel tem largura zero, e o ciclo inteiro passa a ser faixa visível. A amplitude
+que era invisível virou amplitude de verdade, `1 → 1,2`, e o ciclo alongou para
+~7 s para caber nela sem pressa. **O botão encolheu junto**, de 264 px para
+220 px: no auge a respiração chega a 264 px, que é o tamanho que o círculo tinha
+parado antes — o gesto ocupa o mesmo espaço de tela, e é o círculo em repouso que
+ficou menor.
+
+`--glow` e `--circulo` deixaram de ser valores e viraram derivados: o primeiro é
+`color-mix()` de `--acento` com `--halo-intensidade`, o segundo é o `min()` dos
+dois últimos. O glow era o **único** ponto do CSS onde o terracota estava escrito
+duas vezes (`rgba(214, 90, 49, .55)`), e com ele derivado trocar `--acento` leva
+o halo junto.
+
+A duração sai do rpm por `calc(30s / var(--respiracao-rpm))` — 30 s e não 60 s
+porque `alternate` faz um ciclo inteiro valer duas durações. A folga vertical do
+`.palco`, que era `1.5rem` escolhido à mão para a amplitude de então, virou
+`max(1.5rem, calc(var(--circulo) * (var(--respiracao-max) - 1) / 2))`: subir a
+amplitude deixou de poder decepar o halo no overflow.
+
+**Limite resolvido de graça:** as ondas nascem na borda do círculo e correm até a
+borda da tela (`percurso = largura / 2 - raio`), e o círculo de 264 px havia
+encurtado a corrida delas para ~43 px num celular de 390 px. Com 220 px o percurso
+volta a ~65 px. O `raio` é medido em tempo de execução
+(`circulo.current.offsetWidth / 2`), então `onda.ts` nunca precisou saber de nada
+disso.
+
+`prefers-reduced-motion` para o halo no estado médio e tira o deslize do selo.
+A onda continua, porque ali ela não é enfeite: é o retorno de que o microfone
+está ouvindo. **"Estado médio" passou a custar uma linha a mais.** Enquanto a
+amplitude era de 3,6%, `animation: none` bastava: sem animação o disco fica na
+escala natural, que é 1. Com o piso da respiração agora em 1 e o teto em 1,2,
+escala natural é o fundo do ciclo — o ponto onde o halo não existe —, e a regra
+prometia um estado médio que entregava halo nenhum. Ela passa a calcular a média
+dos dois extremos, na escala e no raio da sombra, a partir dos mesmos controles.
+
+**O timer deixou de ser o herói.** Ele era `clamp(3rem, 16vw, 5rem)` porque era
+o centro da tela; com o círculo nesse posto, ficou em 1,5 rem, tabular, no tom
+de texto fraco. Continua na tela porque é informação real — quanto tempo eu já
+falei.
+
+`--acento` governa ~45 regras, todas por `var()` ou `color-mix()`. O único lugar
+do CSS onde a cor estava escrita uma segunda vez era `--glow`
+(`rgba(214, 90, 49, .55)` é o mesmo `#d65a31` em decimal), e trocar o acento
+deixava o halo para trás — daí ele ter virado derivado.
+
+`--fundo` e `--acento` mudaram de `#0f0f10` e `#d8613c` para os valores acima
+quando o botão foi redesenhado; a diferença é pequena, e manter dois terracotas
+quase iguais no mesmo sistema seria pior que trocar o antigo.
+
+**Phronesis é escuro, e só.** O bloco `prefers-color-scheme: light` saiu: um
+segundo tema é uma segunda tela para manter certa a cada mudança, e o botão de
+gravar foi desenhado sobre `#0d0d0d` — halo terracota sobre papel é outro
+efeito, não o mesmo mais claro. `:root` declara `color-scheme: dark`, sem o que
+o navegador desenharia os controles nativos (input, select, checkbox, barra de
+rolagem) no tema claro do sistema em cima do fundo escuro.
+
+*Fora de fatia, no mesmo período (31/08–01/09): a jornada sem transcrição, a marca e o fim do chip.*
+
+de rolar a tela inteira. Os "voltar → `/`" que ficavam no fim de `Sessoes`,
+`Entidades`, `Processando` e da falha da `Revisao` saíram, por duplicarem a
+marca. Ficaram os dois que não são ela: o "voltar" da `Leitura`, que vai para
+`/sessoes` (de onde se chega), e o "depois" no rodapé da `Revisao`, que é adiar
+a revisão, não navegar.
+
+`Processando` é quem dispara `finalizar`, uma vez só (`useRef`), depois de
+garantir a fila vazia; faz o polling de 2 s e, ao ver `em_revisao`, troca a URL
+por `/sessao/:id/revisar` com `replace` — voltar de um corredor já atravessado
+não faz sentido, o botão de voltar tem que sair da sessão.
+
+**A transcrição saiu da jornada.** Ela era a tela que a gravação abria, com o
+texto inteiro e um link para revisar; agora é `/sessao/:id/transcricao`, sem
+finalizar nada e sem redirecionar, alcançável pelo botão "transcrição" na lista
+de sessões, ao lado de "reextrair". Serve para conferir o literal — um nome que o
+STT grafou errado, um trecho que ele comeu. `destino()` em `Sessoes` manda cada
+linha para onde ainda há o que fazer: revisão se há proposta esperando,
+transcrição se o texto já está inteiro, processamento no resto.
+
+**A home não avisa nada, e a lista avisa pela cor.** Havia um `ChipRecuperacao`
+na tela de gravar que aparecia sempre que existia sessão aberta e, num dos seus
+dois estados, cobrava: "sessão de 12 min esperando revisão". Cobrança na tela
+onde eu passo o tempo é a forma de morte da visão §6, e o chip era o único
+elemento crônico que restava ali. Ele saiu inteiro.
+
+O nome da porta acompanhou: "áudios" virou **"sessões"**, que é como a coisa se
+chama no resto do sistema (`:Sessao`, `/sessoes`, `sessao_id`). Áudio é o
+arquivo; sessão é o que eu abro ali.

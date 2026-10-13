@@ -390,3 +390,14 @@ continua trazendo o que é dele: a curva de espera (os números do manifest são
 objeto ausente ou conserta o formato antigo, e o mutador. O que o laço devolve a
 mais é `mudou` — "a escrita foi minha?" —, e é isso que faz a reivindicação de
 uma janela ser uma trava de verdade em vez de uma esperança.
+
+### Do §11 (telas)
+
+**E ele tem teto desde 18/09.** O laço não tinha nenhum, e a tela só sabia falar
+em falha quando o **status** dizia `erro` — mas sessão cuja função morreu no
+`maxDuration` nunca chega a `erro`: ela fica em `extraindo` no grafo (§5.3), e a
+tela ficava em "lendo o que você disse…" indefinidamente. É o que faz uma trava
+parecer lentidão. Passados `TETO_DA_ESPERA_MS` (6 min) o corredor para de
+perguntar e diz o que aconteceu, apontando o reextrair da lista. O relógio é o da
+**visita**: abrir a sessão de novo recomeça a contagem, que é o que se quer ao
+voltar para conferir.

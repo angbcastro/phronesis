@@ -270,3 +270,17 @@ gravado no R2 migrou sozinho: `"extracao"` e `"resolucao"` já eram `AgenteId`.
 `grafo` continua sem consumidor, e agora por um motivo e não por omissão: ele
 não é agente, não tem prompt, e não há o que emendar. Conserto de grafia se
 resolve no vocabulário do STT.
+
+### Do §11 (telas)
+
+**Abrir a barra é sempre começar do zero** — conversa nova, campo vazio, foco no
+campo. **A slice 6 decidia o contrário** (abrir a conversa ativa mais recente na
+primeira abertura de cada visita, para "toco de novo e continuo de onde parei"
+ser verdade) e a **8.1 reverteu**: no uso deu o oposto, porque eu abro o chat
+para perguntar uma coisa nova e caía no meio da conversa de ontem, com uma saída
+a mais para dar antes de escrever. A decisão antiga nem se cumpria como
+escrita — ela morava numa `useRef` por montagem do componente, e o `<Chat>` é
+desmontado ao gravar e ao navegar, então "só na primeira abertura" virava "toda
+vez". O que defende a conversa longa fechada sem querer é a lista, a um toque no
+ícone do cabeçalho. Abrir e fechar sem perguntar não grava nada: o nó
+`:Conversa` nasce no `POST /api/chat`, com a primeira pergunta.

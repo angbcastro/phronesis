@@ -328,3 +328,10 @@ custo e latência já têm lugar: o painel do próprio Gateway. E não deixa cri
 agente: são os que o código tem, e um novo nasce escrevendo código —
 o `enriquecimento-1` da 4.12 nasceu assim, o `confronto-1` da slice 5 também, e
 a caixa de cada um apareceu no painel porque `tests/agentes.test.ts` cobra isso.
+
+### Do §11 (telas)
+
+**`RITUAL` é allowlist, e é por isso que a tabela cresce sozinha do lado da
+gestão.** `/calibracao` e `/agentes` nasceram nas fatias 4.6 e 4.7 e caíram em
+Inter sem ninguém marcar nada, que é o comportamento certo: manutenção é
+gestão, e uma tela nova que fosse ritual é que teria de ser declarada.

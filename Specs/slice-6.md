@@ -414,3 +414,55 @@ ele foi recusado: ele fala de *token*, e o que esta tela mostra enquanto espera
 não é token — é qual busca o agente está fazendo. Um objeto por linha resolve
 isso com `fetch` e `TextDecoder`, que todo navegador já tem, e mantém o
 `package.json` do jeito que a slice 6 o encontrou.
+
+### Do §11 (telas)
+
+*Fora de fatia, no mesmo período: a engrenagem no lugar de três controles.*
+
+canto querer dizer duas coisas conforme a tela. Eram
+três controles soltos na tela — o link de importar logo abaixo do círculo e as
+duas portas no rodapé —, e três coisas para ler antes de falar. Virar um
+**aproxima** a tela do "um botão, um timer, um jeito de parar — idealmente nada
+mais" da visão §6, em vez de afastá-la: o que sobra no caminho do olho é o
+círculo.
+
+Uma rota própria e de destaque — `/chat`, ao lado de Gravar/Revisar — foi a
+primeira ideia levada à entrevista, e caiu assim que ficou claro que a
+integração era com a tela de gravar. O que existe é uma barra:
+
+**Era uma bolha de balão no canto de baixo à direita.** Ela caiu no primeiro uso
+de verdade: um ícone de balão periférico lê como símbolo de suporte, não como
+lugar de perguntar. A barra **não** aceita texto — tocar nela abre o painel e o
+foco vai para o campo de dentro. Um `<input>` no estado fechado que não
+recebesse o que eu digitasse mentiria, então o que está ali é um botão com cara
+de campo.
+
+*Fora de fatia, depois dela: as animações do chat.*
+
+##### As duas animações, e por que a primeira versão não era uma
+
+Até o primeiro uso isso era só o que o documento dizia. Na prática o componente
+voltava cedo com uma árvore diferente, e o que existia era um `@keyframes` de
+entrada — **sem simétrico nenhum na saída**. Fechar era um corte, e a bola
+minimizando era um pulo. Duas causas, as duas mecânicas:
+
+- **a caixa** tinha a animação em `@keyframes`, que não tem volta, e a transição
+  de opacidade do círculo morava **dentro** da regra `.tela.com-chat` — some
+  junto com a classe, e o retorno é instantâneo por construção;
+- **a bola** mudava `--circulo` de `min(72vw, 264px)` para `84px` e virava
+  `justify-content` de `center` para `flex-start`. Propriedade personalizada não
+  registrada **não interpola**, e `justify-content`, `gap` e `padding` não
+  interpolam nunca.
+
+O que existe agora, e vale nos dois sentidos porque mora nas regras **base**:
+
+A transição acima é correta e simétrica, e ainda assim não era fluida. A caixa ia
+do rodapé ao centro interpolando seis propriedades de **layout** — os quatro
+`inset`, o `max-width` e o raio —, recalculadas a cada quadro, com uma lista
+rolável dentro; e a bola e a caixa começavam juntas por coincidência de número
+(320 ms cada), não por construção.
+
+**Os números abaixo são 384 ms e 216 ms — 20% mais devagar que os 320 ms e
+180 ms da primeira versão, a meu pedido.** O fator é o mesmo nos dois caminhos
+da troca de modo (View Transition e o fallback de CSS) e em `DURACAO_CAIXA`:
+os três precisam continuar lendo como um gesto só.

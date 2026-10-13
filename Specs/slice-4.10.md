@@ -612,3 +612,14 @@ o mesmo tratamento que `sessoes/route.ts` e companhia já tinham (§5.2):
 outro tropeço de R2/Neo4j síncrono, aparece com a causa no log e uma frase na
 tela em vez de um 500 mudo. O `waitUntil` de STT/janelas continua fora do
 `try`: falhar ali não pode derrubar a resposta que já foi decidida.
+
+### Do §11 (telas)
+
+**Clicar na sessão leva sempre para onde ainda há o que fazer.** Proposta
+esperando abre na revisão; sessão `confirmada` abre no texto literal, que é o
+que sobrou dela; **todo o resto vai para o corredor**, e é ele quem chama
+`/finalizar` na sessão parada. `transcrito` levava ao texto literal e o corredor
+não a empurrava — uma sessão que transcreveu e nunca extraiu (`waitUntil`
+perdido, extração que morreu) ficava sem caminho nenhum até a revisão, com o
+texto no R2 e nenhuma proposta. Ler a transcrição continua a um toque, no botão
+ao lado, que é onde essa porta de serviço deve estar.

@@ -364,3 +364,32 @@ barulhento. A troca foi feita de olho aberto — o outro lado dela era perder a
 sessão inteira toda vez que eu faço uma pausa —, e o sinal é a linha
 `[pipeline] … STT não ouviu fala — bloco vazio`, que sai em todo bloco vazio.
 Transcrição com um buraco se confere ali, contra o áudio, que está intacto no R2.
+
+### Do §11 (telas)
+
+*Fora de fatia, no mesmo período (12/09): o PWA.*
+
+`CLAUDE.md` decide PWA como stack, e o que existe é o mínimo que faz o app
+**instalar** e abrir sem barra de navegador:
+
+| Peça | Onde | O que dá |
+|---|---|---|
+| `public/manifest.webmanifest` | `display: standalone`, `start_url: "/"`, `theme_color: #0d0d0d`, ícone `/icone.svg` | o "adicionar à tela de início", e o app abrindo sem barra |
+| `metadata.manifest` | `layout.tsx` | é o que põe o `<link rel="manifest">` no HTML |
+| `viewport.viewportFit: "cover"` | `layout.tsx` | a tela chega até a borda no iPhone, por baixo do notch |
+| `matcher` do middleware | `src/middleware.ts` | manifest e ícone respondem sem cookie, senão o navegador não os busca (§7) |
+
+**Não há service worker, não há cache offline e não há instalação promovida.**
+Gravar sem rede não funciona: o `getUserMedia` até abre, mas o bloco não sobe e
+`Processando` não fecha a sessão. O que protege a fala nesse caso é o IndexedDB
+(§3.2), que segura o bloco até a rede voltar — proteção da fila, não do app.
+Quem lê "PWA" em `CLAUDE.md` e espera funcionar no avião vai encontrar menos do
+que espera, e é por isso que está escrito aqui.
+
+*Fora de fatia, no mesmo período (14/09): a ficha sai da linha.*
+
+Cada linha carregava **nove controles**: a caixa do lote, o nome, a estrela de
+canônica, uma meta de até seis fatos, o `select` de tipo, renomear, canônica e
+ficha — num `flex` sem `wrap`. A ficha abria como acordeão dentro da própria
+linha, empurrando a lista para baixo. Num aparelho de 390 px, que é onde este app
+vive, nada disso se lê nem se acerta com o dedo. O que existe agora:
