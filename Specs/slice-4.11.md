@@ -601,3 +601,17 @@ a entidade; e "Jean" **não** é ensinado ao STT — antes porque o filtro de
 
 **Este alias não é uma fusão**, e a forma no grafo passou a dizer isso desde a
 4.11 — escrever uma string num array não junta nada. A distinção está no §8.2.
+
+### Do §4.9 e §4.20 (a ficha e o retrato)
+
+A ficha de uma entidade tem quatro campos de texto: o `resumo` (o retrato de
+identidade, teto de 500) e os três da 005 — `contexto`, `pode_ajudar_com`,
+`fizemos_juntos` —, **sem teto desde a 4.11**. O `TETO_PERFIL = 300` não era
+estética: os três campos entravam no prompt do agente 2 em toda chamada, e sem
+ele o custo crescia junto com o grafo. Esse consumo acabou (§4.8): quem lê os
+três agora é a segunda passada (§4.8.1), e só para os candidatos de **uma**
+menção em dúvida. Quem cobra tamanho é o `TETO_RESUMO`, do campo que entra em
+todo prompt.
+
+**Dois agentes escrevem nesses campos, e eles têm regimes opostos.** A 4.12
+abriu o segundo, e esta seção existe para deixar claro qual é qual.

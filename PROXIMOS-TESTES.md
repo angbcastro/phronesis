@@ -82,6 +82,8 @@ painel de produção não tem override do `confronto`. Na ordem:
       disparando em tudo, o conserto é o prompt do `enriquecimento-1`.
 - [ ] Ler as fichas que o agente 4 escreveu. Ele nunca foi julgado numa sessão
       real.
+- [ ] Decidir o destino do agente 3 (rascunhar por campo) e do `:PERFILA`:
+      conviver, encolher ou sair, depois de ver se ainda uso o botão (§4.9).
 - [ ] `LIMIAR_CONFIANCA = 0,7` é ponto de partida, não medida. Ajustar olhando a
       revisão (§4.13).
 - [ ] **(conferir)** Que a migration 010 rodou no build (é no-op, 0

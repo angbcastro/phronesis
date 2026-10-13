@@ -285,3 +285,44 @@ produção**, e a primeira batida de segunda rodar.
   só essa.
   **Nenhum aviso mora fora de `/entidades`** — notificação de PWA seria o
   primeiro uso de push neste sistema, e foi recusada por agora.
+
+### Do §4.9 e §4.20 (a ficha e o retrato)
+
+**A corrente diz quando quebra (4.12.1).** `encadear()` olha a resposta do elo
+seguinte, e não só a exceção de rede: fora de 2xx ele loga `[fila] o elo seguinte
+respondeu <status>: <até 200 caracteres do corpo> — a fila para aqui`, e segue
+sem lançar. Até a 4.12.1 um 401 do middleware, um 500 da função ou um 504 da
+borda passavam como sucesso — foi assim que a fila de 23/09 parou depois de
+quatro entidades sem deixar uma linha no log, e a causa daquela quebra continua
+desconhecida.
+
+**Sem teto de saída (4.12.1).** A chamada do agente 4 não manda
+`maxOutputTokens`. Até a 4.12.1 ela mandava 4000, com uma segunda tentativa no
+dobro — o número dos agentes que leem **uma janela** —, e a primeira rodada de
+verdade (23/09) quebrou exatamente aí: o "eu", com 128 átomos e 14 mil tokens de
+entrada, gastou 3998 dos 4000 raciocinando e escreveu 2 de texto; a segunda
+tentativa ficou a ~200 tokens de fechar e cortou o JSON no meio do `resumo`. Com
+teto folgado, a mesma chamada fechou com 7392 de raciocínio e 400 de texto. Este
+agente lê **a vida inteira** de uma entidade, e o raciocínio cresce com o que ele
+lê: subir o número só empurraria a falha para quando a entidade crescer. O teto
+que sobra é o do próprio modelo (32.768 de saída para o padrão), e `length` sem
+teto nosso vira `EnriquecimentoError` com o `diagnostico()` no motivo — **sem
+repetir**, porque com `temperature: 0` repetir é pagar duas vezes pela mesma
+falha. O prompt não mudou, e `enriquecimento-1` também não.
+
+**Isto reabre uma recusa da 4.12**, que tinha rejeitado disparo automático ("o
+resumo mudaria sem eu ter pedido"). Reabriu por pedido meu: a ficha só vale se
+estiver em dia, e o botão virou esquecimento. O desfazer de um toque continua
+valendo, e só entram as canônicas — as que eu já declarei minhas.
+
+A batida não tem cookie, então a corrente de `/api/entidades/enriquecer` não
+serve. Ela responde na hora e trabalha em `waitUntil`, em laço — reivindicar,
+rodar, `passadaDeVetores` — e só **começa** entidade nova nos primeiros 180 s: a
+ficha do "eu" levou 62 s em 29/09, e começar uma aos 269 s mataria a função no
+meio dela, sem continuação. Sobrando fila, **chama a si mesma** com `Authorization:
+Bearer $CRON_SECRET` e `?continuacao=1`, que não enfileira de novo, só processa.
+Responder antes de trabalhar é o que mantém a corrente sequencial, e não
+aninhada. A continuação que responde fora de 2xx deixa o status no log, como o
+`encadear()`. Erro fora do agente (o grafo caiu) **para** a corrente, ao
+contrário do elo: com o grafo fora, cada continuação falharia na hora e chamaria
+a próxima, num laço de invocações sem fim.

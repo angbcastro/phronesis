@@ -447,3 +447,50 @@ precisa ser conferido como `canonico` antes da primeira batida.
   medir tool-calling multi-passo. Se ele encadear mal, a ferramenta nova piora a
   resposta em vez de melhorar — e o conserto é o modelo ou o prompt, não remover
   a ferramenta.
+
+### Do §4.9 e §4.20 (a ficha e o retrato)
+
+> **O "eu" não tem esta ficha desde a slice 10.** `enriquecer()` desvia para o
+> retrato quando `nome_normalizado === "eu"`, e o nó dele guarda só `resumo` e
+> `contexto` curtos — ver §4.20. Tudo abaixo continua valendo para as outras
+> entidades, byte a byte.
+
+A ficha de quatro campos (§4.9) serve às outras entidades e **não serve ao
+"eu"**, e a rodada de 23/09 mostrou isso com número: 128 dos 151 átomos ativos
+(85%) são dele — sujeito de todo `SENTIMENTO`, `APRENDIZADO`, `HISTORIA` e
+`ROTINA` por regra da extração —, e a ficha saiu com 1391 caracteres a partir
+de ~49 mil, `fizemos_juntos` vazio. E os três campos de perfil viram o vetor da
+entidade (`fonteDaEntidade`): um retrato longo neles estouraria a entrada do
+modelo de embedding e derrubaria o lote de vetores de todas as entidades.
+
+**Dois módulos, e não um.** A spec pôs os dois agentes em `retrato.ts`;
+`tests/agentes.test.ts` cobra um módulo por agente (a varredura aponta cada
+`generateText` a um dono), e o teste venceu. A dependência vai num sentido só:
+`retrato.ts` importa `retrato-dimensoes.ts`, que recebe o prefixo pronto.
+
+**O formato mora no sufixo** porque qualquer coisa que muda entre chamadas antes
+dos átomos quebra o cache do provedor no primeiro byte diferente. Medido em
+23/09: a segunda chamada com o mesmo bloco leu 14.080 dos 14.128 tokens de
+entrada do cache, que custa ~40× menos.
+
+**O bloco é próprio do retrato** (`blocoNumerado`): linha `n` ↔ `ids[n-1]`, com o
+id fora do prompt. `atomosDaEntidade` passou a devolver `a.id` — campo a mais,
+que a ficha ignora —, e `blocoDeAtomos` não mudou: o prompt da ficha das outras
+entidades é byte a byte o de antes, e há teste cobrando.
+
+**Paralelo não está medido, e é o ponto de retorno desta fatia.** Os 14.080
+tokens de cache de 23/09 vieram de duas chamadas **em sequência**. Com sete a
+treze ao mesmo tempo, o Gateway pode distribuí-las por backends diferentes do
+mesmo modelo, e o cache de um não serve ao outro. `diagnostico()` passou a
+mostrar `cache=` (`usage.inputTokenDetails.cacheReadTokens`) e cada chamada da
+rodada loga o seu, mais o tempo das duas fases. Se a fase 2 não ler o cache, o
+conserto previsto é fixar o provedor por `providerOptions.gateway` — ainda
+string pelo Gateway (regra 8). **Não está no código**: é decisão que depende da
+medida.
+
+O "eu" entra na mesma fila, pelo mesmo `enriquecimento_estado` — os dois
+caminhos que chamam `enriquecer()`, o `{ chave }` e o elo, passam pelo desvio. A
+ordem da reivindicação e o `semEu` da batida estão em §4.9. **Precisa ser
+canônico** para a batida o pegar: em 29/09 o "eu" de produção estava `canonico =
+true` (e em `falhou`, da rodada de 23/09); o de desenvolvimento não foi
+conferido.

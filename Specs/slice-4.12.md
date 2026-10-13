@@ -339,3 +339,50 @@ Contrato completo de `:Entidade` depois da 010:
              enriquecimento_estado, enriquecimento_motivo,
              enriquecimento_em, enriquecimento_atomos })           (010)
 ```
+
+### Do §4.9 e §4.20 (a ficha e o retrato)
+
+Ele lê os átomos que o agente 2 marcou como informação daquele campo e devolve o
+texto novo — e **não grava nada**. O proposto aparece **ao lado** do atual, nunca
+por cima; eu aceito, edito ou ignoro. Continua `perfil-1` byte a byte: o "no
+máximo 300 caracteres" do texto dele ficou como número literal, porque nunca foi
+o corte — é instrução de concisão, e é texto calibrado.
+
+**Quem aponta o que é perfil é o agente 2**, que já está olhando átomo e entidade
+juntos, e é ele que a 4.9 passou a chamar em toda janela. A marca vira
+`(:Atomo)-[:PERFILA { campo }]->(:Entidade)` no confirmar (§8.3), e só ali
+(regra 5). A validação é dupla: o agente só pode marcar uma entidade que o
+**próprio átomo** cita, e o servidor só grava campo do schema e entidade
+aprovada.
+
+**A 4.12 não tocou no `:PERFILA`, nem em quem o marca, nem no agente 3.** O que
+acontece com ele — conviver, encolher ou sair — se decide depois de o lote rodar
+e eu ver se ainda uso o botão.
+
+#### O agente 4 escreve sozinho, e isso reabre uma decisão desta seção
+
+**Até a 4.12, esta seção dizia que nada entrava no perfil sem o meu toque campo a
+campo.** O risco que sustentava a regra continua verdadeiro, e por isso está
+escrito de novo aqui: o perfil é exatamente o que os agentes leem para
+desambiguar; ficha errada contamina toda atribuição futura, e o erro se
+realimenta — átomo atribuído ao Rapha por engano vira evidência do perfil do
+Rapha.
+
+**O que mudou não foi o risco, foi a conta.** A regra cobrava um toque por campo
+por entidade, e o resultado medido foi cinco entidades no grafo **sem nenhum dos
+quatro campos escritos**, desde 02/09 — com a camada 3a (candidatos por perfil)
+nascendo inerte por falta de texto para comparar, e, depois da 4.11, com
+**quase toda menção caindo na segunda passada** porque o `resumo` estava vazio. A
+defesa perfeita não estava protegendo nada: não havia ficha para proteger.
+
+A defesa passou a ser outra, e ela é de três partes:
+
+**A regra 5 do `CLAUDE.md` continua valendo inteira, e não foi emendada.** Ela
+fala de **átomo** e da tela de revisão: nenhum átomo entra no grafo por este
+caminho. O que mudou de regime foi a ficha da entidade, e é esta seção que
+registra a mudança. Emendar a regra 5 para acomodar um caso que ela não cobria
+foi recusado — alargar a regra mais forte do projeto é caro, e desnecessário.
+
+O mecanismo não é novo — é **estado idempotente mais `waitUntil`**, o mesmo da
+transcrição por blocos desde a slice 2. A diferença é onde o estado mora: no nó
+(`enriquecimento_estado`, migration 010), e não no navegador.
