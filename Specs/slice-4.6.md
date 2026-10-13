@@ -458,3 +458,38 @@ deploy**, e sem emenda nenhuma o prompt sai byte a byte igual ao do git, o que
 faz da fatia um no-op até o meu primeiro toque. Verificado por medição, não por
 confiança: 21 correções reais em 5 sessões, e um terço delas mostrou que o maior
 erro do pipeline não é o extrator, é o STT ouvindo nome próprio errado (§14).
+
+### Do §4.11–4.13 (calibração e o painel)
+
+A correção mais cara do sistema se perdia de graça. Rejeitar um átomo, editar um
+texto, trocar um tipo: tudo isso já acontecia na revisão, e nada sobrevivia ao
+clique de confirmar — o servidor chegava a calcular quantos átomos foram
+rejeitados só para descartar o número na resposta HTTP. Esta metade da 4.6 não
+pede nenhum gesto novo na tela; ela só para de jogar fora o que a revisão já
+produz.
+
+**O grafo é o único lugar que ela não toca.** `POST /confirmar` grava exatamente
+o mesmo Cypher de antes. Só depois de responder, dentro de `waitUntil`, o
+servidor compara a proposta com o que foi aprovado, produz os registros de
+`Correcao` e os grava **só no R2**. Falhar ali nunca desfaz nem atrasa o que já
+foi confirmado.
+
+Daí o campo **opcional** `gestos` no corpo do confirmar
+(`{ atomos, entidades_recusadas, renomes, faltantes }`). Ele não carrega valor
+nenhum. Corpo sem ele continua confirmando: o servidor infere pelo valor e marca
+`tocado: false`. Retrocompatível de propósito — nenhum 400 novo nasceu aqui.
+
+**O desenho dela saiu da primeira rodada real, não de palpite.** Medido em
+2026-09-04, com 5 sessões e 21 correções: **metade são correções de `texto`, com
+`antes` e `depois` de 200 a 660 caracteres.** Isso a tira da categoria "lista de
+rótulos curtos" — o que ela precisa resolver é ler dois parágrafos e enxergar
+onde diferem. Daí a única regra de apresentação que não é CSS: par que somado
+cabe em 90 caracteres vai **em linha**, com a seta; acima disso vai
+**empilhado**, um bloco sob o outro, cada um etiquetado ("o que veio" / "o que
+eu deixei"). Sem diff colorido: cor que aponta o que mudou é a tela afirmando
+uma leitura que eu não pedi.
+
+No rodapé, atrás de um botão, os `descartados` da extração agrupados por motivo
+— item que o modelo devolveu e a validação recusou. A revisão já os carregava e
+nunca os renderizou. É o outro lado da correção: ali eu digo o que ficou torto,
+aqui o código diz o que nem passou.

@@ -398,3 +398,25 @@ rodapé continuar seguindo o átomo, já que `nomeFinal` traduz pela chave
 original. Até aqui a barra do átomo mostrava o nome cru, e um renome no rodapé
 não aparecia nela. `montarGestos` recebe só as candidatas da proposta: renomear
 ou recusar uma entidade que eu criei não é correção de agente nenhum.
+
+### Do §4.11–4.13 (calibração e o painel)
+
+**O `chat` é o único cujo envelope não são chaves de JSON**, e a diferença é
+real: o parser dele é o loop de *tool-calling*, não um `JSON.parse`. O que um
+prompt editado não pode perder é o nome do que ele pode chamar — um prompt que
+não cita `buscar_atomos` é um prompt que desliga a ferramenta, e a recusa diz
+isso antes de salvar. Desde a slice 9 o envelope tem os três nomes, e desde a 10
+os quatro: um prompt editado antes delas, e salvo em `/agentes`, **não** cita
+`buscar_entidades` nem `ler_retrato` — as ferramentas continuam oferecidas ao
+modelo, mas sem a instrução de quando usá-las, e salvar de novo esse prompt pede
+que ele passe a citá-las.
+
+**O limiar é o terceiro campo editável** (4.11), e desde a 5.1 são **dois** os
+agentes que têm um — e eles medem coisas diferentes: na resolução, abaixo dele
+a menção vai à segunda passada; no confronto, abaixo dele a relação
+`COMPLEMENTA` é descartada em vez de gravada (§4.15).
+`OverrideDeAgente` ganhou `limiar?: number | null` ao lado de `prompt_hash` e
+`modelo`, com a mesma regra: ausente = a base do git, `null` no corpo revoga e
+volta a ela, número igual ao do git não é edição. Número fora de `[0,1]` no
+arquivo é ignorado como se não estivesse lá — o arquivo é meu, mas um typo não
+pode desligar a segunda passada em silêncio.

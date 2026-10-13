@@ -247,3 +247,101 @@ saindo byte a byte igual ao do git.
 saiu porque a correção deixou de virar apêndice e passou a virar emenda no corpo
 do prompt (§4.12): o que a 4.6 colava a cada chamada agora está escrito dentro do
 texto que `efetivo("extracao", …)` devolve.
+
+### Do §4.11–4.13 (calibração e o painel)
+
+O prompt de extração teve **três fontes** entre a 4.6 e a 7: `INSTRUCOES_BASE`
+no git, as regras aprovadas no R2, e o prompt que eu editei no painel (§4.13).
+Ler o prompt efetivo exigia os três lugares, e `git revert` sozinho não revertia
+mais o prompt inteiro — custo declarado no §14 por três fatias.
+
+**Agora são duas, e o laço vale para todos os agentes.** É a mesma frase, e as
+duas metades vieram da mesma decisão: o que a correção produz deixou de ser um
+apêndice colado antes do `FORMATO` e passou a ser uma **emenda no corpo** do
+prompt daquele agente — entregue pelo canal que a 4.7 já tinha aberto
+(`overrides.ts`), com snapshot imutável e `+p<hash>` no carimbo.
+
+#### Por que o mecanismo mudou
+
+A 4.6 cabeou um mecanismo genérico a um agente só. `paraCalibrar` filtrava
+`agente === "extracao"`; `regras_correntes` era um ponteiro só; `regras()` tinha
+um consumidor só. `resolucao` e `grafo` acumulavam correções **etiquetadas e sem
+consumidor** desde então, e os outros nove agentes não emitiam nada.
+
+O pedido que abriu a 7 foi mais forte que "generalizar as regras": que as
+correções alimentassem algo que **avalia o prompt inteiro do agente** e decide a
+melhor forma de ele passar a considerar o que eu quero. Um apêndice não faz
+isso. Metade das correções reais é reescrita de texto de 200 a 660 caracteres —
+isso é voz, e uma linha imperativa no fim do prompt não ensina voz.
+
+E o pedido veio com a amarra que define a fatia: **o redator tem de ser
+conservador**. Nada de reescrever tudo; alterações incrementais, conforme
+padrões identificados antes e que eu confirmo.
+
+O `Padrao` é a `Regra` da 4.6 com outro destino. A forma é idêntica, e de
+propósito: `id` atribuído no rascunho e nunca editável — é ele que torna
+"sobreviveu à minha edição" bem definido —, `texto` o único campo que a tela
+deixa mexer, `cita` do agente e imutável porque é a procedência. O que mudou é o
+fim: a regra virava apêndice para sempre; o padrão vira pauta, é incorporado ao
+corpo do prompt, e se aposenta com `aplicado_em` preenchido.
+
+**Padrão que eu corto antes de redigir deixa as correções que o motivavam em
+aberto**, e elas voltam na próxima rodada. É o que faz "descartar" ser diferente
+de "endereçar" — a mesma promessa da 4.6, no gesto novo.
+
+A seção do envelope é achada **pelo conteúdo, não pelo nome**: eu posso ter
+renomeado o cabeçalho ao editar o prompt no painel, e o que define a seção é ela
+pedir o JSON. `lastIndexOf` pelo mesmo motivo que a 4.6 usava
+`lastIndexOf(CABECALHO_FORMATO)` — quando uma chave aparece no corpo **e** no
+envelope, é a última ocorrência que é o envelope.
+
+**`criar` entra antes da seção do envelope**, e não no fim do texto. Foi o
+primeiro defeito desta fatia, achado ao escrevê-la: o `FORMATO` costuma ser a
+última seção, e uma seção nova depois dele seria lida como parte do exemplo de
+JSON — exatamente a armadilha que `inserirAntesDoFormato` evitava desde a 4.6.
+
+**Nove dos dez prompts já tinham cabeçalho de seção** antes desta fatia.
+`duplicatas` não tinha: ganhou cabeçalhos no git e virou `duplicatas-2`. Sem
+cabeçalho não há seção, e sem seção a única operação possível seria "reescrever
+tudo" — o que a fatia existe para não permitir.
+
+Tirar `regras()` do caminho de montagem mudaria o prompt da extração **em
+silêncio** se houvesse regra em vigor no R2: o apêndice simplesmente deixaria de
+ser colado, e a primeira sessão depois do deploy sairia extraída por um prompt do
+qual eu nunca tirei nada.
+
+`regras.ts` ficou só de leitura. `versaoDeRegras` e `hashDeTexto` continuam de
+pé, e não são legado inútil: um átomo carimbado `extracao-9+a3f91c7d` em setembro
+precisa resolver para o texto que o produziu, para sempre, e snapshot imutável só
+cumpre a promessa se alguém ainda souber lê-lo.
+
+#### O objeto no R2 é mais velho que o tipo, e vai ser sempre
+
+`IndiceCalibracao` ganhou `padroes` nesta fatia e perdeu `regras_correntes`. O
+objeto gravado na 4.6 não sabe disso, e ler `o?.valor` cru entregava um índice
+com `padroes: undefined` que estourava no primeiro `.filter` de quem o
+recebesse — `GET /api/calibracao` devolveria 500 para quem já tivesse corrigido
+qualquer coisa, e continuaria devolvendo, porque `marcarVisita` e
+`confirmarPadroes` quebram na mesma linha.
+
+#### O relógio da sugestão, agora por agente
+
+`visitado_em` era uma string só. Com o laço aberto para todos isso virou erro:
+abrir a tela de um agente adiava por três semanas a sugestão de **todos** os
+outros, e o material deles ficava parado sem nada acender. Agora é um mapa por
+`AgenteId`, e `sugerirCalibracao` conta só as correções daquele agente.
+
+Isso conserta de quebra um defeito que a 4.6 tinha e ninguém tinha visto: a
+sugestão contava **todas** as correções em aberto, mas `rascunharRegras` só lia
+as de `extracao` e recusava com menos de duas. Uma sessão que só produzisse
+correção de `resolucao` acendia "tem o que olhar" e levava a uma tela que não
+conseguia rascunhar nada.
+
+Não entra mais por injeção, e é a mudança da slice 7: o que a calibração produz é
+uma **emenda ao texto** deste mesmo objeto (§4.12), gravada por `gravarOverride`
+como qualquer edição minha. Prompt editado no painel e prompt emendado pela
+calibração são a mesma coisa para o sistema — mesmo snapshot, mesmo `+p<hash>`,
+mesma última porta em `envelopeFaltando`.
+
+Uma consequência boa e uma ruim. A boa: o prompt efetivo voltou a ser **um texto
+num lugar só**, que se lê inteiro no painel. A ruim: eu e o `redacao-1` escrevemos

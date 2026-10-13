@@ -285,3 +285,46 @@ exatamente o desenho que §4.12 e §4.13 **recusam** para `regras()` e
 "salvei uma regra e ela não valeu" é uma promessa quebrada sem ninguém ver;
 "o nome que entrou agora só entra nos keyterms daqui a cinco minutos" custa uma
 grafia numa sessão, e o ritual é de uma vez por dia.
+
+### Do §4.11–4.13 (calibração e o painel)
+
+Quinze pontos deste sistema falam com o Gateway — eram oito quando esta fatia
+nasceu; o décimo terceiro é o `redacao-1` da slice 7, e os dois últimos são os
+do retrato do "eu", da slice 10. Até esta fatia, saber o
+que cada um fazia exigia abrir cinco arquivos de
+`src/lib/`, e mudar qualquer coisa exigia um deploy. `/agentes` é onde eles
+passam a ter rosto: o fluxo desenhado em **duas telas** — `/agentes`, o que
+entra no grafo, e `/agentes/consulta`, o que sai dele —, e cada caixa abrindo o
+prompt e o modelo que a comandam, e na resolução e no confronto o **limiar**
+(4.11, 5.1).
+
+#### O mecanismo é o da 4.6, generalizado
+
+Nada novo foi inventado: as regras aprovadas já viviam no R2 e já valiam sem
+deploy, com snapshot imutável por hash e sufixo no `prompt_version`. `overrides.ts`
+é `regras.ts` aberto para todos, e o cabeçalho de lá continua sendo a
+explicação de por que R2 (serverless não tem disco gravável nem compartilhado),
+por que snapshot imutável (o carimbo tem de resolver para um texto), e **por que
+sem cache** (cache por instância faria "salvei, vale na próxima" ser falso de um
+jeito que ninguém vê).
+
+**Nunca propaga erro na leitura.** R2 fora do ar não impede sessão nenhuma de ser
+transcrita ou extraída: sem override, o agente sai byte a byte igual ao de antes
+desta fatia. A falha degrada para o comportamento bom, não para nenhum — e é o
+mesmo motivo que faz a slice inteira ser um **no-op** até o meu primeiro toque.
+
+O custo está declarado: **uma leitura do índice por chamada de agente.** Uma por
+sessão na extração, uma na resolução, e **trinta numa sessão gravada de 15 min no
+STT**, uma por bloco. É o preço que `regras()` já paga, e é o preço de a promessa
+ser verdadeira em vez de quase.
+
+#### O que esta fatia não faz
+
+Não guarda histórico de edição: `config/agentes.json` tem o que vale agora, e os
+snapshots por hash guardam os textos, mas não há linha do tempo nem "desfazer" de
+mais de um passo. Não mede nada — não há latência, custo nem contagem de chamada
+por agente, porque `CLAUDE.md` proíbe métrica automática de qualidade e porque
+custo e latência já têm lugar: o painel do próprio Gateway. E não deixa criar
+agente: são os que o código tem, e um novo nasce escrevendo código —
+o `enriquecimento-1` da 4.12 nasceu assim, o `confronto-1` da slice 5 também, e
+a caixa de cada um apareceu no painel porque `tests/agentes.test.ts` cobra isso.

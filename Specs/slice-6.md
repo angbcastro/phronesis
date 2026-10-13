@@ -297,3 +297,59 @@ muda:
 (:Conversa { id, titulo, criado_em, atualizada_em,
              arquivada_em, mensagens_key })                              (012)
 ```
+
+### Do §4.11–4.13 (calibração e o painel)
+
+*Fora de fatia, depois dela: o desenho de /agentes vira duas telas.*
+
+O desenho nasceu como **um** diagrama de todos os agentes, e terminou a slice 6
+como uma grade CSS de **sete colunas** com as setas roteadas à mão em SVG,
+medidas do DOM com `getBoundingClientRect` + `ResizeObserver`, mais sete curvas
+pontilhadas de realimentação passando por fora da grade, e `min-width: 51rem`
+rolando na horizontal. Duas coisas estavam erradas nele, e as duas foram
+consertadas de uma vez.
+
+**Estava confuso, e a culpa era de um invariante geométrico.** Uma aresta de ida
+era um cotovelo — desce, atravessa na altura do meio, desce —, então aresta que
+pulasse uma linha atravessava a caixa que estivesse entre elas. Isso obrigava
+todos os filhos do `grafo` a caberem na **mesma** linha, e cada filho novo
+exigia uma coluna nova: quatro na 4.7, cinco na 4.12, seis na 5, sete na 6. O
+número de colunas passou a ser consequência da geometria, e não da clareza.
+
+**E misturava dois fluxos que não se tocam.** A faixa de leitura da slice 6 — o
+`chat`, o `titulo-chat` e a `conversa` — pendurava no mesmo nó `grafo`, na
+coluna 7, nas mesmas linhas dos agentes de higiene. Só que o chat **não escreve
+nada**: ele é o caminho de sair do grafo, desenhado por cima do caminho de
+entrar nele.
+
+Agora são duas telas, cada uma com URL própria e uma aba no topo:
+
+**A espinha não tem geometria.** Uma coluna só, os passos descem, o elo entre
+eles é uma borda de CSS, e o cotovelo, o `<svg>`, o `<marker>`, o
+`ResizeObserver` e a função `tracar()` deixaram de existir — junto com o teste
+que media o caminho das setas em pixel. **Nenhuma dependência entrou**, pela
+mesma razão de sempre: um motor de pan/zoom seria pagar por um problema que
+este desenho não tem, e agora tem menos ainda.
+
+O que era caixa lateral virou campo do passo, e cada campo diz uma coisa:
+
+| campo | o que é | exemplo |
+|---|---|---|
+| `entradas` | o que chega de fora do caminho | o vocabulário no STT, o dossiê de candidatas na extração |
+| `dentro` | quem roda **dentro** do passo | `resolucao` e `desempate` dentro da `extracao` — que é onde eles de fato rodam (`resolverReferencias` é chamada de dentro de `extrairJanela`) |
+| `volta` | a realimentação, em palavra | "↩ volta para extração · a regra que eu aprovo entra no prompt" |
+
+A `volta` é a mudança que mais paga: a curva pontilhada era o traço mais difícil
+de seguir do desenho antigo, e uma frase de seis palavras diz o mesmo — inclusive
+para onde volta, que a ponta da curva só insinuava. São seis, uma por agente do
+leque.
+
+Aninhar a resolução dentro da extração, em vez de enfileirá-la, é mais
+**verdadeiro** que o desenho anterior, e não só mais curto. E o leque é grade
+que quebra, não fila: os seis partem todos do grafo, e empilhá-los diria que um
+espera o outro.
+
+5. **os fluxos não se misturam**: os agentes da consulta são exatamente `chat` e
+   `titulo-chat`, e nenhum deles aparece no caminho de gravar. É o pedido que
+   gerou esta mudança virado invariante — quem puser o chat de volta na ingestão
+   quebra um teste em vez de só deixar a tela confusa de novo.

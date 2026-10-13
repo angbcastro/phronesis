@@ -230,3 +230,43 @@ antes —, movido quase literal quando ele passou a descrever só o presente
   foi ao modelo devolve a correção à `extracao`, mas numa sessão mista as
   menções resolvidas sem modelo ainda alimentam o agente 2. Está certo por
   sessão e torto por menção — melhor do que estava, e não exato.
+
+### Do §4.11–4.13 (calibração e o painel)
+
+**A procedência é do agente que a etiqueta acusa, e não sempre a do átomo**
+(slice 8.1). Até a 8.1 ela era copiada do átomo da proposta, que carrega sempre
+`prompt_version` e `modelo` da **extração** — então uma correção etiquetada
+`resolucao` dizia um agente na etiqueta e outro no carimbo, e era o agente que
+a slice 7 acabara de ligar ao laço de aprendizado. Agora correção de `sujeito`
+ou `mencao_removida` marcada como `resolucao` carrega `prompt_version_resolucao`
+e `modelo_resolucao` da proposta; todo o resto continua com a versão da
+extração, que é quem produziu o átomo.
+
+O sinal de `sujeito`/`mencao_*` tem **duas partes, e elas vêm de escalas
+diferentes**. A primeira é por átomo: `conhecida: true` é a resolução decidindo
+entre nós que existem, e `conhecida: false` é candidata nova, mais perto de "o
+extrator escreveu algo que não bate com nada". A segunda é por sessão, e entrou
+na 8.1: **a resolução só responde por uma sessão em que ela rodou.**
+`resolucao.ts` roda a camada determinística para toda menção e só chama o modelo
+quando há ambiguidade, e `prompt_version_resolucao` fica `null` quando nenhuma
+foi — sessão sem ambiguidade nenhuma, comum com o grafo pequeno, não chamou o
+agente 2, e quem escreveu aquele nome foi o agente 1. Nessas, a correção volta a
+ser da `extracao`, com a versão dela, e o `calibracao-2` deixa de receber
+material sobre um prompt que não participou.
+
+**A precisão fica certa por sessão e grosseira por menção, e isso é escolha.**
+Saber se *aquela* menção foi ao modelo pediria um campo novo gravado em toda
+proposta — o que tiraria a emenda do tamanho de emenda. Numa sessão mista, duas
+menções ao modelo e oito determinísticas, as correções das oito ainda vão para a
+resolução: erra para o lado de dar material demais ao agente 2, que é o agente
+que existe para decidir isso.
+
+**Capturava os três e calibrava um só até a slice 7.** `resolucao` e `grafo`
+acumularam etiquetados e sem consumidor por três fatias. Na 7 `Correcao.agente`
+deixou de ser um enum de três valores e passou a ser o `AgenteId` do registro
+mais `"grafo"` — e `paraCalibrar` ganhou o parâmetro que faltava. O que estava
+gravado no R2 migrou sozinho: `"extracao"` e `"resolucao"` já eram `AgenteId`.
+
+`grafo` continua sem consumidor, e agora por um motivo e não por omissão: ele
+não é agente, não tem prompt, e não há o que emendar. Conserto de grafia se
+resolve no vocabulário do STT.
