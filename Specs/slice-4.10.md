@@ -596,3 +596,19 @@ extração". Sessão que caiu em `erro` antes de existir transcrição não vira
 `DELETE` de sessão (§10): apagar no meio do pipeline correria com um `waitUntil`
 vivo, que voltaria a gravar o que acabou de sumir. A pergunta é a mesma — "nada
 mais vai mudar sozinho aqui" — e por isso é a mesma predicada, na rota e no botão.
+
+### Do §6 (idempotência)
+
+continuam chegando. Com 6 tentativas e teto de ~1,3 s essa rajada esgotava o
+laço e a exceção subia crua da rota `pronto` — 500 sem causa nenhuma na tela,
+só `${url} respondeu 500` no cliente (`Importacao.tsx`). Dez tentativas com teto
+de 2 s absorvem a rajada sem transformar isso numa espera visível de dezenas de
+segundos.
+
+**A rota `pronto` também passou a responder 502 legível, não 500 cru.** Faltava
+o mesmo tratamento que `sessoes/route.ts` e companhia já tinham (§5.2):
+`existe`, `atualizarManifest` e `atualizarSessao` agora estão dentro de um
+`try/catch` que devolve `erroDeInfra` — o que sobrar do laço acima, ou qualquer
+outro tropeço de R2/Neo4j síncrono, aparece com a causa no log e uma frase na
+tela em vez de um 500 mudo. O `waitUntil` de STT/janelas continua fora do
+`try`: falhar ali não pode derrubar a resposta que já foi decidida.

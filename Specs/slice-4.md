@@ -408,3 +408,15 @@ leitor tratar como caso real. **Nenhum nó do banco carrega esse valor**, pelo
 mesmo motivo — não há dado a migrar, e por isso a remoção não pede migration.
 Uma gravação que a aba interrompeu fica em `gravando` até `/finalizar` levá-la
 adiante, que é o que já acontecia de fato.
+
+### Do §6 (idempotência)
+
+*Fora de fatia, no mesmo período (01/09): o retomar que saiu com o chip.*
+
+**Retomar não existe mais.** Havia um chip na home que oferecia "retomar" e
+"revisar" no mesmo cartão; ele saiu para tirar a cobrança da tela de gravar
+(visão §6), e o "retomar" foi junto — era o único lugar de onde podia ser
+chamado, porque precisa do microfone e do `Gravador`. Todo o maquinário dele foi
+apagado com ele (§5): `proximoIndice`, `foiAbandonada`, `ABANDONO_MIN`,
+`indiceInicial`. Uma gravação nova sempre começa em `chunk_000` de uma sessão
+nova.

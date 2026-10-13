@@ -377,3 +377,16 @@ de um Gateway pendurado.
 **Orçamento que não cabe a chamada não vira chamada.** Antes o modelo era chamado
 assim mesmo e o `waitUntil` morria no meio dele, sem deixar sequer o log; agora
 sobe `PrazoDeChamadaError` com `prazo_ms: 0` e quem chamou tem tempo de gravar.
+
+### Do §6 (idempotência)
+
+**O laço mora em `etag.ts` desde a slice 8, e é um só.** Ele estava copiado três
+vezes — manifest, `parcial.json` e `calibracao/indice.json` —, com a dívida
+declarada no docstring de `atualizarParcial` ("extrair um helper é refatoração
+fora do escopo desta fatia"); a quarta cópia seria a das medidas, e quatro é onde
+uma correção passa a alcançar só três. Cada chamador
+continua trazendo o que é dele: a curva de espera (os números do manifest são os
+únicos diferentes, e o porquê está logo abaixo), o `normalizar` que materializa o
+objeto ausente ou conserta o formato antigo, e o mutador. O que o laço devolve a
+mais é `mudou` — "a escrita foi minha?" —, e é isso que faz a reivindicação de
+uma janela ser uma trava de verdade em vez de uma esperança.

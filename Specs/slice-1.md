@@ -143,3 +143,18 @@ que já estão no grafo foram construídas.
 O laço de espera engolia o erro do bloco em `catch {}` — a falha ia para `erro`
 sem uma linha sequer, e depois do fato não havia o que investigar.
 `tests/pipeline.test.ts` fixa isso: falha de bloco sempre deixa rastro.
+
+### Do §6 (idempotência)
+
+Regra inviolável 4: todo passo é chaveado por `sessao_id` (+ `chunk_index`).
+Eram três travas na slice 1 — o bloco, a proposta e o manifest; a tabela cresceu
+com cada fatia, e hoje são estas:
+
+Duas exigências de transporte do R2 sustentam isso, ambas dentro de `put()` em
+`r2.ts`, ambas descobertas quebrando na primeira gravação real (2026-08-24):
+
+  estrito e recusa com **412 em toda gravação**, esgotando as 6 tentativas.
+  `etagForte()` remove o `W/` antes de assinar.
+
+O primeiro erro mascarava o segundo: o 411 estourava antes de o laço de retry
+chegar a exercitar o `If-Match`. `tests/r2.test.ts` cobre os dois.

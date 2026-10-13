@@ -1,13 +1,12 @@
 ## 6. Idempotência
 
 Regra inviolável 4: todo passo é chaveado por `sessao_id` (+ `chunk_index`).
-Eram três travas na slice 1 — o bloco, a proposta e o manifest; a tabela cresceu
-com cada fatia, e hoje são estas:
+As travas:
 
 | Trava | Onde | Efeito |
 |---|---|---|
 | `chunk_NNN.json` existir | `pipeline.transcreverBloco` | não rechama o STT nem sobrescreve resultado pronto — mas só **depois** de a transcrição voltar |
-| lease `transcrevendo_em` com prazo (`LEASE_BLOCO_MS`, 120 s) | `manifest.reivindicarBloco` | fecha a janela que a trava de cima não cobre: entre o pedido e a resposta do STT, dois workers mandavam o mesmo áudio (slice 8, §4.18) |
+| lease `transcrevendo_em` com prazo (`LEASE_BLOCO_MS`, 120 s) | `manifest.reivindicarBloco` | fecha a janela que a trava de cima não cobre: entre o pedido e a resposta do STT, dois workers mandariam o mesmo áudio (§4.18) |
 | janela `pronta` no `parcial.json` | `janela.reivindicar` | janela fechada não é reextraída nem repaga, por mais vezes que `/pronto` chame |
 | lease `em_curso` com prazo (`LEASE_MS`, 120 s) | `janela.reivindicar` | dois `waitUntil` não extraem a mesma janela; worker morto libera a janela em vez de travá-la |
 | `If-Match` + laço de retry no `parcial.json` | `janela.atualizarParcial` | duas janelas concorrentes se somam em vez de se sobrescrever |
@@ -24,7 +23,7 @@ com cada fatia, e hoje são estas:
 | o rascunho de perfil não escreve | `perfil.rascunhar` | pedir o rascunho dez vezes não muda o grafo; só `POST /api/entidades/perfil` grava |
 | status na cláusula `WHERE` | `sessoes.atualizarSessao` | transição já feita não volta atrás; confirmar duas vezes não reprocessa |
 | `embedding IS NULL` ou modelo diferente | `atomos.embutirAtomos` e `atomosSemVetor` | reconfirmar não reembute o que já tem vetor; rodar o retrofill duas vezes não gasta duas vezes |
-| `embedding_fonte` bater | `entidades.garantirEmbeddings` | entidade em dia não é reembutida — e por isso não há gancho a esquecer em nenhuma das oito rotas de entidade |
+| `embedding_fonte` bater | `entidades.garantirEmbeddings` | entidade em dia não é reembutida — e por isso não há gancho a esquecer em nenhuma das rotas de entidade |
 | `CREATE VECTOR INDEX … IF NOT EXISTS` | migration 006 | reaplicar a migration é no-op |
 | `If-None-Match: *` em `correcoes.json` | `calibracao.capturarCorrecoes` | reenviar o confirmar não sobrescreve o registro permanente da revisão |
 | `If-Match` + laço de retry no índice | `calibracao.atualizarIndice` | duas capturas concorrentes se somam; quem perde a corrida relê e reaplica |
@@ -57,18 +56,16 @@ Vários `/pronto` podem chegar ao mesmo tempo. `atualizarManifest` faz
 read-modify-write condicional: lê o objeto com o etag, aplica um mutador **puro e
 idempotente**, grava com `If-Match` (ou `If-None-Match: *` na primeira vez). Em
 412/409 (`ConflitoR2Error`) relê e reaplica, com backoff, até 10 tentativas
-(subiu de 6 na importação, slice 4.10 — ver abaixo), teto de 2 s por espera.
+e teto de 2 s por espera — ver abaixo.
 
-**O laço mora em `etag.ts` desde a slice 8, e é um só.** Ele estava copiado três
-vezes — manifest, `parcial.json` e `calibracao/indice.json` —, com a dívida
-declarada no docstring de `atualizarParcial` ("extrair um helper é refatoração
-fora do escopo desta fatia"); a quarta cópia seria a das medidas, e quatro é onde
-uma correção passa a alcançar só três. Cada chamador
-continua trazendo o que é dele: a curva de espera (os números do manifest são os
-únicos diferentes, e o porquê está logo abaixo), o `normalizar` que materializa o
-objeto ausente ou conserta o formato antigo, e o mutador. O que o laço devolve a
-mais é `mudou` — "a escrita foi minha?" —, e é isso que faz a reivindicação de
-uma janela ser uma trava de verdade em vez de uma esperança.
+**O laço mora em `etag.ts`, e é um só** — manifest, `parcial.json`,
+`calibracao/indice.json` e medidas passam por ele, e com cópias uma correção
+alcançaria só algumas. Cada chamador traz o que é dele: a curva de espera (os
+números do manifest são os únicos diferentes, e o porquê está logo abaixo), o
+`normalizar` que materializa o objeto ausente ou conserta o formato antigo, e o
+mutador. O que o laço devolve a mais é `mudou` — "a escrita foi minha?" —, e é
+isso que faz a reivindicação de uma janela ser uma trava de verdade em vez de
+uma esperança.
 
 **Módulo próprio e não uma função em `r2.ts`**, por um motivo estrutural de
 teste: meia dúzia de arquivos de `tests/` troca `@/lib/r2` inteiro por uma
@@ -84,22 +81,19 @@ não se acumula — os blocos chegam a cada 30 s de fala real. Na importação,
 `BLOCOS_SIMULTANEOS` sobe dois blocos por vez sem pausa nenhuma; se o rate limit
 pegar vários blocos seguidos, as esperas deles terminam perto umas das outras, e
 o `marcarTranscrito` de todos colide com o `registrarChunk` dos blocos novos que
-continuam chegando. Com 6 tentativas e teto de ~1,3 s essa rajada esgotava o
-laço e a exceção subia crua da rota `pronto` — 500 sem causa nenhuma na tela,
-só `${url} respondeu 500` no cliente (`Importacao.tsx`). Dez tentativas com teto
-de 2 s absorvem a rajada sem transformar isso numa espera visível de dezenas de
-segundos.
+continuam chegando. Dez tentativas com teto de 2 s absorvem a rajada sem
+transformar isso numa espera visível de dezenas de segundos; com menos, o laço se
+esgota e a exceção sobe da rota `pronto`.
 
-**A rota `pronto` também passou a responder 502 legível, não 500 cru.** Faltava
-o mesmo tratamento que `sessoes/route.ts` e companhia já tinham (§5.2):
-`existe`, `atualizarManifest` e `atualizarSessao` agora estão dentro de um
-`try/catch` que devolve `erroDeInfra` — o que sobrar do laço acima, ou qualquer
-outro tropeço de R2/Neo4j síncrono, aparece com a causa no log e uma frase na
-tela em vez de um 500 mudo. O `waitUntil` de STT/janelas continua fora do
-`try`: falhar ali não pode derrubar a resposta que já foi decidida.
+**A rota `pronto` responde 502 legível, não 500 cru**, como as outras (§5.2):
+`existe`, `atualizarManifest` e `atualizarSessao` estão dentro de um
+`try/catch` que devolve `erroDeInfra` — o que sobrar do laço acima, ou
+qualquer outro tropeço de R2/Neo4j síncrono, aparece com a causa no log e uma
+frase na tela. O `waitUntil` de STT/janelas fica fora do `try`: falhar ali não
+pode derrubar a resposta que já foi decidida.
 
 Duas exigências de transporte do R2 sustentam isso, ambas dentro de `put()` em
-`r2.ts`, ambas descobertas quebrando na primeira gravação real (2026-08-24):
+`r2.ts`:
 
 - **`Content-Length` sempre explícito.** O undici o deduz de corpo em texto, mas
   essa dedução se perde quando o corpo chega como stream — que é o que acontece
@@ -110,21 +104,16 @@ Duas exigências de transporte do R2 sustentam isso, ambas dentro de `put()` em
 - **`If-Match` só com validador forte.** O R2 comprime a resposta de GET de
   objeto compressível — o manifest é um — e nesse caso devolve o etag como
   `W/"…"`. O digest é o mesmo; só o prefixo sobra. Repassado cru, o R2 compara
-  estrito e recusa com **412 em toda gravação**, esgotando as 6 tentativas.
-  `etagForte()` remove o `W/` antes de assinar.
+  estrito e recusa com **412 em toda gravação**. `etagForte()` remove o `W/`
+  antes de assinar.
 
-O primeiro erro mascarava o segundo: o 411 estourava antes de o laço de retry
-chegar a exercitar o `If-Match`. `tests/r2.test.ts` cobre os dois.
+`tests/r2.test.ts` cobre os dois.
 
 ### 6.2 Gravação interrompida
 
-**Retomar não existe mais.** Havia um chip na home que oferecia "retomar" e
-"revisar" no mesmo cartão; ele saiu para tirar a cobrança da tela de gravar
-(visão §6), e o "retomar" foi junto — era o único lugar de onde podia ser
-chamado, porque precisa do microfone e do `Gravador`. Todo o maquinário dele foi
-apagado com ele (§5): `proximoIndice`, `foiAbandonada`, `ABANDONO_MIN`,
-`indiceInicial`. Uma gravação nova sempre começa em `chunk_000` de uma sessão
-nova.
+**Retomar não existe.** Uma gravação nova sempre começa em `chunk_000` de uma
+sessão nova; emendar fala na mesma sessão pediria o microfone e o `Gravador` de
+volta fora da tela de gravar, que não cobra nada de ninguém (visão §6).
 
 **Fala não se perde por isso.** Os blocos que já subiram estão no R2, e a sessão
 interrompida continua na lista de sessões levando a `/sessao/:id`, onde
