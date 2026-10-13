@@ -239,3 +239,23 @@ Uma migration, um agente, quatro rotas, uma tela nova.
   ele ainda pode *ser* processado (busca candidatos normalmente), só não entra
   na lista de candidatos de outro átomo, porque comparação de data com string
   vazia nunca é "anterior".
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do §8 (Neo4j)
+
+Contrato completo do que esta migration acrescenta:
+
+```
+(:Atomo { …,
+          confronto_estado, confronto_em,
+          confronto_execucao, confronto_motivo })                        (011)
+
+(:Atomo mais_novo)-[:ATUALIZA|:CONTRADIZ|:CONFIRMA|:COMPLEMENTA
+  { execucao, motivo, confianca,
+    criado_em, modelo, prompt_version }]->(:Atomo mais_antigo)            (011)
+```

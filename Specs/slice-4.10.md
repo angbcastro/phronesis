@@ -418,3 +418,10 @@ vez de acidente de teto.
   tentativas e a sessão foi para `erro`. As nove chamadas que isso custava
   viraram três (`maxRetries: 0` nas chamadas embrulhadas por `limite.ts`), mas
   **o limite em si é questão de plano, não de código**.
+
+### Do §8 (Neo4j)
+
+`descartada_em` (migration 008) é ISO, e **ausente é o caso normal**: toda sessão
+de antes da 4.10 passa no `IS NULL` de `todasSessoes` sem migração de dado
+nenhuma. Ele é o único efeito do `DELETE` de sessão sobre o grafo — os átomos e o
+`:GEROU` ficam onde estavam (regra 6, §10).

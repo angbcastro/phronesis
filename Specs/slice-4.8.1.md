@@ -495,3 +495,35 @@ antes —, movido quase literal quando ele passou a descrever só o presente
   padrão (§4.7), o que enxuga a resposta e não muda o desenho. Num grafo de dezenas de entidades
   isso é mais rápido que ida ao servidor por tecla; em milhares, deixa de ser, e
   a saída é uma rota de busca com uma migration de índice atrás dela.
+
+### Do §8 (Neo4j)
+
+**E `fundir` recusa vencedora com `status = 'fundida'`.** Até a 4.8 só a
+perdedora era conferida, e fundir **para dentro** de um alias corrompe do mesmo
+jeito.
+
+**Quem faz essa próxima passada acontecer** (4.8.1), toda em `waitUntil` e toda
+engolindo a falha com `[entidades]` no log:
+
+| Call site | Por que ali |
+|---|---|
+| `POST /api/sessoes/:id/confirmar` | depois de `gravarAtomos`, junto do `capturarCorrecoes` — é onde nascem as entidades novas |
+| `POST /api/entidades/perfil` | o que mais muda a string canônica |
+| `POST /api/entidades/renomear` | nome novo e alias novo, dos dois lados |
+| `POST /api/entidades/fundir` | o vencedor ganha alias, e alias entra na fonte |
+| `POST /api/entidades/tipo` | o tipo entra na fonte |
+| `POST /api/entidades/criar` | é o passo zero: o nó semeado à mão só entra na 3a com vetor |
+
+Até a 4.8 o único chamador era `POST /api/entidades/embutir`, **que nenhuma tela
+chama** — a varredura de `fetch("/api/…")` em `src/` dá 30 chamadas e nenhuma é
+essa —, e não há cron nem `waitUntil` em lugar nenhum apontando para lá. Ou
+seja: a "próxima passada" descrita neste parágrafo não existia. Entidade nascida
+num confirmar ficava sem vetor para sempre, e a camada 3a (4.10) era código que
+não podia achar nada.
+
+O argumento que recusava o gancho continua escrito acima e continua bom — um
+lugar a mais onde alguém esquece de invalidar. Ele não se aplica **porque o
+gancho não invalida nada**: quem decide é o hash. Esquecer um call site custa
+atraso, não vizinhança errada, porque a próxima passada de qualquer outro
+alcança. E rodar com nada fora de dia custa uma consulta e zero chamada de
+modelo, o que é o que permite chamar à toa.

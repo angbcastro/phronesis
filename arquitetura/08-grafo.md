@@ -9,19 +9,90 @@ o valor de `NEO4J_DATABASE` no arquivo de credenciais. Errar esse segmento dá
 `fields`/`values` da resposta em objetos e transforma `errors[0]` em
 `Neo4jError`.
 
-Quatro módulos escrevem em nó de conteúdo, e a divisão importa:
+### O schema inteiro, por label e aresta
+
+A definição canônica é `db/migrations/`; este é o contrato que ela escreve, com
+a migration de origem de cada propriedade entre parênteses. Constraint de
+existência (`IS NOT NULL`) é recurso Enterprise e o Aura Free a recusa: campo
+obrigatório é garantido pelo código que grava e pelos testes, não pelo banco.
+
+```
+(:Sessao { id, iniciada_em, duracao_s, status, audio_key,              (001)
+           transcricao_key, chunks_total,                               (001)
+           descartada_em })                                             (008)
+
+(:Atomo { id, texto, tipo, criado_em, valido_em, status,               (002)
+          prompt_version, modelo,                                       (002)
+          inicios_s, fins_s, ancoras,                                   (003)
+          embedding, embedding_modelo,                                  (006)
+          confronto_estado, confronto_em,
+          confronto_execucao, confronto_motivo })                       (011)
+tipo ∈ FATO | OPINIAO | SENTIMENTO | APRENDIZADO | CONQUISTA          (002)
+     | DECISAO | ROTINA                                                 (003)
+     | HISTORIA                                                         (007)
+
+(:Entidade:Pessoa|:Projeto|:Objetivo                                    (002)
+           |:Organizacao                                                (007)
+  { id, nome, nome_normalizado, criado_em,                              (002)
+    status,                                                             (004)
+    contexto, pode_ajudar_com, fizemos_juntos,                          (005)
+    embedding, embedding_modelo, embedding_fonte,                       (006)
+    resumo, aliases, canonico,                                          (009)
+    resumo_anterior, contexto_anterior,
+    pode_ajudar_com_anterior, fizemos_juntos_anterior,
+    enriquecimento_estado, enriquecimento_motivo,
+    enriquecimento_em, enriquecimento_atomos })                         (010)
+status ∈ 'ativa' | 'fundida'   resumo ≤ 500 (TETO_RESUMO)
+perfil (contexto, pode_ajudar_com, fizemos_juntos) sem teto
+
+(:Conversa { id, titulo, criado_em, atualizada_em,
+             arquivada_em, mensagens_key })                             (012)
+
+(:Sessao)-[:GEROU]->(:Atomo)                                            (002)
+(:Atomo)-[:SOBRE]->(:Entidade)          exatamente 1, sujeito principal (002)
+(:Atomo)-[:MENCIONA]->(:Entidade)       0..n                            (002)
+(:Atomo)-[:PERFILA { campo }]->(:Entidade)                              (005)
+(:Entidade)-[:FUNDIDA_EM]->(:Entidade)  fusão de duas entidades reais   (004)
+(:Entidade)-[:DISTINTA_DE]->(:Entidade) recusa minha                    (004)
+(:Atomo mais_novo)-[:ATUALIZA|:CONTRADIZ|:CONFIRMA|:COMPLEMENTA
+  { execucao, motivo, confianca, criado_em, modelo, prompt_version,     (011)
+    camada, origem, dono, editado_em,                                   (013)
+    original_tipo, original_camada, original_motivo }]->(:Atomo mais_antigo)
+(:Atomo)-[:CONFRONTO_RECUSADO { em, tipo }]->(:Atomo)                   (013)
+```
+
+| Constraint ou índice | Migration | Para quê |
+|---|---|---|
+| `sessao_id` (único), `sessao_status`, `sessao_iniciada_em` | 001 | a lista de sessões e a guarda de status |
+| `atomo_id` (único), `atomo_status`, `atomo_tipo`, `atomo_valido_em` | 002 | o `MERGE` idempotente do confirmar e os filtros do chat e do confronto |
+| `entidade_id` (único), `entidade_nome_normalizado` (único) | 002 | ver §8.1 |
+| `entidade_status` | 004 | existe e não é usado — ver §8.2 |
+| `atomo_embedding`, `entidade_embedding` (vetoriais) | 006 | ver §8.4 |
+
+As outras migrations (003, 005, 007, 008, 009, 010, 011, 012, 013) **não têm
+statement**: propriedade de valor livre e tipo de relação não se declaram no
+Aura Free, e índice novo esbarra na cota (§14). Elas existem porque
+`db/migrations/` é a definição canônica, e quem for ler tem que ver o contrato
+inteiro. `scripts/migrate.ts` conta 0 statement(s) e segue.
+
+### Quem escreve
 
 | Módulo | Escreve | Quem chama |
 |---|---|---|
+| `sessoes.ts` | `:Sessao` — cria, atualiza com guarda de status, marca `descartada_em` | as rotas de `/api/sessoes` e o pipeline |
 | `atomos.ts` | `:Atomo`, `:Entidade` e `:PERFILA` | **só o confirmar** — nenhum átomo entra antes da revisão (regra 5) |
 | `fusao.ts` | `:Entidade` — funde, renomeia, troca tipo, cria, escreve `resumo`, edita `aliases`, marca `canonico` | as rotas de `/entidades`, com um toque meu em cada uma — e `registrarGrafia`, que o confirmar chama sozinho (§4.14) |
 | `perfil.ts` | `:Entidade` — os três campos de perfil (8.3) | só `POST /api/entidades/perfil`, com um toque meu |
-| `entidades.ts` | `:Entidade` — `embedding`, `embedding_modelo` e `embedding_fonte` (8.4) | `passadaDeVetores()` em `waitUntil`, no confirmar e nas oito rotas de `/entidades`, mais `POST /api/entidades/embutir` para o retrofill; o módulo que lê o catálogo é o mesmo que põe o vetor em dia |
+| `entidades.ts` | `:Entidade` — `embedding`, `embedding_modelo` e `embedding_fonte` (8.4) | `passadaDeVetores()` em `waitUntil`, nos pontos da tabela do §8.4, mais `POST /api/entidades/embutir` para o retrofill; o módulo que lê o catálogo é o mesmo que põe o vetor em dia |
+| `enriquecimento.ts` | `:Entidade` — a ficha inteira, os `_anterior` e o estado da fila (8.3.2) | a fila do agente 4, a batida semanal e o retrato do "eu" (§4.9, §4.20) |
+| `confronto.ts` | `:Atomo` — `confronto_*`; as quatro relações e a recusa (8.5, 8.7) | a fila do confronto, a batida diária e a minha edição em `/confronto` (§4.15) |
+| `conversas.ts` | `:Conversa` (8.6) | `/api/chat` e `/api/conversas` |
 
-`entidades.ts` está na lista porque escrever vetor é escrever no grafo, mesmo
-que o que ele escreva seja derivável do texto a qualquer momento. Ele é a
-exceção da regra de cima e a confirma: é o único dos quatro que grava sem um
-toque meu, e é o único cujo dado se refaz sozinho na passada seguinte.
+Três deles gravam sem um toque meu: `entidades.ts`, cujo dado é derivável do
+texto a qualquer momento e se refaz sozinho na passada seguinte;
+`enriquecimento.ts`, que é a reabertura declarada do regime da ficha (§4.9); e
+`confronto.ts`, que liga átomos já confirmados sem tocar no texto deles (§4.15).
+Nenhum dos três cria átomo.
 
 A regra 5 é sobre o **pipeline** não gravar sozinho. `fusao.ts` é o contrário
 disso: é eu corrigindo à mão o que o pipeline deixou torto. A resolução de
@@ -36,27 +107,22 @@ entidade (4.6) continua só lendo. Labels que o código escreve:
 confirmação não conflita com a regra 5 (nada entra no grafo sem aprovação) —
 essa regra vale para átomo e entidade.
 
-`descartada_em` (migration 008) é ISO, e **ausente é o caso normal**: toda sessão
-de antes da 4.10 passa no `IS NULL` de `todasSessoes` sem migração de dado
-nenhuma. Ele é o único efeito do `DELETE` de sessão sobre o grafo — os átomos e o
-`:GEROU` ficam onde estavam (regra 6, §10).
+`descartada_em` (migration 008) é ISO, e **ausente é o caso normal**: sessão que
+nunca foi descartada passa no `IS NULL` de `todasSessoes`. Ele é o único efeito
+do `DELETE` de sessão sobre o grafo — os átomos e o `:GEROU` ficam onde estavam
+(regra 6, §10).
 
-### 8.1 Schema da slice 2, aplicado e em uso
+### 8.1 `:Atomo` e `:Entidade`: a base (migrations 002, 003 e 007)
 
-A migration `002_atomo_entidade.cypher` já rodou: `:Atomo` e `:Entidade` têm
-constraint e índice no Aura, e o grafo já recebeu conteúdo de sessões reais —
-átomos com as duas listas de offsets, `ancoras`, `status`, `prompt_version` e
-`modelo`, ligados por `:GEROU`, `:SOBRE` e `:MENCIONA`. O `MERGE` com label
-literal por tipo, a constraint de `nome_normalizado` e as listas paralelas como
-float foram conferidos contra o Aura, não só contra o banco mockado. Quem escreve neles é o confirmar da revisão, por
-`atomos.ts`; `entidades.ts` só lê, por `nome_normalizado`.
+Quem escreve átomo e entidade é o confirmar da revisão, por `atomos.ts`. O
+`MERGE` com label literal por tipo, a constraint de `nome_normalizado` e as
+listas paralelas como float são conferidos contra o Aura, não só contra o banco
+mockado.
 
 Neo4j não aceita label vindo de parâmetro e o projeto não usa APOC, então
 `gravarEntidades` roda **uma consulta por tipo**, com o label literal na string.
 É seguro porque o valor sai de `TIPOS_ENTIDADE`, constante fechada, e nunca do
 cliente.
-
-Depois das migrations 003 e 007 o contrato de `:Atomo` é:
 
 ```
 (:Atomo { id, texto, tipo, inicios_s, fins_s, ancoras,
@@ -66,12 +132,11 @@ tipo ∈ FATO | OPINIAO | SENTIMENTO | APRENDIZADO | CONQUISTA | DECISAO
      | HISTORIA | ROTINA
 ```
 
-`HISTORIA` entrou na 007, e é o contrário dos outros sete: eles pedem a
-afirmação destilada, ela pede o episódio com o detalhe que foi contado (§4.6).
-Ela entra também em `TIPOS_SEMPRE_EU` (`tipos.ts`), junto com `SENTIMENTO`,
-`APRENDIZADO` e `ROTINA`. **Nenhum átomo muda de tipo**: o que o `extracao-7`
-colapsou em `FATO` continua `FATO`, e o `prompt_version` carimbado é o que diz
-por quê.
+`HISTORIA` (007) é o contrário dos outros sete: eles pedem a afirmação
+destilada, ela pede o episódio com o detalhe que foi contado (§4.6). Ela está
+também em `TIPOS_SEMPRE_EU` (`tipos.ts`), junto com `SENTIMENTO`, `APRENDIZADO`
+e `ROTINA`. **Nenhum átomo muda de tipo** depois de gravado: o `prompt_version`
+carimbado é o que diz por que ele saiu daquele tipo.
 
 `inicios_s`/`fins_s`/`ancoras` são listas paralelas, uma entrada por âncora —
 Neo4j não guarda array de mapa como propriedade. A proposta no R2 guarda a forma
@@ -85,20 +150,14 @@ no Aura Free, então ela documenta o contrato e o código o garante.
 | `entidade_id` | |
 | `entidade_nome_normalizado` | único entre **todas** as entidades: `:Pessoa`, `:Projeto`, `:Objetivo` e `:Organizacao` carregam `:Entidade`, então um projeto e uma pessoa não podem ter o mesmo nome. Deliberado — é a trava que impede duplicata em corrida, ao custo de recusar colisão legítima de nome entre tipos |
 
-`:Organizacao` entrou na 007 e não trouxe constraint nem índice novo: as duas
-constraints acima são por `:Entidade`, e valem para os quatro labels de uma vez.
-A migration é um no-op, como a 003 e a 005 — label passa a existir quando o
-primeiro nó o recebe, no confirmar. **Nada é reclassificado para trás**: a
-empresa que já está no grafo como `:Pessoa` continua `:Pessoa` até eu trocar o
-tipo à mão em `/entidades` (§8.2), e reclassificar em massa exigiria adivinhar
-quais nós são empresas.
+`:Organizacao` (007) não tem constraint nem índice próprio: as duas constraints
+acima são por `:Entidade`, e valem para os quatro labels de uma vez. Label
+passa a existir quando o primeiro nó o recebe, no confirmar. **Nada é
+reclassificado para trás**: a empresa que está no grafo como `:Pessoa` continua
+`:Pessoa` até eu trocar o tipo à mão em `/entidades` (§8.2), e reclassificar em
+massa exigiria adivinhar quais nós são empresas.
 
 Índices em `:Atomo(status)`, `:Atomo(tipo)` e `:Atomo(valido_em)`.
-
-Constraint de existência de propriedade (`IS NOT NULL`) não existe aqui: é
-recurso Enterprise e o Aura Free recusa. `prompt_version` e `modelo`
-obrigatórios em todo átomo (regra 7) são garantidos por código e teste, não pelo
-banco.
 
 Tipo de relação não se declara em Neo4j — `:GEROU`, `:SOBRE` e `:MENCIONA` só
 passam a existir com a primeira aresta. Ficam registrados em comentário no topo
@@ -122,12 +181,10 @@ parecidas: "Exxmed" e "Exx Med" normalizam para chaves diferentes.
 (:Entidade)-[:DISTINTA_DE]->(:Entidade)  recusa minha: não propor de novo
 ```
 
-**Desde a 4.11 são dois mecanismos, e não um.** Grafia (o que o STT errou, o
-nome antigo de um renome, o que eu escrevo à mão) mora em `e.aliases`, uma lista
-de strings no próprio nó; `:FUNDIDA_EM` ficou significando uma coisa só — fusão
-de duas entidades reais, que é o registro de uma decisão minha. Até a migration
-009 as duas coisas tinham a **mesma forma** no grafo e nenhuma consulta as
-distinguia. Ver "grafia deixou de ser nó", abaixo.
+**São dois mecanismos.** Grafia (o que o STT errou, o nome antigo de um renome,
+o que eu escrevo à mão) mora em `e.aliases`, uma lista de strings no próprio nó;
+`:FUNDIDA_EM` significa uma coisa só — fusão de duas entidades reais, que é o
+registro de uma decisão minha.
 
 **Fundir não apaga** (regra 6). O perdedor fica com `status = 'fundida'` e uma
 aresta `:FUNDIDA_EM`; as **três** arestas que apontam para entidade — `:SOBRE`,
@@ -172,49 +229,31 @@ pendura o `:SOBRE` em **`rapha`**, que nenhuma listagem mostra e que a camada do
 vizinhos descarta. `MERGE` + `DELETE` como o resto: refazer a fusão cura, que é o
 contrato que o §14 declara para ela não ser atômica.
 
-**E `fundir` recusa vencedora com `status = 'fundida'`.** Até a 4.8 só a
-perdedora era conferida, e fundir **para dentro** de um alias corrompe do mesmo
-jeito.
+**E `fundir` recusa vencedora com `status = 'fundida'`**: fundir **para
+dentro** de um alias corrompe do mesmo jeito.
 
-#### Grafia deixou de ser nó (migration 009, slice 4.11)
+#### A grafia é item de `aliases` (migration 009)
 
-A grafia falada é registrada automaticamente no confirmar desde a 4.9
-(`registrarGrafia`, §4.14): eu disse "Jean", confirmei "Giampaolo Lepore", e na
-sessão seguinte "jean" casa por grafia exata, sem depender da busca. Até a 4.10
-ela virava um **nó** `:Entidade` com `status = 'fundida'` e uma `:FUNDIDA_EM`
-para o vencedor.
-
-**O problema não era o efeito, era a forma.** O grafo passou a ter duas espécies
-de nó fundido idênticas entre si — a grafia que o STT errou, criada sozinha, e o
-perdedor de uma fusão que eu mandei fazer, com arestas migradas — e nenhuma
-consulta as distinguia. `/entidades` mostrava as duas como "histórico do nome", a
-lista não era editável, e eu não conseguia ensinar uma grafia **antes** de o STT
-errar pela primeira vez, que é justamente quando ele mais erra.
-
-A migration 009 converteu as primeiras em itens de `aliases` do vencedor
-terminal da cadeia e apagou os nós. **O discriminador é o label**, e não a
-contagem de átomos: nó de grafia nasce só com `:Entidade`, entidade real ganha o
-label do tipo no `ON CREATE` — e o perdedor de uma fusão real também fica com
-zero átomo, porque `fundir()` migra as três arestas.
-
-Depois disso:
+A grafia falada é registrada no confirmar (`registrarGrafia`, §4.14): eu disse
+"Jean", confirmei "Giampaolo Lepore", e na sessão seguinte "jean" casa por
+grafia exata, sem depender da busca. Ela é um item de `aliases`, e não um nó:
+a lista é editável em `/entidades`, e eu posso ensinar uma grafia **antes** de o
+STT errar pela primeira vez, que é justamente quando ele mais erra.
 
 | Escrita | O que ela faz |
 |---|---|
 | `registrarGrafia` (confirmar) | `SET v.aliases = coalesce(v.aliases, []) + $falada` |
 | `renomear` | o nó assume o nome novo; o antigo entra em `aliases` |
-| `fundir` | inalterada: nó perdedor, `status = 'fundida'`, `:FUNDIDA_EM`, arestas migradas |
+| `fundir` | nó perdedor, `status = fundida`, `:FUNDIDA_EM`, arestas migradas |
 
-As quatro recusas de `registrarGrafia` continuam de pé — grafia vazia, pronome
-ou igual à chave do nó; nó alvo inexistente ou ele mesmo fundido; grafia que já é
-entidade **ativa**; grafia que já é alias de outro nó. A quarta é a que mudou de
-mecanismo: até a 009 o índice único de `nome_normalizado` era a trava, porque a
-grafia era nó. String dentro de array o banco não recusa, então a trava passou a
-ser uma leitura do catálogo, em memória — a mesma decisão que `acharPorChave` já
-tomava. Pela mesma razão, `criarEntidade` e o conflito de `renomear` também
-conferem a propriedade: sem isso eu semearia "Jean" como pessoa nova enquanto
-"Jean" é grafia do Giampaolo, e o casamento exato passaria a ter dois donos para
-a mesma chave.
+As quatro recusas de `registrarGrafia`: grafia vazia, pronome ou igual à chave
+do nó; nó alvo inexistente ou ele mesmo fundido; grafia que já é entidade
+**ativa**; grafia que já é alias de outro nó. String dentro de array o banco não
+recusa, então a quarta trava é uma leitura do catálogo, em memória — a mesma
+decisão que `acharPorChave` toma. Pela mesma razão, `criarEntidade` e o conflito
+de `renomear` também conferem a propriedade: sem isso eu semearia "Jean" como
+pessoa nova enquanto "Jean" é grafia do Giampaolo, e o casamento exato passaria a
+ter dois donos para a mesma chave.
 
 Quem lê as grafias, e de onde:
 
@@ -224,25 +263,19 @@ Quem lê as grafias, e de onde:
 | `garantirEmbeddings` | as duas, unidas em Cypher | a grafia entra na string canônica, então acrescentá-la muda o hash e a entidade se reembute sozinha |
 | `buscarConhecidas` / `resolver` | `chaves` | "Exx Med" numa sessão nova volta como conhecida, com o nome do vencedor |
 | `gravarAtomos` e `fundir` (`:SOBRE`, `:MENCIONA`, `:PERFILA`) | `:FUNDIDA_EM` | fusão real continua sendo nó, e a travessia continua igual |
-| `nomesParaVocabulario` | **só `e.nome`** | mandar a grafia rejeitada ensinaria o STT a reproduzi-la — e isso deixou de ser consequência do filtro de status para ser escolha escrita na consulta |
+| `nomesParaVocabulario` | **só `e.nome`** | mandar a grafia rejeitada ensinaria o STT a reproduzi-la — é escolha escrita na consulta, e não consequência do filtro de status |
 
 Depois da travessia dois nomes distintos podem virar o mesmo nó, e `:SOBRE` +
 `:MENCIONA` para a mesma entidade não é contrato válido — a menção redundante é
 descartada, o sujeito vence.
 
-O que a 009 apaga não tem átomo, não tem perfil e não tem label de tipo. **Um
-`:DISTINTA_DE` apontando para um nó de grafia ia junto no `DETACH DELETE`** — no
-grafo em que ela rodou não havia nenhum, e a recusa contra uma *grafia* (e não
-contra uma entidade) não se sustenta depois que a grafia deixa de ser nó.
-
-**O tipo também se conserta.** Ele só era editável enquanto a entidade era
-`nova`, na primeira revisão em que aparecia; depois disso ela vira `conhecida`,
-a revisão a mostra fixa (o grafo vence sobre o extrator) e o label errado ficava
-para sempre. `trocarTipo` põe o label novo e remove os outros, uma consulta com
-labels literais — `:Entidade` nunca sai, porque é ele que carrega a constraint.
-Desde a 007 os outros são três (`:Organizacao` entrou na lista), e é por aqui
-que passa a reclassificação das empresas que nasceram `:Pessoa`: um nó por vez,
-com um toque meu em cada um.
+**O tipo se conserta.** Depois da primeira revisão a entidade é `conhecida`, e a
+revisão a mostra fixa (o grafo vence sobre o extrator). `trocarTipo` põe o label
+novo e remove os outros, uma consulta com labels literais — `:Entidade` nunca
+sai, porque é ele que carrega a constraint. Os outros são quatro (`:Pessoa`,
+`:Projeto`, `:Objetivo`, `:Organizacao`), e é por aqui que passa a
+reclassificação das empresas que nasceram `:Pessoa`: um nó por vez, com um toque
+meu em cada um.
 
 **Semear é criar entidade antes de falá-la.** `/entidades` deixa criar nome e
 tipo à mão, e o nó nasce **órfão de propósito** — zero átomos, e a lista mostra
@@ -270,6 +303,7 @@ escritas aqui:
   índice de faixa. Ele existe, está `ONLINE` e não serve a nenhuma das três
   consultas. Não custa nada com dezenas de nós; é candidato a `DROP` numa
   migration futura, não a conserto agora;
+
 - **`WHERE e.status = 'ativa'` não é consulta válida neste grafo.** Quem ler só
   a migration vai escrevê-la e não achar quase nada. A forma certa, em Cypher
   novo, é sempre o `coalesce`.
@@ -323,9 +357,8 @@ Neo4j também não aceita **nome de propriedade** vindo de parâmetro, então
 literal em `atomos.ts`, e seguro pela mesma razão: o valor sai de `CAMPOS_PERFIL`,
 constante fechada, e nunca do cliente.
 
-**Sem migração de dado.** Nenhum campo é preenchido: as entidades de hoje entram
-no catálogo do agente 2 só com nome e tipo, que é o comportamento anterior à
-slice. Perfil vazio é perfil válido.
+**Perfil vazio é perfil válido**, e é como toda entidade nasce: entra no
+catálogo do agente 2 só com nome e tipo.
 
 ### 8.3.1 A ficha se apresenta: `resumo`, `aliases`, `canonico` (migration 009)
 
@@ -338,26 +371,19 @@ canonico  booleano, marcado à mão; ausente = false
 ```
 
 **O `resumo` é o retrato de identidade**: quem a entidade é para mim e, antes de
-tudo, o que a distingue de outra parecida. Ele é o que os **dois** agentes leem
-por padrão desde a 4.11 — o dossiê do extrator (§4.14) e o catálogo do agente 2
-(§4.8). Até aqui eles liam coisas diferentes da mesma entidade: o extrator via só
-`contexto`, escolhido em código entre os três, e o agente 2 via os três campos
-inteiros de **todas** as entidades em toda chamada. Uma apresentação só, nos dois
-lugares.
+tudo, o que a distingue de outra parecida. É o que os **dois** agentes leem por
+padrão — o dossiê do extrator (§4.14) e o catálogo do agente 2 (§4.8): uma
+apresentação só, nos dois lugares.
 
-O teto de 500 não é estética, e é o mesmo argumento que a 005 usou com 300: sem
-teto, o custo de todo prompt passa a depender do tamanho de cada ficha, e uma
-entidade muito falada empurra as outras para fora do contexto. 300 era pouco para
-um retrato — e este campo cobra sozinho o que antes se cobrava dos três juntos.
-O corte é no servidor (`gravarResumo`), como o do perfil era.
+**O teto de 500 não é estética**: sem teto, o custo de todo prompt passa a
+depender do tamanho de cada ficha, e uma entidade muito falada empurra as outras
+para fora do contexto. O corte é no servidor (`gravarResumo`).
 
-**Resumo vazio é estado válido, e não ganha fallback.** É como toda entidade
-nasce. A entidade sem resumo entra no prompt com nome, tipo e grafias e mais
-nada; o agente devolve confiança baixa, a confiança baixa dispara a segunda
-passada, e a segunda passada carrega o perfil inteiro — que é exatamente o que o
-agente 2 lia antes desta fatia. Entre a 4.11 e a 4.12 essa passada vai ser a
-regra, e isso é **comportamento esperado** (§14): a frequência cai sozinha
-conforme os resumos forem escritos.
+**Resumo vazio é estado válido, e não ganha fallback.** A entidade sem resumo
+entra no prompt com nome, tipo e grafias e mais nada; o agente devolve confiança
+baixa, a confiança baixa dispara a segunda passada, e a segunda passada carrega
+o perfil inteiro. É **comportamento esperado** (§14): a frequência da segunda
+passada cai conforme os resumos são escritos.
 
 **`canonico` é preferência, não obrigação.** "Esta é a ficha oficial desta
 entidade": marcada à mão, um toque, reversível, sem consequência retroativa —
@@ -377,29 +403,9 @@ recusada por isso.
 **Sem índice**, como o perfil: ninguém busca por `resumo` nem por `canonico`, e o
 Aura Free tem cota de índice.
 
-**O `TETO_PERFIL` de 300 saiu** com esta migration, e é ela que o mata. O motivo
-declarado na 005 era o consumo do agente 2 — "os três campos de todas as
-entidades entram no prompt de resolução, e sem teto o custo cresce com o grafo".
-A partir da 4.11 os três campos **não entram mais no caminho comum**: eles só
-aparecem na segunda passada, para os poucos candidatos de uma menção em dúvida.
-O motivo do teto deixou de existir, e o teto com ele.
-
-Contrato completo de `:Entidade` depois da 009:
-
-```
-(:Entidade { id, nome, nome_normalizado, criado_em, status,
-             contexto, pode_ajudar_com, fizemos_juntos,
-             embedding, embedding_modelo, embedding_fonte,
-             resumo, aliases, canonico })
-status ∈ 'ativa' | 'fundida'
-resumo   ≤ 500 (TETO_RESUMO)   aliases  lista   canonico  booleano
-contexto, pode_ajudar_com, fizemos_juntos — SEM TETO a partir da 009
-
-(:Entidade)-[:FUNDIDA_EM]->(:Entidade)   fusão de duas entidades reais   (004)
-                                         — grafia de STT não usa mais    (009)
-(:Entidade)-[:DISTINTA_DE]->(:Entidade)  recusa minha                    (004)
-(:Atomo)-[:PERFILA { campo }]->(:Entidade)                               (005)
-```
+**O perfil não tem teto.** Os três campos não entram no caminho comum do agente
+2: só aparecem na segunda passada, para os poucos candidatos de uma menção em
+dúvida, e o custo de prompt que justificaria um teto não existe.
 
 ### 8.3.2 O desfazer e a fila (migration 010)
 
@@ -417,21 +423,16 @@ enriquecimento_em      ISO 8601 — quando o estado mudou
 enriquecimento_atomos  quantos átomos entraram na última rodada; ausente = 0
 ```
 
-A 010, como a 005 e a 007, **não tem statement nenhum**: propriedade de valor
-livre não se declara no Aura Free. Ela existe porque `db/migrations/` é a
-definição canônica do schema e o contrato mudou. **Sem migração de dado** —
-nenhuma ficha existente é tocada, e entidade sem `enriquecimento_estado`
-simplesmente nunca foi enriquecida, que é o estado de todas elas no dia em que a
-migration foi escrita.
+A 010 não traz migração de dado: entidade sem `enriquecimento_estado`
+simplesmente nunca foi enriquecida.
 
 **Todos ausentes contam como vazio na leitura**, pela mesma razão do `status` na
 004 e do perfil na 005: a defesa vale para o nó que um deploy antigo criar
 amanhã, não só para os que existem hoje. Estado que o código não conhece é lido
 como "nunca enriquecida", e não como erro.
 
-**Os quatro `_anterior` são o desfazer** (§4.9), e são a razão de esta fatia ter
-migration própria em vez de caber na 009: eles existem porque alguma coisa passou
-a escrever a ficha sem eu ver antes.
+**Os quatro `_anterior` são o desfazer** (§4.9): eles existem porque o agente 4
+escreve a ficha sem eu ver antes.
 
 **O estado da fila mora no nó, e não no R2**, ao contrário do acumulado de uma
 sessão (§9). Lá a razão é a regra 5 — nada entra no grafo antes da revisão. Aqui
@@ -443,19 +444,6 @@ nada" ser verdade: o elo seguinte lê o banco, não o navegador.
 `listarEntidades()` já carrega inteiro, e o Aura Free tem cota de índice. É mais
 um lugar que pediria índice no dia em que o catálogo não couber na memória de uma
 função (§14).
-
-Contrato completo de `:Entidade` depois da 010:
-
-```
-(:Entidade { id, nome, nome_normalizado, criado_em, status,
-             contexto, pode_ajudar_com, fizemos_juntos,
-             embedding, embedding_modelo, embedding_fonte,
-             resumo, aliases, canonico,                            (009)
-             resumo_anterior, contexto_anterior,
-             pode_ajudar_com_anterior, fizemos_juntos_anterior,    (010)
-             enriquecimento_estado, enriquecimento_motivo,
-             enriquecimento_em, enriquecimento_atomos })           (010)
-```
 
 ### 8.4 O vetor no grafo (migration 006)
 
@@ -473,12 +461,11 @@ se declara. Propriedade continua não se declarando no Aura Free, então os trê
 campos são contrato escrito, não statement.
 
 **O tier Free aceita índice vetorial**, verificado contra a instância real
-(`0adada47`, Neo4j 5.27-aura) em 2026-09-02: `CREATE` aceito, `ONLINE` em menos
-de 500 ms, `db.index.vector.queryNodes` devolvendo vizinhos com score. A doc
-negava só "Vector Optimization" (configuração ≥ 4 GB), que é outra coisa. **E a
-cota do Free não é medida em bytes**: o teto publicado é de 200 mil nós e 400 mil
-arestas, e embedding é propriedade em nó que já existe — não cria nó nem aresta.
-Com 4.000 átomos o grafo vai a ~4.050 nós, 2% do teto.
+(Neo4j 5.27-aura): `CREATE` aceito, `ONLINE` em menos de 500 ms,
+`db.index.vector.queryNodes` devolvendo vizinhos com score. **E a cota do Free
+não é medida em bytes**: o teto publicado é de 200 mil nós e 400 mil arestas, e
+embedding é propriedade em nó que já existe — não cria nó nem aresta. Com 4.000
+átomos o grafo vai a ~4.050 nós, 2% do teto.
 
 O resto da configuração fica no **padrão medido** (`quantization.type: SCALAR`,
 `hnsw.m: 16`, `ef_construction: 100`, `default_search_expansion_factor: 1.5`).
@@ -507,29 +494,23 @@ O `embedding_fonte` é o que faz `/perfil`, `/renomear`, `/fundir`, `/tipo` e
 `/criar` não precisarem lembrar de **invalidar** nada: a string canônica muda, o
 hash muda, e a próxima passada de `garantirEmbeddings()` reembute.
 
-**Quem faz essa próxima passada acontecer** (4.8.1), toda em `waitUntil` e toda
+**Quem faz essa próxima passada acontecer**, toda em `waitUntil` e toda
 engolindo a falha com `[entidades]` no log:
 
 | Call site | Por que ali |
 |---|---|
 | `POST /api/sessoes/:id/confirmar` | depois de `gravarAtomos`, junto do `capturarCorrecoes` — é onde nascem as entidades novas |
-| `POST /api/entidades/perfil` | o que mais muda a string canônica |
-| `POST /api/entidades/renomear` | nome novo e alias novo, dos dois lados |
+| `POST /api/entidades/perfil` e `/resumo` | o que mais muda a string canônica |
+| `POST /api/entidades/renomear` e `/aliases` | nome e grafias entram na fonte |
 | `POST /api/entidades/fundir` | o vencedor ganha alias, e alias entra na fonte |
-| `POST /api/entidades/tipo` | o tipo entra na fonte |
+| `POST /api/entidades/tipo` e `/canonico` | tipo e marca entram na fonte |
 | `POST /api/entidades/criar` | é o passo zero: o nó semeado à mão só entra na 3a com vetor |
+| `POST /api/entidades/enriquecer`, `/desfazer` e o desfazer do retrato | a ficha escrita ou trocada muda a fonte |
+| `/api/cron/enriquecimento` | a batida semanal escreve fichas |
+| `POST /api/entidades/embutir` | o retrofill à mão |
 
-Até a 4.8 o único chamador era `POST /api/entidades/embutir`, **que nenhuma tela
-chama** — a varredura de `fetch("/api/…")` em `src/` dá 30 chamadas e nenhuma é
-essa —, e não há cron nem `waitUntil` em lugar nenhum apontando para lá. Ou
-seja: a "próxima passada" descrita neste parágrafo não existia. Entidade nascida
-num confirmar ficava sem vetor para sempre, e a camada 3a (4.10) era código que
-não podia achar nada.
-
-O argumento que recusava o gancho continua escrito acima e continua bom — um
-lugar a mais onde alguém esquece de invalidar. Ele não se aplica **porque o
-gancho não invalida nada**: quem decide é o hash. Esquecer um call site custa
-atraso, não vizinhança errada, porque a próxima passada de qualquer outro
+**O gancho não invalida nada: quem decide é o hash.** Esquecer um call site
+custa atraso, não vizinhança errada, porque a próxima passada de qualquer outro
 alcança. E rodar com nada fora de dia custa uma consulta e zero chamada de
 modelo, o que é o que permite chamar à toa.
 
@@ -537,20 +518,9 @@ O teto de `limite = 500` de `garantirEmbeddings()` fica: grafo maior que isso é
 problema de outra fatia, e a rota manual continua existindo para o retrofill.
 
 **Sem migração de dado**: nenhum vetor é calculado pela migration. Quem preenche
-são `POST /api/atomos/embutir` e `POST /api/entidades/embutir` — e, desde a
-4.8.1, os seis call sites da tabela acima. É isso que faz o retrofill custar uma
-chamada de rota em vez de uma reextração.
-
-Contrato completo depois da 006:
-
-```
-(:Atomo    { id, texto, tipo, inicios_s, fins_s, ancoras, valido_em, status,
-             prompt_version, modelo, criado_em,
-             embedding, embedding_modelo })                              (006)
-(:Entidade { id, nome, nome_normalizado, criado_em, status,
-             contexto, pode_ajudar_com, fizemos_juntos,
-             embedding, embedding_modelo, embedding_fonte })             (006)
-```
+são os call sites acima, e `POST /api/atomos/embutir` e `POST
+/api/entidades/embutir` para o retrofill — que custa uma chamada de rota em vez
+de uma reextração.
 
 ### 8.5 As relações de confronto (migration 011)
 
@@ -585,25 +555,10 @@ desfazer não precisa casar `execucao` — a gravação apaga a geração anteri
 antes de escrever, então só existe uma viva por vez — está em §4.15 e, por
 extenso, no cabeçalho da própria migration.
 
-Contrato completo do que esta migration acrescenta:
-
-```
-(:Atomo { …,
-          confronto_estado, confronto_em,
-          confronto_execucao, confronto_motivo })                        (011)
-
-(:Atomo mais_novo)-[:ATUALIZA|:CONTRADIZ|:CONFIRMA|:COMPLEMENTA
-  { execucao, motivo, confianca,
-    criado_em, modelo, prompt_version }]->(:Atomo mais_antigo)            (011)
-```
-
 ### 8.6 A conversa, e o primeiro label solto do grafo (migration 012)
 
-Slice 6. **Proposta — não rodada.** Como a 005, a 007, a 008, a 010 e a 011, ela
-não tem statement nenhum: propriedade de valor livre não se declara no Aura Free
-(constraint de existência é Enterprise) e índice novo não entra por cota (§14).
-`scripts/migrate.ts` conta 0 statement(s) e segue. Ela existe porque
-`db/migrations/` é a definição canônica do schema e o contrato do grafo mudou.
+Sem statement, como as outras de propriedade livre (§8). O contrato do nó está
+no topo deste capítulo.
 
 ```
 (:Conversa {
@@ -618,11 +573,11 @@ não tem statement nenhum: propriedade de valor livre não se declara no Aura Fr
 
 **Sem relação nenhuma, e é a característica que define o label.** `:Conversa`
 não é `:Entidade` nem `:Atomo`, e não se liga a nada do grafo de conhecimento —
-é metadado de aplicação, como `:Sessao`. Uma conversa enxerga o grafo pelas duas
-ferramentas do agente `chat`, nunca por aresta própria; e **uma conversa nunca
-enxerga outra**. Conversas virarem fonte de busca umas das outras — uma terceira
-ferramenta, com embedding nas mensagens — foi considerado e recusado na
-entrevista: nasceu de uma ambiguidade de linguagem, não de um pedido real.
+é metadado de aplicação, como `:Sessao`. Uma conversa enxerga o grafo pelas
+ferramentas do agente `chat` (§4.16.2), nunca por aresta própria; e **uma
+conversa nunca enxerga outra**. Conversas virarem fonte de busca umas das outras
+— uma ferramenta com embedding nas mensagens — foi recusado: nasceu de uma
+ambiguidade de linguagem, não de um pedido real.
 
 **Sem índice, e nem constraint de unicidade em `id`.** `listarConversas` varre
 `(:Conversa)` com `ORDER BY` e `LIMIT` sobre o grafo de uma pessoa só — a mesma
@@ -644,14 +599,6 @@ quando ela some, e o pedido da entrevista foi explícito em ter as **duas** aç�
 e não só uma: `arquivar` congela (`SET c.arquivada_em`), `apagar` apaga
 (`DETACH DELETE` mais o objeto no R2). O `DETACH` é cinto de segurança, não
 necessidade: o nó nasce sem aresta e deve morrer assim.
-
-Contrato completo do que esta migration acrescenta — e nada do que já existia
-muda:
-
-```
-(:Conversa { id, titulo, criado_em, atualizada_em,
-             arquivada_em, mensagens_key })                              (012)
-```
 
 ### 8.7 As duas camadas, a minha edição e a recusa (migration 013)
 
@@ -680,19 +627,6 @@ as quatro a enxergar por engano, mesmo espírito do `DISTINTA_DE`:
 (:Atomo)-[:CONFRONTO_RECUSADO { em, tipo }]->(:Atomo)                   (013)
 ```
 
-`dono` é o que mantém "uma geração" verdadeira (§4.15.3): desde que o átomo é
-comparado também com os mais novos, a rodada dele escreve aresta que **chega**
-a ele, e "apagar as de saída" deixaria de apagar o que ela escreveu.
-
-Contrato completo depois desta migration:
-
-```
-(:Atomo mais_novo)-[:ATUALIZA|:CONTRADIZ|:CONFIRMA|:COMPLEMENTA
-  { execucao, motivo, confianca, criado_em, modelo, prompt_version,     (011)
-    camada, origem, dono, editado_em,                                   (013)
-    original_tipo, original_camada, original_motivo }]->(:Atomo mais_antigo)
-
-(:Atomo)-[:CONFRONTO_RECUSADO { em, tipo }]->(:Atomo)                   (013)
-```
-
-
+`dono` é o que mantém "uma geração" verdadeira (§4.15.3): o átomo é comparado
+também com os mais novos, a rodada dele escreve aresta que **chega** a ele, e
+"apagar as de saída" deixaria de apagar o que ela escreveu.

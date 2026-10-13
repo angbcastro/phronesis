@@ -430,3 +430,105 @@ segunda passada.
   algumas dezenas de entidades e a consulta já carregava o catálogo inteiro; o
   dia em que isso doer, a saída é um índice full-text sobre `aliases` — recusado
   agora por cota de índice do Aura Free.
+
+### Do §8 (Neo4j)
+
+**Desde a 4.11 são dois mecanismos, e não um.** Grafia (o que o STT errou, o
+nome antigo de um renome, o que eu escrevo à mão) mora em `e.aliases`, uma lista
+de strings no próprio nó; `:FUNDIDA_EM` ficou significando uma coisa só — fusão
+de duas entidades reais, que é o registro de uma decisão minha. Até a migration
+009 as duas coisas tinham a **mesma forma** no grafo e nenhuma consulta as
+distinguia. Ver "grafia deixou de ser nó", abaixo.
+
+#### Grafia deixou de ser nó (migration 009, slice 4.11)
+
+A grafia falada é registrada automaticamente no confirmar desde a 4.9
+(`registrarGrafia`, §4.14): eu disse "Jean", confirmei "Giampaolo Lepore", e na
+sessão seguinte "jean" casa por grafia exata, sem depender da busca. Até a 4.10
+ela virava um **nó** `:Entidade` com `status = 'fundida'` e uma `:FUNDIDA_EM`
+para o vencedor.
+
+**O problema não era o efeito, era a forma.** O grafo passou a ter duas espécies
+de nó fundido idênticas entre si — a grafia que o STT errou, criada sozinha, e o
+perdedor de uma fusão que eu mandei fazer, com arestas migradas — e nenhuma
+consulta as distinguia. `/entidades` mostrava as duas como "histórico do nome", a
+lista não era editável, e eu não conseguia ensinar uma grafia **antes** de o STT
+errar pela primeira vez, que é justamente quando ele mais erra.
+
+A migration 009 converteu as primeiras em itens de `aliases` do vencedor
+terminal da cadeia e apagou os nós. **O discriminador é o label**, e não a
+contagem de átomos: nó de grafia nasce só com `:Entidade`, entidade real ganha o
+label do tipo no `ON CREATE` — e o perdedor de uma fusão real também fica com
+zero átomo, porque `fundir()` migra as três arestas.
+
+Depois disso:
+
+| Escrita | O que ela faz |
+|---|---|
+| `registrarGrafia` (confirmar) | `SET v.aliases = coalesce(v.aliases, []) + $falada` |
+| `renomear` | o nó assume o nome novo; o antigo entra em `aliases` |
+| `fundir` | inalterada: nó perdedor, `status = 'fundida'`, `:FUNDIDA_EM`, arestas migradas |
+
+As quatro recusas de `registrarGrafia` continuam de pé — grafia vazia, pronome
+ou igual à chave do nó; nó alvo inexistente ou ele mesmo fundido; grafia que já é
+entidade **ativa**; grafia que já é alias de outro nó. A quarta é a que mudou de
+mecanismo: até a 009 o índice único de `nome_normalizado` era a trava, porque a
+grafia era nó. String dentro de array o banco não recusa, então a trava passou a
+ser uma leitura do catálogo, em memória — a mesma decisão que `acharPorChave` já
+tomava. Pela mesma razão, `criarEntidade` e o conflito de `renomear` também
+conferem a propriedade: sem isso eu semearia "Jean" como pessoa nova enquanto
+"Jean" é grafia do Giampaolo, e o casamento exato passaria a ter dois donos para
+a mesma chave.
+
+| `nomesParaVocabulario` | **só `e.nome`** | mandar a grafia rejeitada ensinaria o STT a reproduzi-la — e isso deixou de ser consequência do filtro de status para ser escolha escrita na consulta |
+
+O que a 009 apaga não tem átomo, não tem perfil e não tem label de tipo. **Um
+`:DISTINTA_DE` apontando para um nó de grafia ia junto no `DETACH DELETE`** — no
+grafo em que ela rodou não havia nenhum, e a recusa contra uma *grafia* (e não
+contra uma entidade) não se sustenta depois que a grafia deixa de ser nó.
+
+**O `resumo` é o retrato de identidade**: quem a entidade é para mim e, antes de
+tudo, o que a distingue de outra parecida. Ele é o que os **dois** agentes leem
+por padrão desde a 4.11 — o dossiê do extrator (§4.14) e o catálogo do agente 2
+(§4.8). Até aqui eles liam coisas diferentes da mesma entidade: o extrator via só
+`contexto`, escolhido em código entre os três, e o agente 2 via os três campos
+inteiros de **todas** as entidades em toda chamada. Uma apresentação só, nos dois
+lugares.
+
+O teto de 500 não é estética, e é o mesmo argumento que a 005 usou com 300: sem
+teto, o custo de todo prompt passa a depender do tamanho de cada ficha, e uma
+entidade muito falada empurra as outras para fora do contexto. 300 era pouco para
+um retrato — e este campo cobra sozinho o que antes se cobrava dos três juntos.
+O corte é no servidor (`gravarResumo`), como o do perfil era.
+
+**Resumo vazio é estado válido, e não ganha fallback.** É como toda entidade
+nasce. A entidade sem resumo entra no prompt com nome, tipo e grafias e mais
+nada; o agente devolve confiança baixa, a confiança baixa dispara a segunda
+passada, e a segunda passada carrega o perfil inteiro — que é exatamente o que o
+agente 2 lia antes desta fatia. Entre a 4.11 e a 4.12 essa passada vai ser a
+regra, e isso é **comportamento esperado** (§14): a frequência cai sozinha
+conforme os resumos forem escritos.
+
+**O `TETO_PERFIL` de 300 saiu** com esta migration, e é ela que o mata. O motivo
+declarado na 005 era o consumo do agente 2 — "os três campos de todas as
+entidades entram no prompt de resolução, e sem teto o custo cresce com o grafo".
+A partir da 4.11 os três campos **não entram mais no caminho comum**: eles só
+aparecem na segunda passada, para os poucos candidatos de uma menção em dúvida.
+O motivo do teto deixou de existir, e o teto com ele.
+
+Contrato completo de `:Entidade` depois da 009:
+
+```
+(:Entidade { id, nome, nome_normalizado, criado_em, status,
+             contexto, pode_ajudar_com, fizemos_juntos,
+             embedding, embedding_modelo, embedding_fonte,
+             resumo, aliases, canonico })
+status ∈ 'ativa' | 'fundida'
+resumo   ≤ 500 (TETO_RESUMO)   aliases  lista   canonico  booleano
+contexto, pode_ajudar_com, fizemos_juntos — SEM TETO a partir da 009
+
+(:Entidade)-[:FUNDIDA_EM]->(:Entidade)   fusão de duas entidades reais   (004)
+                                         — grafia de STT não usa mais    (009)
+(:Entidade)-[:DISTINTA_DE]->(:Entidade)  recusa minha                    (004)
+(:Atomo)-[:PERFILA { campo }]->(:Entidade)                               (005)
+```

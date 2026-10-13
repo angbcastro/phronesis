@@ -315,3 +315,14 @@ entidades reais, que é o registro de uma decisão minha.
   opção testados chega ao modelo, e sem `warning` nenhum: a falha é silenciosa
   dos dois lados. Trocar de STT sem medir isso primeiro perde a metade A da
   slice 3 sem que nada apareça na tela.
+
+### Do §8 (Neo4j)
+
+**O tipo também se conserta.** Ele só era editável enquanto a entidade era
+`nova`, na primeira revisão em que aparecia; depois disso ela vira `conhecida`,
+a revisão a mostra fixa (o grafo vence sobre o extrator) e o label errado ficava
+para sempre. `trocarTipo` põe o label novo e remove os outros, uma consulta com
+labels literais — `:Entidade` nunca sai, porque é ele que carrega a constraint.
+Desde a 007 os outros são três (`:Organizacao` entrou na lista), e é por aqui
+que passa a reclassificação das empresas que nasceram `:Pessoa`: um nó por vez,
+com um toque meu em cada um.

@@ -176,3 +176,15 @@ insumo do extrator, não coisa que eu leio todo dia.
   nasceram às 13:28:17 e a sessão seguinte só começou às 13:28:37: a extração
   dela encontrou as duas já lá e o segundo confirmar reaproveitou os nós em vez
   de criar novos.
+
+### Do §8 (Neo4j)
+
+### 8.1 Schema da slice 2, aplicado e em uso
+
+A migration `002_atomo_entidade.cypher` já rodou: `:Atomo` e `:Entidade` têm
+constraint e índice no Aura, e o grafo já recebeu conteúdo de sessões reais —
+átomos com as duas listas de offsets, `ancoras`, `status`, `prompt_version` e
+`modelo`, ligados por `:GEROU`, `:SOBRE` e `:MENCIONA`. O `MERGE` com label
+literal por tipo, a constraint de `nome_normalizado` e as listas paralelas como
+float foram conferidos contra o Aura, não só contra o banco mockado. Quem escreve neles é o confirmar da revisão, por
+`atomos.ts`; `entidades.ts` só lê, por `nome_normalizado`.

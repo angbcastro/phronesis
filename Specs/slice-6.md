@@ -273,3 +273,27 @@ A fatia 6 se apoiou em material que já estava pronto: saber de quem se está
 falando, que a slice 4 entrega; achar o que já foi dito sem varrer o grafo
 inteiro, que a 4.5 entrega; e comparar o mesmo assunto ao longo do tempo, que a
 slice 5 entrega.
+
+### Do §8 (Neo4j)
+
+Slice 6. **Proposta — não rodada.** Como a 005, a 007, a 008, a 010 e a 011, ela
+não tem statement nenhum: propriedade de valor livre não se declara no Aura Free
+(constraint de existência é Enterprise) e índice novo não entra por cota (§14).
+`scripts/migrate.ts` conta 0 statement(s) e segue. Ela existe porque
+`db/migrations/` é a definição canônica do schema e o contrato do grafo mudou.
+
+**Sem relação nenhuma, e é a característica que define o label.** `:Conversa`
+não é `:Entidade` nem `:Atomo`, e não se liga a nada do grafo de conhecimento —
+é metadado de aplicação, como `:Sessao`. Uma conversa enxerga o grafo pelas duas
+ferramentas do agente `chat`, nunca por aresta própria; e **uma conversa nunca
+enxerga outra**. Conversas virarem fonte de busca umas das outras — uma terceira
+ferramenta, com embedding nas mensagens — foi considerado e recusado na
+entrevista: nasceu de uma ambiguidade de linguagem, não de um pedido real.
+
+Contrato completo do que esta migration acrescenta — e nada do que já existia
+muda:
+
+```
+(:Conversa { id, titulo, criado_em, atualizada_em,
+             arquivada_em, mensagens_key })                              (012)
+```

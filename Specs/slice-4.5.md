@@ -365,3 +365,29 @@ torta neste sistema.
   slice 4.8 mexeu nos dois sentidos: são ~8 chamadas de extração a mais na
   conta, mas espalhadas pelos 15 minutos e sem prazo para esperar, em vez de uma
   rajada no fim. Também não medido.
+
+### Do §8 (Neo4j)
+
+**O tier Free aceita índice vetorial**, verificado contra a instância real
+(`0adada47`, Neo4j 5.27-aura) em 2026-09-02: `CREATE` aceito, `ONLINE` em menos
+de 500 ms, `db.index.vector.queryNodes` devolvendo vizinhos com score. A doc
+negava só "Vector Optimization" (configuração ≥ 4 GB), que é outra coisa. **E a
+cota do Free não é medida em bytes**: o teto publicado é de 200 mil nós e 400 mil
+arestas, e embedding é propriedade em nó que já existe — não cria nó nem aresta.
+Com 4.000 átomos o grafo vai a ~4.050 nós, 2% do teto.
+
+**Sem migração de dado**: nenhum vetor é calculado pela migration. Quem preenche
+são `POST /api/atomos/embutir` e `POST /api/entidades/embutir` — e, desde a
+4.8.1, os seis call sites da tabela acima. É isso que faz o retrofill custar uma
+chamada de rota em vez de uma reextração.
+
+Contrato completo depois da 006:
+
+```
+(:Atomo    { id, texto, tipo, inicios_s, fins_s, ancoras, valido_em, status,
+             prompt_version, modelo, criado_em,
+             embedding, embedding_modelo })                              (006)
+(:Entidade { id, nome, nome_normalizado, criado_em, status,
+             contexto, pode_ajudar_com, fizemos_juntos,
+             embedding, embedding_modelo, embedding_fonte })             (006)
+```

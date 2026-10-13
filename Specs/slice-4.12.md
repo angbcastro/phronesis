@@ -313,3 +313,29 @@ continuar disparando em tudo, o conserto é o prompt do agente 4 (§14).
   `[desempate]` calado na maioria das menções é o número que fecha a fatia; se
   ele continuar disparando em tudo com as fichas escritas, o resumo não está
   identificando, e o conserto é o prompt do agente 4.
+
+### Do §8 (Neo4j)
+
+A 010, como a 005 e a 007, **não tem statement nenhum**: propriedade de valor
+livre não se declara no Aura Free. Ela existe porque `db/migrations/` é a
+definição canônica do schema e o contrato mudou. **Sem migração de dado** —
+nenhuma ficha existente é tocada, e entidade sem `enriquecimento_estado`
+simplesmente nunca foi enriquecida, que é o estado de todas elas no dia em que a
+migration foi escrita.
+
+**Os quatro `_anterior` são o desfazer** (§4.9), e são a razão de esta fatia ter
+migration própria em vez de caber na 009: eles existem porque alguma coisa passou
+a escrever a ficha sem eu ver antes.
+
+Contrato completo de `:Entidade` depois da 010:
+
+```
+(:Entidade { id, nome, nome_normalizado, criado_em, status,
+             contexto, pode_ajudar_com, fizemos_juntos,
+             embedding, embedding_modelo, embedding_fonte,
+             resumo, aliases, canonico,                            (009)
+             resumo_anterior, contexto_anterior,
+             pode_ajudar_com_anterior, fizemos_juntos_anterior,    (010)
+             enriquecimento_estado, enriquecimento_motivo,
+             enriquecimento_em, enriquecimento_atomos })           (010)
+```

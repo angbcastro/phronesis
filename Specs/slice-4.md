@@ -337,3 +337,9 @@ chama o agente 2 e não paga nada.
   perfil. As travas são o agente 3 nunca escrever, o proposto aparecer ao lado do
   atual e nunca por cima, e a escrita passar só por `POST /api/entidades/perfil`.
   Nenhuma delas impede eu mesmo aprovar um rascunho ruim depressa.
+
+### Do §8 (Neo4j)
+
+**Sem migração de dado.** Nenhum campo é preenchido: as entidades de hoje entram
+no catálogo do agente 2 só com nome e tipo, que é o comportamento anterior à
+slice. Perfil vazio é perfil válido.

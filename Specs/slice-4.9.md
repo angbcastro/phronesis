@@ -470,3 +470,24 @@ até eu trocar o tipo à mão em `/entidades`.
   continua saindo etiquetada `extracao` ou `grafo`, e o `calibracao-2` continua
   podendo propor padrão para um erro que nunca chegou ao extrator. O que segura é
   a amarra do `calibracao-2` e o meu descarte na pauta.
+
+### Do §8 (Neo4j)
+
+*Fora de fatia, no mesmo período: a migration 007.*
+
+Depois das migrations 003 e 007 o contrato de `:Atomo` é:
+
+`HISTORIA` entrou na 007, e é o contrário dos outros sete: eles pedem a
+afirmação destilada, ela pede o episódio com o detalhe que foi contado (§4.6).
+Ela entra também em `TIPOS_SEMPRE_EU` (`tipos.ts`), junto com `SENTIMENTO`,
+`APRENDIZADO` e `ROTINA`. **Nenhum átomo muda de tipo**: o que o `extracao-7`
+colapsou em `FATO` continua `FATO`, e o `prompt_version` carimbado é o que diz
+por quê.
+
+`:Organizacao` entrou na 007 e não trouxe constraint nem índice novo: as duas
+constraints acima são por `:Entidade`, e valem para os quatro labels de uma vez.
+A migration é um no-op, como a 003 e a 005 — label passa a existir quando o
+primeiro nó o recebe, no confirmar. **Nada é reclassificado para trás**: a
+empresa que já está no grafo como `:Pessoa` continua `:Pessoa` até eu trocar o
+tipo à mão em `/entidades` (§8.2), e reclassificar em massa exigiria adivinhar
+quais nós são empresas.

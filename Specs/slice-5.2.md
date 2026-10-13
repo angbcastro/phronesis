@@ -355,3 +355,20 @@ mesmo dia). **O que falta:** buildar o commit da 013 e reprocessar tudo.
   não mora nela: é o prompt do confronto, ou ligar o átomo órfão à entidade certa
   (§4.15.2). Desde a 5.2 o confronto cobre bem mais — e o chat passou a depender
   também de respeitar o rótulo `(sutil)`, que só o prompt dele garante.
+
+### Do §8 (Neo4j)
+
+`dono` é o que mantém "uma geração" verdadeira (§4.15.3): desde que o átomo é
+comparado também com os mais novos, a rodada dele escreve aresta que **chega**
+a ele, e "apagar as de saída" deixaria de apagar o que ela escreveu.
+
+Contrato completo depois desta migration:
+
+```
+(:Atomo mais_novo)-[:ATUALIZA|:CONTRADIZ|:CONFIRMA|:COMPLEMENTA
+  { execucao, motivo, confianca, criado_em, modelo, prompt_version,     (011)
+    camada, origem, dono, editado_em,                                   (013)
+    original_tipo, original_camada, original_motivo }]->(:Atomo mais_antigo)
+
+(:Atomo)-[:CONFRONTO_RECUSADO { em, tipo }]->(:Atomo)                   (013)
+```
