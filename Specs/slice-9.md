@@ -340,3 +340,118 @@ julgado numa pergunta real ainda; é o que falta.
 ### Do §4.1–4.7 (o pipeline)
 
 | `modeloChat()` | `chat-7` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |
+
+### Do §4.16 (o chat)
+
+**Oito é piso, e não teto exato — desde que a slice 9 autorizou busca paralela.**
+`stopWhen` é avaliado **entre** passos, então um passo que pede três chamadas de uma
+vez parte de 7 e termina em 10. Isso já era possível antes (o SDK sempre pôde
+agrupar), mas o `chat-2` nunca dizia que podia, e o caso era raro; o `chat-3` manda
+fazer, e o caso vira comum. O transbordo é limitado pelo tamanho de um passo e
+barato, e por isso está documentado em vez de cortado — cortá-lo pediria
+`prepareStep` ou `activeTools`, custo de desenho para um risco que não apareceu.
+
+##### `chat-3`: a resposta para de fazer o trabalho do (i) (slice 9)
+
+O aperto acima cuidou de **quanto** material vem da busca. O que sobrou errado era
+o que a resposta fazia com ele: saía um relatório das buscas, e não uma resposta.
+
+O `chat-2` empurrava para esse registro em três instruções — *"Cite as datas"*,
+*"Cite no máximo cinco trechos"*, *"mostre os dois"* — e puxava para curto em uma
+só, na forma mais fraca que existe: *"Sem lista com marcador **quando** duas frases
+bastam"*, uma negativa condicional que autoriza a lista por omissão. Não havia teto
+de tamanho nem ordem, então evidência e resposta saíam misturadas. E "cite no
+máximo cinco" era lido como cota: cinco.
+
+O `chat-3` inverte a seção `COMO RESPONDER`:
+
+- **a resposta responde nas duas primeiras frases**, antes de qualquer evidência, e
+  sem preâmbulo nem repetição da pergunta — os passos na tela já disseram que
+  procurou;
+- **teto em número de frases**, não em adjetivo. "Prosa curta" não é teto;
+- **prosa, e lista só se eu pedir com essas palavras** — a permissão deixou de ser
+  por omissão;
+- **um trecho, no máximo dois**, e a justificativa entra no próprio prompt: a
+  procedência inteira mora no (i), e a resposta estava duplicando o (i) em prosa;
+- **a data entra dentro da frase**, não num bloco de citações.
+
+**O tom do `Specs/visao.md` §7 não mudou, e o princípio 4 do §5 continua cumprido.**
+Bibliotecário atento e não coach, não inventar, mostrar as duas pontas de uma
+contradição: tudo fica. "Sucinto" aqui é o oposto de "relatório", não de "com
+origem" — o que saiu da resposta foi o bloco de citações, não a origem, porque a
+origem tem um lugar melhor desde a slice 6.
+
+**E o `chat-3` autoriza busca paralela**, que o `chat-2` nunca disse que podia
+embora o SDK já agrupasse: duas buscas que não dependem uma da outra saem no mesmo
+passo. Junto vem o número que faltava — a maioria das perguntas se resolve em uma
+ou duas buscas, e mais de três é sinal de varredura. Ver o transbordo do teto em
+§4.16.1.
+
+**Ficou de fora de propósito**: a instrução para o modelo ler a linha de recorte da
+busca (`8 de 34 trechos`). Ela vai no `chat-4`, junto com a mudança que faz essa
+linha existir — instrução sobre saída que ainda não existe é texto morto, e
+atrapalharia o julgamento à mão que decide se o `chat-3` melhorou a resposta.
+
+##### `chat-4`: a busca diz o que cortou, e de que vazio se trata (slice 9)
+
+`TETO_ATOMOS = 8` e o modelo nunca recebia o total: uma pergunta sobre um mês com
+trinta átomos via oito e não sabia disso. O `chat-2` já mandava dizer o recorte
+usado, sem nunca dar o número com que fazer isso. Agora **as duas Cypher de
+`buscar_atomos` contam**, e o que volta ao modelo começa por uma linha de recorte
+(`linhaDoRecorte`), antes dos trechos.
+
+O `chat-2` mandava "alargar é só para o vazio" sem nunca dizer de que vazio se
+tratava, e era ali que morava boa parte de "traz pouco". O `chat-4` dá o nome de
+cada um e o gesto que cabe a ele, e manda usar **o número da busca** quando disser
+o recorte na resposta — nunca estimativa, e nunca "do diário inteiro" quando a
+conta foi dentro da janela.
+
+**As entidades se penduram depois do corte.** Antes, os dois `OPTIONAL MATCH` de
+`ENTIDADES_DE` rodavam sobre **todo** átomo que passava no filtro e o `LIMIT`
+jogava o trabalho fora no fim; agora a lista é cortada em `[0..$limite]` e só os
+mostrados ganham `sobre`/`cita`. Latência de graça, no mesmo commit.
+
+**`PISO_BUSCA` não mudou, e isso é decisão.** Os 0,45 foram alinhados com uma
+medida de átomo contra átomo (os 0,728 de `confronto.ts`); busca de chat é
+pergunta contra átomo, distribuição diferente e assimétrica, e aquela medida não
+diz nada sobre ela. O que entrou foi o **instrumento**: o (i) mostra, por passo, o
+piso, quantos passaram, quantos ficaram abaixo e o melhor cortado, ao lado da
+similaridade que cada achado já mostrava (`fraseRecorte`, em `Chat.tsx`). Quem
+decide o número é o dono do diário, olhando isso. Verificado contra o Aura em
+23/09 com o vetor de um átomo real: 42 dos 48 vizinhos acima de 0,45, o melhor
+cortado em 0,449 — e com um filtro impossível, `acima_do_piso = 42` e `total = 0`,
+o caso "o filtro cortou" separado do "nada passou do piso".
+
+**O (i) ganhou também a duração de cada passo** (`duracao_ms`). `medidas.ts` não
+serve aqui, e é por desenho: `comMedicao` é chaveado por `sessao_id`, e o chat não
+tem sessão.
+
+`RecorteDaBusca` e os dois campos novos de `PassoDeFerramenta` (`recorte`,
+`duracao_ms`) são **opcionais**: mensagem gravada no R2 antes da slice 9 continua
+legível sem retrofill — o (i) dela mostra "8 trechos" como sempre mostrou.
+
+##### O catálogo e o vetor, lidos uma vez por pergunta (slice 9)
+
+Cada `buscar_atomos` com `entidade` chamava `listarEntidades()` — o Cypher de
+quatro `OPTIONAL MATCH` — e cada busca com `texto` chamava `embutir()`. Com o teto
+de oito chamadas, eram até oito de cada por pergunta.
+
+##### A terceira ferramenta: `buscar_entidades` (slice 9, `chat-5`)
+
+```
+buscar_entidades({ nome?, texto?, tipo?: TipoEntidade })
+```
+
+Até aqui o chat só alcançava a camada dos átomos. A ficha que as slices 4.11 e
+4.12 construíram — `resumo`, `contexto`, `pode_ajudar_com`, `fizemos_juntos` — era
+**ilegível para ele**: "quem pode me ajudar com X" só se respondia relendo átomos
+e re-deduzindo o que a ficha já diz por escrito. O índice `entidade_embedding` da
+migration 006 existia, a extração o usava, e o chat nunca o tocou.
+
+**O piso do caminho por texto é o `PISO_PERFIL` (0,34) da resolução, e não o
+`PISO_BUSCA`.** É a mesma espécie de comparação — texto corrido contra a string
+canônica curta de uma entidade, assimétrica, que pontua sistematicamente menos
+que átomo contra átomo. Nenhum dos dois foi medido contra pergunta de chat; o
+recorte vai para o (i) como na busca de átomos, com o melhor cortado. Conferido
+contra o Aura em 23/09 com o vetor de um átomo real sobre a Isinha: 47 vizinhos,
+três acima de 0,34, a Isinha em primeiro com 0,60.

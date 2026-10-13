@@ -353,3 +353,64 @@ espera o outro.
    `titulo-chat`, e nenhum deles aparece no caminho de gravar. É o pedido que
    gerou esta mudança virado invariante — quem puser o chat de volta na ingestão
    quebra um teste em vez de só deixar a tela confusa de novo.
+
+### Do §4.16 (o chat)
+
+`ARCHITECTURE.md` listava "busca" e "tela Perguntar" como inexistentes desde a
+slice 2. A entrevista de 13/09 resolveu a tensão de produto — é **chat de
+verdade**, com memória de conversa e histórico entre visitas, e não a tela
+minimalista de uma pergunta e uma resposta que `Specs/visao.md` §6 descrevia —
+e desviou para construir a slice 5 primeiro, porque o "Confrontar" é o material
+que esta fatia consome.
+
+*Fora de fatia, depois dela: o aperto de volume da busca.*
+
+##### O aperto de volume, depois da primeira pergunta vaga de verdade
+
+A fatia nasceu com três números que, juntos, entregavam o diário inteiro em vez
+de uma resposta: piso de 0,30, doze átomos por busca, e nenhuma memória entre as
+buscas de um mesmo turno. "Quais são minhas prioridades" cobrou os três de uma
+vez. O conserto foi de calibragem, sem capacidade nova — nenhuma terceira
+ferramenta, nenhum catálogo de entidades injetado:
+
+- **`PISO_BUSCA` 0,30 → 0,45.** O argumento original era que numa leitura o átomo
+  errado custa só uma linha que o modelo descarta. Custa mais: ele **enterra** o
+  acerto no meio de uma resposta longa. E 0,30 não cortava nada — a medida já
+  estava no repositório, em 4.15: numa varredura inteira de confronto o par de
+  átomos **menos** parecido dava 0,728, e o piso de 0,45 "nunca cortou nada". Os
+  átomos deste diário vivem alto no espaço de cosseno; contra uma pergunta
+  abstrata, 0,30 aprova o corpus e os primeiros colocados viram sorteio. 0,45
+  alinha com `PISO_CONFRONTO` e `PISO_VIZINHOS` — um número a menos para
+  calibrar;
+- **`TETO_ATOMOS` 12 → 8.** Doze cabiam no prompt e na tela do (i); a conta que
+  faltava era a outra — doze vezes o teto de oito chamadas são quase cem trechos
+  num contexto só;
+- **o mesmo átomo não volta inteiro duas vezes no mesmo turno.** As duas
+  ferramentas compartilham um conjunto de ids já mostrados; da segunda vez em
+  diante o que vai ao modelo é `[id X] já mostrado acima`. **Colapsar, e não
+  omitir:** um átomo que duas buscas alcançam é informação — sumir com ele faria
+  o modelo ler a segunda busca como mais pobre do que foi e buscar de novo, que
+  é justamente o que o teto de oito chamadas não tem para gastar. O conjunto é
+  montado **por tentativa**, dentro do fecho que `comEsperaDeLimite` repete, pelo
+  mesmo motivo que o rastro já era zerado ali: um conjunto sobrevivente
+  colapsaria, na tentativa boa, exatamente o átomo que só a tentativa perdida
+  mostrou — uma resposta citando "já mostrado acima" sem nada acima;
+- **o prompt virou `chat-2`.** Ele mandava alargar ("outra palavra, sem filtro de
+  tipo, período mais largo") e nunca mandava descartar. Agora alargar é só para a
+  busca que voltou **nada**; pergunta vaga se estreita com `desde` e o recorte
+  usado vai dito na resposta; e há um teto de trechos citados, com a instrução
+  explícita de que o normal é descartar a maior parte do que a busca trouxe.
+
+**O (i) não perdeu nada nisso.** `paraRastro` e `PassoDeFerramenta` continuam
+guardando todos os achados inteiros de todas as chamadas — o rastro completo é a
+promessa da fatia, e o corte é só do que volta ao prompt.
+
+`titulo-chat` é o primeiro id de agente com hífen, e por isso `chavePromptAgente`
+passou a aceitá-lo: o que aquele validador barra é travessia de caminho, não
+hífen.
+
+**Nenhuma dependência nova.** O pacote `ai` traz protocolo de streaming pronto e
+ele foi recusado: ele fala de *token*, e o que esta tela mostra enquanto espera
+não é token — é qual busca o agente está fazendo. Um objeto por linha resolve
+isso com `fetch` e `TextDecoder`, que todo navegador já tem, e mantém o
+`package.json` do jeito que a slice 6 o encontrou.
