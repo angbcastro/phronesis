@@ -129,6 +129,19 @@ painel de produção não tem override do `confronto`. Na ordem:
 - [ ] **(conferir)** A verificação à mão da 4.10: importar de novo o áudio de
       17 min (`mtqoeoqh3e3724514q1f`), comparar com a proposta guardada e olhar
       o log.
+- [ ] O alvo de 10 a 20 átomos por 15 min, pedido em proporção por janela:
+      contar numa sessão longa real quantos saem (§14).
+
+## Slice 4.9 e anteriores — identidade e revisão
+
+- [ ] Numa sessão real, uma grafia que o STT erra chegar ao átomo já com o nome
+      gravado (o dossiê do extrator, §4.14). Correção de grafia que sobreviver
+      continua saindo etiquetada `extracao` ou `grafo` (§14).
+- [ ] Julgar um homófono de verdade: cadastrar os dois nomes em `/entidades`
+      **antes** e gravar uma sessão citando os dois (o Rapha e o Raffa). Até
+      agora o `resolucao-5` só respondeu listas de um.
+- [ ] Cronometrar a revisão de uma sessão de 15 min: a visão promete menos de
+      60 s, e a tela mudou duas vezes a olho, sem cronômetro (§4.7).
 
 ## Slice 3 — duplicatas
 
@@ -139,3 +152,7 @@ painel de produção não tem override do `confronto`. Na ordem:
 
 - [ ] Gravar com a tela apagada. Não está medido se o Chrome no Android
       estrangula o `setTimeout` de 30 s do gravador (§14).
+- [ ] Abrir a tela de gravar e olhar o halo respirar. O botão foi verificado
+      por teste e compilação, não por olho.
+- [ ] Importar um arquivo de cada formato da lista (Ogg/Opus, M4A, MP3, WAV) e
+      ver o `xai/grok-stt` aceitar. Até agora ele só recebeu `audio/webm` (§14).

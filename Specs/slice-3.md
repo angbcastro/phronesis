@@ -281,3 +281,37 @@ o vencedor na sessão seguinte em vez de renascer como nó novo. Desde a 4.11 s�
 dois mecanismos e não um: **grafia é propriedade** (`aliases`, editável à mão),
 e `:FUNDIDA_EM` ficou significando só o que sempre quis dizer — fusão de duas
 entidades reais, que é o registro de uma decisão minha.
+
+### Do §14 (limites conhecidos)
+
+- **`config/vocabulario.txt`** ainda tem só os três nomes de exemplo. Desde a
+  slice 3 ele não é mais a lista inteira — as entidades do grafo entram junto —
+  mas continua sendo o único jeito de ensinar um nome **antes** de falá-lo pela
+  primeira vez, que é justamente quando o STT mais erra.
+
+- **Nome descritivo não é pronome.** "meu pai", "minha mãe" e "meu chefe" passam
+  pela lista e viram nó com esse nome. É defensável — o referente é estável — e
+  desde a slice 3 tem conserto: renomear em `/entidades` deixa a grafia velha
+  como alias, então o nó vira o nome de verdade sem perder os átomos e sem "meu
+  pai" recriar um segundo nó depois.
+
+- **A qualidade da proposta em caso real não foi medida.** O grafo não tem
+  duplicata vinda de sessão, então `duplicatas-1` nunca julgou um par com
+  contexto de verdade. A mecânica, sim, está validada ponta a ponta.
+
+- **Fundir não é atômico.** São **seis** consultas pela Query API (a sexta é a
+  reposição de alias da 4.8.1), sem transação entre elas. Cair no meio deixa as
+  arestas migradas e o perdedor sem alias — um nó de zero átomos aparecendo na
+  lista —, ou os aliases repostos e a perdedora ainda ativa. **Refazer a fusão
+  cura**: a segunda passada não acha aresta para migrar, repõe o que faltar por
+  `MERGE` e marca o alias. O limite mudou de tamanho, não de natureza.
+
+- **O `keyterm` vale só para o provedor de hoje, e agora se sabe o custo disso.**
+  Medido em 31/08 e de novo em 02/09: funciona no `xai/grok-stt` (§4.4). O nome
+  da opção é um mapa por provedor em `modelos.ts`, com **silêncio como padrão**
+  para provedor desconhecido — trocar `STT_MODEL` por um provedor fora do mapa
+  faz o vocabulário não ser mandado, e não derruba a transcrição. No
+  `google/gemini-3.5-transcribe` foi medido que **nenhum** dos cinco nomes de
+  opção testados chega ao modelo, e sem `warning` nenhum: a falha é silenciosa
+  dos dois lados. Trocar de STT sem medir isso primeiro perde a metade A da
+  slice 3 sem que nada apareça na tela.

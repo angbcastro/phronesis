@@ -394,3 +394,79 @@ não classifica, ou `:Projeto`, quando ele via trabalho acontecendo. Os dois
 prompts subiram junto: `extracao-9` e `resolucao-5`. **Nada é reclassificado
 para trás**: a empresa que já está no grafo como `:Pessoa` continua `:Pessoa`
 até eu trocar o tipo à mão em `/entidades`.
+
+### Do §14 (limites conhecidos)
+
+*Fora de fatia, no mesmo período: `extracao-8` e a migration 007.*
+
+- **`HISTORIA` puxa contra a disciplina de volume, e as duas moram no mesmo
+  prompt** (007). Uma seção manda destilar e não passar de 10 a 20 átomos; a
+  outra manda não resumir o episódio. O extrator decide sozinho qual das duas
+  vale para cada trecho, e o modo de falhar é conhecido de antemão nos dois
+  sentidos: `HISTORIA` que engole o dia inteiro (uma janela que devolve um átomo
+  gigante e nada mais), ou `HISTORIA` que nunca aparece porque a regra de volume
+  venceu. Nenhum teste pega isso — é qualidade de extração, que eu avalio à mão
+  na revisão, sessão real por sessão real —, e o conserto, se for preciso, é uma
+  regra aprovada em `/calibracao`, não código.
+
+- **Perfil, duplicatas e embedding não esperam o rate limit**, e é deliberado:
+  saem de um clique meu e falham na minha frente (§5.3). STT, extração e — desde
+  a 4.9 — resolução chamam `comEsperaDeLimite`.
+
+- **O agente 2 pode discordar de si mesmo entre janelas.** Ele vê os átomos já
+  propostos num bloco de contexto (§4.8), mas nada o amarra à decisão anterior —
+  o `ja_nesta_sessao` da 4.9 amarra o **extrator**, não ele, então o risco ficou
+  reduzido e não eliminado:
+  o mesmo "Rafa" pode sair `NOVA` na janela 1 e cair no nó "Raffa" na janela 2,
+  com o catálogo idêntico, fechando a sessão com duas candidatas para uma pessoa.
+  Quem vê é a revisão, e o painel de entidades reaponta as duas num gesto. O
+  complemento barato — o mapa `citado → decidido` da própria sessão entrando como
+  camada em `candidatosDe` — está anotado e não construído.
+
+- **A resolução passou a custar em toda janela**, não só quando há dúvida (4.9).
+  São até oito chamadas de agente 2 por sessão de 15 min onde antes podia ser
+  zero. Não medido sob rate limit, como quase tudo nesta faixa.
+
+- **Uma menção sem candidato nenhum não é validada** (4.9). Ela resolve como
+  entidade nova, de graça, sem passar pelo agente 2 — é o que mantém a promessa
+  de a sessão com o grafo vazio sair como saía na 4.8, e é a única brecha na
+  regra "nenhuma atribuição entra sem segunda opinião". A brecha é estreita por
+  construção: sem candidato não há atribuição, só um nome novo.
+
+- **A marca de perfil ficou mais frequente, não mais rara — e isso foi uma
+  pergunta respondida ao contrário** (4.9). Até a 4.8 quem aponta perfil é o
+  agente 2, e ele só era chamado quando alguma menção precisava de julgamento:
+  numa sessão sem nome ambíguo, "o Rapha sabe produzir evento" **não** virava
+  `:PERFILA`. A 4.9 pôs o agente 2 em toda janela com candidato, e na prática
+  isso resolve o buraco de graça. O que fica registrado é o preço na direção
+  oposta: a sessão limpa deixou de ser de graça, e é isso que o critério 5 da
+  slice 4 comprava.
+
+- **O agente 2 só enxerga os candidatos da menção, não o grafo inteiro.** Quem
+  não casa por chave nem se parece por string nunca chega ao prompt — desde a
+  4.9 o dossiê do extrator alcança mais um pedaço disso (prefixo e as duas
+  camadas semânticas sobre o bloco), mas um apelido sem nenhuma letra em comum
+  com o nome do nó ("Bidu" para "Roberto") continua virando entidade nova, e o conserto é fundir depois em `/entidades`. É deliberado —
+  mandar o catálogo todo seria pagar por texto que não muda resposta nenhuma —,
+  mas é um limite, não um detalhe. O que a barra pesquisável faz é baratear o
+  conserto: o grafo inteiro está a duas letras de distância dentro do próprio
+  átomo, então "Bidu" vira "Roberto" na revisão em vez de virar nó e fusão.
+
+- **Um terço das correções capturadas é erro de STT, e sai etiquetado como erro
+  de agente.** Medido em 2026-09-04, nas 5 primeiras sessões confirmadas: de 21
+  correções, 5 eram conserto de grafia de nome próprio ("Beijing"→"Behring
+  Founders", "Jean"→"Giampaolo Lepore", "Dapta"→"Adapta") e outras 2 misturavam
+  grafia com edição de conteúdo. O extrator não errou nada nessas — ele copiou
+  fielmente o que a transcrição dizia —, mas elas saem como `extracao` (correção
+  de texto) ou `grafo` (renome), porque nenhum sinal no material distingue "o
+  modelo escreveu errado" de "o microfone ouviu errado". O risco concreto é o
+  `calibracao-2` ver quatro casos do mesmo padrão e propor, para o `extracao-9`,
+  um padrão que conserta algo que nunca chegou até ele.
+  **A saída foi construída na 4.9** (§4.14), e não é etiqueta nem regra de
+  prompt: é a busca por bloco entregando ao extrator os nós que o trecho parece
+  citar, para ele já apontar o nó e escrever o nome gravado no texto do átomo.
+  O que continua valendo deste item é a **medição** e o risco enquanto a 4.9 não
+  for verificada numa sessão real: correção de grafia que sobreviver à fatia
+  continua saindo etiquetada `extracao` ou `grafo`, e o `calibracao-2` continua
+  podendo propor padrão para um erro que nunca chegou ao extrator. O que segura é
+  a amarra do `calibracao-2` e o meu descarte na pauta.

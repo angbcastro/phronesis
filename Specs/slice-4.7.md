@@ -257,3 +257,19 @@ mecanismo é o da 4.6 generalizado: texto no R2, snapshot imutável por hash,
 sufixo no `prompt_version`. Sem override nenhum, todo agente sai byte a byte
 igual ao de antes desta fatia, e é `tests/agentes.test.ts` quem cobra isso — mais
 a varredura que impede um agente novo de nascer fora do painel.
+
+### Do §14 (limites conhecidos)
+
+- **O prompt de cinco agentes passou a ter duas fontes.** O git tem a base; o R2
+  tem o que eu editei em `/agentes` (§4.13). É o mesmo custo que a 4.6 já tinha
+  declarado para as regras, agora multiplicado: `git revert` sozinho não reverte
+  mais o prompt inteiro, e ler o prompt efetivo exige os dois lugares. O
+  `prompt_version` e os snapshots imutáveis impedem a procedência de mentir, e
+  `voltar ao original` é um toque — mas quem olhar só o repositório vai ver a
+  metade do texto.
+
+- **A marca de perfil não é editável na revisão.** Ela aparece no átomo e some se
+  eu rejeitar o átomo ou desmarcar a entidade, mas não dá para trocar o campo nem
+  apontar outra entidade — é a única das três relações do átomo que continua sem
+  controle na tela, agora que `menciona` ganhou o dele (4.7). Se o agente 2 errar o campo com
+  frequência, o que se ajusta é o `resolucao-5`.

@@ -417,3 +417,33 @@ de 240 s, ou a fase 2 não ler o cache, a decisão volta para mim. Não foi feit
 nesta sessão porque não há `.env.development.local` neste checkout, e sem ele
 `pnpm dev` escreveria em produção (§12.1). O "eu" de desenvolvimento também
 precisa ser conferido como `canonico` antes da primeira batida.
+
+### Do §14 (limites conhecidos)
+
+- **Uma chamada por dimensão lê todos os átomos do "eu"** (10, §4.20). Cabe
+  enquanto o bloco couber no contexto do modelo — ~5 anos no ritmo de 23/09 para
+  o padrão de 1M. Trocar `RETRATO_MODEL` por um de contexto menor antecipa esse
+  dia. O conserto, quando vier, é capítulos por período.
+
+- **O cache do provedor é uma economia, não um contrato** (10, §4.20). Se o
+  provedor não cachear — ou se as chamadas paralelas da fase 2 caírem em
+  backends diferentes —, a rodada custa N vezes a entrada inteira: mais caro,
+  igualmente certo. **Ainda não medido em paralelo**; o `cache=` do log de cada
+  chamada é onde se olha.
+
+- **O "eu" na batida depende da ordem da reivindicação** (10, §4.9). Rodada que
+  cresça além de ~240 s não cabe numa invocação nem começando no segundo zero, e
+  aí a batida deixa de reescrever o retrato — em silêncio, a não ser pelo
+  `rodando` que volta pelo lease toda semana. **O tempo da rodada inteira ainda
+  não foi medido**; os 60 s de `JANELA_DO_EU_MS` pressupõem até 240 s.
+
+- **Um prompt do chat editado em `/agentes` antes da slice 10 não conhece
+  `ler_retrato`** — a ferramenta é oferecida, mas sem a instrução de começar por
+  ela nas perguntas sobre mim. Salvá-lo de novo pede que ele a cite (envelope).
+
+- **Três ferramentas disputam mais atenção do modelo que duas** (slice 9) — e
+  desde a slice 10 são quatro —, e o
+  `CHAT_MODEL` que as recebe é o `deepseek/deepseek-v4.1-flash`, escolhido sem
+  medir tool-calling multi-passo. Se ele encadear mal, a ferramenta nova piora a
+  resposta em vez de melhorar — e o conserto é o modelo ou o prompt, não remover
+  a ferramenta.

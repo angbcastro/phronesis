@@ -398,3 +398,35 @@ A 4.11 entregou: `resumo`, `aliases` como propriedade e `canonico` no schema
 passada que roda quando a confiança fica abaixo do limiar (§4.8.1). Ela deixou o
 `resumo` **vazio de propósito**, e com ele vazio quase toda menção caía na
 segunda passada.
+
+### Do §14 (limites conhecidos)
+
+- **Se a segunda passada concordar com a primeira em 100% dos casos, ela está
+  pagando uma chamada para não fazer nada** (4.11) — e a conclusão seria que o
+  perfil inteiro não era o que faltava. É a terceira coisa a olhar numa sessão
+  real, ao lado do volume da lista e da voz do átomo.
+
+- **O `resumo` corta em 500 no servidor** (4.11). Texto colado maior que isso
+  perde o fim sem aviso, como o perfil fazia em 300.
+
+- **A migration 009 apagou nós** — a primeira deste projeto que apaga alguma
+  coisa. O que ela apagou não tinha átomo, perfil nem label de tipo; um
+  `:DISTINTA_DE` apontando para um nó de grafia teria ido junto no `DETACH
+  DELETE`, e no grafo em que ela rodou não havia nenhum.
+
+- **Toda grafia confirmada entra em `aliases` e fica** (4.9, reescrito na 4.11).
+  O STT errando de três jeitos deixa três grafias no mesmo nó, e elas engordam a
+  string canônica de `fonteDaEntidade` — que é o texto de onde sai o vetor
+  daquela entidade. Deixou de ser nó permanente: agora é item de array, e
+  `/entidades` remove um com um toque, sem console.
+
+- **Alias não distingue mais "grafia que o STT errou" de "nome antigo depois de
+  um renome"** (4.11). As duas são item do mesmo array. `renomear` já produzia
+  as duas com a mesma forma; agora elas ficam indistinguíveis também na leitura.
+
+- **O casamento exato passa a depender do catálogo caber na memória** de uma
+  função (4.11). Até a 009 a grafia era nó e o índice único de `nome_normalizado`
+  resolvia; hoje `listarEntidades` traz tudo e `acharPorChave` varre. Hoje são
+  algumas dezenas de entidades e a consulta já carregava o catálogo inteiro; o
+  dia em que isso doer, a saída é um índice full-text sobre `aliases` — recusado
+  agora por cota de índice do Aura Free.

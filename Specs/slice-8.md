@@ -237,3 +237,31 @@ caminho sem `ate` seriam três de 90 s num `waitUntil` que morre aos 300 s.
 
 Quem fecha a fatia sou eu — a medida existe para dizer *onde* mexer, não para
 declarar que ficou bom.
+
+### Do §14 (limites conhecidos)
+
+- **O penhasco virando erro troca uma proposta ruim por nenhuma proposta** (8,
+  §4.18). Uma sessão que antes entregaria nove átomos por um passe único sobre a
+  transcrição inteira passa a parar e pedir re-extração. É a troca deliberada:
+  aquele passe custava 1–2 min **em silêncio**, e eu o pagava sem saber. O que
+  reduz a frequência é a espera pelo lease vivo, que era o gatilho mais comum — o
+  que sobra é janela genuinamente presa, que é defeito.
+
+- **O lease do bloco troca recuperação rápida por não pagar duas vezes** (8,
+  §4.18). Se o `waitUntil` que reivindicou um bloco morrer, o laço de
+  `finalizarSessao` espera os 120 s do lease antes de tentar — e ele só tem 150 s
+  de orçamento. Antes ele retranscrevia na hora, pagando o STT duas vezes no caso
+  comum para recuperar depressa no caso raro. A troca foi feita de olho aberto, e
+  o sinal de que ela doeu seria `espera_blocos` alto com `stt` baixo no
+  `medidas.json` — que é exatamente o que a primeira metade da fatia existe para
+  mostrar.
+
+- **Sessão travada em `extraindo` não tem retry automático.** O corredor a deixa
+  em paz de propósito: uma extração pode estar de fato correndo, e empurrar de
+  novo pagaria uma segunda chamada de modelo pela mesma sessão. A saída continua
+  sendo o **reextrair** da lista; `transcrito` e `erro`, esses, o corredor empurra
+  sozinho. **O que mudou em 18/09 é que ela deixou de girar para sempre**: o
+  corredor tem teto (`TETO_DA_ESPERA_MS`, 6 min) e passa a dizer que travou, com
+  o caminho da lista. Seis minutos porque os 300 s de `maxDuration` do
+  `/finalizar` têm de caber inteiros dentro dele — chamar de travado antes seria
+  eu reextrair uma sessão viva e pagar duas vezes.

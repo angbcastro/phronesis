@@ -311,3 +311,47 @@ em `/calibracao`. Migration 013, sem statement. O modelo foi escolhido pela
 comparação de 13/10 (`deepseek/deepseek-v4.1-flash`, agora padrão próprio), e o
 painel de produção não tem override do `confronto` nem do `chat` (conferido no
 mesmo dia). **O que falta:** buildar o commit da 013 e reprocessar tudo.
+
+### Do §14 (limites conhecidos)
+
+- **O confronto não tem mais piso de similaridade** (slice 5.2): `PISO_CONFRONTO`
+  foi medido inerte na 5.1 (o par menos parecido das 21 primeiras relações tinha
+  0,728) e saiu quando os candidatos passaram a ser cem. O corte é o ranking do
+  índice e mais nada.
+
+- **O piso do `COMPLEMENTA` (0,7) ficou, e mudou de efeito** (slice 5.1, 5.2):
+  abaixo dele a relação forte desce para sutil, em vez de sumir. Mora em
+  `/agentes`, e é ali que se ajusta.
+
+- **A camada forte continua calibrada para precisão** (§4.15.2); a cobertura
+  que a 5.1 cortou foi para a camada **sutil**, rotulada (§4.15.3). O preço que
+  sobra é que a camada sutil é, por definição, a que mais erra — o que a segura
+  é o rótulo no chat e a minha correção no radial, não o prompt.
+
+- **O custo por átomo multiplicou** (slice 5.2): cem trechos por chamada, uma
+  chamada por átomo, onde a 5.1 dividia uma chamada entre dez. Centavos no
+  deepseek, mas uma varredura completa — o reprocessar — fica mais lenta e mais
+  cara, e cinco chamadas paralelas por elo chegam mais perto do rate limit da
+  conta.
+
+- **Prompt editado no painel sombreia a base**: um override do `confronto`
+  salvo antes da 5.2 pediria o envelope velho (`novo`/`velho`), e o parser novo
+  não o leria — toda resposta viraria "nenhuma relação". Em 13/10 o painel de
+  produção não tinha override nenhum do `confronto`; o risco volta se um prompt
+  antigo for restaurado de lá.
+
+- **O modelo do confronto passa do teto de chamada às vezes** (slice 5.2): na
+  comparação de 13/10 o `deepseek-v4.1-flash` levou 54 s em média com cem
+  candidatos, e um átomo em quinze não voltou em 180 s (`TETO_CHAMADA_MS`). Esse
+  átomo sai `falhou` e volta na varredura seguinte — com a mesma entrada, então
+  pode falhar de novo. Se a fila acumular `falhou` por prazo, o conserto é
+  menos candidatos ou outro modelo, não um teto maior: a função tem 300 s.
+
+- **O chat assume que a slice 5 funciona bem** (slice 6). `historico_do_atomo`
+  lê as relações da migration 011, e se a varredura não tiver passado — ou tiver
+  passado e descartado o par certo — ele volta sistematicamente com "este átomo
+  ainda não tem nenhuma relação de confronto registrada", e perguntas de "como
+  mudei de opinião" ficam sem resposta real. Não é bug desta fatia, e o conserto
+  não mora nela: é o prompt do confronto, ou ligar o átomo órfão à entidade certa
+  (§4.15.2). Desde a 5.2 o confronto cobre bem mais — e o chat passou a depender
+  também de respeitar o rótulo `(sutil)`, que só o prompt dele garante.

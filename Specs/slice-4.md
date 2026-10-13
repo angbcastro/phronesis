@@ -306,3 +306,34 @@ na mão (§4.8.1).
 Dúvida **destaca, não trava**: a revisão marca o átomo, mostra o motivo
 e o confirmar continua liberado. Sessão em que nenhuma menção tem candidato não
 chama o agente 2 e não paga nada.
+
+### Do §14 (limites conhecidos)
+
+- **A resolução ainda não julgou um homófono de verdade.** O grafo já tem nomes
+  próprios reais — as 5 sessões confirmadas de 04/09 puseram lá "Behring
+  Founders", "Adapta" e "Giampaolo Lepore" —, mas nomes próprios não são a mesma
+  coisa que nomes **em disputa**: enquanto nada no grafo soar como outra coisa,
+  o `resolucao-5` não tem o que desempatar — ele é chamado (desde a 4.9 toda
+  menção com candidato vai), mas responde uma lista de um. O caso concreto de que eu sei a resposta — a sessão com o Rapha e o
+  Raffa — depende dos dois estarem **cadastrados antes da primeira menção**. Que
+  nomes estão lá hoje se vê em `/entidades`, não neste arquivo.
+
+*Fora de fatia, no mesmo período (01/09): o chip que levou o retomar.*
+
+- **Não dá para retomar uma gravação interrompida.** O botão "retomar" morava no
+  chip da home, e o chip saiu para tirar a cobrança da tela de gravar (11) — os
+  dois verbos viviam no mesmo cartão, então perder um custou o outro. O
+  maquinário dele foi apagado junto (§5, §6.2): nada ficou como código morto
+  esperando uma tela que talvez nunca volte. O que **não** se perde: os blocos já
+  subidos estão no R2, e a sessão interrompida continua na lista de sessões
+  levando a `/sessao/:id`, onde `Processando` finaliza e transcreve o que
+  existe — perde-se emendar fala nova na mesma sessão, não se perde fala. Se um
+  dia incomodar, o caminho é um link `retomar` na linha da lista apontando para
+  `/?retomar=<id>`, e as três linhas de `proximoIndice` se reescrevem.
+
+- **O perfil realimenta a resolução, e isso é o risco declarado da slice.** O
+  agente 2 lê o perfil para desambiguar; um perfil errado contamina toda
+  atribuição futura, e átomo atribuído por engano vira evidência daquele mesmo
+  perfil. As travas são o agente 3 nunca escrever, o proposto aparecer ao lado do
+  atual e nunca por cima, e a escrita passar só por `POST /api/entidades/perfil`.
+  Nenhuma delas impede eu mesmo aprovar um rascunho ruim depressa.

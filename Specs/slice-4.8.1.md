@@ -480,3 +480,18 @@ não medida faz qualquer estranheza ficar sem dono.
   no prompt, imposta pelo código na resolução. Enquanto a frase não entrar no
   `resolucao-3` (4.9), o agente 2 continua gastando decisão numa pergunta cuja
   resposta o código já sabe.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do §14 (limites conhecidos)
+
+- **A revisão carrega o grafo inteiro para buscar nele.** `GET /api/entidades`
+  não tem `q`, nem limite, nem paginação, e não há índice de texto sobre `nome` —
+  a busca é no cliente, sobre a lista toda. A 4.8.1 tirou o perfil do payload
+  padrão (§4.7), o que enxuga a resposta e não muda o desenho. Num grafo de dezenas de entidades
+  isso é mais rápido que ida ao servidor por tecla; em milhares, deixa de ser, e
+  a saída é uma rota de busca com uma migration de índice atrás dela.

@@ -208,3 +208,25 @@ As quatro emendas acima, e nada mais.
 - **Reverter a decisão da conversa mais recente pode me morder** no dia em que eu
   fechar o chat sem querer no meio de uma conversa longa. A defesa é a lista, a um
   toque, e ela já existe.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do §14 (limites conhecidos)
+
+- **A etiqueta de agente de `sujeito` e `mencao_removida` usa `sobre.conhecida`
+  do átomo**, e não a referência de cada menção. É o sinal que a spec fixou, e é
+  grosseiro: um átomo sobre "eu" cuja menção era candidata nova sai etiquetado
+  `resolucao`. **Isso deixou de ser gratuito na slice 7**, que abriu o consumo das
+  correções de `resolucao`: o recorte que o `calibracao-2` lê para aquele agente
+  carrega o ruído, e o conserto — a referência de cada menção dizer quem decidiu,
+  incluindo o `desempate-1` — é a 7.1. `mencao_adicionada` ficou de fora dessa regra: acrescentar uma menção
+  que o extrator não listou é falha de extração por definição — não existe
+  referência original para a resolução ter errado.
+  **A 8.1 apertou uma dimensão e deixou a outra**: sessão em que nenhuma menção
+  foi ao modelo devolve a correção à `extracao`, mas numa sessão mista as
+  menções resolvidas sem modelo ainda alimentam o agente 2. Está certo por
+  sessão e torto por menção — melhor do que estava, e não exato.

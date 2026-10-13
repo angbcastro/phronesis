@@ -329,3 +329,39 @@ a desistência diz quando a causa foi pressa e não defeito. Na mesma medição,
 trocar o STT por um modelo que escreve melhor foi **recusado**: o candidato não
 tem canal de vocabulário nenhum, e nome próprio errado custa mais que prosa
 torta neste sistema.
+
+### Do §14 (limites conhecidos)
+
+- **A camada 3b herda atribuição passada.** Ela sugere por semelhança com átomos
+  que já são de alguém, então um erro de atribuição pode sugerir o próximo.
+  Mitigado pelo `porque` na tela — um voto entre `k`, com o átomo à mão —, não
+  eliminado. **E a mitigação passou a custar um toque**: desde que as fontes
+  viraram modal (§4.7), a evidência está a um `ⓘ` de distância em vez de à vista.
+  O ícone só aparece onde há o que ver, que é o que impede a evidência de sumir
+  de vez — mas herança que eu não abro é herança que eu não confiro.
+
+- **Os pisos de 3a e 3b são ponto de partida, não calibração.** Saíram de uma
+  medição de um par contra três textos não relacionados, em 2026-09-02. Quem os
+  ajusta sou eu, olhando a revisão, sessão real por sessão real: piso alto demais
+  faz a camada calar, baixo demais faz o agente 2 ser chamado à toa.
+
+*Fora de fatia, no mesmo período (02–03/09): o rate limit.*
+
+- **`finalizarSessao` espera no máximo 150 s** pelos blocos pendentes; passando
+  disso a sessão vai para `erro` com a lista do que faltou. O áudio fica intacto
+  e o retry é manual. Eram 45 s até 02/09 — menos que uma janela de rate limit
+  (§5.3), então o laço estourava o prazo sem nunca ter chance de passar. O preço
+  do prazo maior é real: bloco que falha por motivo definitivo agora leva 150 s
+  para ser declarado perdido.
+
+*Fora de fatia, no mesmo período (02–03/09): o rate limit.*
+
+- **O rate limit do Gateway é da conta e não some com troca de modelo** (§4.2.1,
+  medido em 02/09). `limite.ts` espera 20 s e 60 s antes de desistir, o que cobre
+  a janela medida (~75 s) — não cobre um limite que dure minutos. Aí a sessão vai
+  para `erro` dizendo que foi rate limit, e o conserto é chamar `/finalizar` de
+  novo mais tarde. **Uma sessão gravada de 15 min são 30 blocos e nunca foi
+  transcrita inteira sob limite** — o que se mediu foram chamadas soltas. A
+  slice 4.8 mexeu nos dois sentidos: são ~8 chamadas de extração a mais na
+  conta, mas espalhadas pelos 15 minutos e sem prazo para esperar, em vez de uma
+  rajada no fim. Também não medido.

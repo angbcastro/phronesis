@@ -148,3 +148,31 @@ texto literal é porta de serviço: mora em `/sessao/:id/transcricao` e se alcan
 pelo botão "transcrição" na lista de sessões (seção 11). Ler quinze minutos de
 transcrição no meio do caminho é o atrito que mata o ritual — a transcrição é
 insumo do extrator, não coisa que eu leio todo dia.
+
+### Do §14 (limites conhecidos)
+
+*Fora de fatia, no mesmo período (31/08): o botão de gravar.*
+
+- **O botão de gravar foi verificado por compilação e teste, não por olho.**
+  `tests/onda.test.ts` cobre a matemática da onda, e `tsc` mais `next build`
+  passam; ninguém abriu a tela e olhou o halo respirar. Não há navegador
+  automatizado no projeto, e o `middleware` exige cookie para chegar em `/`.
+
+- **O "menos de 60 s" da revisão continua sem medição.** A tela já foi usada em
+  sessões reais e o caminho inteiro fecha, mas ninguém cronometrou uma revisão de
+  sessão de 15 min. Ela ficou **mais densa** na 4.8.1 — a dúvida passou a ser de
+  cada referência e a procedência passou a aparecer sempre —, e a densidade foi
+  desfeita depois: a linha de dúvida encolheu para uma pergunta e as fontes
+  foram para trás de um ícone (§4.7). **As duas mudanças foram feitas a olho, sem
+  cronômetro dos dois lados**, e é exatamente por isso que a medição continua
+  valendo a pena: hoje não dá para dizer se a tela ficou mais rápida ou só mais
+  curta.
+
+- **Não há como desfazer um confirmar.** `confirmada` não tem transição de saída
+  e nada apaga átomo (regra 6). Corrigir depois de confirmar depende de edição
+  no grafo, que não existe nesta slice.
+
+- **O caminho de "já conhecida" funciona, medido.** As duas primeiras entidades
+  nasceram às 13:28:17 e a sessão seguinte só começou às 13:28:37: a extração
+  dela encontrou as duas já lá e o segundo confirmar reaproveitou os nós em vez
+  de criar novos.

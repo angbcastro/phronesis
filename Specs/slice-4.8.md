@@ -219,3 +219,32 @@ mecanismo, e não uma passada de costura no fim, que segura o volume da lista.
 acrescentou, e dois blocos injetados — o da janela e, desde a 4.9, o do dossiê;
 e numa sessão que cabe numa janela só — arquivo importado, gravação curta — o
 bloco some e o prompt sai idêntico ao de antes desta fatia.
+
+### Do §14 (limites conhecidos)
+
+- **A extração roda no mesmo `waitUntil` da transcrição.** Em dev isso é o mesmo
+  processo: fechar a janela do servidor no meio mata o job e a sessão fica em
+  `extraindo`. O retry é chamar `/finalizar` de novo. Desde a 4.8 vale também
+  para as janelas, com a diferença de que uma janela morta assim fica `em_curso`
+  no `parcial.json` até o lease vencer (120 s) — depois disso qualquer passada a
+  reivindica de novo.
+
+- **O alvo de 10 a 20 átomos por 15 min ainda é aposta.** O prompt está em
+  `extracao-9` e as sessões julgadas até agora são curtas; a primeira sessão longa
+  confirma ou derruba o número. Desde a 4.8 ele é pedido **em proporção**, janela
+  a janela (`orcamentoDaJanela`), o que troca uma aposta por outra: oito janelas
+  pedindo de 1 a 3 dão de 8 a 24, e é o `estende` que tem de puxar o número para
+  baixo. Mais um motivo para a primeira sessão longa ser a medição que importa.
+
+- **O `estende` é a única coisa que segura o volume da lista, e ele é uma
+  instrução de prompt** (slice 4.8). Sem passada de costura no fim, a janela que
+  ignorar "não repita, estenda" produz um segundo átomo sobre o mesmo assunto —
+  ou um segundo `ROTINA` —, e a revisão abre com mais itens do que devia, que é a
+  condição de morte da visão §8. O código impede a corrupção (`ref` inválida vira
+  descarte) mas não a duplicação; quem vê é a revisão. **Ainda não foi medido
+  contra uma sessão real de 15 min.**
+
+- **A extração agora custa oito chamadas por sessão em vez de uma.** O total de
+  tokens de entrada é parecido — a fala é a mesma —, mas o prompt base viaja em
+  cada janela, e a lista do acumulado cresce a cada uma. É o preço declarado da
+  fatia, e a contrapartida é a espera depois de parar de falar.

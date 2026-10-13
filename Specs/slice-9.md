@@ -288,3 +288,51 @@ da entidade (`chat-5`, §4.16.2). **Não aconteceram, por decisão minha:** a
 medição de `CHAT_MODEL` antes de fixar o padrão, e o streaming do texto final —
 a resposta mais curta encolhe a espera que ele consertaria. Nada disto foi
 julgado numa pergunta real ainda; é o que falta.
+
+### Do §14 (limites conhecidos)
+
+- **E o teto de oito é piso, não teto exato** (slice 9). `stopWhen` é avaliado
+  entre passos, então um passo com três chamadas paralelas parte de 7 e termina em
+  10. Sempre foi possível; o `chat-3` manda usar busca paralela e transforma o caso
+  raro em comum. O transbordo é limitado pelo tamanho de um passo, e foi
+  documentado em vez de cortado (§4.16.1).
+
+- **`CHAT_MODEL` precisa de tool-calling multi-passo bom pelo Gateway, e isso
+  não foi medido** (slice 6). Desde a slice 9 o padrão é **constante própria**
+  (`MODELO_CHAT_PADRAO`), e não mais herança da extração: a troca de 20/09 mudou
+  a resposta do chat num commit que não falava do chat. O id continua sendo
+  `deepseek/deepseek-v4.1-flash` — escolhido para devolver JSON curto, que não é
+  a mesma habilidade —, e continua escolha sem medição: a spec da 9 pedia medir
+  cinco perguntas reais por candidato antes de fixar, e eu decidi fixar sem
+  medir. Se ele encadear mal, o conserto é `CHAT_MODEL` ou o painel de
+  `/agentes`, sem deploy; qual modelo serve continua pergunta aberta.
+
+- **O total do caminho vetorial conta dentro da janela de `K_BUSCA`, não do
+  diário** (slice 9). O "sem dizer que cortou" da slice 6 está resolvido — as
+  duas Cypher contam, e o modelo lê o número antes dos trechos (§4.16.2) —, mas
+  com `texto` a conta é de quantos dos 48 vizinhos passaram. Com 108 átomos
+  (18/09) a janela era quase metade do diário; em 23/09 já eram 151, e ela é um
+  terço. A linha diz isso com todas as letras ("não no diário inteiro"); quando o
+  diário crescer mais, é o texto dela e o `K_BUSCA` que se revisitam juntos.
+
+- **`buscar_entidades` vale o que a ficha tem dentro** (slice 9). Em 23/09, 2 das
+  51 entidades ativas tinham `resumo`, 2 tinham `contexto`, 1 tinha
+  `pode_ajudar_com`. Ficha vazia faz a ferramenta custar uma chamada para
+  devolver casca — nome, contagens, datas e quem co-ocorre —, e o caminho por
+  `texto` quase só acha pelo nome, porque é só o nome que está no vetor. O
+  conserto é rodar o lote de enriquecimento em `/entidades` (4.12), não mexer
+  na ferramenta; o agente 4 que escreve as fichas nunca foi medido numa sessão
+  real.
+
+- **Um prompt do chat editado em `/agentes` antes da slice 9 não conhece o que
+  ela trouxe.** O override guardado no R2 vence o `chat-5` do código: a linha de
+  recorte continua saindo da busca, e `buscar_entidades` continua oferecida,
+  mas sem as instruções de como ler uma nem quando usar a outra.
+
+- **O piso de 0,45 e o teto de 8 não foram medidos contra gabarito** (slice 6, e
+  não podiam ser: `CLAUDE.md` diz que quem julga extração aqui sou eu, na tela).
+  O que existe é uma medida emprestada — os 0,728 da varredura de confronto, em
+  4.15, que é átomo contra átomo e não diz nada sobre pergunta contra átomo — e
+  uma pergunta real que ficou ruim. Desde a slice 9 o instrumento está no (i):
+  por passo, quantos passaram do piso, quantos ficaram abaixo e o melhor
+  cortado.

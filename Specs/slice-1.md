@@ -101,3 +101,17 @@ Bucket privado, sem acesso público. Presigned URLs com validade de 5 minutos, e
 ## Depois desta slice
 
 Gravar (ou importar) sessões reais de diário. A slice 2 extrai átomos delas, e a qualidade da extração eu avalio à mão, na tela de revisão.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do §14 (limites conhecidos)
+
+- **Não foi conferido se o `xai/grok-stt` aceita Ogg/Opus, M4A, MP3 e WAV.** A
+  lista de importação promete os cinco; até agora ele só recebeu `audio/webm`.
+  Se recusar algum, a saída seria converter, e conversão de áudio não cabe em
+  function serverless — a alternativa real é estreitar a lista. Descobre-se no
+  primeiro arquivo de cada tipo.

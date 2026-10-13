@@ -294,3 +294,22 @@ ela fala de átomo, e nenhum átomo entra por esse caminho.
 **A medida que fecha a 4.12 é uma sessão real depois do lote**: `[desempate]`
 calado na maioria das menções quer dizer que o resumo está identificando; se ele
 continuar disparando em tudo, o conserto é o prompt do agente 4 (§14).
+
+### Do §14 (limites conhecidos)
+
+- **O perfil passa a ser escrito sem revisão prévia** (4.12). É a reabertura
+  consciente do que o §4.9 declarava: ficha errada contamina toda atribuição
+  futura, e o erro se realimenta. A defesa deixou de ser "nada entra sem o meu
+  toque campo a campo" e passou a ser: eu escolho quem entra na fila, eu leio a
+  ficha depois, e o desfazer está a um toque. **A regra 5 do `CLAUDE.md` continua
+  valendo inteira** — ela fala de átomo, e nenhum átomo entra no grafo por este
+  caminho. O defeito mais caro que este sistema pode ter é uma afirmação na ficha
+  que nenhum átomo sustenta, porque ela passa a decidir atribuição; quem procura
+  por isso sou eu, lendo a ficha depois de o lote rodar.
+
+- **A segunda passada só encolhe quando os resumos identificarem.** Entre a 4.11
+  e a 4.12 quase toda menção passava por ela, porque resumo vazio derruba a
+  confiança; a 4.12 escreve os resumos, mas **quem diz se eles bastam é o log**.
+  `[desempate]` calado na maioria das menções é o número que fecha a fatia; se
+  ele continuar disparando em tudo com as fichas escritas, o resumo não está
+  identificando, e o conserto é o prompt do agente 4.

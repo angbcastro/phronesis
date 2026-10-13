@@ -389,3 +389,32 @@ teto no meio da lista jogava fora os átomos que já estavam completos:
 tentativas fica a que trouxe mais átomos. A revisão avisa quando a proposta veio
 de resposta cortada — sem o aviso, uma lista curta parece decisão do modelo em
 vez de acidente de teto.
+
+### Do §14 (limites conhecidos)
+
+- **A importação passa a custar 35 chamadas de STT em vez de 1** (4.10),
+  concentradas em cerca de um minuto em vez de espalhadas por dezessete. É o
+  preço declarado de ter um caminho só; `BLOCOS_SIMULTANEOS = 2` mais a espera de
+  `comEsperaDeLimite` são a mitigação, e é a **medição** da primeira importação
+  real que diz se ela basta. Se não bastar, a saída registrada é o bloco de 2
+  min: 9 chamadas, ao custo de generalizar `offsetDoBloco` e `janelasDe`.
+
+- **Trinta e cinco costuras na transcrição importada, onde antes havia zero**
+  (4.10). Arquivo inteiro não corta palavra ao meio; blocos de 30 s cortam em 35
+  lugares. A gravação sempre pagou isso; a importação passa a pagar, e em troca
+  ganha a janela e o RAG por bloco.
+
+*Fora de fatia, logo depois dela (08/09): a revisão enxuta.*
+
+- **O `motivo` do agente 2 não aparece em tela nenhuma.** A linha de dúvida virou
+  `acho que é X — confirma?` (§4.7) e o modal de fontes mostra a camada e as
+  citações, não o motivo. O campo continua sendo escrito pelo agente, gravado em
+  `extracao.json` e lido por `referencias.ts`; o que não existe é caminho de UI
+  até ele. Quando uma atribuição surpreender, é no JSON que se olha — e é por
+  isso que este item está escrito aqui, e não descoberto de novo daqui a um mês.
+
+- **O rate limit do free tier derruba o fallback quando ele mais importa.** Na
+  mesma sessão, com a janela perdida, o passe único levou 429 em todas as
+  tentativas e a sessão foi para `erro`. As nove chamadas que isso custava
+  viraram três (`maxRetries: 0` nas chamadas embrulhadas por `limite.ts`), mas
+  **o limite em si é questão de plano, não de código**.

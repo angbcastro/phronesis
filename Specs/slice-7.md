@@ -189,3 +189,54 @@ A 4.6 está construída inteira, e a **7 a refez**: captura para todo agente, a
 pauta, a emenda e os dois passos que eu confirmo. O que falta é **uso** —
 nenhuma emenda foi aprovada ainda, e enquanto não for, todo prompt continua
 saindo byte a byte igual ao do git.
+
+### Do §14 (limites conhecidos)
+
+*Fora de fatia, no mesmo período (14/09): a colisão de `.quando`.*
+
+- **`.quando` era uma classe global com dois significados** — o selo do painel
+  de agentes (0,6 rem, caixa baixa, borda pílula) e o nome da sessão e da
+  entidade. `.lista-sessoes .quando` tinha especificidade maior mas não
+  redeclarava nenhuma das três propriedades, então todo nome próprio de
+  `/sessoes` e `/entidades` saía a 0,6 rem dentro de uma pílula. **Resolvido**:
+  a regra do selo passou a ser `.agentes .quando, .editor-agente .quando`, e
+  `.voltar` — que era global com `margin-top: 2rem` e ia vazar para o `←` da
+  ficha — virou `.leitura .voltar, .revisao .voltar` na mesma passada. O limite
+  que fica é o de fundo: `globals.css` é uma folha global sem escopo por
+  componente, as duas colisões achadas foram achadas **lendo**, e nada impede a
+  próxima além de escopar por hábito. Um teste não pega isto: o que mede
+  cascata é o navegador.
+
+*Fora de fatia, no mesmo período (12/09): o bloco vazio.*
+
+- **Bloco vazio por defeito do provedor é indistinguível de silêncio** (§5.4).
+  Desde 09/09 um bloco sem transcrição vira bloco vazio em vez de derrubar a
+  sessão, e um tropeço do STT que devolva nada passaria por pausa. O único sinal
+  é a linha `[pipeline] … STT não ouviu fala` no log, uma por bloco vazio; não
+  há checagem de energia do áudio antes de aceitar o vazio, e não vai haver
+  enquanto o log bastar.
+
+*Fora de fatia, no mesmo período (12/09): o deploy.*
+
+- **Gravação com a tela apagada continua não medida.** O `wakeLock` mantém a tela
+  acesa enquanto grava, e com isso a aba nunca vai a segundo plano — a pergunta
+  de se o Chrome no Android estrangula o `setTimeout` de 30 s do gravador
+  (§3.1) fica **sem resposta**, não respondida. Página capturando mídia costuma
+  ser isenta; ninguém verificou aqui. Sistema que recuse a trava por bateria
+  baixa grava do mesmo jeito, e nesse dia a pergunta volta.
+
+- **Uma emenda aprovada depressa pode piorar um prompt calibrado em nove
+  versões, e nenhum teste automático vê.** É a mesma consequência que a 4.6
+  declarava para a regra, agora sobre o corpo do prompt, e portanto maior: o
+  apêndice se revogava tirando uma linha da lista, a emenda só se desfaz pelo
+  `anterior` do snapshot. Consequência direta de não haver medida automática de
+  qualidade — e não vai haver. As defesas são as seis amarras do `redacao-1`
+  (§4.12), o teto de duas seções por rodada, o `extracao-anterior` lado a lado e
+  o índice fechado por `incorporada_em`. Nenhuma é métrica; todas dependem do meu
+  julgamento na revisão seguinte.
+
+- **`grafo` continua sem consumidor, e agora por um motivo.** `resolucao` ganhou o
+  dele na slice 7, quando `paraCalibrar` passou a receber o agente; `grafo` não é
+  agente, não tem prompt e não há o que emendar com ele. Ele aparece na porta de
+  `/calibracao` sem botão, e ocupa vaga no teto de 500 do índice como qualquer
+  outra correção. Quem conserta grafia é o vocabulário do STT — slice 7.2.

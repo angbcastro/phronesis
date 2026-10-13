@@ -255,3 +255,33 @@ uma batida semanal para as canônicas com novidade (§4.9). O ritmo semanal
 reabre uma recusa da 4.12, por pedido meu. O Hobby aceitou a terceira entrada
 de cron (§12). **Falta ver as dez entidades de 23/09 saírem da fila em
 produção**, e a primeira batida de segunda rodar.
+
+### Do §14 (limites conhecidos)
+
+- **Sem teto de saída, o custo de uma ficha é o que o modelo decidir pensar**
+  (4.12.1). Para o "eu", em 23/09, ~8 mil tokens de saída por rodada, e cresce com
+  ele — centavos no preço daquele dia. O teto que sobra é o do modelo (32.768 de
+  saída para o padrão), e trocar `ENRIQUECIMENTO_MODEL` troca esse número junto.
+  Bater nele é `falhou` com `finishReason=length` no motivo.
+
+- **O encadeamento ainda pode cair, e a quebra de 23/09 continua sem causa
+  conhecida** (4.12.1). O `waitUntil` do elo pode morrer, e o cookie repassado
+  pode expirar no meio de uma fila longa. O que a 4.12.1 garante é que a próxima
+  quebra deixa a linha `[fila] o elo seguinte respondeu <status>` no log, e que
+  `/entidades` aberta retoma a corrente sozinha — não que ela não quebre. **Com a
+  aba fechada, uma corrente que cai na terça espera** até eu abrir a tela ou até
+  a batida de segunda-feira.
+
+- **A batida semanal escreve fichas sem eu ter apertado nada** (4.12.1), que é a
+  recusa da 4.12 reaberta por pedido meu. A defesa é a mesma do lote — só
+  canônicas, desfazer de um toque —, e o custo que ela cria é este: a ficha que
+  eu edito à mão numa canônica é reescrita na segunda seguinte se ela ganhou
+  átomo. O desfazer traz a minha versão de volta; a próxima batida a sobrescreve
+  de novo.
+
+- **A primeira batida pega o atrasado inteiro.** Em 29/09 eram 28 canônicas: o
+  "eu" (falhou), Isinha e meu pai (ganharam átomo), e 25 que nunca rodaram —
+  mais as 10 que estão em `na_fila` desde 23/09. É uma rodada de ~40 fichas, e
+  só essa.
+  **Nenhum aviso mora fora de `/entidades`** — notificação de PWA seria o
+  primeiro uso de push neste sistema, e foi recusada por agora.

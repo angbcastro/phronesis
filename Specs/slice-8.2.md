@@ -166,3 +166,60 @@ abre: não mais quando a proposta fecha, e sim quando o **primeiro átomo** exis
 No mesmo deploy, o teto de saída da extração subiu de 8000 para 16.000 tokens
 (§4.6) — decisão tomada contra a evidência já registrada de que subir o número
 não resolve sozinho, e com o escalonamento preservado por cima dele.
+
+### Do §14 (limites conhecidos)
+
+*Fora de fatia, no mesmo período (20/09): o modelo da extração.*
+
+- **O modelo da extração pensa muito, e deixamos — e o padrão trocou sem
+  remedir** (20/09). `zai/glm-5.3-flash`, padrão até então, chegou a gastar 1720
+  tokens pensando para 122 de texto, e na janela 0 da sessão
+  `mtqoeoqh3e3724514q1f` gastou os 8000 inteiros sem escrever um byte de JSON.
+  As defesas do §4.6 seguram a janela pelo teto, não pela mordaça: calar o
+  raciocínio é possível e medido (§4.4), e foi recusado porque cobraria a conta
+  na qualidade da extração. **O limite conhecido que sobra é o custo**: janela
+  que estoura paga duas chamadas em vez de uma, e não há medida de quantas
+  estouram — a sessão real é que diz. O padrão agora é
+  `deepseek/deepseek-v4.1-flash`, por decisão minha e sem sonda nova: **quanto
+  ele pensa, se estoura o teto e como se sai na qualidade da lista são três
+  coisas ainda não medidas**, e a primeira sessão real é que diz. Trocar de
+  volta, ou para outro, continua sendo `EXTRACAO_MODEL`, sem tocar em código — e
+  vale notar que `zai/glm-5.3-flash` nem aparecia na lista de modelos conhecidos
+  do `@ai-sdk/gateway` instalado (4.0.62), que conhece `zai/glm-5.3`; o id novo
+  não foi conferido contra essa lista, e a string sai pelo Gateway de todo jeito.
+
+*Fora de fatia, depois dela (30/09): o prazo das janelas.*
+
+- **As janelas do fim têm até 280 s (`PRAZO_DA_FUNCAO_MS`) contados do começo
+  da função**, sob o `maxDuration` de 300 s — o máximo do plano Hobby. Eram 120 s
+  fixos (`ORCAMENTO_JANELAS_MS`) até 30/09, e com o `deepseek/deepseek-v4.1-flash`
+  cabia uma janela neles, às vezes nenhuma: uma janela custa 60–100 s (extração
+  ~50 s, resolução 15–30 s), e das 19 sessões medidas no R2 saíram 22 falhas
+  `janela_presa`. Não era "o caso ruim de um caso raro": a extração não alcança a
+  fala durante a gravação, e o `/finalizar` herda uma ou duas janelas quase
+  sempre. O re-extrair (`forcar`, que refaz tudo do zero) nunca fechava uma
+  sessão de três janelas nos 120 s. Estourado o prazo, a sessão continua indo
+  para `erro`, e o retry continua sendo `/finalizar` ou `/extrair`. **O que ainda
+  limita é o relógio**: `TETO_CHAMADA_MS` corta cada chamada em 180 s (eram 90 s
+  até 30/09), e três janelas lentas ainda podem não caber em 280 s.
+
+- **As edições da revisão continuam vivendo só na memória da página, e agora a
+  página fica aberta muito mais tempo** (8.2, decisão 6). Bloqueio de tela,
+  descarte da aba pelo sistema ou trocar de app e voltar perde o que eu editei —
+  e isso **já era verdade** antes desta fatia, sem aviso nenhum. O que a 8.2 faz
+  é aumentar o tempo de exposição, porque a revisão abre antes e espera o fim ali
+  dentro. Foi perguntado e escolhido assim, sabendo do risco; é o limite mais
+  afiado da fatia e o primeiro candidato a emenda se me morder.
+
+- **A revisão passa a poder mostrar uma proposta que ainda vai mudar** (8.2). Eu
+  posso ler o conjunto, formar uma impressão, e ela mudar quando o fim chegar. A
+  linha do rodapé é a única defesa contra isso, e ela é discreta de propósito —
+  encher a tela mais apertada do sistema de indicador desfaria o enxugamento que
+  ela recebeu fora de fatia.
+
+- **O teto de saída da extração subiu para 16.000 contra a evidência do próprio
+  código** (20/09, §4.6). O raciocínio registrado — "o modelo enche o que houver"
+  — continua valendo, e o que sustenta a decisão é outra coisa: cada estouro
+  refaz a janela inteira, não só a chamada. Se a `mu4um3ot3t5k4g1u1p1j` e as
+  próximas continuarem falhando com 16.000, o número não é o problema, e o
+  candidato seguinte é trocar o modelo de extração — não subir de novo.
