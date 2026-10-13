@@ -265,3 +265,69 @@ declarar que ficou bom.
   o caminho da lista. Seis minutos porque os 300 s de `maxDuration` do
   `/finalizar` têm de caber inteiros dentro dele — chamar de travado antes seria
   eu reextrair uma sessão viva e pagar duas vezes.
+
+### Do §4.17–4.19 (medida e desempenho)
+
+**O tempo entre o toque em parar e a revisão abrir deixou de ser impressão.** Até
+esta fatia a previsão era "de um a dois minutos para segundos" e previsão não é
+medição: nada nunca foi cronometrado desde que a 4.8 desconcentrou a extração. A
+única sessão longa real que se olhou (`mtqoeoqh3e3724514q1f`, 1044 s) mediu token
+e `finishReason`, nunca relógio — e o sistema saiu do `localhost`, roda no
+telefone, e o telefone é onde eu espero olhando a tela.
+
+**E o coletor descarrega no meio do caminho, não só no fim** (18/09). Gravar
+apenas no `finally` deixava o registro cego exatamente onde ele é mais
+necessário: função morta pelo `maxDuration` não chega ao `finally`, e a medida
+inteira daquela invocação ia junto. Foi o que a sessão `mu73d88b0w4u6o5d440j`
+mostrou — `espera_blocos` e `concatenar` **rodaram** (o `transcricao.json` e o
+`finalizado: true` provam) e não estão no objeto, porque o `/finalizar` foi morto
+no meio da chamada seguinte. `INTERVALO_DESCARGA_MS` é 30 s: uma passada de
+`/pronto` típica dura segundos e não paga descarga nenhuma, e a de 300 s paga
+dez, contra um registro inteiro perdido.
+
+A segunda metade da fatia. Ela sobe **depois** de a medida ter rodado numa sessão
+real, e a ordem não é cerimônia: com instrumento e conserto no mesmo deploy não
+haveria como saber o que melhorou.
+
+| # | O que era | O que é |
+|---|---|---|
+| 1 | o STT do último bloco podia ser pago **duas vezes** | o bloco ganha lease no manifest (`transcrevendo_em`), espelhando `reivindicarJanela` |
+| 2 | `listarEntidades()` rodava **duas vezes por finalização** | um retrato só, passado às janelas e à montagem da proposta (`catalogoUmaVez`) |
+| 3 | `configAgentes()` era um GET por chamada de agente | cache **por invocação** (`invocacao.ts`), que não fura "salvei, vale na próxima" |
+| 4 | ~3,5 s de polling puro entre "acabou" e "abriu" | 1 s → 400 ms no laço dos blocos, 500 → 150 ms na fila, 2 s → 750 ms na tela |
+| 5 | o RAG da janela percorria os 4 blocos em série | `Promise.all`, com o `catch` **por bloco** para um não levar os outros |
+| 5 | a fila do cliente subia um bloco por vez | três frentes, que só importam no instante do `parar` |
+| 6 | toda falha esperava a escada de 20 s e 60 s | só o 429; o resto tenta de novo em segundos (§5.3) |
+
+**O lease do bloco fecha uma janela que a trava antiga não cobria.** A existência
+de `chunk_NNN.json` só vale **depois** de o STT voltar; entre o pedido e a
+resposta havia dezenas de segundos em que o `waitUntil` de `/chunks/:i/pronto` e
+o laço de espera de `finalizarSessao` podiam mandar o mesmo áudio, e o
+`/finalizar` chega segundos depois do último `/pronto`. Agora quem não reivindica
+recebe `null` — que **não é falha**: é a resposta certa, e o laço relê o manifest
+na volta seguinte e vê o bloco pronto. Bloco que falha **solta** o lease antes de
+subir o erro, para o próximo não esperar dois minutos por um trabalho que já
+acabou; e `marcarTranscrito` também o solta, porque bloco pronto não tem dono.
+
+**O penhasco vira erro.** Até aqui, se **qualquer** janela não estivesse `pronta`
+na finalização, `propostaDaSessao` descartava tudo que a 4.8 acumulou e rodava
+`extrair()` sobre a sessão inteira num passe só — **em silêncio**, sem nada na
+tela que distinguisse uma proposta montada de oito janelas de uma tirada num
+passe de 17 minutos. É o caminho de 1–2 min que a 4.8 existe para eliminar, e eu
+o pagava sem saber. Agora a sessão vai para `erro` com o motivo no log
+(`JanelaPresaError`) e espera eu mandar re-extrair.
+
+**E o gatilho mais comum dele nem era defeito.** Ele disparava sempre que um
+lease de 120 s ainda estava segurado por um `waitUntil` anterior no instante em
+que o `/finalizar` rodava — que é a condição **normal**, não a excepcional.
+`avancarJanelas` deixou de desistir nesse caso: fechando a sessão, ela **espera**
+quem está na janela (`esperarQuemEstaNela`, 700 ms entre conferências), e só
+assume quando o lease vence de fato. As três saídas são `pronta` (ele fechou),
+`minha` (o lease venceu e eu assumi) e `desistiu` (acabou o orçamento) — e só a
+última vira erro. Durante a gravação nada mudou: quem encontra a janela ocupada
+para, e não pula, porque a janela `n` precisa do acumulado da `n-1`.
+
+**A troca está declarada:** uma sessão que antes entregaria nove átomos por passe
+único passa a parar e pedir re-extração. É a troca que eu quis — prefiro saber.
+Áudio, transcrição e acumulado continuam todos no R2, e o retry é
+`POST /api/sessoes/:id/extrair`, o mesmo botão de sempre.

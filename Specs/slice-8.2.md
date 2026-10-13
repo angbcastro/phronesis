@@ -254,3 +254,47 @@ teto, a **janela inteira** é refeita do zero (extração, resolução e desempa
 não só a chamada que estourou. O mecanismo não mudou: `FATOR_DE_FOLGA` continua
 2, e a segunda tentativa passa a ir com 32.000 quando `finishReason` for
 `length`. O que subiu foi o piso debaixo dele.
+
+### Do §4.17–4.19 (medida e desempenho)
+
+A slice 8 declarou esta fatia **condicional**: ela só existia se o número da 8
+continuasse ruim. Continuou. Depois dos seis consertos, as sessões reais gravadas
+a partir de 18/09 ainda mostraram 119–301 s de espera entre parar de falar e a
+revisão abrir, e a `mu4um3ot3t5k4g1u1p1j` ficou **dois dias** presa, retentada e
+falhando do mesmo jeito a cada vez. O gatilho disparou.
+
+**O que sobrava de espera era trabalho que só pode acontecer depois que eu paro:**
+o STT do último bloco, a janela final, a resolução de identidade dela. Isso tem
+piso. O resto da sessão — que é a maior parte — **já estava extraído** quando eu
+parava, desde a 4.8. O que esta fatia faz é parar de esconder esse material.
+
+| Peça | O que era | O que é |
+|---|---|---|
+| `GET /api/sessoes/:id/extracao` | 404 enquanto `extracao.json` não existisse | serve o acumulado de `parcial.json`, dizendo `crescendo: true`; o 404 passou a significar **zero átomos** |
+| `GET …/extracao/eventos` | não existia | um fluxo NDJSON, consumido pelas **duas** telas |
+| `Processando` | esperava `status === "em_revisao"` | sai no **primeiro** evento com átomo, antes do status virar |
+| `Revisao` | buscava uma vez e parava | consome o fluxo, funde, e destrava o confirmar no fim |
+| janela que falha | derrubava a proposta e a sessão ia para `erro` | é tentada **uma segunda vez, só ela**, antes de desistir |
+
+**A linha do rodapé é a única concessão de interface.** "faltam 2 de 9 trecho(s)",
+e ela some quando a proposta fecha. Nada de barra de progresso, nada de marca de
+"novo" em átomo que chega: esta é a tela mais apertada do sistema e ela foi
+enxugada de propósito fora de fatia (o texto edita no lugar, a dúvida virou uma
+frase, a procedência foi para trás de um `ⓘ`). Encher de indicador agora desfaria
+isso.
+
+O caminho durante a fala (`fechando: false`, a cada `/pronto`) não mudou: uma
+janela que falha ali já é retentada de graça na chamada natural do bloco seguinte.
+
+**A máquina de estados não ganhou estado novo.** `em_revisao` continua
+significando "a proposta fechou"; o que mudou é que a tela de revisão não espera
+mais por ele para abrir.
+
+**O parser de NDJSON saiu do `Chat.tsx`.** Com o segundo fluxo do projeto, três
+telas passaram a consumir o mesmo dialeto, e `partirLinhas`/`lerEventos` foram
+para `src/client/ndjson.ts`. `Chat.tsx` reexporta `partirLinhas` porque é de lá
+que `tests/chat.test.ts` o importa, e é o mesmo parser. Pelo mesmo motivo
+`TETO_DA_ESPERA_MS`/`esperouDemais` saíram de `Processando.tsx` para
+`src/client/espera.ts`: duas telas passaram a contar o mesmo teto, e a segunda
+não deve arrastar a primeira inteira para o bundle por causa de seis linhas puras
+(é a razão de `localizarNoAudio` morar em `transcricao.ts`, §4.5).
