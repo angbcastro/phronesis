@@ -512,3 +512,143 @@ Quem confronta com o grafo continua sendo o passo seguinte (4.8), que atribui
 átomos da mesma sessão dizendo "Rafa" podem ser duas pessoas. Desde a 4.9 ele
 vê também a chave que o extrator apontou, como quinta camada de candidato, e
 valida **toda** menção que tenha candidato.
+
+### Do §4.8, §4.8.1, §4.10 e §4.14 (identidade)
+
+A frase equivalente dentro de `INSTRUCOES` — repetir a regra de tipo para o
+agente não gastar a decisão à toa — **entrou no `resolucao-3`** (slice 4.9), que
+era a fatia que já ia subir a versão do prompt de qualquer jeito. A regra passou
+a ser dita nos dois prompts e imposta nas duas pontas do código; a migration 007
+acrescentou `HISTORIA` aos três tipos, nos quatro lugares de uma vez, porque
+`TIPOS_SEMPRE_EU` é a lista única que todos leem (§14).
+
+`TOP_K = 3` sobre a **união** das quatro camadas, e piso de score por camada —
+e desde a 4.9 são `TOP_K = 4` e cinco camadas (§4.14), porque a chave do extrator
+tinha de caber **junto** com as três e não no lugar de uma.
+Sem teto e sem piso, todo átomo ganha candidato e a lista de dúvida da revisão
+vira lista de nomes. **Uma camada semântica sem piso é uma camada que sempre
+acha alguém.**
+
+O outro argumento que sustentava os dois **caducou na 4.9**: até a 4.8 eles eram
+o que fazia `decidir()` não cair sempre em `julgar` e o critério 5 da slice 4
+sobreviver — sessão sem ambiguidade não pagava nada, porque o caso comum era a
+grafia casar com um nó e os vizinhos votarem **no mesmo nó**, união de tamanho 1,
+decisão de graça. A 4.9 pôs o agente 2 em toda menção com candidato de propósito
+(§4.14), e o critério morreu ali. O que **não** morreu é a deduplicação: ela
+continua sendo o que mantém a lista curta e honesta.
+
+**O erro mais frequente do sistema não era do extrator, e mesmo assim era ele
+quem o fixava.** Medido em 2026-09-04, nas 5 primeiras sessões confirmadas: de
+21 correções capturadas, **um terço era conserto de grafia de nome próprio que o
+STT errou** — "Beijing"→"Behring Founders", "Jean"→"Giampaolo Lepore",
+"Dapta"→"Adapta". O extrator não errou nada nessas; ele copiou fielmente o que a
+transcrição dizia. Só que o texto do átomo é escrito por ele, e é no texto que o
+nome errado se fixa — inclusive dentro do vetor, que sai só de `a.texto`
+(§4.10).
+
+Nenhuma das duas defesas existentes alcançava o caso. O vocabulário do STT
+(§4.4) ensina a grafia de nome que **já** está no grafo, e ainda assim "Adapta"
+saiu como "na data" na medição de 02/09. A camada de string do agente 2 mede
+Levenshtein e palavra em comum, e "giam" fica longe demais de "giampaolo lepore"
+nos dois — é apelido, não erro de uma letra.
+
+Por isso a 4.9 inverte a decisão que o §4.6 declarava desde a slice 4: o prompt
+da extração passa a saber que entidades existem. **Não o catálogo inteiro** — os
+até 30 nós que o trecho parece citar, escolhidos por busca. Com um grafo pequeno
+os dois são a mesma coisa; a diferença aparece quando ele cresce, e o desenho
+tem de estar pronto antes disso.
+
+Os três no mesmo `waitUntil` de `/pronto`, porque cada um precisa do anterior: a
+busca precisa do texto, a janela precisa das candidatas dos blocos dela. **O
+passo do meio nunca derruba os outros dois**: sem `candidatas_NNN.json` o dossiê
+fica menor, e dossiê vazio faz o extrator se comportar exatamente como na 4.8. É
+a regra de precedência da 4.5 — nada no caminho do vetor impede uma gravação —, e
+o sinal é a linha `[candidatas]` no log.
+
+`avancarJanelas` monta o dossiê antes de extrair, calculando o que faltar
+(catch-up idempotente, dentro do `ate` que ele já recebe) e lendo o catálogo
+**uma vez** por janela, que é o mesmo número de consultas de antes: ele agora
+viaja para dentro de `extrairJanela`, que antes o lia sozinha.
+
+#### `extracao-7`: um bloco injetado, e a base intacta
+
+> Os dois números desta seção são os que **a 4.9 produziu**, e não os que estão
+> em vigor: a migration 007 subiu os dois logo depois, para `extracao-8` e
+> `resolucao-4`, e a 4.11 os subiu de novo, para `extracao-9` e `resolucao-5`
+> (§4.6, §4.8 e §8.1). O que a 4.9 fez com o prompt continua descrito aqui; o que
+> cada versão diz de si está em `PROMPT_VERSION` e `PROMPT_VERSION_RESOLUCAO`.
+
+`INSTRUCOES_BASE` e `FORMATO` **não mudaram um byte**. O bloco novo entra por
+`inserirAntesDoFormato`, como `blocoDaJanela` já entrava, e
+declara a chave nova de dentro de si — precedente que o `estende` da 4.8 abriu.
+`blocoDasCandidatas([])` devolve `""`, e aí a chamada sai **byte a byte igual à
+da 4.8**: grafo vazio, primeira sessão da vida do sistema, Gateway fora. É o
+mesmo no-op que toda fatia que injeta texto neste prompt garante — e o que torna
+cada uma reversível olhando uma linha.
+
+> **Como a candidata se apresenta mudou na 4.11**, e só isso: chave, nome, tipo,
+> a marca de ficha oficial, as grafias **como lista** e o `resumo`, no lugar dos
+> aliases concatenados numa string e do `contexto` isolado. É a mesma
+> apresentação que o agente 2 vê — `apresentarEntidade`, uma função só (§4.8). O
+> resto do bloco ficou byte a byte igual: ele foi calibrado e funciona. Foi essa
+> troca que levou `PROMPT_VERSION` a `extracao-9`.
+
+`AtomoCru.sobre` passou de `string` para
+`MencaoCrua = { citado, chave: string | null }`, e `menciona` para
+`MencaoCrua[]`. **`parsearResposta` aceita as duas formas** — string vira
+`{ citado, chave: null }` —, que é o que mantém intacto o caminho sem dossiê e
+lê qualquer resposta no formato antigo. `AtomoProposto`, `Extracao` e `Parcial`
+não mudaram: a revisão e o confirmar não têm formato novo para aprender.
+`EstadoJanela` ganhou `candidatas?: string[]`, que é procedência (regra 7) e é o
+que responde "por que ele apontou aquele nó" três meses depois — o dossiê é uma
+foto do grafo no momento da janela, e o grafo de hoje não a reconstrói.
+
+**A guarda do `eu` ganhou o lado da extração.** A lista de conhecidos na frente
+do modelo é convite para pendurar um `SENTIMENTO` em outra pessoa; o prompt pede
+o contrário, e o parse recusa: nos quatro tipos que são sempre de `eu` (§4.8) a
+chave cai, e o `citado` fica como veio — quem arbitra sujeito errado do extrator
+continua sendo a revisão.
+
+`PROMPT_VERSION` subiu para `extracao-7` mesmo com a base igual, pelo critério
+de sempre: a **entrada** mudou. Precedente do `extracao-6` da própria 4.8.
+
+#### `resolucao-3`: valida toda menção
+
+- `candidatosDe` ganhou a chave do extrator como **quinta camada, `extrator`**,
+  na cabeça da união; `TOP_K` subiu de 3 para 4 para ela caber **junto** com as
+  três. Chave que não existe no catálogo é descartada em silêncio.
+- `decidir()` continua como está, mas o resultado dele virou o **prior**, não a
+  resposta: toda menção com candidato entra no prompt.
+- **A menção sem candidato nenhum não vai.** Ali não há atribuição a validar — a
+  união vazia é entidade nova, e a única resposta válida seria a que o prior já
+  dá. É o que mantém a promessa de uma sessão com o grafo vazio sair como saía
+  na 4.8, sem pagar uma chamada para descobrir que não havia o que perguntar.
+
+**O critério 5 da slice 4 morreu aqui, de propósito.** "Sessão sem ambiguidade
+não paga nada" era promessa da 4; desde que o extrator aponta o nó e escreve o
+nome dentro do texto, nenhuma atribuição dele entra sem segunda opinião, e o
+preço é uma chamada de resolução por janela em vez de "só quando houver dúvida".
+
+Duas frases entraram no texto de `INSTRUCOES` junto, e são as que a 4.8.1 recusou
+subir sozinha: **a regra de tipo** ("SENTIMENTO, APRENDIZADO e ROTINA são sempre
+de `eu`" — a guarda de código já existia, e a frase é o que impede o agente de
+gastar decisão numa pergunta cuja resposta o código já sabe) e **o escopo das
+chaves por menção** (só valem as listadas naquela menção — a distância entre o
+que o prompt mostra, até 30 do dossiê, e o que o código aceita, 4 candidatos,
+cresceu nesta fatia).
+
+E `comEsperaDeLimite` entrou na chamada. A 4.8 deixou isso fora de escopo; esta
+fatia é o que torna o conserto necessário — o agente passou a rodar em **toda**
+janela, oito vezes por sessão de 15 min, na mesma rajada em que o STT já disputa
+o limite da conta (§5.3).
+
+Nenhuma tela nova, e nenhum gesto novo. A camada `extrator` entra na procedência
+que a revisão dá de toda referência com evidência — as mesmas de `perfil` e
+`vizinhos` (§4.7) —, e pelo mesmo argumento, mais forte: ali o nome dentro do
+texto do átomo deixou de ser o que eu falei, e o `citado` da referência é o que
+guarda a grafia. A discordância entre os dois agentes chega como dúvida comum.
+
+> Desde que as fontes viraram modal (§4.7), essa procedência é **alcançável**, e
+> não mais exibida por padrão — e o `motivo` que o agente 2 escreve deixou de
+> aparecer na tela em qualquer caminho. Ele continua no `extracao.json`, e é
+> lá que se olha quando a atribuição surpreende. Está no §14.

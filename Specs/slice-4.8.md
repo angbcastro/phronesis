@@ -303,3 +303,19 @@ acumulado está vazio.** Não é detalhe: é o que faz o arquivo importado e a
 gravação de menos de dois minutos continuarem recebendo exatamente o prompt de
 antes desta fatia. (O terceiro caso era o fallback de passe único, que a slice 8
 removeu — §4.18.)
+
+### Do §4.8, §4.8.1, §4.10 e §4.14 (identidade)
+
+O agente 2 continua rodando **dentro** da extração, e por isso ele também virou
+por janela: as menções que nascem numa janela são decididas quando ela fecha, e
+nunca reabertas. Duas consequências opostas, e as duas são deliberadas:
+
+`PROMPT_VERSION_RESOLUCAO` **não** subiu com isso, e a razão é o contrário da
+que fez a extração subir: o texto do prompt é o mesmo, o bloco de contexto some
+quando está vazio, e o que um `prompt_version` precisa resolver é um texto
+(§4.13). O que mudou foi o recorte da sessão que ele enxerga — está aqui e no
+§14, e não num número.
+
+O custo é até uma chamada de resolução por janela em vez de uma por sessão. A
+trava que a torna condicional continua valendo, agora por janela: janela sem
+menção ambígua não chama o agente e não paga nada.

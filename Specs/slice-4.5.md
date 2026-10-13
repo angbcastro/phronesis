@@ -451,3 +451,45 @@ gravada de 15 min são 30 blocos. O tratamento está em `limite.ts` (§5.3).
 **Repetido em 2026-09-02 contra um bloco de sessão real**, e o efeito é maior do
 que a medição de agosto sugeria — lá a lista trocava uma grafia plausível por
 outra; aqui ela tira um nome do ruído puro:
+
+### Do §4.8, §4.8.1, §4.10 e §4.14 (identidade)
+
+Uma passada determinística e de graça monta os candidatos de cada menção,
+reusando `proximidade` de `duplicatas.ts` — que pega o homófono de brinde, porque
+"Rafa" fica a uma ou duas letras de "Raffa" e de "Rapha".
+
+| Situação da menção | O que acontece |
+|---|---|
+| a união tem **um** candidato, e ele é exato | resolve ali, `certo: true`, de graça |
+| a união está vazia | entidade nova, `certo: true`, de graça |
+| qualquer outra coisa | vai ao agente |
+
+**A conta é sobre a união deduplicada das quatro camadas** (§4.10), não sobre a
+camada de string sozinha — foi o que mudou na 4.5, quando as duas camadas
+semânticas entraram. O caso comum de uma sessão sem ambiguidade é a grafia casar
+com um nó **e** os vizinhos votarem no mesmo nó: união de tamanho 1, decisão de
+graça, agente 2 não chamado. `decidir()` (`resolucao.ts:265`) diz o mesmo com
+todas as letras no próprio cabeçalho.
+
+Até aqui **toda semelhança deste sistema era grafia**: `nome_normalizado` na
+slice 3, `proximidade()` na 4. Letra não alcança dois átomos que dizem a mesma
+coisa com palavras diferentes, nem uma pessoa cujo nome eu falo de um jeito que o
+grafo não escreveu. O vetor é a primeira comparação daqui que não passa por
+letra.
+
+#### A versão do prompt do agente 2, de `resolucao-2` a `resolucao-5`
+
+`PROMPT_VERSION_RESOLUCAO` subiu para `resolucao-2` na 4.5, e o texto do prompt
+quase não mudou. **A versão acompanha a entrada, não só a redação:** o conjunto
+de candidatos que o agente recebe é outro, e isso é saída diferente (regra 7). Na
+4.9 ela subiu de novo, para `resolucao-3`, pelo mesmo critério e mais o texto: a
+chave do extrator entrou como quinta camada, a lista virou a de todas as menções
+com candidato, e duas frases entraram no prompt (§4.14). E para `resolucao-4` com
+a migration 007, pelos dois motivos outra vez — o catálogo passou a ter
+organizações, e a regra de tipo passou a travar `HISTORIA` em `eu` junto com os
+outros três. E para `resolucao-5` na 4.11, pelos dois motivos mais uma vez: o
+catálogo trocou os três campos de perfil pela apresentação única (§4.8), e
+`certo: true|false` virou `confianca` de 0 a 1.
+O prompt passou a dizer, ao lado de cada candidato, **por que ele está na lista** —
+e quando o motivo é "átomos passados parecidos", os trechos vão junto, porque
+evidência de uso é o sinal mais forte que existe quando o perfil está vazio.

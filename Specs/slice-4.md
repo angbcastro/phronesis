@@ -367,3 +367,20 @@ Antes elas eram texto morto no item: menção errada só se consertava rejeitand
 átomo inteiro ou renomeando a entidade no rodapé, e as duas são grandes demais
 para o erro. A lista viaja inteira nas edições do átomo, e não como delta: sem
 isso não dá para distinguir "não mexi" de "apaguei todas".
+
+### Do §4.8, §4.8.1, §4.10 e §4.14 (identidade)
+
+`citado` guarda o que o extrator escreveu; `entidade` é a quem foi atribuído.
+Até a slice 3 todas as menções ao mesmo nome colapsavam numa candidata só,
+válida para a sessão inteira — o que não tem como expressar que dois "Rafa" da
+mesma sessão são duas pessoas. O painel de entidades da revisão continua
+existindo, agora como **visão agregada** do que foi resolvido.
+
+**Se nenhuma menção precisar de julgamento, o agente não é chamado** e a sessão
+não paga nada. `prompt_version_resolucao` e `modelo_resolucao` ficam `null` na
+proposta: registrar uma versão que não rodou seria mentira na procedência.
+
+Uma chamada só para a sessão inteira. O catálogo que vai no prompt é o das
+entidades que **esta sessão pode citar** — as já resolvidas e os candidatos —, e
+não o grafo inteiro: uma menção só resolve para um candidato dela, e mandar o
+resto seria pagar por texto que não muda resposta nenhuma.

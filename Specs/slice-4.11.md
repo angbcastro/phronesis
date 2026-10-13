@@ -532,3 +532,72 @@ contexto, pode_ajudar_com, fizemos_juntos — SEM TETO a partir da 009
 (:Entidade)-[:DISTINTA_DE]->(:Entidade)  recusa minha                    (004)
 (:Atomo)-[:PERFILA { campo }]->(:Entidade)                               (005)
 ```
+
+### Do §4.8, §4.8.1, §4.10 e §4.14 (identidade)
+
+Isso mata qualquer solução baseada em nome, e é o que separa esta slice da 3. Lá
+o problema era duas grafias para a mesma coisa, e `nome_normalizado` resolvia
+(8.2). Aqui é o contrário — **uma grafia para duas coisas** — e a chave não pode
+resolver, por construção. Só o contexto resolve, e desde a 4.11 esse contexto é
+o **`resumo`** da entidade (8.3.1) — o retrato de identidade que eu escrevo, no
+lugar dos três campos de perfil que ele lia antes.
+
+Até a 4.10 a mesma entidade tinha **duas caras**, para dois agentes que leem o
+mesmo trecho: o dossiê do extrator mostrava nome, tipo, grafias concatenadas numa
+string e o campo `contexto` isolado — um dos três, escolhido em código, sem que
+ninguém tivesse decidido que era o que mais identifica alguém; e o catálogo do
+agente 2 mostrava os **três** campos inteiros, de **todas** as entidades do
+catálogo, em toda chamada.
+
+`apresentarEntidade` (`entidades.ts`) é a apresentação única, e mora no módulo que
+define o que uma entidade é para as outras camadas — duas cópias do mesmo texto
+divergiriam no primeiro ajuste, que é o problema que a fatia resolveu:
+
+**Resumo vazio não ganha fallback** — a linha é "(sem resumo escrito)", e é a
+resposta certa. Preencher com `contexto` esconderia o buraco em vez de mostrá-lo:
+o agente devolve confiança baixa, e é isso que dispara a segunda passada com o
+perfil inteiro. Entre a 4.11 e a 4.12 essa passada vai ser a regra, e é o preço
+declarado (§14).
+
+**É esta seção que matou o `TETO_PERFIL`.** O teto de 300 existia por causa deste
+consumo, e a migration 005 o dizia com todas as letras: "os três campos de todas
+as entidades entram no prompt do agente de resolução, e sem teto o custo daquela
+chamada cresce com o tamanho do grafo". Os três campos saíram do caminho comum —
+eles só aparecem na segunda passada, para os poucos candidatos de uma menção em
+dúvida. O motivo do teto foi embora com eles.
+
+Até a 4.10 o agente 2 respondia `certo: true | false`, e `false` era a única
+coisa que a tela sabia pintar. **Não existia "resolvi com folga" nem "resolvi
+raspando", e não existia caminho nenhum para ele pedir mais informação**: ou ele
+decidia com o que recebeu, ou marcava dúvida e me empurrava a decisão.
+
+Agora ele devolve `confianca`, de 0 a 1, com o que o número significa dito em
+palavras dentro do prompt — 1 é "o átomo casa com a ficha de um deles e de
+nenhum outro", 0,5 é "nada no átomo distingue os candidatos". Abaixo do
+
+É a última linha que tornou o `TETO_PERFIL` desnecessário. O perfil não saiu do
+sistema na 4.11 — ele saiu do **caminho comum**, e este é o lugar onde ele sempre
+valeu a pena: poucos candidatos, de uma menção só.
+
+**O desempate determinístico do canônico acontece antes de qualquer chamada.**
+Em `candidatosDe`, os parecidos vêm ordenados por proximidade e, no empate, o
+`canonico` vence. Importa porque `unir()` corta em `TOP_K`: dois nós igualmente
+próximos disputam a mesma vaga, e quem fica de fora não chega a ser oferecido ao
+agente. Até a 4.11 isso era decidido pela ordem em que o catálogo voltava do
+banco — consequência do laço, e não decisão.
+
+| `:Entidade` | uma string canônica: `nome`, `tipo`, `aliases` e os três campos de perfil, com campo vazio **omitido**. As grafias vêm da união das duas fontes desde a 009 (§8.2); o `resumo` **não entra** — pô-lo ali reembutiria o grafo inteiro e mudaria a camada 3a, e isso é decisão que a 4.11 não tomou |
+
+> Até a 4.10 ela criava um **nó** `:Entidade` com `status = 'fundida'` e
+> `-[:FUNDIDA_EM]->` o vencedor, exatamente como `renomear`. A migration 009
+> (slice 4.11) converteu esses nós em itens de array e os apagou; o porquê está
+> no §8.2, "grafia deixou de ser nó".
+
+Dois efeitos, e o segundo deixou de ser de graça: `fonteDaEntidade` inclui
+aliases, então o hash muda e a passada de vetores do próprio confirmar reembute
+a entidade; e "Jean" **não** é ensinado ao STT — antes porque o filtro de
+`status` excluía o nó de grafia, agora porque `nomesParaVocabulario` lê só
+`e.nome` e nunca toca o array.
+
+**Este alias não é uma fusão**, e a forma no grafo passou a dizer isso desde a
+4.11 — escrever uma string num array não junta nada. A distinção está no §8.2.

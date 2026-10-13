@@ -544,3 +544,61 @@ mesmo motivo que `montarCorpoDoConfirmar`: é lógica que quebra em silêncio, e
 O formato é **um** parágrafo por átomo, com uma linha por referência incerta, e
 não um bloco por referência. É a mitigação declarada do custo: esta é a tela mais
 apertada do sistema, e o "menos de 60 s" segue sem medição (§14).
+
+### Do §4.8, §4.8.1, §4.10 e §4.14 (identidade)
+
+O `extracao-9` diz, sem exceção: **SENTIMENTO, APRENDIZADO, HISTORIA e ROTINA
+são sempre de `eu`** (`HISTORIA` entrou na lista com a migration 007) —
+sentimento é meu por definição mesmo quando foi outra pessoa que o provocou, e
+quem provocou vai em `menciona`. A resolução não respeitava isso, e
+não por descuido do agente: as camadas semânticas são calculadas **por átomo**
+(4.10) e entregues a todas as menções dele sem filtro pelo citado, então `"eu"`
+casa exato, a 3b traz de quem são os vizinhos, a união vira 2 e a menção vai ao
+agente. Ele então pode responder outra pessoa — e um `SENTIMENTO` saía
+`sobre: "Giampaolo Lepore"` com `certo: true`, sem marca nenhuma na tela.
+
+As três frases são diferentes de propósito (4.8.1): a do meio existia como "o
+agente não respondeu por esta menção" nos três casos, e era ela que eu lia para
+decidir se o agente estava funcionando. A terceira linha é o instrumento que
+faltava — sem ela, uma resposta que o parser não entende sai paga e muda para
+"ninguém respondeu". `parsearResposta` também passou a aceitar **array solto**,
+como `isolarJson` na extração: `[{"n":1,…}]` era lido do primeiro `{` ao último
+`}` e virava um objeto sem `referencias`, ou seja, uma janela inteira decidida
+sem segunda opinião e sem uma linha de log.
+
+não tem desfazer. A evidência que vai junto do fallback é a do **primeiro
+candidato que tem alguma**, e não a do exato: a camada `exato` nunca traz
+`porque`, então o `??` de antes apagava a evidência dos vizinhos justamente no
+caso em que eu preciso dela para decidir.
+
+**`NOVA` que colide com um nó existente também é dúvida.** Quando o agente
+responde `NOVA` e a grafia citada já é o `nome_normalizado` de alguém, o
+confirmar **não** cria um segundo nó — a constraint da migration 002 não deixa,
+`agregarCandidatas` remapeia e o átomo cai no nó que existe. Ou seja, o agente
+diz "é outra pessoa" e o sistema faz o oposto. A causa é legítima e fica; o que
+mudou é o sinal: `certo: false`, com o motivo nomeando o conflito, que é o que
+me manda renomear uma das duas.
+
+**E ele aparece com o agente certo, não só quando ele hesitou** (4.8.1). Até ali
+a linha só saía junto do bloco de dúvida, ou seja, a herança era invisível
+exatamente no caminho comum (`certo: true`), que é onde ela mais acontece — a
+condição declarada da camada valia para a minoria dos casos. A procedência passou
+a existir sempre que houver evidência, independente de o agente ter hesitado; o
+que mudou desde então é **onde** ela aparece — de uma lista fixa embaixo do átomo
+para o `ⓘ` ao lado da entidade, a um toque (§4.7).
+
+`ReferenciaResolvida` ganhou `camada?: Camada` no mesmo gesto, porque o `porque`
+sozinho chega sem dizer se decidiu alguma coisa: é o campo que separa "a grafia
+
+A mesma regra vale na leitura: se o índice ainda não existe, se o Gateway está
+fora, ou se nada passa do piso, `candidatosSemanticos` engole a falha, registra o
+motivo e devolve lista vazia — e a resolução se comporta exatamente como na
+slice 4. É também o que permite este código ir ao ar antes de a migration 006
+rodar.
+
+E vale para o vetor da **entidade** desde a 4.8.1: `passadaDeVetores()` roda em
+`waitUntil` depois do confirmar e das oito rotas de `/entidades`, engolindo a
+falha com `[entidades]` no log (§8.4). Até ali a camada 3a era código que não
+podia achar nada — `garantirEmbeddings()` tinha um chamador só, uma rota que
+nenhuma tela chama —, e entidade nascida num confirmar ficava sem vetor para
+sempre.
