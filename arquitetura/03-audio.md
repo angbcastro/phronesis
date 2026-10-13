@@ -29,15 +29,15 @@ parar ──▶ /sessao/:id            (Processando: não mostra a transcrição
                                       waitUntil: fecha a janela do
                                       fim e monta a proposta ─────▶ extracao.json
                                       status = em_revisao
-  GET /api/sessoes/:id a cada 2 s ──▶ acompanha o status
-  em_revisao ──▶ /sessao/:id/revisar   (replace: o corredor não volta)
+  /extracao/eventos + status a 750 ms ▶ acompanha a proposta
+  1º átomo ──▶ /sessao/:id/revisar    (replace: o corredor não volta)
 ```
 
 ### 3.0 O caminho curto: arquivo importado
 
-Nota de voz do WhatsApp, gravador do celular, áudio antigo no disco. **Desde a
-slice 4.10 o arquivo é fatiado em blocos de 30 s no navegador — os mesmos da
-gravação — e sobe um `chunk_NNN.wav` por bloco.**
+Nota de voz do WhatsApp, gravador do celular, áudio antigo no disco. **O arquivo
+é fatiado em blocos de 30 s no navegador — os mesmos da gravação — e sobe um
+`chunk_NNN.wav` por bloco.**
 
 ```
 navegador                             Vercel                       R2 / Gateway
@@ -58,19 +58,15 @@ loop por bloco, 2 de cada vez:
                                         candidatas + avancarJanelas
 sessionStorage duracao:<id>
 ▶ /sessao/:id   (daqui em diante é o mesmo caminho da gravação: `Processando`
-                 chama /finalizar com a duração, faz o polling de 2 s e abre a
+                 chama /finalizar com a duração, acompanha a proposta e abre a
                  revisão sozinho)
 ```
 
-**Por que fatiar, se antes não fatiava.** Até a 4.9 o arquivo subia inteiro em
-`i = 0`, e era decisão declarada: `offsetDoBloco(0)` é zero, os timestamps do STT
-já saíam absolutos, e não havia emenda nenhuma na transcrição. O preço só
-apareceu quando a janela passou a existir. Com **um bloco só**, `janelasDe`
-devolve uma janela que *é* a sessão inteira e `blocoDaJanela` devolve string
-vazia: a slice 4.8 fica **inerte** no caminho importado — o que era para ser nove
-chamadas de 2 min vira uma chamada de 17 min —, e a 4.9 junto, porque
-`candidatas_NNN.json` é chaveado por bloco e o RAG rodava uma vez para dezessete
-minutos. Foi medido na sessão `mtqoeoqh3e3724514q1f` (§4.6).
+**Por que fatiar.** Com **um bloco só**, `janelasDe` devolveria uma janela que
+*é* a sessão inteira e `blocoDaJanela` devolveria string vazia: a extração por
+janela ficaria **inerte** no caminho importado — o que deve ser nove chamadas de
+2 min viraria uma chamada de 17 min —, e o RAG por bloco junto, porque
+`candidatas_NNN.json` é chaveado por bloco.
 
 Fatiar só o texto da transcrição custaria menos — uma chamada de STT em vez de
 trinta e cinco — e foi **recusado**: manteria dois conceitos de bloco no sistema
@@ -96,8 +92,8 @@ diferença **não aparece na tela**: só no log (§14).
 
 **Dois blocos por vez.** Trinta e cinco `/pronto` em sequência disparariam trinta
 e cinco chamadas de STT em cerca de um minuto, onde a gravação espalha as mesmas
-trinta e cinco por dezessete minutos reais — a rajada que a 4.8 existe para
-evitar, chegando pela porta dos fundos. `BLOCOS_SIMULTANEOS = 2` limita a frente,
+trinta e cinco por dezessete minutos reais — a rajada que a extração por janela
+evita, chegando pela porta dos fundos. `BLOCOS_SIMULTANEOS = 2` limita a frente,
 e `comEsperaDeLimite` (§5.3) absorve o resto. O manifest aguenta a concorrência
 (§6.1) e a ordem de chegada não importa: a janela só fecha sobre prefixo
 contíguo.
@@ -107,14 +103,13 @@ fecha no meio da gravação. Um arquivo importado já está no disco de quem o
 escolheu: se o PUT falhar, `Importacao` tenta 3 vezes com o mesmo backoff e
 depois pede o arquivo de novo.
 
-**A duração não vem mais por bloco.** `/pronto` grava `duracao_s` na sessão a
-cada chamada, e o campo existia porque "arquivo importado é um bloco só, de
-duração arbitrária". Fatiado, ele deixa de ser: mandar `30` em cada bloco
-deixaria a sessão de 17 min registrada como 30 s. O caminho fatiado **não manda o
-campo**, e vale `chunks.length * DURACAO_CHUNK_S` — a conta da gravação, correta
-para blocos de 30 s. Quem manda a duração real é o `/finalizar`, uma vez só, com
-o valor do `sessionStorage`. O campo continua existindo em `/pronto` e é usado
-pelo caminho de fallback, onde o bloco de fato tem duração arbitrária.
+**A duração não vem por bloco.** `/pronto` grava `duracao_s` na sessão a cada
+chamada, e mandar `30` em cada bloco deixaria a sessão de 17 min registrada como
+30 s. O caminho fatiado **não manda o campo**, e vale `chunks.length *
+DURACAO_CHUNK_S` — a conta da gravação, correta para blocos de 30 s. Quem manda a
+duração real é o `/finalizar`, uma vez só, com o valor do `sessionStorage`. O
+campo continua existindo em `/pronto` e é usado pelo caminho de fallback, onde o
+bloco de fato tem duração arbitrária.
 
 ### 3.1 Por que o recorder é recriado
 
@@ -130,7 +125,7 @@ Formato: `audio/webm;codecs=opus`, mono, 24 kbps — ~120 kB por bloco de 30 s,
 
 ### 3.2 Durabilidade da fila
 
-`fila.ts` sobe um bloco por vez, na ordem em que foi falado:
+`fila.ts` sobe até três blocos por vez (`FRENTES`), na ordem em que foram falados:
 
 1. `enfileirar` grava no IndexedDB **antes** de qualquer rede;
 2. pede a presigned, faz o `PUT`, chama `/pronto`;

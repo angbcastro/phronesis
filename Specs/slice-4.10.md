@@ -623,3 +623,33 @@ não a empurrava — uma sessão que transcreveu e nunca extraiu (`waitUntil`
 perdido, extração que morreu) ficava sem caminho nenhum até a revisão, com o
 texto no R2 e nenhuma proposta. Ler a transcrição continua a um toque, no botão
 ao lado, que é onde essa porta de serviço deve estar.
+
+### Do §3 (o caminho do áudio)
+
+Nota de voz do WhatsApp, gravador do celular, áudio antigo no disco. **Desde a
+slice 4.10 o arquivo é fatiado em blocos de 30 s no navegador — os mesmos da
+gravação — e sobe um `chunk_NNN.wav` por bloco.**
+
+**Por que fatiar, se antes não fatiava.** Até a 4.9 o arquivo subia inteiro em
+`i = 0`, e era decisão declarada: `offsetDoBloco(0)` é zero, os timestamps do STT
+já saíam absolutos, e não havia emenda nenhuma na transcrição. O preço só
+apareceu quando a janela passou a existir. Com **um bloco só**, `janelasDe`
+devolve uma janela que *é* a sessão inteira e `blocoDaJanela` devolve string
+vazia: a slice 4.8 fica **inerte** no caminho importado — o que era para ser nove
+chamadas de 2 min vira uma chamada de 17 min —, e a 4.9 junto, porque
+`candidatas_NNN.json` é chaveado por bloco e o RAG rodava uma vez para dezessete
+minutos. Foi medido na sessão `mtqoeoqh3e3724514q1f` (§4.6).
+
+**Dois blocos por vez.** Trinta e cinco `/pronto` em sequência disparariam trinta
+e cinco chamadas de STT em cerca de um minuto, onde a gravação espalha as mesmas
+trinta e cinco por dezessete minutos reais — a rajada que a 4.8 existe para
+evitar, chegando pela porta dos fundos. `BLOCOS_SIMULTANEOS = 2` limita a frente,
+
+**A duração não vem mais por bloco.** `/pronto` grava `duracao_s` na sessão a
+cada chamada, e o campo existia porque "arquivo importado é um bloco só, de
+duração arbitrária". Fatiado, ele deixa de ser: mandar `30` em cada bloco
+deixaria a sessão de 17 min registrada como 30 s. O caminho fatiado **não manda o
+campo**, e vale `chunks.length * DURACAO_CHUNK_S` — a conta da gravação, correta
+para blocos de 30 s. Quem manda a duração real é o `/finalizar`, uma vez só, com
+o valor do `sessionStorage`. O campo continua existindo em `/pronto` e é usado
+pelo caminho de fallback, onde o bloco de fato tem duração arbitrária.
