@@ -343,3 +343,27 @@ chama o agente 2 e não paga nada.
 **Sem migração de dado.** Nenhum campo é preenchido: as entidades de hoje entram
 no catálogo do agente 2 só com nome e tipo, que é o comportamento anterior à
 slice. Perfil vazio é perfil válido.
+
+### Do §4.1–4.7 (o pipeline)
+
+*Fora de fatia, no mesmo período (01/09): o seletor de entidades.*
+
+Era um `<input list>` com `<datalist>`, escolhido na slice 4 por não custar
+biblioteca. Ele não sustenta o que falta: casa só prefixo em vários navegadores,
+não mostra tipo nem apelido, não atravessa alias, e no celular — que é onde este
+app vive — degrada para uma tirinha de sugestão. O combobox é escrito à mão, com
+os tokens de `globals.css`; nenhuma dependência entrou.
+
+*Fora de fatia, no mesmo período (01/09): o seletor de entidades.*
+
+O catálogo vem de `GET /api/entidades`, rota que já existia — **rota nova
+nenhuma, migration nenhuma**. Se ela falhar, as barras voltam a ser texto livre,
+que era o comportamento anterior; `tests/revisao.test.ts` fixa isso.
+
+*Fora de fatia, no mesmo período (01/09): as menções editáveis.*
+
+**As menções são editáveis** — acrescentar e tirar, uma barra por menção.
+Antes elas eram texto morto no item: menção errada só se consertava rejeitando o
+átomo inteiro ou renomeando a entidade no rodapé, e as duas são grandes demais
+para o erro. A lista viaja inteira nas edições do átomo, e não como delta: sem
+isso não dá para distinguir "não mexi" de "apaguei todas".

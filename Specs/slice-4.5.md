@@ -391,3 +391,63 @@ Contrato completo depois da 006:
              contexto, pode_ajudar_com, fizemos_juntos,
              embedding, embedding_modelo, embedding_fonte })             (006)
 ```
+
+### Do §4.1–4.7 (o pipeline)
+
+*Fora de fatia, no mesmo período (02/09): o Gemini recusado.*
+
+#### Abrir mão do timestamp para ganhar texto: medido e recusado (2026-09-02)
+
+A pergunta voltou, e desta vez com a proposta certa: **trocar procedência por
+qualidade de transcrição**, indo para o `google/gemini-3.5-transcribe`. A
+medição usou um bloco real de sessão importada (`mtkwtbpa…`) em vez do teste de
+microfone, e o resultado inverteu a decisão pelo motivo oposto ao esperado.
+
+O Gemini de fato escreve melhor. No mesmo bloco:
+
+| | `grok-stt` | `gemini-3.5-transcribe` |
+|---|---|---|
+| "eu me apliquei hoje" | "eu me **apoiou**" — erra nas duas rodadas | **acerta** |
+| o nome "Bearing Founders" | "**Bejewel** Founders" sem lista; certo **com** lista | **acerta sozinho**, nas duas ocorrências |
+| "Phronesis" | **acerta** | "**fronesis**" |
+| "na Adapta" | erra ("na data") | erra ("na data") |
+
+**Mas ele não tem por onde receber o vocabulário.** Testados cinco nomes de
+opção — `keyterm`, `phrases`, `speechContexts`, `vocabulary` e `prompt` —, os
+cinco devolvem saída **byte a byte idêntica** à chamada sem opção nenhuma, e o
+AI SDK não emite um `warning` sequer. Não é nome errado: é canal inexistente,
+com falha silenciosa. `providerOptions` vira decoração e ninguém fica sabendo.
+
+Isso mata a troca. Num sistema em que o nome próprio é a chave da entidade e o
+insumo do agente 2, um modelo que escreve melhor a prosa e pior o nome está
+piorando exatamente o que importa — e "fronesis" é o nome do próprio projeto.
+A lista tem efeito medido e grande (§4.4); um provedor surdo a ela custa mais
+do que ganha. Somado a `segments: 0` e `providerMetadata` sem palavras
+(reconfirmado nesta medição), o Gemini perde nos dois eixos que decidem.
+
+**Fica registrado para ninguém repetir o teste daqui a três meses:** a troca já
+foi tentada duas vezes — em 31/08, revertida no mesmo dia por falta de
+timestamp; em 02/09, recusada por falta de canal de vocabulário. A âncora por
+bloco de 30 s resolveria o primeiro motivo (a gravação já é fatiada, e
+`localizarNoAudio` já toca por bloco), **mas não resolve o segundo** — por isso
+não foi construída: não há hoje, neste Gateway, um modelo pelo qual gastá-la.
+
+#### O rate limit é da conta, não do modelo (2026-09-02)
+
+Medido na mesma sessão de trabalho, e é o achado que não é sobre o Gemini:
+
+```
+GatewayRateLimitError: Free tier requests on this model are rate-limited.
+```
+
+Ele apareceu depois de cinco chamadas seguidas de transcrição no Gemini e, na
+mesma janela, **derrubou também o `xai/grok-stt`** — que a tabela acima listava
+como sem limite. Trocar de modelo não escapa dele. Uma espera de ~75 s
+destravou o que três tentativas seguidas do próprio AI SDK não destravaram.
+
+Isso é um risco vivo do caminho de hoje, não uma nota de rodapé: uma sessão
+gravada de 15 min são 30 blocos. O tratamento está em `limite.ts` (§5.3).
+
+**Repetido em 2026-09-02 contra um bloco de sessão real**, e o efeito é maior do
+que a medição de agosto sugeria — lá a lista trocava uma grafia plausível por
+outra; aqui ela tira um nome do ruído puro:

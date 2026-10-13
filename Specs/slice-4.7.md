@@ -273,3 +273,15 @@ a varredura que impede um agente novo de nascer fora do painel.
   apontar outra entidade — é a única das três relações do átomo que continua sem
   controle na tela, agora que `menciona` ganhou o dele (4.7). Se o agente 2 errar o campo com
   frequência, o que se ajusta é o `resolucao-5`.
+
+### Do §4.1–4.7 (o pipeline)
+
+**A lista final é cacheada por 5 minutos** (`TTL_MS`), não indefinidamente, e o
+cache é do resultado da união — arquivo ∪ grafo —, não do arquivo. Duas
+consequências que valem estar escritas: um nome que eu confirmo agora leva até
+5 min para chegar ao STT, e o cache é por instância serverless, que é
+exatamente o desenho que §4.12 e §4.13 **recusam** para `regras()` e
+`overrides.ts`. A assimetria é deliberada e o critério é o que a demora custa:
+"salvei uma regra e ela não valeu" é uma promessa quebrada sem ninguém ver;
+"o nome que entrou agora só entra nos keyterms daqui a cinco minutos" custa uma
+grafia numa sessão, e o ritual é de uma vez por dia.

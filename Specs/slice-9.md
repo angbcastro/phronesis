@@ -336,3 +336,7 @@ julgado numa pergunta real ainda; é o que falta.
   uma pergunta real que ficou ruim. Desde a slice 9 o instrumento está no (i):
   por passo, quantos passaram do piso, quantos ficaram abaixo e o melhor
   cortado.
+
+### Do §4.1–4.7 (o pipeline)
+
+| `modeloChat()` | `chat-7` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |

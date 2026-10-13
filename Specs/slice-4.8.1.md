@@ -527,3 +527,20 @@ gancho não invalida nada**: quem decide é o hash. Esquecer um call site custa
 atraso, não vizinhança errada, porque a próxima passada de qualquer outro
 alcança. E rodar com nada fora de dia custa uma consulta e zero chamada de
 modelo, o que é o que permite chamar à toa.
+
+### Do §4.1–4.7 (o pipeline)
+
+**A dúvida é de cada referência, e não só do sujeito.** O agente 2 decide por
+menção (4.8) e devolve `certo`, `motivo`, `alternativas` e `porque` em cada uma;
+até a 4.8.1 a tela lia tudo do `sobre`, e discordância sobre **menção** não
+aparecia em lugar nenhum — o átomo passava aprovado, sem marca, com a menção
+atribuída a quem o agente não teve certeza de ser. Agora a marca do átomo, o
+bloco de dúvida e a barra de cada menção olham a lista de referências incertas:
+`referenciasDoAtomo` devolve o sujeito e as menções na ordem da tela, e
+`incertasDoAtomo` filtra. As duas são funções puras exportadas da `Revisao`, pelo
+mesmo motivo que `montarCorpoDoConfirmar`: é lógica que quebra em silêncio, e
+`tests/revisao.test.ts` a fixa sem render.
+
+O formato é **um** parágrafo por átomo, com uma linha por referência incerta, e
+não um bloco por referência. É a mitigação declarada do custo: esta é a tela mais
+apertada do sistema, e o "menos de 60 s" segue sem medição (§14).

@@ -425,3 +425,152 @@ vez de acidente de teto.
 de antes da 4.10 passa no `IS NULL` de `todasSessoes` sem migração de dado
 nenhuma. Ele é o único efeito do `DELETE` de sessão sobre o grafo — os átomos e o
 `:GEROU` ficam onde estavam (regra 6, §10).
+
+### Do §4.1–4.7 (o pipeline)
+
+*Fora de fatia, no mesmo período (09/09): o bloco mudo.*
+
+**Bloco sem palavra nenhuma não vota** (09/09). O bloco mudo volta vazio (§5.4) e
+não trouxe tempo de coisa alguma; deixá-lo entrar na conta faria uma pausa de
+30 s rebaixar a sessão inteira para `segmento` e apagar o player por palavra de
+átomos cujas âncoras são por palavra. `granularidadeDaSessao` olha só quem
+trouxe palavra.
+
+A mesma mecânica de opção-por-provedor vale para pedir a um modelo que **pense
+menos**, e a pergunta apareceu quando a janela 0 da sessão
+`mtqoeoqh3e3724514q1f` gastou os 8000 tokens de saída inteiros raciocinando sem
+escrever um byte de JSON (§4.6). `scripts/raciocinio.ts` foi escrito para
+responder se dava, e respondeu que dá.
+
+*Fora de fatia, no mesmo período (07/09): a sonda do raciocínio.*
+
+**A medição, de 07/09, contra `zai/glm-5.3-flash`** (que o Gateway resolveu para
+`baseten`), mesmo prompt e mesmo teto de 8000 em todas:
+
+| opção | raciocínio | texto | |
+|---|---|---|---|
+| sem opção | 117 | 613 char | **é assim que roda** |
+| `reasoningEffort: "minimal"` | 0 | 613 char | funciona, e não usamos |
+| `thinking: { type: "disabled" }` | 0 | 613 char | funciona, e não usamos |
+| `reasoning_effort: "minimal"` | 117 | 613 char | ignorada em silêncio |
+| `enable_thinking: false` | 162 | 613 char | ignorada em silêncio |
+
+Duas funcionam de fato: zeram o raciocínio e devolvem o mesmo texto. As outras
+duas não avisam que não pegaram — o que as denuncia é o número igual, ou maior,
+ao da linha de base. É por isso que um nome desses nunca poderia ser escrito no
+código sem medir, e é a mesma armadilha do vocabulário do STT.
+
+Três nomes ficaram **sem medir** — `reasoningEffort: "none"`,
+`reasoning: { enabled: false }` e `maxReasoningTokens: 512` —, porque o rate
+limit da conta chegou no meio da sonda. `PROBE_SO=maxReasoningTokens` roda só
+um, sem gastar o limite com a lista inteira.
+
+A sonda pergunta sob duas chaves (`PROBE_PROVEDOR`) porque o Gateway resolveu
+`zai/glm-5.3-flash` para `resolvedProvider: baseten`: não dá para saber de fora
+se a opção viaja sob o provedor do id ou sob o que atendeu. Neste caso a do id
+bastou.
+
+**Esta medição é do modelo que era o padrão até 20/09.** Desde então o padrão da
+extração é `deepseek/deepseek-v4.1-flash`, e a sonda **não** foi rodada contra
+ele — nem precisa ser, enquanto a decisão for não calar o raciocínio de modelo
+nenhum. Se um dia ela voltar a importar, `pnpm probe:raciocinio` já lê o padrão
+novo; e a tabela acima continua valendo para o `zai`, que `EXTRACAO_MODEL` traz
+de volta sem deploy.
+
+**E desde a 4.10 a importação passa por aqui igual à gravação.** O arquivo
+importado tinha zero emenda — era um bloco só, e `offsetDoBloco(0)` é zero.
+Fatiado em 30 s, ele passa a ter as mesmas emendas da gravação: numa sessão de
+17 min são **trinta e cinco lugares** onde uma palavra pode ser cortada ao meio,
+onde antes não havia nenhum. É preço declarado (§14), e em troca a importação
+ganha a janela e o RAG por bloco. **Nenhuma linha desta seção precisou mudar
+para isso** — `30 × i` continua sendo a conta, porque o bloco continua tendo 30 s.
+
+**São duas causas diferentes com consertos diferentes**, e o `finishReason` é o
+que as separa. Por duas fatias esta tabela existiu como prescrição escrita, e o
+código repetia a mesma chamada nos dois casos:
+
+A distinção não é acadêmica. Com `temperature: 0`, repetir a mesma chamada
+depois de um `length` é **determinístico**: mesmo prompt, mesmo teto, mesmo
+estouro. A janela 0 da sessão `mtqoeoqh3e3724514q1f` gastou duas chamadas para
+falhar exatamente igual duas vezes. E no caso `stop` a segunda tentativa
+**mascarava** o problema acertando por sorte, e ele voltava na sessão seguinte.
+
+#### Truncou, e não perde mais tudo (slice 4.10)
+
+Estourar o teto **no meio da lista** era pior que estourá-lo no pensamento. A
+chamada 2 da janela 0 da `mtqoeoqh3e3724514q1f` devolveu 11351 caracteres: cerca
+de dez objetos de átomo completos e um pela metade. `isolarJson` faz
+`lastIndexOf("}")`, o `JSON.parse` estoura, e `parsearResposta` descartava os
+dez — mais duas chamadas de modelo, sob rate limit de free tier, para chegar ao
+mesmo lugar.
+
+O que mudou de comportamento, e é o que importa:
+
+- a **segunda** tentativa que trunca deixou de lançar e matar a janela: usa o que
+  foi salvo;
+- a **primeira** que trunca ainda dispara a segunda — o que veio pode estar
+  faltando o fim da lista —, mas agora com rede: fica **a melhor das duas pelo
+  número de átomos** (`melhorLeitura`), e no empate a íntegra. Na medição, a
+  chamada com ~10 átomos foi descartada em favor de uma que trouxe menos;
+- log próprio: `[extracao] sessão <id>: resposta cortada, N átomo(s)
+  recuperado(s)`;
+- `truncada` sobe da leitura ao `EstadoJanela`, dele ao `montarExtracao` — uma
+  janela cortada basta — e da `Extracao` à revisão, que **avisa**. Eu julgo a
+  lista à mão, e sem o aviso uma lista curta parece decisão do modelo em vez de
+  acidente de teto.
+
+**O teto não mudou junto**, e é de propósito: mexer no teto e no salvamento na
+mesma fatia esconderia qual dos dois funcionou.
+
+**Subir `MAX_TOKENS_SAIDA` não estava na lista, e o parágrafo original fica
+registrado porque ele continua verdadeiro:** ele já tinha sido subido uma vez
+depois da `mtgo3kaf5`, e a janela seguinte encheu os 8000 do mesmo jeito — o
+modelo ocupa o que houver. O escalonamento é o que resolve, e não o orçamento.
+
+*Fora de fatia, logo depois dela (08/09): a revisão enxuta.*
+
+**O texto do átomo edita no lugar, e por isso saiu do editor.** Ele é o campo que
+eu mais mexo — o extrator escreve com as minhas palavras, mas erra pontuação e
+uma palavra aqui e ali —, e era o único conteúdo do átomo que exigia abrir um
+painel embaixo para tocar. Agora o `<p>` vira `<textarea>` no clique (ou no
+Enter, porque ele é `role="button"` com `tabIndex`), com a mesma margem, fonte e
+entrelinha do parágrafo, altura seguindo o conteúdo (`scrollHeight` no `ref` e a
+cada tecla, `resize: none`), e fecha no `blur`. O `cursor: text` do CSS voltou a
+dizer a verdade: até a 4.6 ele mentia, sinalizando um clique que não existia
+mais. O editor de baixo ficou com o que **não** é texto corrido: tipo, sujeito,
+menções e trechos — e a nota "aqui muda só este átomo" saiu junto, porque o
+alcance de cada lugar está três parágrafos abaixo, e ela roubava linha da tela
+mais apertada do sistema.
+
+*Fora de fatia, logo depois dela (08/09): a revisão enxuta.*
+
+**A linha da dúvida virou uma pergunta, e só isso.** Ela dizia "de quem é?
+escolhi X para 'Y' — motivo do agente · também podia ser Z, W": a decisão vinha
+enterrada no meio da justificativa, e a justificativa é longa justamente nos
+casos difíceis. Hoje ela diz `acho que é **X** — confirma?` (e `menção 2: acho
+que é X — confirma?` para as menções, por `ondeEstaA`). O que saiu — `citado`,
+`motivo` e `alternativas` — **não** deixou de existir no dado nem no payload: as
+alternativas já estavam no topo da lista do seletor, que é onde elas servem para
+alguma coisa, e o motivo é procedência, que passou a morar no modal de fontes,
+abaixo. A tela pergunta; quem quiser o porquê, pede.
+
+A procedência do GraphRAG — a frase da camada (`FRASE_DA_CAMADA`) e os trechos de
+átomos passados que votaram — era uma lista `.porque` **sempre visível** embaixo
+de cada átomo desde a 4.8.1. Numa proposta de nove átomos, com o dossiê da 4.9
+resolvendo quase toda menção, isso é a maior parte do que a tela mostra, e nada
+disso é decisão: é explicação de uma decisão que quase sempre está certa.
+
+Ela saiu da vista padrão e virou **modal**. Cada nome na linha "sobre X · menciona
+Y" ganha um `ⓘ` ao lado — `EntidadeRef` —, e só ganha quando aquela referência
+tem evidência (`herdadasDoAtomo`, isto é, `porque` ou `camada`); as demais ficam
+só o nome, sem ícone e sem espaço gasto. Clicar abre um diálogo centralizado com
+o nome da entidade, a frase da camada e as citações. Diálogo e não gaveta lateral
+porque o conteúdo é curto e é sobre **um** ponto da tela; `Escape` e o véu fecham,
+como na gaveta de agentes (4.13).
+
+**A condição da camada 3b continua satisfeita, e agora com uma condição a mais.**
+O §4.10 declara que aquela camada só é aceitável porque o átomo que a elegeu está
+na tela, corrigível. Ele está — a um toque, e marcado com um ícone que só aparece
+quando há o que ver. O que a fatia troca é "sempre à vista" por "sempre
+alcançável", e a troca é deliberada: uma tela que mostra tudo o tempo todo é uma
+tela que não se resolve em 60 s, e o custo declarado é meu se eu deixar de clicar.

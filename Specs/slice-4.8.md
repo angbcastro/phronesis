@@ -248,3 +248,58 @@ bloco some e o prompt sai idêntico ao de antes desta fatia.
   tokens de entrada é parecido — a fala é a mesma —, mas o prompt base viaja em
   cada janela, e a lista do acumulado cresce a cada uma. É o preço declarado da
   fatia, e a contrapartida é a espera depois de parar de falar.
+
+### Do §4.1–4.7 (o pipeline)
+
+**Isso resolvia metade do problema.** A transcrição acompanhava a fala desde a
+slice 1, mas tudo o que vem depois dela — a extração sobre a transcrição
+inteira, a resolução, os embeddings — esperava eu parar. Numa sessão de 15 min
+era uma chamada de raciocínio com ~15 mil caracteres de entrada, e ela sozinha
+respondia por quase toda a espera entre parar de falar e revisar.
+
+Três consequências que valem estar escritas:
+
+- **A chamada mais cara deixou de acontecer logo depois de 30 chamadas de STT**,
+  que era exatamente o pior momento para o rate limit da conta (§5.3). Agora ela
+  é oito chamadas pequenas espalhadas pelos 15 minutos, e durante a gravação
+  esperar o limite passar é de graça — não há prazo a estourar.
+- **A resposta da extração continua podendo truncar, e truncou.** Esta linha
+  já disse o contrário — "nenhuma janela chega perto de `maxOutputTokens:
+  8000`" —, e a primeira janela real extraída depois da 4.8 desmentiu:
+  `finishReason=length` com 5210 tokens de entrada e os 8000 de saída gastos
+  **pensando**, sem um byte de JSON (sessão `mtqoeoqh3e3724514q1f`). A premissa
+  errada era tratar o teto como teto de JSON: ele cobre **raciocínio e texto
+  juntos**, e o volume do pensamento não encolhe com a entrada do jeito que o
+  JSON encolhe. Encolher a janela não protege nada; o que protege está no §4.6.
+- **O caminho de uma janela só continua existindo, e é o mesmo código.** Arquivo
+  importado que o navegador não fatiou, e gravação de menos de dois minutos:
+  passam por uma janela que se declara a sessão inteira, com o prompt saindo byte
+  a byte igual ao de antes da 4.8. **O terceiro caso saiu na slice 8**: janela que
+  não fecha já não cai no passe único — a sessão vai para `erro` e espera eu
+  mandar re-extrair (§4.18).
+
+**As duas funções servem à janela desde a 4.8**, e não foi coincidência: uma
+janela é `concatenar` sobre um subconjunto de blocos, o que devolve uma
+`Transcricao` com offsets já absolutos — nada na âncora nem no player precisa
+saber que ela é um pedaço. E `janelasDe` fatia o mesmo prefixo contíguo pela
+mesma razão de sempre: com um buraco no meio, a janela leria fala fora de ordem.
+
+**Dispara sozinha**, e desde a slice 4.8 já durante a gravação: a cada quatro
+blocos transcritos, `avancarJanelas` fecha uma janela de 2 minutos no mesmo
+`waitUntil` que transcreveu o bloco. Ninguém aperta nada entre parar de falar e
+ter a proposta (aceite 1 da slice 2) — e agora isso custa segundos, porque o que
+falta quando eu paro é uma janela de no máximo 90 s de fala. Quem lê a proposta
+é a revisão (§4.7), e é o confirmar dela que a leva ao grafo.
+
+**O prompt base não mudou um byte.** `INSTRUCOES_BASE` e `FORMATO` são os
+mesmos da 4.7 — cinco versões de calibração produziram o que está lá, e
+reescrevê-lo por causa de janela seria arriscar o que está bom. O que entra é um
+bloco injetado no **mesmo ponto** em que a regra aprovada entra (§4.12), pelo
+mesmo `inserirAntesDoFormato`: depois de tudo o que instrui, antes do envelope.
+Ele carrega quatro coisas:
+
+**`blocoDaJanela` devolve string vazia quando a janela é a sessão inteira e o
+acumulado está vazio.** Não é detalhe: é o que faz o arquivo importado e a
+gravação de menos de dois minutos continuarem recebendo exatamente o prompt de
+antes desta fatia. (O terceiro caso era o fallback de passe único, que a slice 8
+removeu — §4.18.)

@@ -326,3 +326,22 @@ labels literais — `:Entidade` nunca sai, porque é ele que carrega a constrain
 Desde a 007 os outros são três (`:Organizacao` entrou na lista), e é por aqui
 que passa a reclassificação das empresas que nasceram `:Pessoa`: um nó por vez,
 com um toque meu em cada um.
+
+### Do §4.1–4.7 (o pipeline)
+
+A deduplicação de **entidade** chegou na slice 3 e é o `duplicatas-2`. O que
+continua não existindo é a deduplicação de **átomo**, numa fatia futura ainda
+sem número: dizer a mesma coisa em duas sessões ainda cria dois. A porta por
+onde ela vai passar é esta, e
+`tests/agentes.test.ts` é a guarda que impede um agente novo de nascer por
+fora dela.
+
+Metade do que se fala são nomes próprios que o modelo não conhece: "Rodozanco"
+vira "rodo zanco". `config/vocabulario.txt` (uma entrada por linha, `#` é
+comentário) é lido e mandado como `keyterm`, respeitando o teto da API: 100
+termos, 50 caracteres cada, sem repetir a mesma palavra em outra caixa. Termo
+longo demais é descartado inteiro, nunca truncado pela metade. Na slice 1 a
+lista é escrita à mão; a partir da slice 3 é gerada das entidades do grafo.
+
+**A lista de fato muda a transcrição** — medido em 2026-08-31, mesmo bloco,
+mesma chamada, só a lista variando:

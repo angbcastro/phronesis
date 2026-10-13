@@ -1,19 +1,17 @@
-## 4. Transcrição
+## 4. O pipeline: da fala à proposta, e dela ao grafo
 
-### 4.1 Paralela, não no fim — e desde a 4.8 isso vale para a extração também
+### 4.1 Paralela, não no fim: a transcrição e a extração acompanham a fala
 
 Cada bloco é transcrito assim que sobe, disparado por `waitUntil` na rota
 `/pronto` — o cliente não espera pelo STT, ele volta a gravar. Quando a gravação
 de 15 minutos para, só falta o último bloco. É isso que faz o sistema parecer
 rápido (aceite 5).
 
-**Isso resolvia metade do problema.** A transcrição acompanhava a fala desde a
-slice 1, mas tudo o que vem depois dela — a extração sobre a transcrição
-inteira, a resolução, os embeddings — esperava eu parar. Numa sessão de 15 min
-era uma chamada de raciocínio com ~15 mil caracteres de entrada, e ela sozinha
-respondia por quase toda a espera entre parar de falar e revisar.
+A extração acompanha a fala pelo mesmo motivo: uma chamada de raciocínio sobre a
+transcrição inteira, feita só depois de eu parar, responderia por quase toda a
+espera entre parar de falar e revisar.
 
-Na mesma rota `/pronto`, encadeados no mesmo `waitUntil`, rodam agora
+Na mesma rota `/pronto`, encadeados no mesmo `waitUntil`, rodam
 `recuperarCandidatas` — a busca que pergunta ao grafo quem aquele bloco cita
 (§4.14) — e `avancarJanelas`: a cada `JANELA_BLOCOS` (4) blocos transcritos, uma
 janela de 2 minutos é extraída e resolvida, e os átomos dela vão para
@@ -22,31 +20,25 @@ máximo 3 blocos — e monta a proposta a partir do acumulado.
 
 Três consequências que valem estar escritas:
 
-- **A chamada mais cara deixou de acontecer logo depois de 30 chamadas de STT**,
-  que era exatamente o pior momento para o rate limit da conta (§5.3). Agora ela
-  é oito chamadas pequenas espalhadas pelos 15 minutos, e durante a gravação
-  esperar o limite passar é de graça — não há prazo a estourar.
-- **A resposta da extração continua podendo truncar, e truncou.** Esta linha
-  já disse o contrário — "nenhuma janela chega perto de `maxOutputTokens:
-  8000`" —, e a primeira janela real extraída depois da 4.8 desmentiu:
-  `finishReason=length` com 5210 tokens de entrada e os 8000 de saída gastos
-  **pensando**, sem um byte de JSON (sessão `mtqoeoqh3e3724514q1f`). A premissa
-  errada era tratar o teto como teto de JSON: ele cobre **raciocínio e texto
-  juntos**, e o volume do pensamento não encolhe com a entrada do jeito que o
-  JSON encolhe. Encolher a janela não protege nada; o que protege está no §4.6.
-- **O caminho de uma janela só continua existindo, e é o mesmo código.** Arquivo
-  importado que o navegador não fatiou, e gravação de menos de dois minutos:
-  passam por uma janela que se declara a sessão inteira, com o prompt saindo byte
-  a byte igual ao de antes da 4.8. **O terceiro caso saiu na slice 8**: janela que
-  não fecha já não cai no passe único — a sessão vai para `erro` e espera eu
-  mandar re-extrair (§4.18).
+- **A chamada mais cara não acontece logo depois de 30 chamadas de STT**, que
+  seria o pior momento para o rate limit da conta (§5.3): ela é oito chamadas
+  pequenas espalhadas pelos 15 minutos, e durante a gravação esperar o limite
+  passar é de graça — não há prazo a estourar.
+- **A resposta da extração pode truncar mesmo numa janela pequena.** O teto de
+  saída cobre **raciocínio e texto juntos**, e o volume do pensamento não
+  encolhe com a entrada do jeito que o JSON encolhe. Encolher a janela não
+  protege nada; o que protege está no §4.6.
+- **O caminho de uma janela só é o mesmo código.** Arquivo importado que o
+  navegador não fatiou, e gravação de menos de dois minutos, passam por uma
+  janela que se declara a sessão inteira. Janela que não fecha não cai num passe
+  único: a sessão vai para `erro` e espera eu mandar re-extrair (§4.18).
 
 ### 4.2 Porta única de modelo (Vercel AI Gateway)
 
-**Todo tráfego de LLM deste sistema sai pelo Vercel AI Gateway** — STT hoje,
-extração e deduplicação a partir da slice 2, e o que vier depois. Uma chave
-(`AI_GATEWAY_API_KEY`), um lugar para ver custo e latência, e trocar de provedor
-é mudar uma variável de ambiente, sem tocar em código. É a regra inviolável 8.
+**Todo tráfego de LLM deste sistema sai pelo Vercel AI Gateway** — STT,
+extração, resolução, embedding, chat, todos. Uma chave (`AI_GATEWAY_API_KEY`),
+um lugar para ver custo e latência, e trocar de provedor é mudar uma variável de
+ambiente, sem tocar em código. É a regra inviolável 8.
 
 O mecanismo está no próprio SDK. `resolveLanguageModel` e
 `resolveTranscriptionModel` mandam qualquer `model` em string para o provedor
@@ -81,9 +73,9 @@ não se espalha pelo código.
 algum dos quatro pontos da tabela for furado. É o que sustenta a promessa de
 "uma chave, um lugar para ver custo" a cada agente novo que entra.
 
-**Hoje passam por aqui doze consumidores**, cada um com sua função em
-`modelos.ts` e sua variável de ambiente (§12), e todos os doze com caixa no
-painel de `/agentes` (§4.13):
+**Passam por aqui catorze funções, uma por agente** — `modeloRetrato()` serve
+aos dois do retrato —, cada uma com sua variável de ambiente (§12), e todos os
+agentes com caixa no painel de `/agentes` (§4.13):
 
 | Função | Agente | Padrão |
 |---|---|---|
@@ -98,27 +90,26 @@ painel de `/agentes` (§4.13):
 | `modeloRedacao()` | `redacao-1` | o da calibração |
 | `modeloDuplicatas()` | `duplicatas-2` | `deepseek/deepseek-v4.1-flash` |
 | `modeloEmbedding()` | embedding | `openai/text-embedding-3-small` |
-| `modeloConfronto()` | `confronto-3` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 5.2, escolhido pela comparação de 13/10 (§4.15.3) |
-| `modeloChat()` | `chat-7` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 9 |
+| `modeloConfronto()` | `confronto-3` | `deepseek/deepseek-v4.1-flash` — próprio (§4.15.3) |
+| `modeloChat()` | `chat-7` | `deepseek/deepseek-v4.1-flash` — próprio, para a troca do modelo da extração não arrastar o chat |
 | `modeloTituloChat()` | `titulo-chat-1` | o do chat |
 
-A deduplicação de **entidade** chegou na slice 3 e é o `duplicatas-2`. O que
-continua não existindo é a deduplicação de **átomo**, numa fatia futura ainda
-sem número: dizer a mesma coisa em duas sessões ainda cria dois. A porta por
-onde ela vai passar é esta, e
-`tests/agentes.test.ts` é a guarda que impede um agente novo de nascer por
-fora dela.
+A deduplicação de **entidade** é o `duplicatas-2` (§8.2). A de **átomo** não
+existe: dizer a mesma coisa em duas sessões cria dois. `tests/agentes.test.ts`
+é a guarda que impede um agente novo de nascer por fora desta porta.
 
 ### 4.2.1 Por que o STT é o `xai/grok-stt`, e não um melhor de texto
 
-Medido em 2026-08-31, com o **mesmo bloco real** de 30 s para todos, pelo
-Gateway. A pergunta não é quem transcreve melhor: é quem devolve **tempo**.
+A pergunta não é quem transcreve melhor: é quem devolve **tempo**. Sem tempo não
+há procedência, que a visão §4 lista como necessidade: todo átomo nasceria com
+`inicios_s`, `fins_s` e `ancoras` vazios, o player da revisão sumiria e
+"escuto antes de aprovar" deixaria de existir.
 
 | Modelo | Tempo | Texto | Custo/30 s |
 |---|---|---|---|
-| `xai/grok-stt` | **palavra** — 64 segmentos de 1 palavra (`1.802–2.002 "Vamos"`) | pior dos cinco | $0,0008 |
-| `openai/whisper-1` | frase — 4 segmentos de ~8 s | bom | $0,0029 |
-| `google/gemini-3.5-transcribe` | **nenhum** | melhor dos cinco | $0,0014 |
+| `xai/grok-stt` | **palavra** — `segments` de uma palavra cada | o pior dos cinco | $0,0008 |
+| `openai/whisper-1` | frase — segmentos de ~8 s | bom | $0,0029 |
+| `google/gemini-3.5-transcribe` | **nenhum** | o melhor dos cinco | $0,0014 |
 | `openai/gpt-4o-transcribe` | **nenhum** | bom | $0,0015 |
 | `openai/gpt-4o-mini-transcribe` | **nenhum** | bom | $0,0008 |
 
@@ -127,72 +118,37 @@ Gateway. A pergunta não é quem transcreve melhor: é quem devolve **tempo**.
 found`. Não estão neste Gateway — e é de **Deepgram** que vem o nome `keyterm`
 usado em `stt.ts`, o que explica a opção estar lá.
 
-**Sem tempo não há procedência**, que a visão §4 lista como necessidade: sem
-ele todo átomo nasce com `inicios_s`, `fins_s` e `ancoras` vazios, o player da
-revisão some de todos os itens e "escuto antes de aprovar" deixa de existir.
-Isso elimina os três modelos sem timestamp por melhor que seja o texto deles.
+O tempo elimina os três modelos sem timestamp por melhor que seja o texto
+deles. O custo declarado é a prosa: o grok escreve pior que os outros, e
+transcrição estranha numa sessão de verdade tem aqui a primeira suspeita.
 
-> **A tabela tinha uma sexta coluna, "Rate limit", que dizia `—` para o
-> `xai/grok-stt` e eliminava o `whisper-1`. Ela saiu porque é falsa** — ver
-> "O rate limit é da conta", abaixo. O limite não escolhe modelo.
+#### O Gemini escreve melhor, e é surdo à lista de nomes
 
-O custo declarado: no bloco medido o grok escreveu "Vamos testar se **a
-secretária** está funcionando" onde os outros três ouviram "testar se **isso
-aqui tá** funcionando". O bloco é um teste de microfone de 24/08, e as sessões
-reais transcritas por ele produziram extração boa — mas transcrição estranha
-numa sessão de verdade tem aqui a primeira suspeita.
+O `google/gemini-3.5-transcribe` escreve a prosa melhor que o grok, e acerta
+sozinho nome próprio que o grok só acerta com a lista. Ele é recusado assim
+mesmo, pelos dois eixos que decidem: não devolve tempo (`segments: 0`, nada em
+`providerMetadata`), e **não tem por onde receber o vocabulário** — cinco nomes
+de opção (`keyterm`, `phrases`, `speechContexts`, `vocabulary` e `prompt`)
+devolvem saída byte a byte idêntica à chamada sem opção nenhuma, e o AI SDK não
+emite um `warning` sequer. Num sistema em que o nome próprio é a chave da
+entidade e o insumo do agente 2, um modelo que escreve melhor a prosa e pior o
+nome piora exatamente o que importa.
 
-#### Abrir mão do timestamp para ganhar texto: medido e recusado (2026-09-02)
+A âncora por bloco de 30 s resolveria a falta de tempo (a gravação já é
+fatiada, e `localizarNoAudio` já toca por bloco), **mas não a de
+vocabulário** — por isso não foi construída: não há, neste Gateway, um modelo
+pelo qual gastá-la.
 
-A pergunta voltou, e desta vez com a proposta certa: **trocar procedência por
-qualidade de transcrição**, indo para o `google/gemini-3.5-transcribe`. A
-medição usou um bloco real de sessão importada (`mtkwtbpa…`) em vez do teste de
-microfone, e o resultado inverteu a decisão pelo motivo oposto ao esperado.
-
-O Gemini de fato escreve melhor. No mesmo bloco:
-
-| | `grok-stt` | `gemini-3.5-transcribe` |
-|---|---|---|
-| "eu me apliquei hoje" | "eu me **apoiou**" — erra nas duas rodadas | **acerta** |
-| o nome "Bearing Founders" | "**Bejewel** Founders" sem lista; certo **com** lista | **acerta sozinho**, nas duas ocorrências |
-| "Phronesis" | **acerta** | "**fronesis**" |
-| "na Adapta" | erra ("na data") | erra ("na data") |
-
-**Mas ele não tem por onde receber o vocabulário.** Testados cinco nomes de
-opção — `keyterm`, `phrases`, `speechContexts`, `vocabulary` e `prompt` —, os
-cinco devolvem saída **byte a byte idêntica** à chamada sem opção nenhuma, e o
-AI SDK não emite um `warning` sequer. Não é nome errado: é canal inexistente,
-com falha silenciosa. `providerOptions` vira decoração e ninguém fica sabendo.
-
-Isso mata a troca. Num sistema em que o nome próprio é a chave da entidade e o
-insumo do agente 2, um modelo que escreve melhor a prosa e pior o nome está
-piorando exatamente o que importa — e "fronesis" é o nome do próprio projeto.
-A lista tem efeito medido e grande (§4.4); um provedor surdo a ela custa mais
-do que ganha. Somado a `segments: 0` e `providerMetadata` sem palavras
-(reconfirmado nesta medição), o Gemini perde nos dois eixos que decidem.
-
-**Fica registrado para ninguém repetir o teste daqui a três meses:** a troca já
-foi tentada duas vezes — em 31/08, revertida no mesmo dia por falta de
-timestamp; em 02/09, recusada por falta de canal de vocabulário. A âncora por
-bloco de 30 s resolveria o primeiro motivo (a gravação já é fatiada, e
-`localizarNoAudio` já toca por bloco), **mas não resolve o segundo** — por isso
-não foi construída: não há hoje, neste Gateway, um modelo pelo qual gastá-la.
-
-#### O rate limit é da conta, não do modelo (2026-09-02)
-
-Medido na mesma sessão de trabalho, e é o achado que não é sobre o Gemini:
+#### O rate limit é da conta, não do modelo
 
 ```
 GatewayRateLimitError: Free tier requests on this model are rate-limited.
 ```
 
-Ele apareceu depois de cinco chamadas seguidas de transcrição no Gemini e, na
-mesma janela, **derrubou também o `xai/grok-stt`** — que a tabela acima listava
-como sem limite. Trocar de modelo não escapa dele. Uma espera de ~75 s
-destravou o que três tentativas seguidas do próprio AI SDK não destravaram.
-
-Isso é um risco vivo do caminho de hoje, não uma nota de rodapé: uma sessão
-gravada de 15 min são 30 blocos. O tratamento está em `limite.ts` (§5.3).
+Ele derruba todos os modelos da conta na mesma janela: trocar de modelo não
+escapa dele, e uma espera de ~75 s destrava o que três tentativas seguidas do
+próprio AI SDK não destravam. Uma sessão gravada de 15 min são 30 blocos de STT.
+O tratamento está em `limite.ts` (§5.3).
 
 ### 4.3 Granularidade e procedência
 
@@ -211,35 +167,29 @@ A sessão inteira vale o elo mais fraco: um único bloco por segmento rebaixa
 própria precisão — o aceite 6 (clicar no minuto 9 e ouvir o minuto 9) degrada
 para precisão de frase quando é só o que o provedor devolve.
 
-**Bloco sem palavra nenhuma não vota** (09/09). O bloco mudo volta vazio (§5.4) e
-não trouxe tempo de coisa alguma; deixá-lo entrar na conta faria uma pausa de
-30 s rebaixar a sessão inteira para `segmento` e apagar o player por palavra de
+**Bloco sem palavra nenhuma não vota.** O bloco mudo volta vazio (§5.4) e não
+traz tempo de coisa alguma; deixá-lo entrar na conta faria uma pausa de 30 s
+rebaixar a sessão inteira para `segmento` e apagar o player por palavra de
 átomos cujas âncoras são por palavra. `granularidadeDaSessao` olha só quem
 trouxe palavra.
 
-**Observado com `xai/grok-stt` (2026-08-24, primeira transcrição real):** o
-provedor não expõe nada em `providerMetadata`, então o bloco é registrado como
-`granularidade: "segmento"` — mas os `segments` que ele devolve têm **uma
-palavra cada** (64 de 64 no bloco medido, ex.: `1.802–2.002 "Vamos"`). Na
-prática a precisão é por palavra e o campo a subdeclara. Subdeclarar é o lado
-seguro do erro, e nada foi mudado: reclassificar depende de decidir se
-"um segmento de uma palavra" conta como timestamp por palavra, o que é escolha
-de produto, não de implementação.
-
-**Reconfirmado em 2026-08-31**, na medição de §4.2.1: mesmos 64 segmentos de uma
-palavra, mesma ausência de `providerMetadata`. É exatamente esse comportamento —
-`segments` densos o bastante para ancorar palavra por palavra — que faz este
-modelo ser o único do Gateway que serve, e é sobre ele que as âncoras dos átomos
-que já estão no grafo foram construídas.
+**O `xai/grok-stt` não expõe nada em `providerMetadata`**, então o bloco é
+registrado como `granularidade: "segmento"` — mas os `segments` que ele
+devolve têm **uma palavra cada**. Na prática a precisão é por palavra e o campo
+a subdeclara. Subdeclarar é o lado seguro do erro: reclassificar depende de
+decidir se "um segmento de uma palavra" conta como timestamp por palavra, o que
+é escolha de produto, não de implementação. É esse comportamento — `segments`
+densos o bastante para ancorar palavra por palavra — que faz este modelo ser o
+único do Gateway que serve.
 
 ### 4.4 Vocabulário
 
 Metade do que se fala são nomes próprios que o modelo não conhece: "Rodozanco"
-vira "rodo zanco". `config/vocabulario.txt` (uma entrada por linha, `#` é
-comentário) é lido e mandado como `keyterm`, respeitando o teto da API: 100
-termos, 50 caracteres cada, sem repetir a mesma palavra em outra caixa. Termo
-longo demais é descartado inteiro, nunca truncado pela metade. Na slice 1 a
-lista é escrita à mão; a partir da slice 3 é gerada das entidades do grafo.
+vira "rodo zanco". O vocabulário é a união de `config/vocabulario.txt` (uma
+entrada por linha, `#` é comentário) com as entidades do grafo
+(`nomesParaVocabulario`), mandada como `keyterm`, respeitando o teto da API:
+100 termos, 50 caracteres cada, sem repetir a mesma palavra em outra caixa.
+Termo longo demais é descartado inteiro, nunca truncado pela metade.
 
 **A união não vai inteira: `termoUtil` corta duas classes**, e o corte vale para
 o que vem do arquivo e para o que vem do grafo. O ganho do vocabulário está em
@@ -255,14 +205,14 @@ certo é uma vaga a menos para o nome que ele erra:
 cache é do resultado da união — arquivo ∪ grafo —, não do arquivo. Duas
 consequências que valem estar escritas: um nome que eu confirmo agora leva até
 5 min para chegar ao STT, e o cache é por instância serverless, que é
-exatamente o desenho que §4.12 e §4.13 **recusam** para `regras()` e
-`overrides.ts`. A assimetria é deliberada e o critério é o que a demora custa:
-"salvei uma regra e ela não valeu" é uma promessa quebrada sem ninguém ver;
-"o nome que entrou agora só entra nos keyterms daqui a cinco minutos" custa uma
-grafia numa sessão, e o ritual é de uma vez por dia.
+exatamente o desenho que §4.13 **recusa** para `overrides.ts`. A assimetria é
+deliberada e o critério é o que a demora custa: "salvei uma emenda e ela não
+valeu" é uma promessa quebrada sem ninguém ver; "o nome que entrou agora só
+entra nos keyterms daqui a cinco minutos" custa uma grafia numa sessão, e o
+ritual é de uma vez por dia.
 
-**A lista de fato muda a transcrição** — medido em 2026-08-31, mesmo bloco,
-mesma chamada, só a lista variando:
+**A lista de fato muda a transcrição** — mesmo bloco, mesma chamada, só a lista
+variando:
 
 | Lista | Saída |
 |---|---|
@@ -274,9 +224,8 @@ A grafia segue a lista, e o controle mostra que um termo que não foi falado
 **não** se injeta na saída. É o que sustenta a metade A da slice 3: gerar a
 lista das entidades do grafo tem efeito real, não decorativo.
 
-**Repetido em 2026-09-02 contra um bloco de sessão real**, e o efeito é maior do
-que a medição de agosto sugeria — lá a lista trocava uma grafia plausível por
-outra; aqui ela tira um nome do ruído puro:
+**Num bloco de sessão real o efeito é maior**: a lista tira um nome do ruído
+puro.
 
 | Lista | Saída |
 |---|---|
@@ -298,10 +247,8 @@ slice 3 sem que nada na tela mude.
 #### Dá para calar o raciocínio deste modelo, e não calamos
 
 A mesma mecânica de opção-por-provedor vale para pedir a um modelo que **pense
-menos**, e a pergunta apareceu quando a janela 0 da sessão
-`mtqoeoqh3e3724514q1f` gastou os 8000 tokens de saída inteiros raciocinando sem
-escrever um byte de JSON (§4.6). `scripts/raciocinio.ts` foi escrito para
-responder se dava, e respondeu que dá.
+menos**: quando o raciocínio come o teto de saída inteiro, a janela chega sem um
+byte de JSON (§4.6). `scripts/raciocinio.ts` responde se dá, e dá.
 
 **A decisão é não usar.** O raciocínio não é o defeito — é o que a extração faz
 de útil. Ler um diário falado e decidir o que vira átomo, de quem é, e o que
@@ -315,38 +262,16 @@ A medição fica registrada porque a pergunta pode voltar — outro
 `EXTRACAO_MODEL`, outro provedor, outro comportamento —, e porque saber que o
 canal existe é diferente de usá-lo.
 
-**A medição, de 07/09, contra `zai/glm-5.3-flash`** (que o Gateway resolveu para
-`baseten`), mesmo prompt e mesmo teto de 8000 em todas:
-
-| opção | raciocínio | texto | |
-|---|---|---|---|
-| sem opção | 117 | 613 char | **é assim que roda** |
-| `reasoningEffort: "minimal"` | 0 | 613 char | funciona, e não usamos |
-| `thinking: { type: "disabled" }` | 0 | 613 char | funciona, e não usamos |
-| `reasoning_effort: "minimal"` | 117 | 613 char | ignorada em silêncio |
-| `enable_thinking: false` | 162 | 613 char | ignorada em silêncio |
-
-Duas funcionam de fato: zeram o raciocínio e devolvem o mesmo texto. As outras
-duas não avisam que não pegaram — o que as denuncia é o número igual, ou maior,
-ao da linha de base. É por isso que um nome desses nunca poderia ser escrito no
-código sem medir, e é a mesma armadilha do vocabulário do STT.
-
-Três nomes ficaram **sem medir** — `reasoningEffort: "none"`,
-`reasoning: { enabled: false }` e `maxReasoningTokens: 512` —, porque o rate
-limit da conta chegou no meio da sonda. `PROBE_SO=maxReasoningTokens` roda só
-um, sem gastar o limite com a lista inteira.
-
-A sonda pergunta sob duas chaves (`PROBE_PROVEDOR`) porque o Gateway resolveu
-`zai/glm-5.3-flash` para `resolvedProvider: baseten`: não dá para saber de fora
-se a opção viaja sob o provedor do id ou sob o que atendeu. Neste caso a do id
-bastou.
-
-**Esta medição é do modelo que era o padrão até 20/09.** Desde então o padrão da
-extração é `deepseek/deepseek-v4.1-flash`, e a sonda **não** foi rodada contra
-ele — nem precisa ser, enquanto a decisão for não calar o raciocínio de modelo
-nenhum. Se um dia ela voltar a importar, `pnpm probe:raciocinio` já lê o padrão
-novo; e a tabela acima continua valendo para o `zai`, que `EXTRACAO_MODEL` traz
-de volta sem deploy.
+`pnpm probe:raciocinio` mede, contra o modelo da extração em vigor, quais
+opções de fato calam o raciocínio. Algumas zeram o pensamento e devolvem o mesmo
+texto; outras são ignoradas em silêncio, e o que as denuncia é o número de
+tokens de raciocínio igual, ou maior, ao da linha de base. É por isso que um
+nome desses nunca pode ser escrito no código sem medir, e é a mesma armadilha do
+vocabulário do STT. A sonda pergunta sob duas chaves (`PROBE_PROVEDOR`),
+porque o Gateway pode resolver o id para outro provedor, e `PROBE_SO` roda uma
+opção só, sem gastar o rate limit com a lista inteira. Enquanto a decisão for não
+calar o raciocínio de modelo nenhum, a medição não precisa ser refeita a cada
+troca de `EXTRACAO_MODEL`.
 
 ### 4.5 Concatenação
 
@@ -358,28 +283,25 @@ Enquanto processa, a tela mostra só o **prefixo contíguo** dos blocos prontos
 (`prefixoContiguo`): se o bloco 2 ainda está no STT, o 3 não aparece — texto
 parcial nunca é lido fora de ordem.
 
-**As duas funções servem à janela desde a 4.8**, e não foi coincidência: uma
-janela é `concatenar` sobre um subconjunto de blocos, o que devolve uma
-`Transcricao` com offsets já absolutos — nada na âncora nem no player precisa
-saber que ela é um pedaço. E `janelasDe` fatia o mesmo prefixo contíguo pela
-mesma razão de sempre: com um buraco no meio, a janela leria fala fora de ordem.
+**As duas funções servem à janela**: uma janela é `concatenar` sobre um
+subconjunto de blocos, o que devolve uma `Transcricao` com offsets já absolutos
+— nada na âncora nem no player precisa saber que ela é um pedaço. E `janelasDe`
+fatia o mesmo prefixo contíguo pela mesma razão: com um buraco no meio, a janela
+leria fala fora de ordem.
 
-**E desde a 4.10 a importação passa por aqui igual à gravação.** O arquivo
-importado tinha zero emenda — era um bloco só, e `offsetDoBloco(0)` é zero.
-Fatiado em 30 s, ele passa a ter as mesmas emendas da gravação: numa sessão de
-17 min são **trinta e cinco lugares** onde uma palavra pode ser cortada ao meio,
-onde antes não havia nenhum. É preço declarado (§14), e em troca a importação
-ganha a janela e o RAG por bloco. **Nenhuma linha desta seção precisou mudar
-para isso** — `30 × i` continua sendo a conta, porque o bloco continua tendo 30 s.
+**A importação passa por aqui igual à gravação**: o arquivo importado é fatiado
+em blocos de 30 s (§3.0), e `30 × i` continua sendo a conta. O preço são as
+emendas — uma palavra pode ser cortada ao meio a cada 30 s (§14) —, e em troca a
+importação tem a janela e o RAG por bloco.
 
 ### 4.6 Extração de átomos, janela a janela
 
-**Dispara sozinha**, e desde a slice 4.8 já durante a gravação: a cada quatro
-blocos transcritos, `avancarJanelas` fecha uma janela de 2 minutos no mesmo
-`waitUntil` que transcreveu o bloco. Ninguém aperta nada entre parar de falar e
-ter a proposta (aceite 1 da slice 2) — e agora isso custa segundos, porque o que
-falta quando eu paro é uma janela de no máximo 90 s de fala. Quem lê a proposta
-é a revisão (§4.7), e é o confirmar dela que a leva ao grafo.
+**Dispara sozinha**, já durante a gravação: a cada quatro blocos transcritos,
+`avancarJanelas` fecha uma janela de 2 minutos no mesmo `waitUntil` que
+transcreveu o bloco. Ninguém aperta nada entre parar de falar e ter a proposta
+(aceite 1 da slice 2), e o que falta quando eu paro é uma janela de no máximo
+90 s de fala. Quem lê a proposta é a revisão (§4.7), e é o confirmar dela que a
+leva ao grafo.
 
 `extracao.ts` monta o prompt, valida a resposta item por item e carimba a
 procedência. Sai pelo Gateway como o STT, por
@@ -402,15 +324,13 @@ inteira atrás de um trecho, o que é ganho e não perda.
 Menor, a janela corta frase no meio e multiplica a chamada de modelo, que é
 justamente a rajada que o free tier recusa. Maior, sobra fala demais para a
 janela do fim e a espera depois de parar volta a crescer. `JANELA_BLOCOS = 0`
-desliga o caminho incremental e devolve o sistema ao de antes da fatia — é o
-botão de pânico, e existe para ser usado sem deploy de emergência.
+desliga o caminho incremental — a sessão inteira sai num passe só. É o botão de
+pânico: uma constante em `tipos.ts`, que pede deploy mas não refatoração.
 
-**O prompt base não mudou um byte.** `INSTRUCOES_BASE` e `FORMATO` são os
-mesmos da 4.7 — cinco versões de calibração produziram o que está lá, e
-reescrevê-lo por causa de janela seria arriscar o que está bom. O que entra é um
-bloco injetado no **mesmo ponto** em que a regra aprovada entra (§4.12), pelo
-mesmo `inserirAntesDoFormato`: depois de tudo o que instrui, antes do envelope.
-Ele carrega quatro coisas:
+**O prompt base não sabe que existe janela.** `INSTRUCOES_BASE` e `FORMATO`
+descrevem a sessão; o que a janela acrescenta é um bloco injetado por
+`inserirAntesDoFormato`: depois de tudo o que instrui, antes do envelope. Ele
+carrega quatro coisas:
 
 | O que | Por quê |
 |---|---|
@@ -419,21 +339,16 @@ Ele carrega quatro coisas:
 | a lista numerada do que já foi proposto | é o que o `ref` do `estende` endereça |
 | a chave `estende` no JSON | a operação que impede a lista de virar trinta átomos |
 
-E desde a 4.9 há **um segundo bloco injetado**, no mesmo ponto e antes deste: o
-dossiê das candidatas (§4.14). A ordem é `INSTRUCOES_BASE → blocoDasCandidatas →
-blocoDaJanela → FORMATO → texto` — o dossiê primeiro, porque é material; a janela
-depois, porque é sobre aquela chamada e mais nenhuma.
+Antes dele, no mesmo ponto, entra o dossiê das candidatas (§4.14). A ordem é
+`INSTRUCOES_BASE → blocoDasCandidatas → blocoDaJanela → FORMATO → texto` — o
+dossiê primeiro, porque é material; a janela depois, porque é sobre aquela
+chamada e mais nenhuma.
 
-**Eram três blocos até a slice 7**, e o primeiro era o das regras aprovadas. Ele
-saiu porque a correção deixou de virar apêndice e passou a virar emenda no corpo
-do prompt (§4.12): o que a 4.6 colava a cada chamada agora está escrito dentro do
-texto que `efetivo("extracao", …)` devolve.
 
 **`blocoDaJanela` devolve string vazia quando a janela é a sessão inteira e o
 acumulado está vazio.** Não é detalhe: é o que faz o arquivo importado e a
-gravação de menos de dois minutos continuarem recebendo exatamente o prompt de
-antes desta fatia. (O terceiro caso era o fallback de passe único, que a slice 8
-removeu — §4.18.)
+gravação de menos de dois minutos receberem o prompt sem bloco de janela, o
+mesmo de um passe único.
 
 #### `estende`: o que substitui a passada de costura
 
@@ -464,35 +379,24 @@ Item malformado não derruba a extração inteira: vai para `descartados` com o
 motivo. Lista de descarte crescendo é sinal de prompt piorando — e é o único
 sinal automático que existe, já que a qualidade é avaliada à mão na revisão.
 
-#### O modelo raciocina, e o raciocínio come a saída
-
-`zai/glm-5.3-flash`, o padrão da extração até 20/09, é modelo de raciocínio.
-Numa sessão de 4 mil caracteres ele gastou **1720 tokens raciocinando para 122
-de texto** — e quando o raciocínio consome o orçamento inteiro a resposta chega
-sem JSON nenhum. Foi assim que a sessão `mtgo3kaf5` falhou, de forma
-intermitente: a mesma transcrição às vezes passava.
-
-**A troca do padrão para `deepseek/deepseek-v4.1-flash` não move nada desta
-seção.** O que as defesas abaixo olham é o `finishReason` da resposta e a razão
-entre pensamento e texto, nunca o nome do modelo: num modelo que pensa pouco
-elas simplesmente não disparam. O que a troca abre é uma pergunta sem resposta
-medida — quanto este pensa —, e quem responde é a sessão real, pelo diagnóstico
-que já sai no log.
+O modelo da extração raciocina, e quando o raciocínio consome o orçamento
+inteiro a resposta chega sem JSON nenhum, de forma intermitente: a mesma
+transcrição às vezes passa. As defesas abaixo olham o `finishReason` da resposta
+e a razão entre pensamento e texto, nunca o nome do modelo: num modelo que pensa
+pouco elas simplesmente não disparam.
 
 **São duas causas diferentes com consertos diferentes**, e o `finishReason` é o
-que as separa. Por duas fatias esta tabela existiu como prescrição escrita, e o
-código repetia a mesma chamada nos dois casos:
+que as separa:
 
 | O que o diagnóstico mostra | O que aconteceu | Quem cuida |
 |---|---|---|
-| `finishReason=length`, `raciocinio` no teto | o raciocínio comeu o orçamento e a resposta foi cortada no meio dele | na extração, `faltouOrcamento()` → segunda tentativa com o dobro de teto. A resolução não repete desde 30/09: o teto dela (100 mil) já passa do `max_out` do modelo |
+| `finishReason=length`, `raciocinio` no teto | o raciocínio comeu o orçamento e a resposta foi cortada no meio dele | na extração, `faltouOrcamento()` → segunda tentativa com o dobro de teto. A resolução não repete: o teto dela (100 mil) já passa do `max_out` do modelo |
 | `finishReason=stop`, saída sobrando, `pensamento` grande e `texto=0` | o modelo escreveu a resposta na parte de raciocínio, não na de texto | `textoDaResposta()` → lê o `reasoningText` |
 
 A distinção não é acadêmica. Com `temperature: 0`, repetir a mesma chamada
 depois de um `length` é **determinístico**: mesmo prompt, mesmo teto, mesmo
-estouro. A janela 0 da sessão `mtqoeoqh3e3724514q1f` gastou duas chamadas para
-falhar exatamente igual duas vezes. E no caso `stop` a segunda tentativa
-**mascarava** o problema acertando por sorte, e ele voltava na sessão seguinte.
+estouro. E no caso `stop`, repetir **mascararia** o problema acertando por
+sorte, e ele voltaria na sessão seguinte.
 
 As defesas de hoje, da que conserta para a que só conta o que houve:
 
@@ -502,16 +406,15 @@ As defesas de hoje, da que conserta para a que só conta o que houve:
 | `fecharJsonTruncado(bruto)` | resposta cortada **depois** de começar a lista: corta no último átomo que fechou inteiro e fecha o array. Abaixo |
 | `textoDaResposta(resposta)` | o JSON que foi parar no pensamento ainda é lido — **exceto** em `length`, onde o raciocínio está cortado no meio e `isolarJson` casaria um rascunho abandonado |
 | a resposta crua no erro | os primeiros 400 caracteres vão na mensagem, e "resposta vazia" é dito com essas palavras |
-| `diagnostico(resposta)` | `finishReason`, tokens de entrada/saída/raciocínio e o tamanho do texto e do pensamento, nas duas tentativas. Mora em `modelos.ts`: os três agentes têm o mesmo modo de falha |
+| `diagnostico(resposta)` | `finishReason`, tokens de entrada/saída/raciocínio e o tamanho do texto e do pensamento, nas duas tentativas. Mora em `modelos.ts`: todo agente tem o mesmo modo de falha |
 
-#### Truncou, e não perde mais tudo (slice 4.10)
+#### Truncou, e salva o que veio inteiro
 
-Estourar o teto **no meio da lista** era pior que estourá-lo no pensamento. A
-chamada 2 da janela 0 da `mtqoeoqh3e3724514q1f` devolveu 11351 caracteres: cerca
-de dez objetos de átomo completos e um pela metade. `isolarJson` faz
-`lastIndexOf("}")`, o `JSON.parse` estoura, e `parsearResposta` descartava os
-dez — mais duas chamadas de modelo, sob rate limit de free tier, para chegar ao
-mesmo lugar.
+Estourar o teto **no meio da lista** é pior que estourá-lo no pensamento: a
+resposta traz átomos completos e um pela metade, `isolarJson` faz
+`lastIndexOf("}")`, o `JSON.parse` estoura, e sem salvamento todos os
+completos se perderiam — mais duas chamadas de modelo para chegar ao mesmo
+lugar.
 
 `fecharJsonTruncado` varre o texto com uma máquina de estados mínima —
 dentro/fora de string, escape, profundidade de `{}` e `[]` — guardando o índice
@@ -527,14 +430,12 @@ problema é que não há fim. Misturar as duas perguntas faria `isolarJson` ment
 sobre resposta íntegra. Ela só é chamada no `catch` do `JSON.parse`: resposta
 inteira nunca passa por ali.
 
-O que mudou de comportamento, e é o que importa:
+Quando a resposta trunca:
 
-- a **segunda** tentativa que trunca deixou de lançar e matar a janela: usa o que
-  foi salvo;
-- a **primeira** que trunca ainda dispara a segunda — o que veio pode estar
-  faltando o fim da lista —, mas agora com rede: fica **a melhor das duas pelo
-  número de átomos** (`melhorLeitura`), e no empate a íntegra. Na medição, a
-  chamada com ~10 átomos foi descartada em favor de uma que trouxe menos;
+- a **segunda** tentativa que trunca não mata a janela: usa o que foi salvo;
+- a **primeira** que trunca dispara a segunda — o que veio pode estar faltando o
+  fim da lista —, e fica **a melhor das duas pelo número de átomos**
+  (`melhorLeitura`), no empate a íntegra;
 - log próprio: `[extracao] sessão <id>: resposta cortada, N átomo(s)
   recuperado(s)`;
 - `truncada` sobe da leitura ao `EstadoJanela`, dele ao `montarExtracao` — uma
@@ -542,23 +443,13 @@ O que mudou de comportamento, e é o que importa:
   lista à mão, e sem o aviso uma lista curta parece decisão do modelo em vez de
   acidente de teto.
 
-**O teto não mudou junto**, e é de propósito: mexer no teto e no salvamento na
-mesma fatia esconderia qual dos dois funcionou.
 
-**Subir `MAX_TOKENS_SAIDA` não estava na lista, e o parágrafo original fica
-registrado porque ele continua verdadeiro:** ele já tinha sido subido uma vez
-depois da `mtgo3kaf5`, e a janela seguinte encheu os 8000 do mesmo jeito — o
-modelo ocupa o que houver. O escalonamento é o que resolve, e não o orçamento.
-
-**Mesmo assim ele subiu de novo em 20/09, de 8000 para 16.000, por decisão
-minha e sabendo disso.** O que mudou foi a evidência de produção: a sessão
-`mu4um3ot3t5k4g1u1p1j` ficou dois dias presa, retentada e falhando igual a cada
-vez, e o conserto do prazo por chamada (§5.3) tinha limitado o pior caso a 90 s
-por chamada **sem reduzir o tempo total** — porque quando uma chamada estoura o
-teto, a **janela inteira** é refeita do zero (extração, resolução e desempate),
-não só a chamada que estourou. O mecanismo não mudou: `FATOR_DE_FOLGA` continua
-2, e a segunda tentativa passa a ir com 32.000 quando `finishReason` for
-`length`. O que subiu foi o piso debaixo dele.
+**O teto é de 16.000 tokens (`MAX_TOKENS_SAIDA`), e a segunda tentativa vai com
+32.000** (`FATOR_DE_FOLGA` 2) quando `finishReason` for `length`. Subir o teto
+sozinho não resolve — o modelo ocupa o que houver, e o escalonamento é o que
+resolve. O que justifica um piso alto é outra coisa: quando uma chamada estoura,
+a **janela inteira** é refeita do zero (extração, resolução e desempate), não só
+a chamada.
 
 **Pedir ao modelo para pensar menos também não está na lista, e também é de
 propósito** — ainda que se saiba exatamente como, e a medição esteja no §4.4. O
@@ -570,19 +461,16 @@ As duas últimas defesas são as mais antigas e as que mais importam — sem a
 resposta crua, "não é JSON válido" é indiagnosticável depois do fato, a mesma
 lição que o STT já tinha ensinado uma vez (5.1).
 
-O prompt também ganhou uma proibição explícita de **comentar a transcrição**. O
-modelo devolveu um átomo dizendo que o texto era confuso e circular; falar
-desorganizado é o esperado num diário falado, e lista vazia é a resposta certa
-quando não há o que extrair.
+O prompt proíbe **comentar a transcrição**: falar desorganizado é o esperado
+num diário falado, e lista vazia é a resposta certa quando não há o que
+extrair.
 
 #### O que o prompt manda fazer (`extracao-9`)
 
-A primeira versão pedia "uma afirmação por item" e só descartava hesitação. Numa
-sessão real de 45 s isso rendeu 9 átomos — "acordei", "pedalei", "nadei", "fui
-sauna" —, o que extrapolado dá ~150 numa sessão de 15 min. Duas condições de
-morte de `Specs/visao.md` §8 de uma vez: revisão que passa de um minuto, e
-rotina repetida todo dia apodrecendo o grafo. O prompt **manda selecionar**, não
-picar:
+O prompt **manda selecionar**, não picar: uma afirmação por item renderia ~150
+átomos numa sessão de 15 min — duas condições de morte de `Specs/visao.md` §8
+de uma vez: revisão que passa de um minuto, e rotina repetida todo dia
+apodrecendo o grafo.
 
 | Critério | Regra |
 |---|---|
@@ -653,21 +541,18 @@ quando ele não reconhece nenhuma das candidatas do dossiê, e é sempre `null`
 quando não há dossiê — aí ele devolve o nome cru como sempre devolveu, e
 `parsearResposta` lê as duas formas.
 
-**Até a 4.8 este parágrafo dizia o contrário**, e com todas as letras: o prompt
-da extração não sabia que entidades existem no grafo, e era de propósito. A
-inversão é a slice 4.9 e está no §4.14, com o argumento que a sustenta: o
-problema **é** do extrator, porque quem escreve o texto do átomo é ele, e é no
-texto que o nome errado se fixa — inclusive dentro do vetor, que sai só de
-`a.texto` (§4.10). O que **não** mudou é o resto: `INSTRUCOES_BASE` e `FORMATO`
-continuam byte a byte os da 4.7, e o dossiê entra por um bloco injetado.
+O extrator conhece o grafo pelo dossiê (§4.14) porque o problema da grafia
+**é** dele: quem escreve o texto do átomo é ele, e é no texto que o nome errado
+se fixa — inclusive dentro do vetor, que sai só de `a.texto` (§4.10). O dossiê
+entra por um bloco injetado, e não pela base do prompt.
 
-Quem confronta com o grafo continua sendo o passo seguinte (4.8), que atribui
-**cada menção** a um nó — não cada nome. A diferença é a slice 4 inteira: dois
-átomos da mesma sessão dizendo "Rafa" podem ser duas pessoas. Desde a 4.9 ele
-vê também a chave que o extrator apontou, como quinta camada de candidato, e
-valida **toda** menção que tenha candidato.
+Quem confronta com o grafo é o passo seguinte (4.8), que atribui **cada
+menção** a um nó — não cada nome. A diferença é a slice 4 inteira: dois átomos
+da mesma sessão dizendo "Rafa" podem ser duas pessoas. Ele vê também a chave que
+o extrator apontou, como quinta camada de candidato, e valida **toda** menção
+que tenha candidato.
 
-`entidades.ts` ficou com as duas pontas disso:
+`entidades.ts` tem as duas pontas disso:
 
 | Função | Faz |
 |---|---|
@@ -688,8 +573,8 @@ nada — trocar o tipo de uma entidade existente é edição em `/entidades` (8.
 não efeito colateral de uma extração.
 
 O tipo é proposto pelo extrator numa lista `entidades` à parte, entre os quatro
-de `TIPOS_ENTIDADE` (`:Pessoa`, `:Projeto`, `:Objetivo` e, desde a 007,
-`:Organizacao`), e cai em `:Pessoa` quando falta ou vem inválido — num diário
+de `TIPOS_ENTIDADE` (`:Pessoa`, `:Projeto`, `:Objetivo` e `:Organizacao`),
+e cai em `:Pessoa` quando falta ou vem inválido — num diário
 falado, quase sempre acerta. **`:Organizacao` existe porque esse padrão mentia
 com frequência**: empresa, ONG, startup e cliente ou nasciam `:Pessoa`, por ser
 o padrão, ou `:Projeto`, quando o extrator via trabalho acontecendo — e o que
@@ -771,18 +656,14 @@ desabilitado** enquanto sobrar pronome. Desmarcar deixa a entidade só no texto 
 O editor de um átomo abre por um botão **editar** — que num átomo em dúvida
 (4.8) se chama **escolher**. Menção igual ao sujeito não é exibida nem enviada.
 
-**O texto do átomo edita no lugar, e por isso saiu do editor.** Ele é o campo que
-eu mais mexo — o extrator escreve com as minhas palavras, mas erra pontuação e
-uma palavra aqui e ali —, e era o único conteúdo do átomo que exigia abrir um
-painel embaixo para tocar. Agora o `<p>` vira `<textarea>` no clique (ou no
-Enter, porque ele é `role="button"` com `tabIndex`), com a mesma margem, fonte e
-entrelinha do parágrafo, altura seguindo o conteúdo (`scrollHeight` no `ref` e a
-cada tecla, `resize: none`), e fecha no `blur`. O `cursor: text` do CSS voltou a
-dizer a verdade: até a 4.6 ele mentia, sinalizando um clique que não existia
-mais. O editor de baixo ficou com o que **não** é texto corrido: tipo, sujeito,
-menções e trechos — e a nota "aqui muda só este átomo" saiu junto, porque o
-alcance de cada lugar está três parágrafos abaixo, e ela roubava linha da tela
-mais apertada do sistema.
+**O texto do átomo edita no lugar.** Ele é o campo que eu mais mexo — o
+extrator escreve com as minhas palavras, mas erra pontuação e uma palavra aqui e
+ali. O `<p>` vira `<textarea>` no clique (ou no Enter, porque ele é
+`role="button"` com `tabIndex`), com a mesma margem, fonte e entrelinha do
+parágrafo, altura seguindo o conteúdo (`scrollHeight` no `ref` e a cada tecla,
+`resize: none`), e fecha no `blur`; o `cursor: text` do CSS sinaliza o
+clique. O editor de baixo fica com o que **não** é texto corrido: tipo, sujeito,
+menções e trechos.
 
 **A entidade se corrige em dois lugares, e a diferença entre eles é o alcance.**
 Dentro do átomo, no bloco "entidades" do editor, eu troco o sujeito e as menções
@@ -797,14 +678,12 @@ apagar tudo mostra o grafo todo, mais falado primeiro; digitar filtra por
 **trecho** — "nan" acha "Fernanda". Cada linha traz tipo e número de sessões, e
 quando o casamento veio de um apelido ele aparece entre parênteses, senão a linha
 apareceria sem motivo visível. As alternativas do agente de resolução vêm
-primeiro. O filtro de tipo continua, agora valendo para todas as barras daquele
-átomo.
+primeiro. O filtro de tipo vale para todas as barras daquele átomo.
 
-Era um `<input list>` com `<datalist>`, escolhido na slice 4 por não custar
-biblioteca. Ele não sustenta o que falta: casa só prefixo em vários navegadores,
-não mostra tipo nem apelido, não atravessa alias, e no celular — que é onde este
-app vive — degrada para uma tirinha de sugestão. O combobox é escrito à mão, com
-os tokens de `globals.css`; nenhuma dependência entrou.
+O combobox é escrito à mão, com os tokens de `globals.css`, e nenhuma
+dependência entrou. Um `<input list>` com `<datalist>` não basta: casa só
+prefixo em vários navegadores, não mostra tipo nem apelido, não atravessa alias,
+e no celular — que é onde este app vive — degrada para uma tirinha de sugestão.
 
 **O campo continua aceitando nome que não existe.** A lista é ajuda, não trava. O
 que decide entre reusar um nó e criar outro é o **casamento exato** de
@@ -812,15 +691,13 @@ que decide entre reusar um nó e criar outro é o **casamento exato** de
 alias), vai a grafia canônica do grafo e o tipo do nó; não casou, nasce entidade
 nova com o que eu escrevi.
 
-**A linha `+ criar "X"` cria — na tela, não no grafo.** Até aqui ela só escrevia
-o nome naquela barra: a entidade não existia para o átomo seguinte nem aparecia
-no rodapé, e não havia como renomeá-la de uma vez. Agora escolhê-la (clique ou
+**A linha `+ criar "X"` cria — na tela, não no grafo.** Escolhê-la (clique ou
 Enter) chama `aoCriar` do `SeletorEntidade`, e a `Revisao` guarda a entidade em
-`criadas`, com o tipo do filtro daquele átomo (`Pessoa` em "todas"). Ela passa a
-contar como candidata para `finalDe`, `nomeFinal`, `usada` e o rodapé — onde
-aparece como "nova, criada aqui" enquanto algum átomo a usa —, e o nó só nasce
-no confirmar, como qualquer candidata nova: a regra 5 não tem exceção para isto.
-Digitar e sair sem escolher a linha continua sendo texto livre.
+`criadas`, com o tipo do filtro daquele átomo (`Pessoa` em "todas"). Ela conta
+como candidata para `finalDe`, `nomeFinal`, `usada` e o rodapé — onde aparece
+como "nova, criada aqui" enquanto algum átomo a usa —, e o nó só nasce no
+confirmar, como qualquer candidata nova: a regra 5 não tem exceção para isto.
+Digitar e sair sem escolher a linha é texto livre.
 
 As barras dos átomos leem `catalogoDaTela`: o grafo, e depois as entradas locais
 (`entradasLocais`) — as candidatas novas da proposta e as criadas, **com o nome
@@ -828,9 +705,8 @@ final**, sem a que já casa com um nó e sem pronome. O confirmar continua
 canonizando contra o catálogo do grafo puro. A barra mostra `nomeFinal` e guarda
 o nome **original** (`nomeOriginalEm`): é isso que faz o renome seguinte no
 rodapé continuar seguindo o átomo, já que `nomeFinal` traduz pela chave
-original. Até aqui a barra do átomo mostrava o nome cru, e um renome no rodapé
-não aparecia nela. `montarGestos` recebe só as candidatas da proposta: renomear
-ou recusar uma entidade que eu criei não é correção de agente nenhum.
+original. `montarGestos` recebe só as candidatas da proposta: renomear ou
+recusar uma entidade que eu criei não é correção de agente nenhum.
 
 **O nome dentro do texto acompanha a entidade.** O `extracao-9` escreve o nome
 gravado do nó dentro do texto (§4.14); se a resolução pendurou "a Nic" na
@@ -847,9 +723,8 @@ gesto "texto". Limite: depois de uma edição à mão, uma troca seguinte só
 substitui o nome da proposta — um nome intermediário que já estava no texto
 editado fica.
 
-O catálogo vem de `GET /api/entidades`, rota que já existia — **rota nova
-nenhuma, migration nenhuma**. Se ela falhar, as barras voltam a ser texto livre,
-que era o comportamento anterior; `tests/revisao.test.ts` fixa isso.
+O catálogo vem de `GET /api/entidades`. Se ela falhar, as barras viram texto
+livre; `tests/revisao.test.ts` fixa isso.
 
 **O perfil não vem nesse payload** (4.8.1). A revisão baixa o grafo inteiro a
 cada abertura (§14) e usa nome, chaves e tipo; os três campos de perfil são o
@@ -859,55 +734,47 @@ campo mais pesado da resposta e ninguém os lê ali. Quem quer os campos pede
 a campo e não `delete`, para que campo novo em `EntidadeDoGrafo` não vaze para o
 contrato do catálogo sem alguém decidir.
 
-**As menções são editáveis** — acrescentar e tirar, uma barra por menção.
-Antes elas eram texto morto no item: menção errada só se consertava rejeitando o
-átomo inteiro ou renomeando a entidade no rodapé, e as duas são grandes demais
-para o erro. A lista viaja inteira nas edições do átomo, e não como delta: sem
+**As menções são editáveis** — acrescentar e tirar, uma barra por menção:
+menção errada se conserta sem rejeitar o átomo inteiro nem renomear a entidade
+no rodapé. A lista viaja inteira nas edições do átomo, e não como delta: sem
 isso não dá para distinguir "não mexi" de "apaguei todas".
 
 **Átomo com atribuição incerta aparece marcado**, com a sugestão já preenchida no
 seletor. O confirmar **não** trava: ver 4.8.
 
 **A dúvida é de cada referência, e não só do sujeito.** O agente 2 decide por
-menção (4.8) e devolve `certo`, `motivo`, `alternativas` e `porque` em cada uma;
-até a 4.8.1 a tela lia tudo do `sobre`, e discordância sobre **menção** não
-aparecia em lugar nenhum — o átomo passava aprovado, sem marca, com a menção
-atribuída a quem o agente não teve certeza de ser. Agora a marca do átomo, o
-bloco de dúvida e a barra de cada menção olham a lista de referências incertas:
-`referenciasDoAtomo` devolve o sujeito e as menções na ordem da tela, e
-`incertasDoAtomo` filtra. As duas são funções puras exportadas da `Revisao`, pelo
-mesmo motivo que `montarCorpoDoConfirmar`: é lógica que quebra em silêncio, e
-`tests/revisao.test.ts` a fixa sem render.
+menção (4.8) e devolve `certo`, `motivo`, `alternativas` e `porque` em cada
+uma; a marca do átomo, o bloco de dúvida e a barra de cada menção olham a lista
+de referências incertas: `referenciasDoAtomo` devolve o sujeito e as menções na
+ordem da tela, e `incertasDoAtomo` filtra. As duas são funções puras exportadas
+da `Revisao`, pelo mesmo motivo que `montarCorpoDoConfirmar`: é lógica que
+quebra em silêncio, e `tests/revisao.test.ts` a fixa sem render.
 
 O formato é **um** parágrafo por átomo, com uma linha por referência incerta, e
-não um bloco por referência. É a mitigação declarada do custo: esta é a tela mais
-apertada do sistema, e o "menos de 60 s" segue sem medição (§14).
+não um bloco por referência: esta é a tela mais apertada do sistema.
 
-**A linha da dúvida virou uma pergunta, e só isso.** Ela dizia "de quem é?
-escolhi X para 'Y' — motivo do agente · também podia ser Z, W": a decisão vinha
-enterrada no meio da justificativa, e a justificativa é longa justamente nos
-casos difíceis. Hoje ela diz `acho que é **X** — confirma?` (e `menção 2: acho
-que é X — confirma?` para as menções, por `ondeEstaA`). O que saiu — `citado`,
-`motivo` e `alternativas` — **não** deixou de existir no dado nem no payload: as
-alternativas já estavam no topo da lista do seletor, que é onde elas servem para
-alguma coisa, e o motivo é procedência, que passou a morar no modal de fontes,
+**A linha da dúvida é uma pergunta, e só isso**: `acho que é **X** —
+confirma?` (e `menção 2: acho que é X — confirma?` para as menções, por
+`ondeEstaA`). `citado`, `motivo` e `alternativas` continuam no dado e no
+payload: as alternativas estão no topo da lista do seletor, que é onde elas
+servem para alguma coisa, e o motivo é procedência, que mora no modal de fontes,
 abaixo. A tela pergunta; quem quiser o porquê, pede.
 
 #### As fontes moram atrás de um ícone, e não na vista padrão
 
-A procedência do GraphRAG — a frase da camada (`FRASE_DA_CAMADA`) e os trechos de
-átomos passados que votaram — era uma lista `.porque` **sempre visível** embaixo
-de cada átomo desde a 4.8.1. Numa proposta de nove átomos, com o dossiê da 4.9
-resolvendo quase toda menção, isso é a maior parte do que a tela mostra, e nada
-disso é decisão: é explicação de uma decisão que quase sempre está certa.
+A procedência do GraphRAG — a frase da camada (`FRASE_DA_CAMADA`) e os trechos
+de átomos passados que votaram — fica fora da vista padrão: numa proposta de
+nove átomos, com o dossiê resolvendo quase toda menção, ela seria a maior parte
+do que a tela mostra, e nada disso é decisão: é explicação de uma decisão que
+quase sempre está certa.
 
-Ela saiu da vista padrão e virou **modal**. Cada nome na linha "sobre X · menciona
-Y" ganha um `ⓘ` ao lado — `EntidadeRef` —, e só ganha quando aquela referência
-tem evidência (`herdadasDoAtomo`, isto é, `porque` ou `camada`); as demais ficam
-só o nome, sem ícone e sem espaço gasto. Clicar abre um diálogo centralizado com
-o nome da entidade, a frase da camada e as citações. Diálogo e não gaveta lateral
-porque o conteúdo é curto e é sobre **um** ponto da tela; `Escape` e o véu fecham,
-como na gaveta de agentes (4.13).
+Ela é um **modal**. Cada nome na linha "sobre X · menciona Y" ganha um `ⓘ` ao
+lado — `EntidadeRef` —, e só ganha quando aquela referência tem evidência
+(`herdadasDoAtomo`, isto é, `porque` ou `camada`); as demais ficam só o nome,
+sem ícone e sem espaço gasto. Clicar abre um diálogo centralizado com o nome da
+entidade, a frase da camada e as citações. Diálogo e não gaveta lateral porque o
+conteúdo é curto e é sobre **um** ponto da tela; `Escape` e o véu fecham, como
+na gaveta de agentes (4.13).
 
 **A trava de índice das menções vale para o ícone também**, e é por isso que
 `mencoesEntradas` carrega o `ordem` original: filtrar a menção igual ao sujeito
@@ -915,12 +782,12 @@ desloca a posição na tela, e `herdadas` casa por índice pré-filtro. Ícone n
 entidade errada é a mesma classe de erro que sugestão na linha errada — só que
 mais silenciosa, porque o modal parece ter respondido.
 
-**A condição da camada 3b continua satisfeita, e agora com uma condição a mais.**
-O §4.10 declara que aquela camada só é aceitável porque o átomo que a elegeu está
-na tela, corrigível. Ele está — a um toque, e marcado com um ícone que só aparece
-quando há o que ver. O que a fatia troca é "sempre à vista" por "sempre
-alcançável", e a troca é deliberada: uma tela que mostra tudo o tempo todo é uma
-tela que não se resolve em 60 s, e o custo declarado é meu se eu deixar de clicar.
+**A condição da camada 3b é satisfeita a um toque.** O §4.10 declara que aquela
+camada só é aceitável porque o átomo que a elegeu está na tela, corrigível. Ele
+está — a um toque, e marcado com um ícone que só aparece quando há o que ver:
+"sempre alcançável" no lugar de "sempre à vista". Uma tela que mostra tudo o
+tempo todo não se resolve em 60 s, e o custo declarado é meu se eu deixar de
+clicar.
 
 **A armadilha do índice, e ela é silenciosa.** As menções na tela são uma lista
 por posição, e a referência casa com a posição **por índice**. Assim que eu
@@ -957,11 +824,10 @@ afirmação dele, e átomo com procedência falsa é pior que átomo nenhum.
 Entidade só é gravada se algum átomo aprovado de fato a usa: aprovar na tela e
 depois rejeitar todos os átomos dela não pode deixar nó órfão.
 
-**A lista de entidades vem da tela, não da proposta.** Era o contrário, e por
-isso renomear o sujeito de um átomo devolvia 400: o servidor exigia que ele
-estivesse entre as entidades da extração, e a lista não tinha como crescer. Agora
-o corpo manda `entidades: [{ nome, tipo }]` com os nomes finais, e o cliente
-acrescenta qualquer sujeito que eu tenha escrito à mão. Duas guardas no servidor,
-porque a regra não pode depender da UI: nome que caia na lista de pronomes é
-recusado com 400, e `tipo` é validado contra `TIPOS_ENTIDADE`.
+**A lista de entidades vem da tela, não da proposta**: o corpo manda
+`entidades: [{ nome, tipo }]` com os nomes finais, e o cliente acrescenta
+qualquer sujeito que eu tenha escrito à mão — sem isso, renomear o sujeito de um
+átomo seria recusado. Duas guardas no servidor, porque a regra não pode depender
+da UI: nome que caia na lista de pronomes é recusado com 400, e `tipo` é
+validado contra `TIPOS_ENTIDADE`.
 

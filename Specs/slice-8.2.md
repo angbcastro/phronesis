@@ -223,3 +223,34 @@ não resolve sozinho, e com o escalonamento preservado por cima dele.
   refaz a janela inteira, não só a chamada. Se a `mu4um3ot3t5k4g1u1p1j` e as
   próximas continuarem falhando com 16.000, o número não é o problema, e o
   candidato seguinte é trocar o modelo de extração — não subir de novo.
+
+### Do §4.1–4.7 (o pipeline)
+
+*Fora de fatia, no mesmo período (20/09): a troca do modelo da extração.*
+
+#### O modelo raciocina, e o raciocínio come a saída
+
+`zai/glm-5.3-flash`, o padrão da extração até 20/09, é modelo de raciocínio.
+Numa sessão de 4 mil caracteres ele gastou **1720 tokens raciocinando para 122
+de texto** — e quando o raciocínio consome o orçamento inteiro a resposta chega
+sem JSON nenhum. Foi assim que a sessão `mtgo3kaf5` falhou, de forma
+intermitente: a mesma transcrição às vezes passava.
+
+**A troca do padrão para `deepseek/deepseek-v4.1-flash` não move nada desta
+seção.** O que as defesas abaixo olham é o `finishReason` da resposta e a razão
+entre pensamento e texto, nunca o nome do modelo: num modelo que pensa pouco
+elas simplesmente não disparam. O que a troca abre é uma pergunta sem resposta
+medida — quanto este pensa —, e quem responde é a sessão real, pelo diagnóstico
+que já sai no log.
+
+| `finishReason=length`, `raciocinio` no teto | o raciocínio comeu o orçamento e a resposta foi cortada no meio dele | na extração, `faltouOrcamento()` → segunda tentativa com o dobro de teto. A resolução não repete desde 30/09: o teto dela (100 mil) já passa do `max_out` do modelo |
+
+**Mesmo assim ele subiu de novo em 20/09, de 8000 para 16.000, por decisão
+minha e sabendo disso.** O que mudou foi a evidência de produção: a sessão
+`mu4um3ot3t5k4g1u1p1j` ficou dois dias presa, retentada e falhando igual a cada
+vez, e o conserto do prazo por chamada (§5.3) tinha limitado o pior caso a 90 s
+por chamada **sem reduzir o tempo total** — porque quando uma chamada estoura o
+teto, a **janela inteira** é refeita do zero (extração, resolução e desempate),
+não só a chamada que estourou. O mecanismo não mudou: `FATOR_DE_FOLGA` continua
+2, e a segunda tentativa passa a ir com 32.000 quando `finishReason` for
+`length`. O que subiu foi o piso debaixo dele.

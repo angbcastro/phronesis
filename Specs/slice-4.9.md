@@ -491,3 +491,24 @@ primeiro nó o recebe, no confirmar. **Nada é reclassificado para trás**: a
 empresa que já está no grafo como `:Pessoa` continua `:Pessoa` até eu trocar o
 tipo à mão em `/entidades` (§8.2), e reclassificar em massa exigiria adivinhar
 quais nós são empresas.
+
+### Do §4.1–4.7 (o pipeline)
+
+E desde a 4.9 há **um segundo bloco injetado**, no mesmo ponto e antes deste: o
+dossiê das candidatas (§4.14). A ordem é `INSTRUCOES_BASE → blocoDasCandidatas →
+blocoDaJanela → FORMATO → texto` — o dossiê primeiro, porque é material; a janela
+depois, porque é sobre aquela chamada e mais nenhuma.
+
+**Até a 4.8 este parágrafo dizia o contrário**, e com todas as letras: o prompt
+da extração não sabia que entidades existem no grafo, e era de propósito. A
+inversão é a slice 4.9 e está no §4.14, com o argumento que a sustenta: o
+problema **é** do extrator, porque quem escreve o texto do átomo é ele, e é no
+texto que o nome errado se fixa — inclusive dentro do vetor, que sai só de
+`a.texto` (§4.10). O que **não** mudou é o resto: `INSTRUCOES_BASE` e `FORMATO`
+continuam byte a byte os da 4.7, e o dossiê entra por um bloco injetado.
+
+Quem confronta com o grafo continua sendo o passo seguinte (4.8), que atribui
+**cada menção** a um nó — não cada nome. A diferença é a slice 4 inteira: dois
+átomos da mesma sessão dizendo "Rafa" podem ser duas pessoas. Desde a 4.9 ele
+vê também a chave que o extrator apontou, como quinta camada de candidato, e
+valida **toda** menção que tenha candidato.

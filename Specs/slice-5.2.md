@@ -372,3 +372,29 @@ Contrato completo depois desta migration:
 
 (:Atomo)-[:CONFRONTO_RECUSADO { em, tipo }]->(:Atomo)                   (013)
 ```
+
+### Do §4.1–4.7 (o pipeline)
+
+| `modeloConfronto()` | `confronto-3` | `deepseek/deepseek-v4.1-flash` — próprio desde a slice 5.2, escolhido pela comparação de 13/10 (§4.15.3) |
+
+*Fora de fatia, no mesmo período (12/10): a revisão cria a entidade na hora.*
+
+**A linha `+ criar "X"` cria — na tela, não no grafo.** Até aqui ela só escrevia
+o nome naquela barra: a entidade não existia para o átomo seguinte nem aparecia
+no rodapé, e não havia como renomeá-la de uma vez. Agora escolhê-la (clique ou
+Enter) chama `aoCriar` do `SeletorEntidade`, e a `Revisao` guarda a entidade em
+`criadas`, com o tipo do filtro daquele átomo (`Pessoa` em "todas"). Ela passa a
+contar como candidata para `finalDe`, `nomeFinal`, `usada` e o rodapé — onde
+aparece como "nova, criada aqui" enquanto algum átomo a usa —, e o nó só nasce
+no confirmar, como qualquer candidata nova: a regra 5 não tem exceção para isto.
+Digitar e sair sem escolher a linha continua sendo texto livre.
+
+As barras dos átomos leem `catalogoDaTela`: o grafo, e depois as entradas locais
+(`entradasLocais`) — as candidatas novas da proposta e as criadas, **com o nome
+final**, sem a que já casa com um nó e sem pronome. O confirmar continua
+canonizando contra o catálogo do grafo puro. A barra mostra `nomeFinal` e guarda
+o nome **original** (`nomeOriginalEm`): é isso que faz o renome seguinte no
+rodapé continuar seguindo o átomo, já que `nomeFinal` traduz pela chave
+original. Até aqui a barra do átomo mostrava o nome cru, e um renome no rodapé
+não aparecia nela. `montarGestos` recebe só as candidatas da proposta: renomear
+ou recusar uma entidade que eu criei não é correção de agente nenhum.

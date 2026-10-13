@@ -188,3 +188,58 @@ constraint e índice no Aura, e o grafo já recebeu conteúdo de sessões reais 
 literal por tipo, a constraint de `nome_normalizado` e as listas paralelas como
 float foram conferidos contra o Aura, não só contra o banco mockado. Quem escreve neles é o confirmar da revisão, por
 `atomos.ts`; `entidades.ts` só lê, por `nome_normalizado`.
+
+### Do §4.1–4.7 (o pipeline)
+
+*Fora de fatia, no mesmo período (31/08): a medição dos modelos de STT.*
+
+Medido em 2026-08-31, com o **mesmo bloco real** de 30 s para todos, pelo
+Gateway. A pergunta não é quem transcreve melhor: é quem devolve **tempo**.
+
+| Modelo | Tempo | Texto | Custo/30 s |
+|---|---|---|---|
+| `xai/grok-stt` | **palavra** — 64 segmentos de 1 palavra (`1.802–2.002 "Vamos"`) | pior dos cinco | $0,0008 |
+| `openai/whisper-1` | frase — 4 segmentos de ~8 s | bom | $0,0029 |
+| `google/gemini-3.5-transcribe` | **nenhum** | melhor dos cinco | $0,0014 |
+| `openai/gpt-4o-transcribe` | **nenhum** | bom | $0,0015 |
+| `openai/gpt-4o-mini-transcribe` | **nenhum** | bom | $0,0008 |
+
+`deepgram/*`, `assemblyai/*`, `elevenlabs/*`, `groq/whisper-*`,
+`mistral/voxtral-*`, `fal/wizper`, `revai/*` e `azure/whisper`: `Model not
+found`. Não estão neste Gateway — e é de **Deepgram** que vem o nome `keyterm`
+usado em `stt.ts`, o que explica a opção estar lá.
+
+**Sem tempo não há procedência**, que a visão §4 lista como necessidade: sem
+ele todo átomo nasce com `inicios_s`, `fins_s` e `ancoras` vazios, o player da
+revisão some de todos os itens e "escuto antes de aprovar" deixa de existir.
+Isso elimina os três modelos sem timestamp por melhor que seja o texto deles.
+
+> **A tabela tinha uma sexta coluna, "Rate limit", que dizia `—` para o
+> `xai/grok-stt` e eliminava o `whisper-1`. Ela saiu porque é falsa** — ver
+> "O rate limit é da conta", abaixo. O limite não escolhe modelo.
+
+O custo declarado: no bloco medido o grok escreveu "Vamos testar se **a
+secretária** está funcionando" onde os outros três ouviram "testar se **isso
+aqui tá** funcionando". O bloco é um teste de microfone de 24/08, e as sessões
+reais transcritas por ele produziram extração boa — mas transcrição estranha
+numa sessão de verdade tem aqui a primeira suspeita.
+
+O prompt também ganhou uma proibição explícita de **comentar a transcrição**. O
+modelo devolveu um átomo dizendo que o texto era confuso e circular; falar
+desorganizado é o esperado num diário falado, e lista vazia é a resposta certa
+quando não há o que extrair.
+
+A primeira versão pedia "uma afirmação por item" e só descartava hesitação. Numa
+sessão real de 45 s isso rendeu 9 átomos — "acordei", "pedalei", "nadei", "fui
+sauna" —, o que extrapolado dá ~150 numa sessão de 15 min. Duas condições de
+morte de `Specs/visao.md` §8 de uma vez: revisão que passa de um minuto, e
+rotina repetida todo dia apodrecendo o grafo. O prompt **manda selecionar**, não
+picar:
+
+**A lista de entidades vem da tela, não da proposta.** Era o contrário, e por
+isso renomear o sujeito de um átomo devolvia 400: o servidor exigia que ele
+estivesse entre as entidades da extração, e a lista não tinha como crescer. Agora
+o corpo manda `entidades: [{ nome, tipo }]` com os nomes finais, e o cliente
+acrescenta qualquer sujeito que eu tenha escrito à mão. Duas guardas no servidor,
+porque a regra não pode depender da UI: nome que caia na lista de pronomes é
+recusado com 400, e `tipo` é validado contra `TIPOS_ENTIDADE`.

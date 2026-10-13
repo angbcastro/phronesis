@@ -115,3 +115,25 @@ antes —, movido quase literal quando ele passou a descrever só o presente
   Se recusar algum, a saída seria converter, e conversão de áudio não cabe em
   function serverless — a alternativa real é estreitar a lista. Descobre-se no
   primeiro arquivo de cada tipo.
+
+### Do §4.1–4.7 (o pipeline)
+
+**Todo tráfego de LLM deste sistema sai pelo Vercel AI Gateway** — STT hoje,
+extração e deduplicação a partir da slice 2, e o que vier depois. Uma chave
+(`AI_GATEWAY_API_KEY`), um lugar para ver custo e latência, e trocar de provedor
+é mudar uma variável de ambiente, sem tocar em código. É a regra inviolável 8.
+
+**Observado com `xai/grok-stt` (2026-08-24, primeira transcrição real):** o
+provedor não expõe nada em `providerMetadata`, então o bloco é registrado como
+`granularidade: "segmento"` — mas os `segments` que ele devolve têm **uma
+palavra cada** (64 de 64 no bloco medido, ex.: `1.802–2.002 "Vamos"`). Na
+prática a precisão é por palavra e o campo a subdeclara. Subdeclarar é o lado
+seguro do erro, e nada foi mudado: reclassificar depende de decidir se
+"um segmento de uma palavra" conta como timestamp por palavra, o que é escolha
+de produto, não de implementação.
+
+**Reconfirmado em 2026-08-31**, na medição de §4.2.1: mesmos 64 segmentos de uma
+palavra, mesma ausência de `providerMetadata`. É exatamente esse comportamento —
+`segments` densos o bastante para ancorar palavra por palavra — que faz este
+modelo ser o único do Gateway que serve, e é sobre ele que as âncoras dos átomos
+que já estão no grafo foram construídas.

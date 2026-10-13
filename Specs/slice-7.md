@@ -240,3 +240,10 @@ saindo byte a byte igual ao do git.
   agente, não tem prompt e não há o que emendar com ele. Ele aparece na porta de
   `/calibracao` sem botão, e ocupa vaga no teto de 500 do índice como qualquer
   outra correção. Quem conserta grafia é o vocabulário do STT — slice 7.2.
+
+### Do §4.1–4.7 (o pipeline)
+
+**Eram três blocos até a slice 7**, e o primeiro era o das regras aprovadas. Ele
+saiu porque a correção deixou de virar apêndice e passou a virar emenda no corpo
+do prompt (§4.12): o que a 4.6 colava a cada chamada agora está escrito dentro do
+texto que `efetivo("extracao", …)` devolve.
