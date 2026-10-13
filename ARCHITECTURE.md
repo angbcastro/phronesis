@@ -33,7 +33,7 @@ construído e ainda não foi validado está em `PROXIMOS-TESTES.md`.
 | 4.12.1 | a fila da ficha anda, e bate toda segunda | sim |
 | 5 | confrontar: relações entre átomos | sim |
 | 5.1 | o confronto calibrado pela primeira revisão à mão | sim |
-| 5.2 | o confronto amplo: grafo inteiro, duas camadas, a minha correção | não — commit sem push |
+| 5.2 | o confronto amplo: grafo inteiro, duas camadas, a minha correção | sim |
 | 6 | o chat: perguntar ao grafo | sim |
 | 7 | o laço de calibração vale para todo agente | sim |
 | 8 | o sistema se cronometra | sim |
