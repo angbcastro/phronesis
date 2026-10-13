@@ -259,3 +259,32 @@ Contrato completo do que esta migration acrescenta:
   { execucao, motivo, confianca,
     criado_em, modelo, prompt_version }]->(:Atomo mais_antigo)            (011)
 ```
+
+### Do §4.15 (o confronto)
+
+O pilar "Confrontar" que `Specs/visao.md` sempre descreveu, e que este arquivo
+listava como não existente desde a slice 2: perceber que uma posição mudou.
+Nasceu de um pedido de chat/GraphRAG que a entrevista de alinhamento desviou —
+responder "como minha opinião sobre X mudou" pede comparar átomos ao longo do
+tempo, e a peça que faz isso nunca tinha sido construída (`Specs/slice-5.md`).
+
+**Nunca no caminho da resposta.** O agente `confronto` (`src/lib/confronto.ts`)
+roda por cron próprio (`GET /api/cron/confronto`, separado do `cron/diario`,
+§10), sob demanda (`POST /api/confronto/rodar`, botão em `/confronto`) e, desde
+a 5.2, **disparado de fundo quando eu confirmo uma sessão** — em `waitUntil`,
+sem a revisão esperar nada (§4.15.3). É decisão da entrevista: comparar um
+átomo contra o grafo inteiro é trabalho de fundo, não parte do caminho crítico
+da gravação.
+
+**`/confronto`** (`src/components/Confronto.tsx`): botão "rodar agora", botão
+"reprocessar tudo" (dois toques), quantos átomos ainda esperam (a tela relê
+sozinha a cada 4 s enquanto houver fila, mesma decisão de `/entidades`), a
+lista dos últimos átomos tocados com quantas relações fortes e sutis cada um
+tem e um desfazer por linha — e, desde a 5.2, a busca por texto e o **radial**
+de um átomo, onde eu corrijo relação por relação (§4.15.3).
+
+Décimo agente do registro (`src/lib/agentes.ts`); no desenho de `/agentes` ele
+é um dos seis do leque que parte do grafo gravado. (Quando esta fatia nasceu, o
+desenho ainda era a grade de colunas, e o `confronto` custou a sexta delas; foi
+esse crescimento, repetido a cada agente novo, que levou o desenho à espinha de
+hoje — §4.13.)

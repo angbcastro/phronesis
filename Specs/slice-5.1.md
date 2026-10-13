@@ -251,3 +251,109 @@ Nenhuma migration, nenhuma variável de ambiente nova, nenhuma rota removida.
 - **`reprocessar` é destrutivo e não tem desfazer**: ele apaga as relações de
   todos os átomos de uma vez. O contrapeso é que a varredura as reconstrói — e
   é por isso que ele pede dois toques.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do §4.15 (o confronto)
+
+#### 4.15.1 O que a primeira revisão à mão mudou (slice 5.1)
+
+A slice 5 foi medida do único jeito que este sistema aceita: **58 átomos
+processados, 21 relações escritas, todas lidas uma a uma por mim.** Cinco
+reprovadas — e **todas as cinco eram `COMPLEMENTA`**; as seis que não eram
+(`ATUALIZA`, `CONFIRMA`, `CONTRADIZ`) passaram inteiras. `Specs/slice-5.1.md`
+tem a tabela par a par; o que segue é o sistema que saiu dela.
+
+**Dois botões foram medidos e recusados antes de qualquer conserto.**
+`PISO_CONFRONTO` está **inerte**: o par menos parecido dos 21 tinha
+similaridade 0,728, muito acima de 0,45 — quem seleciona é o top-8 do índice, e
+subir o piso até onde cortaria os falsos positivos (0,77) levaria junto duas
+das três `CONTRADIZ` aprovadas. Um piso de confiança **global** também não
+separa: das reprovadas, três estavam em 0,6 e duas em 0,7, mas havia três
+aprovadas em 0,6 e três em 0,7. O que sobrou foi prompt, informação e um piso
+por tipo.
+
+**O prompt virou `confronto-2`**, com `NENHUMA` declarada como a resposta
+padrão, um portão explícito (nomear a afirmação específica compartilhada, com
+palavras dos **dois** trechos, ou é `NENHUMA`), e três proibições que vieram
+direto dos erros: não vale mesma pessoa/mesmo dia/mesmo tema; não vale presumir
+que duas referências vagas ("a empresa", "o negócio", "ela") são a mesma coisa;
+e não vale inventar a abstração que liga os dois — num dos erros o `motivo` do
+próprio modelo dizia "generaliza a percepção antiga". `CONFIRMA` foi
+redefinido de "repete sem acrescentar nada" para **corroboração**: o novo
+sustenta a afirmação antiga, repetindo-a **ou** trazendo resultado que mostra
+que ela se cumpriu.
+
+**O átomo chega ao modelo com as entidades que ele aponta**, sem o `"eu"` —
+`sobre:` e `cita:`, e `sem entidade nomeada` quando não há. Elas custam 700
+chars no grafo inteiro e servem para **barrar** referente presumido, nunca para
+justificar ligação: dois dos falsos positivos eram pares em que um lado é
+`sobre: Behring Founders` e o outro não nomeia empresa nenhuma, mas um terceiro
+era um par que **compartilha** duas pessoas e mesmo assim não tem relação — daí
+a regra de que entidade em comum não é motivo estar escrita no prompt.
+
+**O lote com acervo numerado compartilhado** substituiu uma chamada por átomo
+(e foi substituído de volta na 5.2, quando cada átomo passou a ter cem
+candidatos — §4.15.3).
+A medição: numa varredura completa o desenho antigo gastava 39 chamadas e
+mandava 47.322 chars de candidato para 14.431 distintos — o mesmo texto **3,3
+vezes**. Agora cada átomo envolvido entra uma vez só num acervo numerado, e a
+lista de pares vem depois (`7 → 3`); a resposta referencia os números do
+acervo, e **par que ninguém pediu é descartado** — inclusive o mesmo par na
+direção errada. `MAX_TOKENS_SAIDA` subiu de 1.500 para 4.000, porque o teto
+antigo era dimensionado para um alvo.
+
+**O `COMPLEMENTA` ganhou piso de confiança próprio** (`LIMIAR_COMPLEMENTA`,
+0,7), e é o `limiarPadrao` do agente — o mesmo campo que a resolução usa desde
+a 4.11, editável em `/agentes` sem deploy, que é o que uma calibração precisa
+ser. Os outros três tipos não têm piso. Desde a 5.2, abaixo dele a relação
+**desce para a camada sutil** em vez de ser descartada.
+
+**`POST /api/confronto/reprocessar`** apaga todas as relações **do agente** (as
+que eu editei e as minhas recusas ficam, desde a 5.2) e devolve o grafo
+inteiro à fila. Existe porque trocar o prompt é o trabalho normal desta fatia:
+sem ele, `confronto-2` só alcançaria átomo novo e o gabarito — as relações já
+julgadas à mão — ficaria congelado no prompt que as produziu. É destrutivo e
+não tem desfazer próprio; o contrapeso é que a varredura reconstrói, e que a
+tela pede dois toques.
+
+#### 4.15.2 O que a segunda rodada mediu, e a decisão que saiu dela
+
+O `confronto-2` rodou sobre os mesmos 58 átomos, e o resultado foi conferido
+contra o gabarito das 21 relações já julgadas: **21 relações viraram 13.**
+
+- **Os cinco erros foram corrigidos, 5 de 5.** `94→57` voltou como `CONFIRMA`,
+  que era o veredito; os outros quatro não voltaram.
+- **Das dezesseis aprovadas, oito sobreviveram** — e a perda é legível.
+  **Quatro delas (`63→27`, `64→27`, `65→27`, `68→27`) apontavam para o mesmo
+  átomo**, um `FATO` que diz "uma menina que eu conheci na festa do rock" e que
+  **não tem entidade ligada nenhuma**; os átomos novos dizem `cita: Franciele
+  Sena`, e a regra de referente recusou o par — certa pela letra, errada pelo
+  fato. Outras três (`67→5`, `80→26`, `93→29`) são exatamente o que as regras
+  novas proíbem — mesma pessoa, mesmo padrão de comportamento, abstração — e
+  tinham sido aprovadas.
+- **`68→27` prova que não foi o piso**: `CONTRADIZ` não tem piso de confiança, e
+  morreu igual. Foram as regras.
+
+**A decisão foi manter assim**, sabendo o preço: o confronto está calibrado
+para **precisão, não cobertura**. Num grafo que existe para responder perguntas,
+um falso positivo contamina a resposta e um falso negativo apenas deixa de
+ajudar — e as duas alavancas de recuperação (afrouxar "mesma pessoa"/"mesmo
+padrão", baixar o limiar) trariam ruído junto. Ligar o átomo órfão à entidade
+certa continua sendo o conserto honesto quando o caso voltar: ele arruma o
+dado, não o prompt.
+
+#### 4.15.3 O horizonte largo, as duas camadas e a minha correção (slice 5.2)
+
+A 5.1 deixou o confronto preciso e estreito, e a estreiteza estava no código,
+não no prompt: oito candidatos por vetor, só contra data **estritamente
+anterior** — e como `valido_em` é o `iniciada_em` da sessão, dois átomos da
+mesma gravação nunca se comparavam; o sentimento e o fato que o explica, ditos
+juntos, nunca chegavam a ser um par. A entrevista de 12/10 pediu o contrário
+sem abrir mão da precisão: sentimentos complementados por fatos, relações entre
+os dias, ligações sutis — e o chat sem citar interpretação como registro
+(`Specs/slice-5.2.md` tem as decisões e o que foi recusado em cada uma).

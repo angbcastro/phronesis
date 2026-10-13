@@ -420,3 +420,92 @@ a menção vai à segunda passada; no confronto, abaixo dele a relação
 volta a ela, número igual ao do git não é edição. Número fora de `[0,1]` no
 arquivo é ignorado como se não estivesse lá — o arquivo é meu, mas um typo não
 pode desligar a segunda passada em silêncio.
+
+### Do §4.15 (o confronto)
+
+**Candidatos, pelo mesmo mecanismo vetorial da 4.5.**
+`db.index.vector.queryNodes('atomo_embedding', …)` a partir do vetor do átomo
+sendo processado. **Até a 5.2** eram os oito mais parecidos, só com `valido_em`
+estritamente anterior e acima de `PISO_CONFRONTO`; **hoje** são os cem mais
+parecidos do grafo inteiro, mais antigos e mais novos, sem piso — e o código
+decide a direção (§4.15.3). Átomo sem data continua fora: sem data não há como
+dizer quem é o mais novo. Sem candidato, o átomo não vai ao modelo — mesmo
+espírito custo-consciente de `decidir()` em `resolucao.ts`.
+
+**Uma geração, sem precisar casar `execucao`.** Ao contrário da ficha da
+entidade (que sobrescreve um campo e por isso guarda um `_anterior` para
+restaurar), uma relação é uma aresta que só existe se for escrita.
+`gravarRelacoes` apaga as arestas **do agente** cujo `dono` é o átomo antes de
+escrever as novas, toda vez que roda — nunca há mais de uma geração viva ao
+mesmo tempo, e o desfazer (`POST /api/confronto/desfazer`) apaga o que existe
+agora, porque "o que existe agora" já é a última geração. (Até a 5.2 a geração
+era "as relações de saída"; desde que o átomo é comparado também com os mais
+novos, a rodada escreve aresta que chega a ele, e quem diz de qual rodada ela é
+é o `dono` — §4.15.3.) Isso também cobre de
+graça uma rodada que morreu entre gravar e marcar `processado`: a tentativa
+seguinte substitui, nunca duplica. `execucao` continua gravado, em cada
+relação e no átomo (`confronto_execucao`) — é rastro de auditoria, não trava.
+
+**A fila é o mesmo mecanismo da 4.12: estado idempotente mais `waitUntil`.**
+Um **elo** por vez (`reivindicarProximosAtomos`, até `ALVOS_POR_ELO` = 5
+átomos, julgados em paralelo desde a 5.2), do `valido_em` mais antigo para o
+mais novo, com o mesmo *lease* de retomada de `reivindicarProxima`.
+`POST /api/confronto/rodar` não distingue "começar" de "elo seguinte" como
+`enriquecer` faz — não há passo de escolher o que entra: todo POST reivindica
+os pendentes e se autoencadeia. O cron corre a mesma fila num loop simples, até
+ela esvaziar ou o orçamento de tempo acabar.
+
+**A falha é do alvo** desde a 5.2: cada átomo tem a sua chamada, e um que cai
+sai `falhou` com o motivo na linha enquanto os outros quatro gravam. Só o que
+quebra antes de os alvos se separarem — a busca de candidatos, o Aura fora —
+marca o elo inteiro. `marcarFalhaEmLote` só marca quem ainda está `rodando`.
+
+**Os mesmos quatro tipos, mais largos.** `COMPLEMENTA` passou a cobrir o fato que
+explica ou contextualiza um sentimento e as partes do mesmo episódio; `CONFIRMA`
+e `CONTRADIZ`, o que aconteceu cumprindo ou desmentindo um medo, expectativa ou
+plano registrado antes. Tipos novos (`EXPLICA`, `MESMO_EPISODIO`, `DESFECHO`,
+`VIRADA`) foram desenhados e adiados — a virada já se compõe de `ATUALIZA` mais
+o fato que a `COMPLEMENTA`.
+
+**Duas camadas.** `forte` é o portão da 5.1: a afirmação comum se escreve com
+palavras dos dois trechos. `sutil` é a ligação real que pede uma inferência — o
+sentimento e o fato que não se citam, a mesma pessoa e o mesmo comportamento
+dela. O sutil **liga e nunca nomeia**: o motivo aponta o que cada trecho diz e
+não dá nome a padrão, traço ou diagnóstico (visão §7). O que a 5.1 descartava
+por "mesma pessoa, mesmo padrão" agora tem para onde ir sem contaminar a
+resposta. Camada inválida ou ausente na resposta do modelo vira sutil; no grafo,
+ausente é forte (tudo o que a 5 e a 5.1 gravaram passou pelo portão).
+
+**Um alvo por chamada, cinco em paralelo, no máximo sete relações.** O acervo
+compartilhado não escala para cem candidatos por alvo. Cada elo julga até
+`ALVOS_POR_ELO` = 5 átomos em paralelo (`processarElo`), e dois alvos do mesmo
+elo que se têm como candidato ficam com o par só no primeiro
+(`repartirPares`). O parser corta em `TETO_RELACOES_POR_ATOMO` = 7, forte
+primeiro e depois por confiança, descontadas as relações que eu já congelei no
+átomo; com o teto já cheio de relações minhas, o átomo nem vai ao modelo. O
+teto de saída é 100 mil tokens, sem segunda tentativa dobrada — a decisão da
+resolução em 30/09 —, e cada chamada leva o prazo do elo (`PRAZO_DO_ELO_MS`).
+
+**Uma geração por `dono`.** A rodada de um átomo agora escreve aresta que chega
+a ele — o par com um átomo mais novo. `dono` (migration 013) é o átomo cuja
+rodada escreveu a aresta; `gravarRelacoes` e `desfazerConfronto` apagam só as
+do agente cujo dono é o alvo, e a escrita confere de novo, no Cypher, que o par
+não ganhou recusa nem aresta de outra rodada enquanto o modelo pensava.
+
+(`texto_proposto`), e `descreverCorrecao` os mostra ao `calibracao-2` — é a
+"7.2 do confronto" que a slice 7 deixou para depois: o gesto agora existe, e o
+laço já existia.
+
+**A primeira comparação (13/10)**, 15 átomos com cem candidatos cada:
+
+| Modelo | Fortes | Sutis | Tempo médio | Tokens de saída | Falhas |
+|---|---|---|---|---|---|
+| `deepseek/deepseek-v4.1-flash` | 17 | 28 | 54,4 s | 260.681 | 1 (cortado nos 180 s) |
+| `google/gemini-3.8-flash` | 6 | 8 | 26,4 s | 43.940 | 0 |
+| `anthropic/claude-sonnet-5.5` | 13 | 21 | 4,1 s | 5.483 | 0 |
+
+O `deepseek/deepseek-v4-pro` entrou e saiu: o primeiro átomo não voltou em 180 s.
+O escolhido foi o `deepseek-v4.1-flash`, e ele virou `MODELO_CONFRONTO_PADRAO` —
+constante própria, para uma troca de modelo da extração não trocar o confronto,
+o mesmo motivo do chat na slice 9. O preço declarado é o tempo: quase toda a
+saída dele é raciocínio, e um em quinze passou do `TETO_CHAMADA_MS` (§14).
