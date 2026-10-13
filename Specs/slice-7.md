@@ -345,3 +345,22 @@ mesma última porta em `envelopeFaltando`.
 
 Uma consequência boa e uma ruim. A boa: o prompt efetivo voltou a ser **um texto
 num lugar só**, que se lê inteiro no painel. A ruim: eu e o `redacao-1` escrevemos
+
+### Do §5 (estados da sessão)
+
+*Fora de fatia, no mesmo período (09–12/09): o bloco mudo.*
+
+Até 09/09 isso derrubava a **sessão inteira**. O erro é determinístico: o laço de
+`finalizarSessao` insistia no mesmo bloco mudo pelos 150 s de `ESPERA_MAX_MS`,
+sempre com a mesma resposta, e depois mandava tudo para `erro`. Medido na sessão
+`mtu336r50a5i4j3k2o1g`: 9 blocos, 7 com fala, os blocos 4 e 8 com RMS de 0,004
+contra 0,11 dos outros. Quatro minutos e meio de diário perdidos por duas pausas
+minhas — e o diagnóstico custou baixar os WAV do R2 e medir, porque o log dizia
+"não transcreveu" para silêncio e para defeito com as mesmas palavras.
+
+**O que se perde:** um tropeço do provedor que devolva nada tem exatamente a
+mesma cara que silêncio, e agora vira bloco vazio em silêncio em vez de erro
+barulhento. A troca foi feita de olho aberto — o outro lado dela era perder a
+sessão inteira toda vez que eu faço uma pausa —, e o sinal é a linha
+`[pipeline] … STT não ouviu fala — bloco vazio`, que sai em todo bloco vazio.
+Transcrição com um buraco se confere ali, contra o áudio, que está intacto no R2.

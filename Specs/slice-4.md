@@ -384,3 +384,27 @@ Uma chamada só para a sessão inteira. O catálogo que vai no prompt é o das
 entidades que **esta sessão pode citar** — as já resolvidas e os candidatos —, e
 não o grafo inteiro: uma menção só resolve para um candidato dela, e mandar o
 resto seria pagar por texto que não muda resposta nenhuma.
+
+### Do §5 (estados da sessão)
+
+*Fora de fatia, no mesmo período (01/09): o chip da home e a máquina de recuperação.*
+
+**A máquina de recuperação foi apagada inteira.** Com o chip da home saíram
+`GET /api/sessoes/abertas` e `sessoesAbertas()`, e com eles as peças que só
+existiam para alimentá-los: `STATUS_ABERTOS`, `estaAberta`, `foiAbandonada` e
+`duracaoPorChunks` (`estados.ts`), `ABANDONO_MIN` (`tipos.ts`), `proximoIndice` e
+`duracaoEstimadaS` (`manifest.ts`), e a opção `indiceInicial` do `Gravador`.
+Nenhuma delas ficou como código morto com teste em volta: elas estão no git, e a
+que voltar a ser necessária se reescreve em três linhas. O que fica no lugar é
+uma marca só, na lista de sessões, e ela sai de `confirmada` — verde é sessão
+revisada, branco é sessão com trabalho pendente (`jaRevisada`, seção 11).
+
+**`abandonada` saiu da máquina junto.** Ele estava em `STATUS_SESSAO`, na tabela
+de transições e nos `sePartirDe` de `/pronto`, `/finalizar` e `pipeline.ts` — mas
+nenhuma escrita no grafo jamais produziu esse status: `foiAbandonada()` só
+reetiquetava a resposta de `/api/sessoes/abertas` em memória, nunca o nó. Era
+vocabulário sem fato, e um estado que nunca acontece só serve para o próximo
+leitor tratar como caso real. **Nenhum nó do banco carrega esse valor**, pelo
+mesmo motivo — não há dado a migrar, e por isso a remoção não pede migration.
+Uma gravação que a aba interrompeu fica em `gravando` até `/finalizar` levá-la
+adiante, que é o que já acontecia de fato.

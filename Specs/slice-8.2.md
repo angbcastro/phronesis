@@ -298,3 +298,46 @@ que `tests/chat.test.ts` o importa, e é o mesmo parser. Pelo mesmo motivo
 `src/client/espera.ts`: duas telas passaram a contar o mesmo teto, e a segunda
 não deve arrastar a primeira inteira para o bundle por causa de seis linhas puras
 (é a razão de `localizarNoAudio` morar em `transcricao.ts`, §4.5).
+
+### Do §5 (estados da sessão)
+
+*Fora de fatia, depois dela (30/09): o prazo no /pronto.*
+
+Quem chama dentro de um prazo passa o seu (`ate`): `finalizarSessao` tem 150 s
+para os blocos que faltam, e as janelas do fim ficam com o que sobrar até
+`PRAZO_DA_FUNCAO_MS` (280 s contados do começo da função). Uma espera que não
+caiba nesse orçamento é pior que não esperar — o `waitUntil` morre antes de a
+chamada voltar, e a falha fica sem nem o log. **Desde 30/09 o `/pronto` também
+passa `ate`**, o mesmo `PRAZO_DA_FUNCAO_MS` contado da chegada do pedido. As
+janelas que fecham durante a gravação iam sem prazo porque ali esperar o limite
+passar é de graça — eu ainda estou falando —, e continua sendo, dentro da vida
+da função. O que mudou é que uma chamada agora pode durar 180 s, e extração e
+resolução em série passariam do `maxDuration` sem ele.
+
+Os dois pontos que falam com modelo no caminho automático estão cobertos:
+`stt.ts` e `extracao.ts`. A extração era a mais exposta das duas justamente por
+rodar logo depois dos 30 blocos de STT, que é quando o limite está mais perto de
+estourar; **a slice 4.8 desfez essa concentração** — são oito chamadas menores
+espalhadas pela gravação, e sete delas sem prazo nenhum para esperar.
+
+**A resolução entrou na lista na 4.9**, e ela é o terceiro ponto do caminho
+automático. Até a 4.8 o agente 2 falhava em vez de esperar; a degradação já era
+a certa (as menções voltam como dúvida e a revisão me deixa escolher, §4.8), mas
+o critério declarado aqui é "quem roda em `waitUntil` espera", e ele estava do
+lado errado da linha. O que tornou o conserto necessário foi a 4.9: o agente
+passou a rodar em **toda** janela, oito vezes por sessão de 15 min, na mesma
+rajada em que o STT já disputa o limite da conta. Ele recebe o `ate` de quem o
+chamou — o mesmo da extração daquela janela.
+
+`TETO_CHAMADA_MS` era 90 s e subiu para 180 s em 30/09: com o
+`deepseek/deepseek-v4.1-flash` a extração passa de 90 s na cauda, e a resolução
+ganhou teto de 100 mil tokens — a ~240 tokens/s, 90 s cortava por volta de 20
+mil, antes do limite do próprio modelo (32.768). Com 90 s, a corrente do
+`/pronto` cabia nos 300 s mesmo sem prazo; com 180 s não cabe, e quem segura a
+função agora é o `ate`, que as quatro chamadas do caminho automático recebem
+todas. Os agentes fora dele (chat, confronto, enriquecimento, retrato) não
+repassam o sinal e não são afetados. A folga de 5 s
+existe porque prazo que termina junto com o orçamento é o mesmo defeito outra
+vez, só que menor: quando a chamada é cortada ainda falta escrever
+`parcial.json`, o objeto de medidas e o estado da sessão, e os três são laços por
+etag.

@@ -331,3 +331,49 @@ para, e não pula, porque a janela `n` precisa do acumulado da `n-1`.
 único passa a parar e pedir re-extração. É a troca que eu quis — prefiro saber.
 Áudio, transcrição e acumulado continuam todos no R2, e o retry é
 `POST /api/sessoes/:id/extrair`, o mesmo botão de sempre.
+
+### Do §5 (estados da sessão)
+
+**Aquele limite era do free tier, e desde a compra de créditos ele não
+reapareceu.** A medição de 02/09 é real e o desenho que ela produziu continua
+certo — mas o que ela mediu foi uma **conta gratuita**, não o modelo nem o
+Gateway. A consequência é de projeto, e ela é a segunda metade da slice 8:
+**paralelismo deixou de ser risco e virou escolha.** Num sistema de um usuário,
+requisição à toa não é custo. A escada longa fica porque custa zero enquanto o
+limite não volta, e porque conta gratuita é um estado ao qual se pode voltar.
+
+**Duas escadas desde a slice 8, e a diferença é o diagnóstico.** O módulo nasceu
+de uma medição só e tratava tudo que não fosse 429 como definitivo — um 502 do
+Gateway, um socket que morreu no meio, um `overloaded` do provedor derrubavam a
+janela na primeira tentativa. Isso ficou caro pelo lado oposto quando o penhasco
+virou erro (§4.18): falha boba de rede passou a custar a sessão. `ehTransitorio`
+reconhece as três formas — código de rede dentro do `cause`, status 5xx ou 408, e
+o `overloaded` que vem no corpo —, e elas levam `ESPERAS_TRANSITORIA_MS`, de 1 s
+e 3 s. Os **contadores são separados**: um blip de rede no começo não gasta a
+paciência que o 429 vai precisar depois. Fora das duas listas nada é repetido —
+modelo inexistente, prompt que estoura o contexto e JSON inválido falham igual na
+segunda vez.
+
+**A quarta classe foi medida em 2026-09-18, e ela não é pressa: é silêncio.** A
+sessão `mu73d88b0w4u6o5d440j` — 203 s de fala, 7 blocos — gastou **300.116 ms**
+numa única chamada de extração que o Gateway nunca respondeu, e morreu no
+`headersTimeout` do undici. Todo o resto daquela sessão foi rápido: STT 7,2 s
+somados (pior bloco 1,8 s), catálogo 88 ms, camada semântica 513 ms, a fila do
+cliente drenando em 2,7 s. **Não foi volume**: 43 entidades, 108 átomos, uma
+janela de dois minutos de fala, e o Gateway não devolveu um token sequer de uso.
+
+O que torna isso estrutural, e não azar: **o `headersTimeout` do undici é 300 s,
+que é exatamente o `maxDuration` da rota.** Quando ele dispara não sobra
+orçamento nenhum para o `catch` gravar a falha, marcar a sessão como `erro` ou
+cair em outro caminho — a função é morta no meio e a sessão fica presa em
+`extraindo` **para sempre**, com a tela batendo. Foi o que aconteceu: quem
+estourou primeiro (o `/pronto` do bloco 3, começado às 15:08:42) alcançou o
+`catch` e deixou `parcial.json` e a medida; o `/finalizar`, começado às 15:10:06,
+foi morto antes do seu. E **sem streaming em lugar nenhum** do sistema, o Gateway
+só manda headers quando a geração inteira acaba — então aquele teto é, na
+prática, "tempo total de geração", e um modelo que pensa demais é indistinguível
+de um Gateway pendurado.
+
+**Orçamento que não cabe a chamada não vira chamada.** Antes o modelo era chamado
+assim mesmo e o `waitUntil` morria no meio dele, sem deixar sequer o log; agora
+sobe `PrazoDeChamadaError` com `prazo_ms: 0` e quem chamou tem tempo de gravar.

@@ -493,3 +493,16 @@ No rodapé, atrás de um botão, os `descartados` da extração agrupados por mo
 — item que o modelo devolveu e a validação recusou. A revisão já os carregava e
 nunca os renderizou. É o outro lado da correção: ali eu digo o que ficou torto,
 aqui o código diz o que nem passou.
+
+### Do §5 (estados da sessão)
+
+*Fora de fatia, no mesmo período (05/09): a guarda de `confirmada`.*
+
+`transcrito` **não é mais terminal**: a extração emenda nele. O fim da linha é
+`confirmada`, e quem confirma sou eu, na revisão — `estaConcluida` mudou junto.
+`confirmada` **não tem transição de saída**, e desde 05/09 isso vale de fato: as
+quatro escritas de `erro` (três em `pipeline.ts`, uma na rota `/finalizar`)
+levam a lista de onde se pode cair em `erro`, e ela é a máquina inteira menos
+`confirmada`. Antes elas iam sem guarda nenhuma, e um `/finalizar` numa sessão
+já confirmada cuja `transcricao.json` tivesse sumido do R2 gravava `erro` por
+cima: os átomos continuavam no grafo e a sessão aparecia como falha.

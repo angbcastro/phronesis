@@ -493,3 +493,16 @@ catálogo trocou os três campos de perfil pela apresentação única (§4.8), e
 O prompt passou a dizer, ao lado de cada candidato, **por que ele está na lista** —
 e quando o motivo é "átomos passados parecidos", os trechos vão junto, porque
 evidência de uso é o sinal mais forte que existe quando o perfil está vazio.
+
+### Do §5 (estados da sessão)
+
+*Fora de fatia, no mesmo período (02/09): o retry de rede.*
+
+`UND_ERR_CONNECT_TIMEOUT` no `cause`, e o pedido **nunca saiu**. Em link com
+meia dúzia de saltos e jitter alto isso acontece de verdade: medido no link que
+produziu o primeiro caso, o handshake frio com o R2 falhou depois de 24,8 s e as
+quatro tentativas seguintes abriram em menos de 400 ms cada.
+
+Medido em 2026-09-02 (§4.2.1): o free tier do AI Gateway recusa rajada de
+chamada, **na conta inteira e não por modelo**. É a terceira classe de falha
+deste sistema, e a única em que o conserto é o relógio:

@@ -574,3 +574,25 @@ na tela, corrigível. Ele está — a um toque, e marcado com um ícone que só 
 quando há o que ver. O que a fatia troca é "sempre à vista" por "sempre
 alcançável", e a troca é deliberada: uma tela que mostra tudo o tempo todo é uma
 tela que não se resolve em 60 s, e o custo declarado é meu se eu deixar de clicar.
+
+### Do §5 (estados da sessão)
+
+*Fora de fatia, no mesmo período (07/09): o retry trancado.*
+
+**Esse retry esteve trancado por um guard de rota.** `POST /:id/extrair` barrava
+em `temTranscricao`, que não inclui `erro`, e respondia `409 sessão em 'erro':
+não há transcrição para extrair` — numa sessão cuja `transcricao.json` estava
+intacta no R2, e dez linhas abaixo do próprio docstring que diz que a rota
+existe para quando "a sessão ficou em `extraindo` ou `erro`". Todo o resto já
+concordava: `PERMITIDAS.erro` inclui `extraindo`, e a escrita em `pipeline.ts`
+lista `erro` como origem válida. Hoje o guard é `podeReextrair`, que é
+`temTranscricao` mais `erro`. As duas perguntas ficaram separadas de propósito:
+`temTranscricao` é "a transcrição está pronta para eu mostrar", e é o que a tela
+de leitura e a lista continuam usando; `podeReextrair` é "vale disparar a
+extração". Sessão que caiu em `erro` antes de existir transcrição não vira 500 —
+`extrairSessao` procura o `transcricao.json` e devolve `erro` com log próprio.
+
+**`terminouDeProcessar` ganhou um segundo consumidor na 4.10**, e é a guarda do
+`DELETE` de sessão (§10): apagar no meio do pipeline correria com um `waitUntil`
+vivo, que voltaria a gravar o que acabou de sumir. A pergunta é a mesma — "nada
+mais vai mudar sozinho aqui" — e por isso é a mesma predicada, na rota e no botão.

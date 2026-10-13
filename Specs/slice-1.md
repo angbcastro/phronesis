@@ -137,3 +137,9 @@ palavra, mesma ausência de `providerMetadata`. É exatamente esse comportamento
 `segments` densos o bastante para ancorar palavra por palavra — que faz este
 modelo ser o único do Gateway que serve, e é sobre ele que as âncoras dos átomos
 que já estão no grafo foram construídas.
+
+### Do §5 (estados da sessão)
+
+O laço de espera engolia o erro do bloco em `catch {}` — a falha ia para `erro`
+sem uma linha sequer, e depois do fato não havia o que investigar.
+`tests/pipeline.test.ts` fixa isso: falha de bloco sempre deixa rastro.
