@@ -403,21 +403,16 @@ leva ao arquivo por esta tabela.
 
 ## Manutenção deste arquivo
 
-Documento desatualizado é pior que documento nenhum: ele mente com autoridade.
+Documento desatualizado é pior que documento nenhum: ele mente com autoridade. A
+regra inteira está no `CLAUDE.md`, que vence se as duas divergirem; aqui ela é
+curta:
 
-Atualize `ARCHITECTURE.md` **no mesmo commit** da mudança sempre que mexer em:
-
-- fluxo de dado ou ordem dos passos (seções 3 e 4);
-- contrato de rota, formato de payload ou chave do R2 (seções 9 e 10);
-- tipo do domínio em `src/lib/tipos.ts`, ou schema do grafo (seção 8);
-- máquina de estados, trava de idempotência ou concorrência (seções 5 e 6);
-- dependência externa, provedor ou variável de ambiente (seções 4.2 e 12);
-- fronteira de segurança: auth, middleware, presign, CORS (seção 7);
-- módulo novo, removido ou com responsabilidade trocada (seção 2);
-- limite conhecido resolvido ou descoberto (seção 14).
-
-Mudança que não toca nada disso — refatoração interna, ajuste de texto na tela,
-teste novo sobre comportamento já descrito — não pede atualização.
-
-Ao fechar uma slice, revise o arquivo inteiro: o cabeçalho declara qual slice
-está no ar e o que ainda não existe.
+- toda mudança de fluxo, contrato de rota, chave do R2, tipo do domínio, schema,
+  estados, idempotência, dependência, variável de ambiente, fronteira de
+  segurança, módulo ou limite atualiza o mapa ou o capítulo que ela toca, **no
+  mesmo commit**;
+- presente do indicativo, e o motivo curto; a crônica vai para o "Como ficou" da
+  spec da fatia, e o andamento para o `PROXIMOS-TESTES.md`;
+- ao fechar uma slice, revisar a tabela de estado e "O sistema numa página";
+- `tests/arquitetura.test.ts` cobra o inventário, os §, os tamanhos e a
+  ausência de data e de ID de sessão.

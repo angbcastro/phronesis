@@ -7,7 +7,7 @@ Leitura obrigatória no começo de qualquer tarefa:
 | Arquivo | O que é |
 |---|---|
 | este arquivo | regras do projeto — **vence em qualquer conflito** |
-| `ARCHITECTURE.md` | o sistema como ele é hoje — e que você atualiza junto com o código |
+| `ARCHITECTURE.md` | o **mapa** do sistema como ele é hoje — leia inteiro; e o capítulo de `arquitetura/` que a tarefa toca, achado pelo índice do mapa. Você atualiza os dois junto com o código |
 | `Specs/slice-x.md` | escopo e critérios de aceite da fatia atual "x" |
 | `db/migrations/` | definição canônica do schema — nunca inferir label ou propriedade do código |
 
@@ -109,14 +109,18 @@ desenvolvimento, e `pnpm migrate` a saída de emergência contra produção.
 7. Todo átomo gravado carrega `prompt_version` e `modelo`.
 8. **Todo tráfego de modelo sai pelo Vercel AI Gateway.** Nenhum pacote de provedor nas dependências (`@ai-sdk/openai`, `openai`, `groq-sdk`…), nenhum endpoint de provedor escrito à mão, nenhuma chave de provedor além de `AI_GATEWAY_API_KEY`. Modelo se referencia por string `provedor/modelo`, sempre por `src/lib/modelos.ts` — passar objeto de provedor fura a porta e o Gateway não vê a chamada. `tests/gateway.test.ts` falha quando alguém fura; o conserto é usar a porta, não afrouxar o teste.
 
-## ARCHITECTURE.md — sempre atualizado
+## ARCHITECTURE.md e `arquitetura/` — sempre atualizados
 
-`ARCHITECTURE.md` (na raiz) descreve o sistema como ele é: topologia, mapa dos
-módulos, caminho do áudio, pipeline de transcrição, máquina de estados, travas de
-idempotência, fronteira de segurança, layout do R2, rotas, ambiente.
+`ARCHITECTURE.md` (na raiz) é o **mapa**: o estado das fatias, a topologia, o
+mapa dos módulos, a fronteira de segurança e o índice dos capítulos. Os
+capítulos — caminho do áudio, pipeline, identidade, ficha, calibração,
+confronto, chat, desempenho, estados, idempotência, grafo, R2, rotas, telas,
+ambiente, verificação, limites — moram em `arquitetura/`, com a numeração §
+de sempre: o código cita `§x.y`, e o índice do mapa leva ao arquivo.
 
-**Leia antes de mexer em qualquer coisa. Atualize no mesmo commit da mudança.**
-Documento desatualizado é pior que documento nenhum: ele mente com autoridade.
+**Leia o mapa inteiro e o capítulo que a tarefa toca, antes de mexer. Atualize
+no mesmo commit da mudança.** Documento desatualizado é pior que documento
+nenhum: ele mente com autoridade.
 
 Atualizar é obrigatório quando a mudança toca:
 
@@ -130,22 +134,44 @@ Atualizar é obrigatório quando a mudança toca:
 - limite conhecido resolvido ou descoberto.
 
 Refatoração interna, ajuste de texto na tela ou teste novo sobre comportamento já
-descrito não pedem atualização. Ao fechar uma slice, revisar o arquivo inteiro —
-o cabeçalho declara qual slice está no ar e o que ainda não existe.
+descrito não pedem atualização.
 
-A seção "Manutenção deste arquivo", no fim do próprio `ARCHITECTURE.md`, repete
-essa regra para quem chegar por lá. Se as duas divergirem, **este arquivo vence**.
+**Como se escreve ali** — no mapa e em todo capítulo:
 
-Ordem de precedência dos documentos: `CLAUDE.md` → `ARCHITECTURE.md` →
-`Specs/slice-N.md`. `ARCHITECTURE.md` descreve o que **existe**; `Specs/` descreve
-o que **deve existir**. Quando o código contradiz o `ARCHITECTURE.md`, o errado é
-o documento — conserte-o e me avise.
+1. **Presente do indicativo.** O texto descreve o que existe.
+2. **O motivo fica, curto:** por que é assim e o que foi recusado.
+3. **A crônica sai** — data, ID de sessão, "antes era assim", "desde a 4.x",
+   medição de um dia — para a seção "Como ficou" no fim do `Specs/slice-N.md`
+   da fatia que a produziu.
+4. **O andamento sai** — "construída, não verificada", "falta medir" — para o
+   `PROXIMOS-TESTES.md`.
+5. **Limite resolvido sai** do §14 para o "Como ficou" da fatia que o resolveu.
+
+**Ao fechar uma slice**, revise no mapa a tabela de estado e "O sistema numa
+página", revise os capítulos que ela tocou, e escreva o "Como ficou" da spec
+dela.
+
+`tests/arquitetura.test.ts` é a guarda, e roda no `pnpm test`: falha quando um
+módulo, rota, variável de ambiente, migration ou agente fica sem texto, quando
+um `§x.y` citado no código ou nas specs não existe como cabeçalho, quando o mapa
+passa de 50 KB ou um capítulo de 120 KB, e quando uma data ou um ID de sessão
+aparece no mapa ou num capítulo. Se ele te barrou, o conserto é escrever o texto
+que falta ou mover a crônica, não afrouxar o teste.
+
+A seção "Manutenção deste arquivo", no fim do `ARCHITECTURE.md`, repete essa
+regra, curta. Se as duas divergirem, **este arquivo vence**.
+
+Ordem de precedência dos documentos: `CLAUDE.md` → `ARCHITECTURE.md` e
+`arquitetura/` → `Specs/slice-N.md`. A arquitetura descreve o que **existe**;
+`Specs/` descreve o que **deve existir**, e guarda no "Como ficou" a história de
+como ficou. Quando o código contradiz a arquitetura, o errado é o documento —
+conserte-o e me avise.
 
 ## Como trabalhamos
 
 - Uma slice vertical por vez (DB + API + UI de um caminho só, funcionando ponta a ponta). Não construir adiantado o que a slice atual não usa.
 - A spec da slice atual está em `Specs/`. Se ela conflitar com este arquivo, este arquivo vence — e me avise do conflito.
-- Toda mudança de código passa por `ARCHITECTURE.md` — ver a seção acima. Trabalho entregue sem o documento acompanhando está incompleto.
+- Toda mudança de código passa pelo `ARCHITECTURE.md` e pelos capítulos de `arquitetura/` — ver a seção acima. Trabalho entregue sem o documento acompanhando está incompleto.
 - Antes de refatorar algo fora do escopo da slice, perguntar.
 - Qualidade de extração eu avalio à mão, na tela de revisão, sessão real por sessão real. Não existe gabarito rotulado, arquivo de fixture nem percentual de recall — não inventar nenhum dos três. Quando a saída está ruim, o que se ajusta é o prompt, e quem diz que está ruim sou eu.
 

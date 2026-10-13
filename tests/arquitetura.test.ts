@@ -11,9 +11,6 @@
  *
  * Mesmo molde de `tests/gateway.test.ts`: se ele te barrou, o conserto é
  * escrever o texto que falta, não afrouxar o teste.
- *
- * Nasce em `describe.skip` (passo 2 da spec) e entra no `pnpm test` no passo 5,
- * quando a limpeza dos capítulos tiver fechado o inventário.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -103,7 +100,7 @@ const ID_SESSAO = /\b(?=[0-9a-z]*\d)(?=[0-9a-z]*[a-z])[0-9a-z]{16,40}\b/;
 /** Lidas fora do §12 de propósito: o ambiente do Node e o exemplo num comentário. */
 const VARIAVEIS_FORA = new Set(["NODE_ENV", "NOME"]);
 
-describe.skip("inventário da documentação", () => {
+describe("inventário da documentação", () => {
   it("lê um mapa e um corpo que não estão vazios", () => {
     // Sem isto, um erro de caminho faria os testes abaixo passarem sem olhar nada.
     expect(DOCS[0].arquivo).toBe(MAPA);
