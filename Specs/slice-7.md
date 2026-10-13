@@ -393,3 +393,22 @@ canônica, uma meta de até seis fatos, o `select` de tipo, renomear, canônica 
 ficha — num `flex` sem `wrap`. A ficha abria como acordeão dentro da própria
 linha, empurrando a lista para baixo. Num aparelho de 390 px, que é onde este app
 vive, nada disso se lê nem se acerta com o dedo. O que existe agora:
+
+### Do §12 (ambiente)
+
+*Fora de fatia, no mesmo período (12/09): o primeiro deploy.*
+
+**O que o primeiro deploy provou**, e que só produção responde: a migration roda
+no build (as dez, `010` com 0 statements como esperado, e de novo idempotente no
+deploy seguinte); o middleware **lê os segredos no Edge** — conferido mandando
+cookie forjado e `Bearer` errado, que forçam a leitura de `AUTH_SECRET` e
+`CRON_SECRET` e voltaram 307 e 401 em vez de 500; o Resend entrega o link; e a
+batida diária escreveu `backup/grafo-12.json` com 95 nós do grafo real.
+
+**Os 300 s de `maxDuration` cabem no Hobby.** Com Fluid Compute — ligado por
+padrão em projeto novo — o Hobby tem 300 s de padrão *e* de máximo, que é o teto
+das quatro rotas pesadas (`/chunks/[i]/pronto`, `/finalizar`, `/extrair`,
+`/entidades/enriquecer`) e o que cobre os `waitUntil(passadaDeVetores(...))` das
+dez rotas de `/entidades`. Nada aqui pede plano pago. A **região da função**
+acompanha a da instância Aura: cada requisição do pipeline faz várias idas à
+Query API, e região trocada multiplica isso por round-trip.

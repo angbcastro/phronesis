@@ -326,3 +326,10 @@ aninhada. A continuação que responde fora de 2xx deixa o status no log, como o
 `encadear()`. Erro fora do agente (o grafo caiu) **para** a corrente, ao
 contrário do elo: com o grafo fora, cada continuação falharia na hora e chamaria
 a próxima, num laço de invocações sem fim.
+
+### Do §12 (ambiente)
+
+**A terceira entrada (4.12.1) foi aceita pelo Hobby** no deploy de 29/09 —
+`vercel crons ls` lista as três. Se um dia o plano recusar uma quarta, o build
+falha antes de subir, e o caminho é dobrar a batida nova dentro do
+`/cron/diario`, checando o dia da semana.
