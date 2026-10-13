@@ -149,3 +149,43 @@ em que algo muda sem eu aprovar.
   na revisão seguinte. Nenhuma delas é medida.
 - **O prompt efetivo deixa de ser legível só pelo git**, e isso não é novo — a
   4.7 já abriu essa porta. O que muda é a frequência com que ela é usada.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**A 7 é a fatia que muda o que "calibrar" quer dizer.** Até ela o sistema tinha
+**um** laço fechado — correção na revisão → `calibracao/indice.json` →
+`calibracao-1` → regra aprovada → apêndice no prompt de extração — e ele valia
+para um agente só; os outros dez com prompt mudavam por deploy ou por eu
+reescrever o texto no painel. A 7 abre o laço para todos e troca o mecanismo: a
+regra deixa de ser apêndice permanente e vira **a pauta de uma emenda**. O
+`calibracao-2` diz que padrão as minhas correções de um agente revelam, eu
+confirmo, e o `redacao-1` escreve a mudança **seção por seção** no corpo do
+prompt daquele agente (§4.12). As fontes do prompt caíram de três para duas.
+
+*Fora de fatia, no mesmo período (12/09): o deploy.*
+
+**E o sistema saiu do `localhost`.** Ele roda na Vercel, no plano Hobby, com o
+grafo de produção na instância Aura que sempre teve as sessões reais e um segundo
+banco só para o `pnpm dev` (§12.1). Push em `master` vai a produção direto, e a
+migration roda no build — a aprovação passou a ser o ato de mandar buildar
+(`CLAUDE.md`). A porta de entrada é o magic link entregue pelo Resend, o cookie de
+90 dias agora **desliza** em vez de vencer, e o app se instala na tela inicial do
+Android (§7, §2). Uma batida diária grava o dump do grafo no R2 e impede a
+instância Free de ser pausada por 72 h de silêncio (§9, §10).
+
+O que o deploy destrava não é conforto: é a **medição**. A 4.11 e a 4.12 esperam
+uma sessão real, e o telefone é onde eu falo.
+
+Até a slice 7 esse laço era **da extração e só dela**, e o que ele produzia era
+um apêndice colado antes do `FORMATO`. Ver §4.12 para o que mudou e por quê.
+
+A 4.6 está construída inteira, e a **7 a refez**: captura para todo agente, a
+pauta, a emenda e os dois passos que eu confirmo. O que falta é **uso** —
+nenhuma emenda foi aprovada ainda, e enquanto não for, todo prompt continua
+saindo byte a byte igual ao do git.

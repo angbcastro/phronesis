@@ -353,3 +353,44 @@ candidatas são calculadas, gravadas e ignoradas. É o ponto de retorno barato �
   em `candidatosDe` — fica anotado, não construído.
 
 E um que **sai** do §14: a linha que diz que a resolução não espera rate limit.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**E o extrator deixou de ignorar o grafo** (seções 4.6, 4.14 e 8.2). Era decisão
+declarada até a 4.8 — "o prompt da extração não sabe que entidades existem, e é
+de propósito" —, e a medição de 04/09 a derrubou: **um terço das 21 correções de
+5 sessões reais era conserto de grafia de nome próprio que o STT errou**
+("Jean"→"Giampaolo Lepore", "Dapta"→"Adapta"), e nenhuma das duas defesas
+existentes alcançava o caso. Agora, a cada bloco transcrito, uma busca de cinco
+camadas pergunta ao grafo quem aquele trecho parece citar, e a janela recebe o
+**dossiê** das até 30 candidatas antes de extrair. O extrator responde
+`{citado, chave}`: a grafia que a transcrição escreveu, e o nó que ele
+reconheceu — e escreve o **nome gravado** dentro do texto do átomo, que é onde o
+nome errado se fixava, inclusive dentro do vetor.
+
+Três consequências, e as três são decisões: o agente 2 passou a **validar toda
+menção** com candidato (o critério 5 da slice 4 morreu de propósito, e sessão
+sem ambiguidade passou a pagar); a grafia que eu falei **vira alias do nó** no
+confirmar, então "jean" resolve por casamento exato já na sessão seguinte; e a
+primeira linha do §8.2 — "nada aqui é automático" — deixou de valer para o nó de
+alias, que não é uma fusão porque nasce sem átomo e desfazê-lo é apagar duas
+coisas.
+
+*Fora de fatia, no mesmo período (07/09): `extracao-8` e a migration 007.*
+
+**O diário passou a ter história e organização** (migration 007, seções 4.6 e
+8.1). `:Atomo` ganhou o tipo `HISTORIA` — o episódio contado com o detalhe que
+eu contei, e o único tipo em que o prompt manda **não** resumir, porque a
+disciplina de volume que rege os outros sete espremeria uma noite inteira numa
+linha. `:Entidade` ganhou o label `:Organizacao` — empresa, ONG, startup,
+escola, cliente —, que até aqui nasciam `:Pessoa`, o padrão de quem o extrator
+não classifica, ou `:Projeto`, quando ele via trabalho acontecendo. Os dois
+prompts subiram junto: `extracao-9` e `resolucao-5`. **Nada é reclassificado
+para trás**: a empresa que já está no grafo como `:Pessoa` continua `:Pessoa`
+até eu trocar o tipo à mão em `/entidades`.

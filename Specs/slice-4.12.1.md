@@ -237,3 +237,21 @@ build falha antes de subir, e o que muda é esta seção (dobrar a semanal dentr
   preço de 23/09, e é o que a `Specs/slice-10.md` reorganiza.
 - **O teto que sobra é o do modelo** (32.768 de saída para o padrão). Trocar
   `ENRIQUECIMENTO_MODEL` troca esse número junto.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**A slice 4.12.1 está no ar desde 29/09.** A primeira rodada de
+verdade do enriquecimento em lote (23/09) falhou de dois jeitos: o "eu" estourou
+o teto de saída, e a fila parou calada depois de quatro entidades. A fatia
+(`Specs/slice-4.12.1.md`) tira o teto de saída do agente 4, faz a corrente dizer
+o status HTTP quando quebra, faz `/entidades` retomar a fila parada, e dá à fila
+uma batida semanal para as canônicas com novidade (§4.9). O ritmo semanal
+reabre uma recusa da 4.12, por pedido meu. O Hobby aceitou a terceira entrada
+de cron (§12). **Falta ver as dez entidades de 23/09 saírem da fila em
+produção**, e a primeira batida de segunda rodar.

@@ -143,3 +143,32 @@ Cada passo é um commit. Nenhum `push` acontece sem eu pedir.
   item listado, não conserto.
 - Reescrever as specs antigas além de acrescentar o "Como ficou".
 - Gerar documentação a partir do código.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+*A linha de estado do cabeçalho, como estava antes de virar tabela.*
+
+**Estado: slice 2 fechada e validada; slices 3 (higiene do grafo), 4
+(identidade por contexto), 4.5 (o grafo ganha vetor), 4.6 (o prompt aprende
+com a revisão), 4.7 (o painel dos agentes), 4.8 (a extração acompanha a fala),
+4.8.1 (as seis emendas), 4.9 (o extrator conhece o grafo), 4.10 (o arquivo
+importado entra pela mesma porta), 4.11 (a entidade se apresenta, e o agente 2
+mede a própria dúvida), 4.12 (a ficha se escreve sozinha), 5 (confrontar:
+relações entre átomos ao longo do tempo), 5.1 (o confronto calibrado pela
+primeira revisão à mão), 6 (o chat: perguntar ao grafo em texto livre), 7 (o
+laço de retroalimentação deixa de ser da extração), 8.1 (as quatro emendas), 8
+(o sistema se cronometra, e encolhe o que mede) e 8.2 (a revisão abre antes de a
+proposta fechar) construídas.**
+
+*O que ainda não existia, como o cabeçalho dizia.*
+
+O que ainda não existe: `:Foco`, as 2-4 perguntas do ritual, me testar sobre o
+que aprendi (a fatia C), e a deduplicação de **átomo** — dizer a mesma coisa em
+duas sessões ainda cria dois, só que agora possivelmente ligadas por `:CONFIRMA`
+(§4.15).

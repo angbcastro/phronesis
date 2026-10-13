@@ -274,3 +274,23 @@ coisa: é o ponto de retorno barato. O passo 5 é o que dispensa a janela aberta
 - **Um elo que morre entre gravar a ficha e marcar `pronta`** deixa a entidade em
   `rodando` até a retomada; a ficha já está escrita, e a próxima rodada a
   reescreve a partir dos mesmos átomos. Não há perda, só trabalho repetido.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+A 4.12 é o que preenche esse campo: o **agente 4** (`enriquecimento-1`) lê todos
+os átomos ligados a uma entidade por `:SOBRE` ou `:MENCIONA` e escreve os quatro
+campos da ficha de uma vez — e **grava sozinho**, numa fila assíncrona que anda
+sem janela aberta (§4.9). É a reabertura declarada do regime do perfil: a defesa
+deixou de ser um toque por campo e passou a ser a seleção, a leitura depois, e o
+desfazer de uma geração (migration 010, §8.3.2). **A regra 5 continua intocada** —
+ela fala de átomo, e nenhum átomo entra por esse caminho.
+
+**A medida que fecha a 4.12 é uma sessão real depois do lote**: `[desempate]`
+calado na maioria das menções quer dizer que o resumo está identificando; se ele
+continuar disparando em tudo, o conserto é o prompt do agente 4 (§14).

@@ -126,3 +126,25 @@ Constraint de `id` único em `:Atomo` e `:Entidade`; constraint de `nome_normali
 ## Depois desta slice
 
 Com átomos acumulados de verdade, a slice 3 abre as duas coisas que dependem de histórico: as perguntas do ritual e as relações entre átomos — `:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`. E o vocabulário do STT passa a ser gerado das entidades do grafo.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+Gravar (ou importar), subir, transcrever, extrair, revisar, confirmar. A
+extração acontece **durante** a gravação, janela a janela, e quando eu paro
+sobra só a janela do fim; a proposta vai para `extracao.json` e a sessão para
+`em_revisao` (seções 4.6 e 5); o confirmar da revisão grava `:Atomo` e
+`:Entidade` no Neo4j (seções 4.7 e 8). Sessões reais já foram confirmadas e os
+átomos conferidos no banco, com âncoras, `prompt_version` e `modelo`.
+
+**A jornada não passa pela transcrição.** Parar de falar leva à tela de
+processamento, e dela a revisão abre sozinha quando a proposta fica pronta. O
+texto literal é porta de serviço: mora em `/sessao/:id/transcricao` e se alcança
+pelo botão "transcrição" na lista de sessões (seção 11). Ler quinze minutos de
+transcrição no meio do caminho é o atrito que mata o ritual — a transcrição é
+insumo do extrator, não coisa que eu leio todo dia.

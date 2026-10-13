@@ -268,3 +268,23 @@ condicionada à medida, e foi descartada em 23/09.
 - **Nada aqui foi medido contra gabarito, e não pode ser.** `CLAUDE.md` é explícito:
   quem julga qualidade de resposta sou eu, na tela, pergunta real por pergunta real.
   Os testes desta fatia são todos de mecanismo.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**A slice 9 está construída, e sobe em partes.** A fatia (`Specs/slice-9.md`) é
+o miolo do chat — como a pergunta vira busca e como a busca vira resposta. Em
+quatro commits, cada um ponto de retorno: o prompt responde antes de despejar e
+autoriza busca paralela (`chat-3`); o chat tem padrão de modelo próprio
+(`MODELO_CHAT_PADRAO`); a busca diz quanto cortou e de que vazio se trata, o (i)
+mostra o recorte e a duração de cada passo, e catálogo e vetor são lidos uma vez
+por pergunta (`chat-4`); e a terceira ferramenta, `buscar_entidades`, lê a ficha
+da entidade (`chat-5`, §4.16.2). **Não aconteceram, por decisão minha:** a
+medição de `CHAT_MODEL` antes de fixar o padrão, e o streaming do texto final —
+a resposta mais curta encolhe a espera que ele consertaria. Nada disto foi
+julgado numa pergunta real ainda; é o que falta.

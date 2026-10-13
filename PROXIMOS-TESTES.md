@@ -84,9 +84,9 @@ painel de produção não tem override do `confronto`. Na ordem:
       real.
 - [ ] `LIMIAR_CONFIANCA = 0,7` é ponto de partida, não medida. Ajustar olhando a
       revisão (§4.13).
-- [ ] **(conferir)** O cabeçalho do `ARCHITECTURE.md` ainda diz que a migration
-      010 "não foi rodada". Com a 4.12.1 no ar, ela deve ter rodado no build.
-      Confirmar e corrigir o documento.
+- [ ] **(conferir)** Que a migration 010 rodou no build (é no-op, 0
+      statements). O cabeçalho antigo do `ARCHITECTURE.md` dizia que não; com a
+      4.12.1 no ar, ela deve ter rodado.
 
 ## Slice 9 (e 6) — o chat
 

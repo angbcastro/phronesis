@@ -395,3 +395,25 @@ ler_retrato(dimensao?)
   de ~240 s não cabe numa invocação nem começando no segundo zero, e aí a batida
   deixa de reescrever o retrato — em silêncio, a não ser pelo `rodando` que volta
   pelo lease toda semana.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**A slice 10 está construída, e não verificada.** A fatia
+(`Specs/slice-10.md`) dá ao "eu" um **retrato** no lugar da ficha de quatro
+campos (§4.20): o Agora e uma seção por dimensão da minha vida, no R2, escritos
+por dois agentes novos (`retrato-1`, `retrato-dimensoes-1`) em duas fases sobre
+um prefixo comum; uma tela em `/entidades` para ler, aprovar as dimensões e
+desfazer os dois lados; e `ler_retrato`, a quarta ferramenta do chat (`chat-6`),
+que lê uma dimensão por vez. Sem migration. **O que falta, e é o ponto de
+retorno da spec:** rodar o "eu" contra o banco de desenvolvimento e ler no log o
+tempo das duas fases e o `cache=` de cada chamada paralela — se a rodada passar
+de 240 s, ou a fase 2 não ler o cache, a decisão volta para mim. Não foi feito
+nesta sessão porque não há `.env.development.local` neste checkout, e sem ele
+`pnpm dev` escreveria em produção (§12.1). O "eu" de desenvolvimento também
+precisa ser conferido como `canonico` antes da primeira batida.

@@ -377,3 +377,24 @@ grafo estaria dizendo duas verdades ao mesmo tempo.
   a mesma forma; agora elas ficam indistinguíveis também na leitura.
 - **O `resumo` corta em 500 no servidor.** Texto colado maior que isso perde o fim
   sem aviso, como o perfil fazia em 300.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**A 4.11 e a 4.12 estão em código e verdes nos testes, e NENHUMA das duas foi
+medida numa sessão real.** A migration 009 foi aprovada e aplicada (duas grafias
+viraram `aliases`, dois nós apagados); **a 010 está escrita como proposta e não
+foi rodada** — ela é no-op (0 statements) e espera aprovação, como o `CLAUDE.md`
+manda.
+
+A 4.11 entregou: `resumo`, `aliases` como propriedade e `canonico` no schema
+(§8.3.1); uma apresentação só da entidade, lida pelos dois agentes (§4.8);
+`extracao-9` e `resolucao-5`; o `TETO_PERFIL` morto; e o `desempate-1`, a segunda
+passada que roda quando a confiança fica abaixo do limiar (§4.8.1). Ela deixou o
+`resumo` **vazio de propósito**, e com ele vazio quase toda menção caía na
+segunda passada.

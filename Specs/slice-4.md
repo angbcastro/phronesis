@@ -285,3 +285,24 @@ Com identidade confiável e perfil acumulando, a slice 5 abre o que sempre
 dependeu de material: as 2-4 perguntas do ritual e as relações entre átomos —
 `:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`. Uma pergunta boa precisa saber de quem
 se está falando, e é isso que esta slice entrega.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**O sistema descobre de quem eu estou falando pelo contexto, e não pela grafia
+do nome** (seções 4.8 e 8.3). "Raffa" e "Rapha" são o mesmo som: o STT escreve
+uma grafia só para os dois, e a grafia carrega **zero** sinal sobre quem é. Por
+isso são **dois agentes e não um** — o `extracao-9` extrai e propõe o nó, e o
+`resolucao-5` valida cada menção. Desde a 4.11 os dois leem a **mesma**
+apresentação da entidade: o `resumo`, as grafias e a marca de ficha oficial. E o
+agente 2 devolve **confiança**, não mais um booleano — abaixo do limiar a menção
+vai a uma segunda leitura, que tem a ficha inteira dos candidatos daquela menção
+na mão (§4.8.1).
+Dúvida **destaca, não trava**: a revisão marca o átomo, mostra o motivo
+e o confirmar continua liberado. Sessão em que nenhuma menção tem candidato não
+chama o agente 2 e não paga nada.

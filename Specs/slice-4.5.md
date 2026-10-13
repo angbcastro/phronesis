@@ -299,3 +299,33 @@ A slice 5 abre o que sempre dependeu de material acumulado: as 2-4 perguntas do
 ritual, as relações entre átomos (`:ATUALIZA`, `:CONTRADIZ`, `:CONFIRMA`) e a
 deduplicação de átomo. As três precisam encontrar o que já foi dito sem varrer o
 grafo inteiro, e é isso que o vetor entrega.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**E o grafo passou a comparar significado, não só letra** (seções 4.10 e 8.4).
+`:Atomo` e `:Entidade` carregam um vetor de 1536 dimensões, dois índices
+vetoriais os indexam, e a resolução de identidade ganhou **duas camadas de
+candidato que enxergam sentido**: uma que compara o átomo com o perfil escrito
+de uma entidade, e outra em que os átomos vizinhos votam em quem eles já são.
+As duas cobrem buracos opostos — a primeira pega quem tem perfil e nenhum átomo,
+a segunda pega quem tem átomos e nenhum perfil — e nenhuma delas substitui a
+grafia: são **aditivas**, com teto e piso, e uma sessão sem ambiguidade continua
+não pagando nada. A camada dos vizinhos herda atribuição passada, e o que a torna
+aceitável é que a revisão mostra **quais** átomos elegeram cada sugestão.
+
+*Fora de fatia, no mesmo período (02/09): o rate limit e o STT recusado.*
+
+**O caminho automático aguenta o Gateway dizer "devagar"** (seções 4.2.1 e 5.3).
+O free tier limita por conta, não por modelo — medido em 02/09, com o mesmo
+limite derrubando os dois modelos de STT em disputa —, e uma sessão de 15 min são
+30 blocos. STT e extração agora esperam a janela passar em vez de morrer nela, e
+a desistência diz quando a causa foi pressa e não defeito. Na mesma medição,
+trocar o STT por um modelo que escreve melhor foi **recusado**: o candidato não
+tem canal de vocabulário nenhum, e nome próprio errado custa mais que prosa
+torta neste sistema.

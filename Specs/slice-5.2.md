@@ -291,3 +291,23 @@ ARCHITECTURE.md, CLAUDE.md, PROXIMOS-TESTES.md
 - **Prompt editado no painel sombreia a base**: um override do `confronto` salvo
   antes desta fatia pede o envelope velho (`novo`/`velho`), e o parser novo não o
   lê. Ele precisa voltar à base em `/agentes` antes do reprocessar.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**A slice 5.2 está construída, e não verificada.** A fatia
+(`Specs/slice-5.2.md`) alarga o confronto (§4.15.3): cada átomo é julgado contra
+os cem mais parecidos do grafo inteiro — mais antigos, mais novos e da mesma
+sessão —, a direção da aresta é decidida pelo código, e toda relação ganha uma
+**camada**, forte ou sutil, que o chat (`chat-7`) lê com ressalva. A tela
+`/confronto` ganhou busca e um radial onde eu corrijo relação por relação; a
+edição congela a relação, apagar vira recusa do par, e cada gesto vira correção
+em `/calibracao`. Migration 013, sem statement. O modelo foi escolhido pela
+comparação de 13/10 (`deepseek/deepseek-v4.1-flash`, agora padrão próprio), e o
+painel de produção não tem override do `confronto` nem do `chat` (conferido no
+mesmo dia). **O que falta:** buildar o commit da 013 e reprocessar tudo.

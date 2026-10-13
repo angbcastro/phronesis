@@ -248,3 +248,28 @@ ARCHITECTURE.md, CLAUDE.md, Specs/visao.md   só quando esta fatia for construí
 - **Sem resumir ou podar histórico**: uma conversa muito longa entra inteira no
   prompt a cada mensagem nova; se isso virar problema de custo ou de teto de
   contexto, é ajuste futuro, não coberto aqui.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**E o grafo passou a responder** (seção 4.16). A fatia 6 é o chat que a decisão
+de produto da slice 5 já tinha escolhido no lugar da tela Perguntar minimalista
+de `Specs/visao.md` §6: uma barra discreta no rodapé da tela inicial que expande
+para o centro, com memória de conversa e histórico entre visitas. Por dentro é um **agente com
+ferramentas**, e não um pipeline: o modelo decide quais buscas fazer e encadeia
+até oito antes de responder, porque "como eu estava depois que terminei com a
+Isinha" exige achar a data numa busca para filtrar por ela na seguinte. São duas
+ferramentas, as duas só-leitura — `buscar_atomos` (texto por vetor, entidade,
+tipos, período, tudo combinável) e `historico_do_atomo` (a cadeia de relações da
+slice 5, nas duas direções). A regra 5 fica intocada por decisão declarada:
+**nem por ferramenta o chat escreve no grafo**.
+
+A fatia 6 se apoiou em material que já estava pronto: saber de quem se está
+falando, que a slice 4 entrega; achar o que já foi dito sem varrer o grafo
+inteiro, que a 4.5 entrega; e comparar o mesmo assunto ao longo do tempo, que a
+slice 5 entrega.

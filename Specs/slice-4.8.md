@@ -194,3 +194,28 @@ tests/pipeline-janela.test.ts    novo
 
 Nenhuma tela. Nenhuma rota nova. Nenhuma migration — o grafo é o único lugar que
 esta fatia não toca.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**E a extração deixou de ser um evento no fim: virou um processo** (seções 4.1,
+4.6 e 6). A transcrição já era por bloco de 30 s desde a slice 1, mas tudo o que
+vem depois dela esperava eu parar de falar — uma chamada de raciocínio com a
+transcrição inteira, mais a resolução, mais os embeddings. Era isso que fazia a
+espera entre parar e revisar durar um a dois minutos, contra os "poucos
+segundos" que a visão §3 promete. Agora, **a cada quatro blocos transcritos uma
+janela de 2 min fecha durante a própria gravação**: extrai, resolve, e soma os
+átomos ao acumulado em `parcial.json`. Quando eu paro, sobra a janela do fim.
+
+A janela vê o que as anteriores propuseram e **estende** um átomo em vez de
+duplicá-lo — inclusive o `ROTINA`, que é no máximo um por sessão. É esse
+mecanismo, e não uma passada de costura no fim, que segura o volume da lista.
+`extracao-9` é a `INSTRUCOES_BASE` da 4.7 mais o que a migration 007
+acrescentou, e dois blocos injetados — o da janela e, desde a 4.9, o do dossiê;
+e numa sessão que cabe numa janela só — arquivo importado, gravação curta — o
+bloco some e o prompt sai idêntico ao de antes desta fatia.

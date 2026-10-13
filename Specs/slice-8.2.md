@@ -149,3 +149,20 @@ transmite, e o retry de janela única.
   fechar deixa a tela esperando para sempre um átomo que não vem — e como o confirmar
   fica travado até fechar, a tela trava junto. Precisa de um teto de tempo, e o teto é
   o que decide se a fatia é usável.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**A 8.2 era condicional, e a condição se cumpriu.** A `Specs/slice-8.md` declarou
+que ela só existiria "se o número desta continuar ruim"; as sessões reais
+gravadas desde 18/09 mostraram 119–301 s de espera e uma sessão presa por dois
+dias, então a fatia subiu (§4.19). O que ela muda é o instante em que a revisão
+abre: não mais quando a proposta fecha, e sim quando o **primeiro átomo** existe.
+No mesmo deploy, o teto de saída da extração subiu de 8000 para 16.000 tokens
+(§4.6) — decisão tomada contra a evidência já registrada de que subir o número
+não resolve sozinho, e com o escalonamento preservado por cima dele.

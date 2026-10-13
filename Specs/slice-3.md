@@ -263,3 +263,21 @@ Com o grafo limpo e os nomes certos, a slice 4 abre o que depende de material
 acumulado: as perguntas do ritual e as relações entre átomos — `:ATUALIZA`,
 `:CONTRADIZ`, `:CONFIRMA`. E aí a tela Perguntar, que é a terceira das três que
 importam e a única que ainda não existe.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**O grafo agora cuida do próprio nome** (seção 8.2). O vocabulário do STT é
+gerado das entidades do grafo, em união com `config/vocabulario.txt`; e
+`/entidades` é onde eu vejo o que entrou e conserto o que entrou torto —
+fundindo duas grafias da mesma coisa, ou dando nome a quem ficou como "meu pai".
+**Fundir não apaga: cria alias**, e é isso que faz a grafia morta resolver para
+o vencedor na sessão seguinte em vez de renascer como nó novo. Desde a 4.11 são
+dois mecanismos e não um: **grafia é propriedade** (`aliases`, editável à mão),
+e `:FUNDIDA_EM` ficou significando só o que sempre quis dizer — fusão de duas
+entidades reais, que é o registro de uma decisão minha.

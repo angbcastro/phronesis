@@ -341,3 +341,51 @@ do R2, um objeto por vez.
 - **Proposta salva de resposta cortada pode estar incompleta**, e não há como
   saber o que faltava: o modelo foi interrompido, não perguntado. O aviso na
   revisão é a única defesa, e quem julga sou eu.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+A primeira sessão longa real **rodou de ponta a ponta e custou quatro chamadas
+de modelo para entregar uma** (`mtqoeoqh3e3724514q1f`, 1044 s, 9 átomos em
+6 min 46 s). Três coisas saíram dessa medição, e as três são a 4.10: a janela não
+existia no caminho importado (o arquivo subia num bloco só, e com um bloco só a
+4.8 é inerte); o fallback repetia a chamada que acabara de falhar; e uma resposta
+cortada no meio da lista perdia os dez átomos que já estavam inteiros. Agora o
+arquivo importado é fatiado em blocos de 30 s como a gravação (§3.0), a resposta
+cortada é salva até o último átomo completo (§4.6), e `/sessões` ganhou um botão
+para apagar sessão de teste (§10) — porque uma sessão de 17 min fatiada são 35
+objetos no R2.
+**A verificação que decide a fatia é à mão**: importar o mesmo áudio de 17 min de
+novo e comparar com a proposta guardada, olhando o log. A lista do que falta
+gravar e olhar vive na spec da fatia, em `Specs/` — o `PROXIMA-SESSAO.md` que a
+carregava foi apagado, porque checkpoint fora da spec virava uma segunda fonte de
+verdade que envelhecia sozinha.
+
+*Fora de fatia, logo depois dela (08/09).*
+
+**A tela de revisão foi enxugada depois disso, fora de fatia** (§4.7): o texto do
+átomo edita no próprio lugar, a linha de dúvida virou `acho que é X — confirma?`
+e a procedência do GraphRAG saiu da vista padrão para um modal atrás do `ⓘ` ao
+lado da entidade. Nenhum dado deixou de ser produzido ou gravado — o que mudou é
+o que a tela mostra sem eu pedir.
+
+**E a importação deixou de ser um caminho à parte** (seções 3.0, 4.5 e 4.6). O
+arquivo subia inteiro em `i = 0` — decisão consciente enquanto não havia janela —
+e o preço apareceu quando havia: com um bloco só, a extração por janela e o RAG
+por bloco ficam **inertes** no caminho importado. Agora o navegador fatia o
+arquivo em blocos de 30 s, os mesmos da gravação, e sobe um `chunk_NNN.wav` por
+bloco; nada rio abaixo mudou, porque o bloco continua tendo 30 s. Navegador que
+não decodifica o formato cai no caminho antigo, inteiro — esta mudança não pode
+deixar a importação pior do que ela já era.
+
+**E uma resposta cortada parou de custar a janela toda** (seção 4.6). Estourar o
+teto no meio da lista jogava fora os átomos que já estavam completos:
+`fecharJsonTruncado` corta no último que fechou e fecha o array, e entre as duas
+tentativas fica a que trouxe mais átomos. A revisão avisa quando a proposta veio
+de resposta cortada — sem o aviso, uma lista curta parece decisão do modelo em
+vez de acidente de teto.

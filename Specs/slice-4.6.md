@@ -433,3 +433,28 @@ Com o loop fechado para a extração, a próxima calibração possível é o `re
 correções de `sujeito`/`mencao_*` já estão sendo capturadas e etiquetadas, só falta um
 `calibracao-1` que leia esse recorte e proponha regra para o agente 2. A higiene de entidade
 (`entidade_renomeada`) aponta para o mesmo padrão, se um dia a lista de renomes justificar.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**E a correção que eu faço na revisão parou de se perder** (seções 4.11 e 4.12).
+Até aqui, rejeitar um átomo, editar um texto ou trocar um tipo morria no clique
+de confirmar — o servidor até contava os rejeitados, só para descartar o número
+na resposta. Agora o confirmar apura, **depois** de gravar no grafo e fora do
+caminho da resposta, o que a proposta dizia contra o que eu aprovei, e guarda o
+resultado no R2. Nenhum gesto novo na revisão, nenhum node novo, nenhuma
+migration: o grafo é o único lugar que essa captura não toca.
+
+Acumulada, ela vira material: em `/calibracao` eu escolho um agente, peço ao
+`calibracao-2` os padrões que as minhas correções dele revelam, confirmo os que
+fazem sentido, e o `redacao-1` escreve a **emenda** — seção por seção, no corpo
+do prompt daquele agente. **A emenda aprovada vale na próxima chamada sem
+deploy**, e sem emenda nenhuma o prompt sai byte a byte igual ao do git, o que
+faz da fatia um no-op até o meu primeiro toque. Verificado por medição, não por
+confiança: 21 correções reais em 5 sessões, e um terço delas mostrou que o maior
+erro do pipeline não é o extrator, é o STT ouvindo nome próprio errado (§14).

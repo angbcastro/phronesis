@@ -203,3 +203,37 @@ Esta fatia é a primeira de oito, recortadas da mesma lista de melhorias (17/09)
 
 A **8.1 sai no intervalo desta**, porque não depende de nada e é o atrito diário que
 faz eu não gravar a sessão que esta fatia precisa.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**A slice 8 sobe em partes, e a ordem não é detalhe.** A primeira é só o
+cronômetro (§4.17): três objetos no R2, as três marcas do cliente, a
+instrumentação nos passos que já existem e o resumo mensal na batida diária.
+Nenhum conserto de desempenho vai junto — se instrumento e conserto subissem no
+mesmo deploy, não se saberia o que melhorou, e a fatia inteira existe para saber.
+Depois vêm os seis consertos e o penhasco virando erro (§4.18). Entre as duas vai
+**uma sessão real gravada**, com o `medidas.json` dela lido.
+
+**A linha de base foi colhida em 2026-09-18, e ela não mediu uma espera: mediu
+uma trava.** A sessão `mu73d88b0w4u6o5d440j` (203 s de fala, 7 blocos) ficou
+presa em `extraindo` e nunca abriu a revisão. Tudo no pipeline foi rápido — fila
+do cliente 2,7 s, STT 7,2 s somados, catálogo 88 ms, camada semântica 513 ms — e
+**uma única chamada de extração gastou 300.116 ms sem devolver um token**,
+morrendo no `headersTimeout` do undici, que é o mesmo `maxDuration` de 300 s da
+rota. Isso refutou a suspeita que estava escrita: o custo não era a resolução da
+janela do fim.
+
+A consequência entrou **antes** dos seis consertos, e é a quarta classe de falha
+do §5.3 — **prazo por chamada de modelo**, mais a medida que sobrevive à função
+morta (§4.17) e o corredor com teto (§11). Sem ela os consertos pioravam este
+caso exato: `ehTransitorio` passaria a repetir uma chamada pendurada, e no
+caminho sem `ate` seriam três de 90 s num `waitUntil` que morre aos 300 s.
+
+Quem fecha a fatia sou eu — a medida existe para dizer *onde* mexer, não para
+declarar que ficou bom.

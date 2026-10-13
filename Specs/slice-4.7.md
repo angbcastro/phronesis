@@ -240,3 +240,20 @@ a dimensão está declarada na migration 006.
   medição minha, não regra de código.
 - **Uma leitura do índice por chamada de agente**, trinta numa sessão gravada de
   15 min. É o preço de a promessa ser verdadeira em vez de quase.
+
+## Como ficou
+
+O que o `ARCHITECTURE.md` contava desta fatia — datas, medições, o que era
+antes —, movido quase literal quando ele passou a descrever só o presente
+(`Specs/documentacao.md`).
+
+### Do cabeçalho do `ARCHITECTURE.md`
+
+**E os agentes ganharam rosto** (seção 4.13). `/agentes` desenha o fluxo em duas
+telas — o que entra no grafo (STT, extração, resolução, a revisão e a higiene) e
+o que sai dele (o chat) —, e clicar numa caixa abre o prompt e o modelo
+daquele agente, editáveis, valendo na próxima execução e **sem deploy**. O
+mecanismo é o da 4.6 generalizado: texto no R2, snapshot imutável por hash,
+sufixo no `prompt_version`. Sem override nenhum, todo agente sai byte a byte
+igual ao de antes desta fatia, e é `tests/agentes.test.ts` quem cobra isso — mais
+a varredura que impede um agente novo de nascer fora do painel.
