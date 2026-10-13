@@ -10,7 +10,7 @@
 | `GET /api/sessoes/:id` | estado + transcrição (parcial enquanto processa) | polling de 2 s; `completa` é sobre a transcrição, não sobre a sessão |
 | `DELETE /api/sessoes/:id` | apaga os objetos da sessão no R2 e marca `descartada_em` | **409 se ainda está processando**; o grafo fica intacto (regra 6) — ver abaixo |
 | `POST /api/sessoes/:id/extrair` | dispara extração **e resolução** de uma sessão já transcrita | retry do `waitUntil` perdido; `{"forcar":true}` refaz as duas e sobrescreve |
-| `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão — **fechada ou ainda crescendo** | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b desde a slice 4.5; `anterior` vem como cabeçalho, e a lista antiga só com `?anterior=1`. Desde a 8.2 responde também do `parcial.json`, com `crescendo`/`trechos_totais`/`trechos_faltando`, e o **404 passou a significar "zero átomos"** (§4.19) |
+| `GET /api/sessoes/:id/extracao` | a proposta + o mapa de blocos, para a revisão — **fechada ou ainda crescendo** | o mapa é o que traduz offset em bloco; a referência traz o `porque` da camada 3b; `anterior` vem como cabeçalho, e a lista antiga só com `?anterior=1`. Enquanto a proposta cresce responde do `parcial.json`, com `crescendo`/`trechos_totais`/`trechos_faltando`, e o **404 significa "zero átomos"** (§4.19) |
 | `GET /api/sessoes/:id/extracao/eventos` | um **fluxo NDJSON** da proposta enquanto ela cresce: um evento por mudança, o último com `crescendo: false` | mesmo dialeto de `/api/chat`; polling curto do lado do servidor (700 ms), fecha sozinho aos 280 s e o cliente reconecta. As duas telas do corredor consomem o mesmo fluxo (§4.19) |
 | `POST /api/sessoes/:id/medidas` | as marcas que só o navegador sabe dar: `parou`, `fila_vazia`, `revisou` | epoch em ms, e toda marca reescreve a linha do índice; corpo sem marca plausível não grava nada (§4.17) |
 | `GET /api/sessoes/:id/medidas` | o detalhe medido daquela sessão | não há tela: é por aqui que "o objeto é lido sob demanda" acontece |
@@ -27,9 +27,9 @@
 | `POST /api/entidades/fundir` | `{vencedora, perdedora}` — migra arestas, marca alias | idempotente pela guarda de `status` |
 | `POST /api/entidades/distintas` | `{a, b}` — a recusa que impede a pergunta de voltar | |
 | `POST /api/entidades/renomear` | `{chave, nome}` — grafia velha entra em `aliases` | recusa pronome, como o confirmar; recusa nome que já é grafia de outro nó |
-| `POST /api/entidades/tipo` | `{chave, tipo}` — troca o label | o tipo só era editável enquanto a entidade era nova |
+| `POST /api/entidades/tipo` | `{chave, tipo}` — troca o label | na revisão, o tipo só é editável enquanto a entidade é nova |
 | `POST /api/entidades/criar` | `{nome, tipo}` — semeia um nome antes de falá-lo | cria nó órfão de propósito |
-| `POST /api/entidades/perfil` | `{chave, campo, texto}` — grava um dos três campos | o único lugar que escreve perfil; **sem teto** desde a 009 |
+| `POST /api/entidades/perfil` | `{chave, campo, texto}` — grava um dos três campos | o único lugar que escreve perfil; **sem teto** |
 | `POST /api/entidades/resumo` | `{chave, texto}` — grava o retrato de identidade | o único lugar que o escreve; corta em `TETO_RESUMO` (500) no servidor; texto vazio limpa |
 | `POST /api/entidades/aliases` | `{chave, grafia, acao}` — acrescenta ou tira uma grafia | um item por chamada: a lista na tela é a união de duas fontes, e mandá-la de volta gravaria uma na outra. Acrescentar reusa `registrarGrafia`, com as quatro recusas |
 | `POST /api/entidades/canonico` | `{chave, canonico}` — marca a ficha oficial | reversível, sem consequência retroativa; não trava nada |
@@ -48,12 +48,12 @@
 | `GET /api/conversas` | a lista, ativas e arquivadas juntas, por `atualizada_em` desc | quem separa é a tela. **Sem `POST`**: conversa nasce da primeira pergunta, não de um botão — assim a lista nunca acumula conversa vazia |
 | `PATCH /api/conversas/:id` | `{arquivada: boolean}` — congela ou descongela | um booleano e não duas rotas: as duas direções são a mesma decisão |
 | `DELETE /api/conversas/:id` | apaga de vez — o objeto no R2 **e** o nó | a **única deleção de verdade** do sistema, e a exceção declarada à regra 6 (§4.16.5, migration 012). R2 antes do nó, sempre |
-| `GET /api/agentes` | `{agentes, telas, atualizado_em}` — os doze com o que está em vigor, mais **as duas telas** do fluxo (`/agentes` e `/agentes/consulta` escolhem a sua por `fluxo`) | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
+| `GET /api/agentes` | `{agentes, telas, atualizado_em}` — os quinze com o que está em vigor, mais **as duas telas** do fluxo (`/agentes` e `/agentes/consulta` escolhem a sua por `fluxo`) | **de graça**: nenhuma chamada de modelo, nenhuma ida ao grafo; a base do git viaja junto, para a tela dizer "editado" sem segunda ida à rede |
 | `POST /api/agentes/:id` | `{prompt?, modelo?}` — o que passa a valer | o **único** lugar que escreve configuração de agente; `null` revoga o campo e volta à base; recusa prompt que quebre o envelope e id de modelo fora do formato |
 | `GET /api/confronto` | quantos átomos esperam, e os últimos que a varredura tocou, com quantas relações fortes e sutis cada um tem | só leitura; alimenta a tela `/confronto` |
 | `POST /api/confronto/rodar` | reivindica até cinco átomos pendentes e os julga em paralelo; se autoencadeia em `waitUntil` até a fila esvaziar. `?se_parado=1` (o disparo do confirmar, 5.2) só começa se nenhum elo estiver rodando | mesmo cookie repassado do elo de enriquecimento; sem distinção entre "começar" e "elo seguinte" — não há passo de escolher o que entra |
 | `POST /api/confronto/desfazer` | `{atomo_id}` — apaga as relações que a rodada daquele átomo escreveu (as do agente cujo `dono` é ele) e limpa o estado | uma **troca** para "nunca tentado", não uma restauração de conteúdo; as que eu editei ficam; 400 quando o átomo nunca foi tocado |
-| `POST /api/confronto/reprocessar` | apaga todas as relações **do agente** e devolve o grafo inteiro à fila (5.1; as minhas e as recusas ficam desde a 5.2) | é como um prompt novo alcança o que já foi julgado. Não roda a fila — a tela chama `rodar` em seguida; destrutivo e sem desfazer, por isso dois toques na tela |
+| `POST /api/confronto/reprocessar` | apaga todas as relações **do agente** e devolve o grafo inteiro à fila (as que eu editei e as minhas recusas ficam) | é como um prompt novo alcança o que já foi julgado. Não roda a fila — a tela chama `rodar` em seguida; destrutivo e sem desfazer, por isso dois toques na tela |
 | `GET /api/confronto/atomo/:id` | o radial (5.2): o átomo, todas as relações dele nas duas direções, e os vizinhos ativos | só leitura; 404 quando o átomo não existe |
 | `POST /api/confronto/relacao` | `{novo_id, velho_id, acao, valor}`, `acao ∈ tipo\|camada\|motivo\|recusar` — a minha edição: congela a relação (`origem: 'eu'`) ou a apaga deixando `CONFRONTO_RECUSADO`; a correção vai ao índice de calibração em `waitUntil` | 400 para tipo, camada ou motivo inválidos e para relação que não existe mais; apagar não tem desfazer, e é a tela que pede dois toques |
 | `GET /api/confronto/busca?q=` | a `buscarAtomos` do chat por texto, os doze mais parecidos — para achar o átomo cujo radial abrir | só leitura |
@@ -74,7 +74,7 @@ detalhe de deploy: o teto de execução é o que decide se um `waitUntil` termin
 | `maxDuration` | Rotas |
 |---|---|
 | 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/entidades/enriquecer`, `/entidades/retrato/proposta`, `/confronto/rodar`, `/cron/confronto`, `/cron/enriquecimento`, `/chat`, `/extracao/eventos` — as que chamam modelo dentro de `waitUntil`, correm a mesma fila em loop, encadeiam até oito chamadas antes de responder, ou **mantêm um fluxo aberto** |
-| 60 s | `/confirmar`, `/atomos/embutir`, `/entidades/embutir`, `/entidades/duplicatas`, `/entidades/fundir`, `/entidades/perfil/rascunho`, `/calibracao/rascunho` |
+| 60 s | `/confirmar`, `/atomos/embutir`, `/entidades/embutir`, `/entidades/duplicatas`, `/entidades/fundir`, `/entidades/perfil/rascunho`, `/calibracao/padroes`, `/calibracao/redacao` |
 | padrão | todo o resto |
 
 O 60 s do `/confirmar` é o que mais importa: a apuração de correções roda no
@@ -87,12 +87,14 @@ rate limit sem prazo** que a fila usa (§4.9): uma espera de 75 s estouraria um
 teto de 60 e mataria o elo no meio do sono. `LEASE_MS` é o mesmo número, e é por
 isso: passado ele, a função que reivindicou está morta com certeza.
 
-`dynamic = "force-dynamic"` em treze rotas, todas de leitura de estado:
-`GET /api/sessoes`, `GET /api/sessoes/:id`, `GET /api/sessoes/:id/extracao`,
-`GET /api/sessoes/:id/extracao/eventos`, `GET /api/entidades`,
-`GET /api/calibracao`, `GET /api/calibracao/sugestao`, `GET /api/confronto`,
-`GET /api/conversas`, as duas de `/api/chat` e as duas de medidas
-(`/api/medidas` e `/api/sessoes/:id/medidas`).
+`dynamic = "force-dynamic"` nas rotas que leem estado — nenhuma delas pode
+servir resposta de cache: `/api/sessoes`, `/api/sessoes/:id`,
+`/api/sessoes/:id/extracao`, `/api/sessoes/:id/extracao/eventos`,
+`/api/entidades`, `/api/entidades/retrato`, `/api/calibracao`,
+`/api/calibracao/sugestao`, `/api/confronto`, `/api/confronto/atomo/:id`,
+`/api/confronto/busca`, `/api/chat`, `/api/conversas`, `/api/conversas/:id`,
+as duas de medidas (`/api/medidas` e `/api/sessoes/:id/medidas`) e as três de
+cron.
 
 O 300 s do `/chat` é o mais justificado da tabela, e o único que não é sobre
 `waitUntil`: uma pergunta composta paga até oito idas ao Gateway antes da
