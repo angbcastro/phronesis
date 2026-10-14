@@ -299,8 +299,8 @@ escrevi uma coisa, e o átomo pode ter achado outra.
 Construída em 13/10/2026, com `pnpm test` verde. **Não verificada contra
 modelo**: nenhum pedido rodou ainda, nem em dev — o ponto de retorno da ordem 3
 (a chamada sobre a sessão inteira passando de 200 s numa sessão de 15 min) está
-em aberto, e é o primeiro item da fatia no `PROXIMOS-TESTES.md`. Não foi para o
-ar: o commit não foi empurrado.
+em aberto, e é o primeiro item da fatia no `PROXIMOS-TESTES.md`. Foi para o ar
+no mesmo dia, sem a verificação.
 
 O que saiu diferente do que está escrito acima, e por quê:
 
