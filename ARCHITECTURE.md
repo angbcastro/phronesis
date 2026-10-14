@@ -143,7 +143,9 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   env.ts          leitura de variável de ambiente, falha cedo se faltar
   rede.ts         retry de conexão: o que dá para repetir sem duplicar efeito
   limite.ts       o rate limit do Gateway: reconhecer e esperar passar
-  neo4j.ts        HTTP Query API (nunca driver Bolt)
+  neo4j.ts        HTTP Query API (nunca driver Bolt) — as linhas como objetos,
+                  ou a resposta inteira, com a classificação do banco, os
+                  avisos, o modo de acesso e o tempo máximo
   fusao.ts        fundir, renomear, recusar, excluir — a escrita de higiene no grafo
   duplicatas.ts   quem parece ser a mesma coisa: string + o modelo, só propõem
   sessoes.ts      repositório de :Sessao (criar, buscar, atualizar com guarda,
@@ -205,6 +207,10 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   (`buscar_atomos`, `historico_do_atomo`, `buscar_entidades`,
                   `ler_retrato`), o loop com teto de 8 chamadas, e o rastro que
                   o botão (i) abre. Não sabe que conversa existe
+  consulta.ts     a Cypher que o modelo escreve: os bloqueios no texto, o
+                  EXPLAIN que só deixa passar leitura, a execução em Read, e a
+                  saída sem vetor e com teto, que diz quanto cortou. Não fala
+                  com modelo
   conversas.ts    :Conversa, as mensagens no R2, arquivar e apagar — e o agente
                   `titulo-chat`, a única chamada de modelo que mora aqui
   entidades.ts    catálogo do grafo, a apresentação que os dois agentes leem, a

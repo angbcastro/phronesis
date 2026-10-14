@@ -1,9 +1,10 @@
 # Slice 12 — O chat que navega o grafo
 
-> **Estado: especificada.** As decisões estão tomadas (entrevista de 13/10), e o
-> protótipo (ordem 0) rodou contra produção no mesmo dia: as receitas da §5 são
-> as que rodaram. A busca por sentido rodou com o vetor de um átomo, e não com o
-> de uma pergunta — o piso para pergunta contra átomo se mede no passo 1.
+> **Estado: em construção — passo 1 feito.** As decisões estão tomadas
+> (entrevista de 13/10), e o protótipo (ordem 0) rodou contra produção no mesmo
+> dia: as receitas da §5 são as que rodaram. O passo 1 pôs a trava à prova
+> contra a instância e mediu o piso com vetor de pergunta: não há número que
+> separe o tema do resto (§5).
 
 **Objetivo:** que o chat responda as perguntas **globais** — contar, ordenar,
 comparar períodos, acompanhar uma mudança — escrevendo a própria Cypher, só de
@@ -173,6 +174,10 @@ O que foi conferido na instância, e decide o desenho:
 | `SEARCH … FOR v` | aceita variável, e não só parâmetro: o `embedding` de um átomo serve de vetor, sem chamar o modelo de embedding |
 | `valido_em` | ISO em UTC (`…T22:44:04.000Z`); `datetime({datetime: datetime(a.valido_em), timezone: 'America/Sao_Paulo'})` converte |
 | `LOAD CSV FROM 'https://…'` | classificado `r` — por isso o bloqueio textual |
+| `TERMINATE TRANSACTIONS` | classificado `r` também — e encerra a transação de outro, a do pipeline inclusive. Bloqueio textual (passo 1) |
+| `CALL db.labels()` / `CALL db.createLabel(…)` | `r` / `w`: a classificação acerta, e o bloqueio de `CALL` fica pela procedure que ela errasse |
+| a escrita em `accessMode: "Read"` | recusada antes de tocar em linha, mesmo sem nenhuma linha casando: `Neo.ClientError.Statement.AccessMode` (passo 1) |
+| o estouro do `maxExecutionTime` | chega como `Neo.ClientError.Transaction.Terminated` ("terminated by the user"), e não como "timed out" (passo 1) |
 
 ### 3.2 A trava, em camadas
 
@@ -181,8 +186,13 @@ O que foi conferido na instância, e decide o desenho:
    - `LOAD CSV` — é leitura para o banco, e é uma porta para fora;
    - `CALL` de procedure — `CALL {` e `CALL (`, de subquery, passam. A busca por
      sentido é a cláusula `SEARCH`, e nenhuma receita precisa de procedure;
-   - o label `:Conversa` — uma conversa nunca enxerga outra (§8.6);
+   - o label `:Conversa` — uma conversa nunca enxerga outra (§8.6). Procurado
+     também dentro dos literais, com a maiúscula: o label se alcança por texto
+     (`'Conversa' IN labels(n)`, `n:$('Conversa')`), e `'conversa'` em
+     minúscula, que é como se busca no texto do átomo, passa. O nó de conversa
+     que chegar sem o label escrito (`MATCH (n)`) vira uma marca na limpeza;
    - `USE` — outro banco;
+   - `TERMINATE` — o banco o classifica como leitura;
    - `EXPLAIN` e `PROFILE` no começo — quem os põe é a ferramenta.
 2. **`EXPLAIN` com `accessMode: Read`**, exigindo `queryType = 'r'`. `s` também é
    recusado.
@@ -247,8 +257,11 @@ seções:
      'America/Sao_Paulo'}))`: é ele que se compara com `date($hoje)` e é ele que
      se devolve. `left(a.valido_em, 10)` erra o dia de quem gravou depois das
      21h;
-   - `2 * score - 1` converte o score do `SEARCH` em cosseno; o piso é o que o
-     passo 1 medir (§5), e a coluna `sim` vai sempre na saída;
+   - `2 * score - 1` converte o score do `SEARCH` em cosseno, e o cosseno **só
+     ordena**: não há piso (§5). Frase curta contra átomo dá número baixo — 0,3
+     a 0,6 no melhor caso — e isso é normal; o tema acaba onde os trechos
+     deixam de falar dele, e quem vê isso é o modelo, lendo. A coluna `sim` vai
+     sempre na saída;
    - relação de confronto vai sempre do mais novo para o mais antigo; `camada`
      ausente é forte; a sutil é "parece ligado a", nunca afirmação (§4.15);
    - nunca devolver o nó inteiro.
@@ -283,7 +296,8 @@ agora vai também como `$hoje`.
 Rodadas contra produção pelo MCP oficial, só leitura, em 13/10. `$hoje` e
 `$vetor` vêm do servidor. `dia` é sempre o de Brasília (§4, item 3), calculado
 uma vez num `WITH`. A busca por sentido rodou com o vetor de um átomo no lugar
-de `$vetor`: a sintaxe e a forma das linhas estão conferidas, o piso não.
+de `$vetor`: a sintaxe e a forma das linhas ficaram conferidas ali, e o piso, com
+vetor de pergunta, no passo 1.
 
 **O que o protótipo mudou no rascunho:**
 
@@ -304,11 +318,48 @@ de `$vetor`: a sintaxe e a forma das linhas estão conferidas, o piso não.
 - **O vetor pode ser o de um átomo.** `SEARCH … FOR v` aceita variável: "mais
   trechos como este" é uma consulta, sem `texto` e sem chamada de embedding.
 
-**O piso.** Átomo contra átomo, os vizinhos que o protótipo mostrou ficaram
-entre 0,49 e 0,69. Pergunta curta contra átomo não foi medida, e não há razão
-para esperar o mesmo intervalo. O passo 1 mede com um `$vetor` de verdade — as
-palavras de busca das receitas abaixo — antes de um número entrar no prompt; até
-lá, as receitas ordenam por `sim`, sem piso, e a coluna vai na saída.
+**O piso: não há.** Átomo contra átomo, os vizinhos do protótipo ficaram entre
+0,49 e 0,69. O passo 1 mediu pergunta contra átomo, com o `$vetor` de verdade de
+doze buscas — as palavras das receitas abaixo, "meus maiores medos", e cinco
+temas para conferir, um deles ausente do diário —, sobre os 226 átomos:
+
+| busca | melhor | mediana | ≥ 0,45 | ≥ 0,35 |
+|---|---|---|---|---|
+| medo, receio, insegurança… | 0,51 | 0,28 | 5 | 31 |
+| sonho, desejo, o que eu quero um dia | 0,46 | 0,32 | 1 | 71 |
+| desafio, dificuldade, o que foi difícil | 0,45 | 0,27 | 1 | 18 |
+| stress, ansiedade, pressão | 0,50 | 0,26 | 3 | 20 |
+| o que me ajuda quando estou ansioso… | 0,59 | 0,32 | 12 | 80 |
+| política, governo, eleição, ideologia | 0,35 | 0,20 | 0 | 0 |
+| meus maiores medos | 0,54 | 0,29 | 5 | 45 |
+| futebol, time, campeonato | 0,34 | 0,21 | 0 | 0 |
+| religião, Deus, fé | 0,32 | 0,21 | 0 | 0 |
+| dinheiro, finanças, investimento | 0,43 | 0,24 | 0 | 10 |
+| minha família, meus pais | 0,53 | 0,28 | 3 | 19 |
+| Isinha | 0,60 | 0,24 | 5 | 13 |
+
+**Nenhum número separa o tema do resto**, e o que decide é a sobreposição:
+
+- **O relevante desce abaixo do irrelevante de outra busca.** "O jogo do Galo
+  foi fantástico" é futebol, e fica em 0,33; em "sonho", um trecho sobre o surf
+  já marcado com a Nicole, que é plano e não sonho, fica em 0,375.
+- **A escala anda com a busca.** A mediana vai de 0,20 (política) a 0,32
+  (sonho): "o que eu quero um dia" parece com quase tudo que se diz na primeira
+  pessoa. O mesmo 0,35 dá 0 trechos numa e 71 na outra.
+- **Nem o melhor serve de sinal de tema ausente.** Religião, que o diário não
+  tem, tem o melhor em 0,32; futebol, que tem, em 0,34.
+
+Então **o prompt não ganha número**: as receitas ordenam por `sim`, trazem o
+trecho curto, e o modelo lê em ordem até os trechos deixarem de falar do tema.
+Se ele lê bem, o (i) das nove é que mostra: a coluna vai na saída. Para
+a 8, a resposta continua sendo dita pelo texto: os dois trechos da aula de
+economia, no topo, falam de Jango, e não de posição minha.
+
+**O `PISO_BUSCA = 0,45` de `buscar_atomos` está medido também, e alto demais
+para frase curta**: deixaria 5 trechos de medo, 1 de sonho, 1 de desafio e
+nenhum de política ou de futebol — o Galo some. Ele foi feito para a pergunta
+local, com nome e evento; se fica, e com que número, é o `chat-9` que decide,
+com o (i) das nove na mão.
 
 **Pessoas mais próximas** — peso afetivo:
 
@@ -558,8 +609,9 @@ quê. `ler_retrato` fica — ele lê o R2, não o grafo.
   devolve o `queryType` que o teste quer):
   - `CREATE`, `MERGE`, `SET`, `DELETE`, `REMOVE` e `CALL` de procedure de escrita
     recusados **antes** da execução — a execução nunca é chamada;
-  - `LOAD CSV`, `:Conversa`, `USE`, `EXPLAIN`/`PROFILE` recusados sem ir ao
-    banco; "use" dentro de um literal de string não dispara nada; `CALL {` passa;
+  - `LOAD CSV`, `:Conversa` (escrito, entre crases ou num literal), `USE`,
+    `TERMINATE`, `EXPLAIN`/`PROFILE` recusados sem ir ao banco; "use" dentro de
+    um literal de string não dispara nada; `CALL {` e `CALL (x) {` passam;
   - `queryType` `rw`, `w` ou `s` recusado;
   - `embedding` e lista longa de número nunca na saída, nem aninhados;
   - o corte, por linhas e por caracteres, com a mensagem que manda agregar;
@@ -624,7 +676,9 @@ quê. `ler_retrato` fica — ele lê o R2, não o grafo.
    Ponto de retorno: `pnpm test` verde, um `EXPLAIN` de escrita de verdade
    recusado contra a instância, e **o piso medido** — as palavras de busca da
    §5 viram `$vetor` de verdade, e a distribuição de `sim` decide se o prompt
-   ganha um número.
+   ganha um número. **Feito em 13/10**: 50 testes; as escritas recusadas no
+   `EXPLAIN` com uma guarda no `fetch` que só deixava sair `EXPLAIN`; e o piso
+   medido — sem número (§5).
 2. `dia.ts`, a ferramenta em `chat.ts`, os tipos, o rastro e o dia de Brasília
    nas ferramentas antigas.
 3. O `chat-8` e o envelope.
@@ -643,10 +697,10 @@ quê. `ler_retrato` fica — ele lê o R2, não o grafo.
 - **O vazio pode ser do nome, e não do diário.** Os avisos do banco pegam label e
   propriedade que não existem; não pegam um valor que não existe (`tipo:
   'MEDO'`). A linha de zero resultados diz as causas possíveis; não diz qual foi.
-- **O piso é medido uma vez, num diário pequeno.** O passo 1 o mede sobre as
-  palavras de busca da §5 e uns 230 átomos; a distribuição muda com o diário, e
-  quem escreve o número dentro da Cypher é o modelo. A similaridade vai nas
-  linhas que o (i) mostra.
+- **Não há piso na busca por sentido.** O passo 1 mediu, e nenhum número separa
+  o tema do resto (§5): quem decide onde o tema acaba é o modelo, lendo os
+  trechos em ordem. Um modelo que leia pouco para cedo, e um que leia mal leva
+  trecho de fora; a defesa é a coluna `sim` e o trecho no (i).
 - **O dia fora do chat é UTC.** Retrato, confronto, enriquecimento e correções
   leem `valido_em` com `slice(0, 10)`: a sessão gravada depois das 21h aparece
   com o dia seguinte nos prompts e nas telas deles. O chat é o único que

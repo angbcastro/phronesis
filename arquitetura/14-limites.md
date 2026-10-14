@@ -611,10 +611,13 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   novo pede que ele cite as ferramentas (envelope).
 - **O piso de 0,45 e o teto de 8 da busca não foram medidos contra gabarito**, e
   não podem ser: `CLAUDE.md` diz que quem julga aqui sou eu, na tela. O que
-  existe é uma medida emprestada — os 0,728 da varredura de confronto, que é
-  átomo contra átomo e não diz nada sobre pergunta contra átomo. O instrumento
-  está no (i): por passo, quantos passaram do piso, quantos ficaram abaixo e o
-  melhor cortado.
+  existe é a distribuição de pergunta contra átomo, medida na slice 12 (a spec
+  guarda a tabela): frase curta dá de 0,3 a 0,6 no melhor trecho, e o relevante
+  de uma busca fica abaixo do irrelevante de outra. Para frase curta, 0,45 corta
+  quase tudo — "futebol" perde o único trecho sobre futebol. O piso foi pensado
+  para a pergunta local, com nome e evento, e a Cypher do modelo não tem piso
+  nenhum (§4.16.3). O instrumento está no (i): por passo, quantos passaram do
+  piso, quantos ficaram abaixo e o melhor cortado.
 
 ### §4.17–4.19 — medida e desempenho
 
@@ -755,9 +758,12 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   há cota em bytes no Free contra a qual comparar isso, e o vetor do índice,
   quantizado em `SCALAR`, fica em torno de 6 MB. Se um dia apertar, o botão é a
   dimensão do vetor.
-- **`db.index.vector.queryNodes` está deprecado a partir do Neo4j 2026.04**, em
-  favor da cláusula `SEARCH`. A instância é 5.27 e o procedimento funciona; quando
-  a Aura subir, é uma linha a trocar em `entidades.ts`.
+- **`db.index.vector.queryNodes` está deprecado**, em favor da cláusula
+  `SEARCH`. A instância já roda Cypher 25 (runtime 2026.09, embora o kernel se
+  chame 5.27-aura): o procedimento funciona com aviso de depreciação, e o
+  `SEARCH` funciona, com o mesmo score. Trocar é mexer nas buscas por vetor de
+  `entidades.ts`, `confronto.ts` e `chat.ts`, sem pressa enquanto o
+  procedimento existir.
 
 ### §9, §12 — backup, ambiente e deploy
 
