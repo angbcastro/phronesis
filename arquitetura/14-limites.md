@@ -609,6 +609,16 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   continua oferecendo-a sem as instruções de quando usá-la — e um salvo antes do
   `ler_retrato` não manda começar por ele nas perguntas sobre mim. Salvá-lo de
   novo pede que ele cite as ferramentas (envelope).
+- **O dia fora do chat é o de Greenwich.** Retrato, confronto, enriquecimento e
+  correções leem `valido_em` cortando os dez primeiros caracteres: a sessão
+  gravada depois das 21h aparece com o dia seguinte nos prompts e nas telas
+  deles. Só o chat converte (§4.16.1). Consertar é passar esses módulos por
+  `dia.ts`, e não houve pedido — o chat era o que dizia a data dentro da frase.
+- **Consulta válida que responde errado não dá erro** (§4.16.3). Uma Cypher que
+  roda e conta a coisa errada — um label trocado, um filtro esquecido — devolve
+  um número plausível, e os avisos do banco só pegam nome que não existe, não
+  valor que não existe (`tipo: 'MEDO'`). A defesa é o (i) mostrar a Cypher e as
+  linhas, e eu ler.
 - **O piso de 0,45 e o teto de 8 da busca não foram medidos contra gabarito**, e
   não podem ser: `CLAUDE.md` diz que quem julga aqui sou eu, na tela. O que
   existe é a distribuição de pergunta contra átomo, medida na slice 12 (a spec

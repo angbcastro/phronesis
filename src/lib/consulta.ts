@@ -151,14 +151,26 @@ export function bloqueio(cypher: string): string | null {
   return null;
 }
 
+/** Os `$parametro` do código — o `$vetor` dentro de um texto não conta. */
+function parametrosUsados(cypher: string): Set<string> {
+  const { codigo } = separar(cypher);
+  return new Set([...codigo.matchAll(/\$([A-Za-z_]\w*)/g)].map((m) => m[1]));
+}
+
+/**
+ * A consulta usa este parâmetro? É o que deixa a ferramenta pular a chamada de
+ * embedding quando o modelo mandou `texto` e não escreveu `$vetor`.
+ */
+export const usaParametro = (cypher: string, nome: string): boolean =>
+  parametrosUsados(cypher).has(nome);
+
 /**
  * O parâmetro que a consulta usa e que não veio. `$vetor` tem frase própria: ele
  * só existe quando a chamada traz `texto`, e o modelo que o usou sem `texto`
  * precisa saber disso, e não só que falta.
  */
 export function parametroQueFalta(cypher: string, parametros: Record<string, unknown>): string | null {
-  const { codigo } = separar(cypher);
-  for (const [, nome] of codigo.matchAll(/\$([A-Za-z_]\w*)/g)) {
+  for (const nome of parametrosUsados(cypher)) {
     if (nome in parametros) continue;
     if (nome === "vetor") {
       return "a consulta usa $vetor, e $vetor só existe quando a chamada traz `texto`: passe em `texto` as palavras da busca por sentido";

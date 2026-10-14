@@ -1,6 +1,6 @@
 # Slice 12 — O chat que navega o grafo
 
-> **Estado: em construção — passo 1 feito.** As decisões estão tomadas
+> **Estado: em construção — passos 1 e 2 feitos.** As decisões estão tomadas
 > (entrevista de 13/10), e o protótipo (ordem 0) rodou contra produção no mesmo
 > dia: as receitas da §5 são as que rodaram. O passo 1 pôs a trava à prova
 > contra a instância e mediu o piso com vetor de pergunta: não há número que
@@ -544,11 +544,14 @@ consulta?: {
   linhas: unknown[][];   // as que foram ao modelo, já limpas e cortadas
   total: number;         // quantas o banco devolveu
   cortado: boolean;
+  avisos?: string[];     // o que o banco avisou — o (i) precisa dizer por que veio vazio
 }
 ```
 
 `erro` e `duracao_ms` são os de sempre. `achados` fica vazio, como em
-`buscar_entidades`.
+`buscar_entidades`, e `parametros` leva só o `texto`: a Cypher mora em
+`consulta`, que nasce também na recusa e na falha — a consulta escrita é o que
+explica o erro.
 
 **No progresso**, no passado como os outros: `consultou o grafo — 15 linhas`,
 `consultou o grafo — cortado em 150 de 412`, ou o erro.
@@ -620,8 +623,9 @@ quê. `ler_retrato` fica — ele lê o R2, não o grafo.
 - `tests/chat.test.ts`: a ferramenta no conjunto, o rastro com `consulta`, o
   `$hoje` injetado, a mensagem antiga sem `consulta` desenhando o (i).
 - `tests/dia.test.ts`: `…T01:30:00.000Z` é o dia anterior em Brasília, e
-  `…T03:00:00.000Z` já é o mesmo; o `$hoje` e o "Hoje é" às 22h de Brasília
-  dizem o dia de Brasília.
+  `…T03:00:00.000Z` já é o mesmo; a data sem hora não se converte. O `$hoje` e o
+  "Hoje é" às 22h de Brasília ficam em `tests/chat.test.ts`, onde as ferramentas
+  e o sistema se montam.
 - `tests/agentes.test.ts`, `tests/gateway.test.ts` e `tests/arquitetura.test.ts`
   passam: o envelope com `consultar_grafo`, o script sem pacote de provedor, o
   módulo novo com texto no §2.
@@ -680,7 +684,11 @@ quê. `ler_retrato` fica — ele lê o R2, não o grafo.
    `EXPLAIN` com uma guarda no `fetch` que só deixava sair `EXPLAIN`; e o piso
    medido — sem número (§5).
 2. `dia.ts`, a ferramenta em `chat.ts`, os tipos, o rastro e o dia de Brasília
-   nas ferramentas antigas.
+   nas ferramentas antigas. **Feito em 13/10**: a frase de progresso do passo
+   novo e as datas do (i) e da lista entraram junto, porque são o mesmo dia; o
+   bloco da Cypher e da tabela no (i) fica para o passo 4. A ferramenta está no
+   conjunto, e o `chat-7` ainda não a cita — o modelo a vê só pela descrição até
+   o passo 3.
 3. O `chat-8` e o envelope.
 4. O (i).
 5. O script e a comparação. **Ponto de retorno: o HTML vai para mim**, e o modelo

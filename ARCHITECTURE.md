@@ -42,6 +42,7 @@ construído e ainda não foi validado está em `PROXIMOS-TESTES.md`.
 | 9 | a resposta do chat vem antes do despejo | sim |
 | 10 | o retrato do "eu" | sim |
 | 11 | o que faltou, a pedido | sim |
+| 12 | o chat que navega o grafo | não |
 
 "No ar" é estar em `master` no remoto: push é deploy, e a migration roda no
 build (`CLAUDE.md`). Se uma fatia no ar já foi validada é pergunta do
@@ -80,9 +81,11 @@ Agora e uma seção por dimensão, no R2 (§4.20).
 **Relações e perguntas.** O `confronto-3` liga cada átomo novo aos cem mais
 parecidos do grafo inteiro com `ATUALIZA`, `CONTRADIZ`, `CONFIRMA` ou
 `COMPLEMENTA`, em camada forte ou sutil, e eu corrijo relação por relação em
-`/confronto` (§4.15). O chat (`chat-7`) é um agente com quatro ferramentas
-só-leitura — `buscar_atomos`, `historico_do_atomo`, `buscar_entidades` e
-`ler_retrato` — que encadeia até oito chamadas antes de responder (§4.16).
+`/confronto` (§4.15). O chat (`chat-7`) é um agente com cinco ferramentas
+só-leitura — `buscar_atomos`, `historico_do_atomo`, `buscar_entidades`,
+`ler_retrato` e `consultar_grafo`, a Cypher que ele mesmo escreve, atrás de três
+travas — que encadeia até oito chamadas antes de responder (§4.16). As datas
+que ele diz são as de Brasília.
 
 **Calibração.** Toda correção que eu faço na revisão ou em `/confronto` é
 apurada e guardada no R2 (§4.11). Em `/calibracao` o
@@ -168,6 +171,8 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   transcricao.ts  offsets absolutos, prefixo contíguo, concatenação — e o
                   caminho de volta, do segundo para o bloco que o contém  (client)
   texto.ts        normalização, nome_normalizado e lista de pronomes       (client)
+  dia.ts          o dia de Brasília de um instante, e o de hoje: a data que
+                  o chat diz, no servidor e na tela                       (client)
   extracao.ts     átomos a partir de uma janela: prompt, JSON estrito, procedência
                   — e o bloco que diz de que minutos ela é e o que já foi proposto,
                   ou o do pedido, que aponta o foco para o que faltou
@@ -203,9 +208,10 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   sutil, e GRAVA — mesmo padrão do enriquecimento, nunca no
                   caminho da resposta. Também o radial de `/confronto` e a
                   minha edição, que congela a relação ou deixa a recusa
-  chat.ts         o agente `chat`: as quatro ferramentas só-leitura
+  chat.ts         o agente `chat`: as cinco ferramentas só-leitura
                   (`buscar_atomos`, `historico_do_atomo`, `buscar_entidades`,
-                  `ler_retrato`), o loop com teto de 8 chamadas, e o rastro que
+                  `ler_retrato`, `consultar_grafo` — esta pela porta de
+                  `consulta.ts`), o loop com teto de 8 chamadas, e o rastro que
                   o botão (i) abre. Não sabe que conversa existe
   consulta.ts     a Cypher que o modelo escreve: os bloqueios no texto, o
                   EXPLAIN que só deixa passar leitura, a execução em Read, e a

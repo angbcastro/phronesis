@@ -40,6 +40,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { lerEventos, partirLinhas } from "@/client/ndjson";
 import { usaTransicao } from "@/client/transicao";
+import { diaLocal } from "@/lib/dia";
 import { mesAno, type Conversa, type Mensagem, type PassoDeFerramenta } from "@/lib/tipos";
 
 export { partirLinhas };
@@ -73,6 +74,7 @@ const nomeDoTipo = (t: unknown): string =>
 export function frasePasso(p: PassoDeFerramenta): string {
   if (p.ferramenta === "buscar_entidades") return fraseEntidades(p);
   if (p.ferramenta === "ler_retrato") return fraseRetrato(p);
+  if (p.ferramenta === "consultar_grafo") return fraseConsulta(p);
   const n = p.achados.length;
   // "8 de 34" quando a busca contou mais do que mostrou (slice 9). Mensagem
   // gravada antes da 9 não tem recorte e continua dizendo só "8 trechos".
@@ -114,6 +116,24 @@ function fraseRetrato(p: PassoDeFerramenta): string {
   }
   const n = p.achados.length;
   return `leu a dimensão ${r.nome || r.dimensao} — ${n} fonte${n === 1 ? "" : "s"}`;
+}
+
+/** Quanto do erro de uma consulta cabe na linha de progresso; o (i) mostra inteiro. */
+export const TETO_ERRO_NA_FRASE = 120;
+
+/**
+ * A frase do passo de `consultar_grafo` (slice 12): linhas, e não trechos — as
+ * colunas são do modelo, e uma linha pode ser uma contagem.
+ */
+function fraseConsulta(p: PassoDeFerramenta): string {
+  if (p.erro) {
+    const erro = p.erro.split("\n")[0];
+    return `consultou o grafo — ${erro.length > TETO_ERRO_NA_FRASE ? `${erro.slice(0, TETO_ERRO_NA_FRASE)}…` : erro}`;
+  }
+  const c = p.consulta;
+  if (!c || c.total === 0) return "consultou o grafo — nada";
+  if (c.cortado) return `consultou o grafo — cortado em ${c.linhas.length} de ${c.total}`;
+  return `consultou o grafo — ${c.total} linha${c.total === 1 ? "" : "s"}`;
 }
 
 /** A frase do passo de `buscar_entidades` (slice 9): fichas, não trechos. */
@@ -202,10 +222,13 @@ export function separarConversas(conversas: readonly Conversa[]): {
   };
 }
 
-/** `2026-09-13T...` → `13/09`. A lista mostra o dia, não a hora. */
+/**
+ * `2026-09-13T...` → `13/09`. A lista mostra o dia, não a hora — e o dia de
+ * Brasília (`dia.ts`): a conversa das 22h não pode aparecer como de amanhã.
+ */
 export function diaCurto(iso: string): string {
-  const d = iso.slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : "";
+  const d = diaLocal(iso);
+  return d === "" ? "" : `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 }
 
 // ─────────────────────────── o componente ───────────────────────────
@@ -763,7 +786,8 @@ function Rastro({ passos }: { passos: readonly PassoDeFerramenta[] }) {
           {p.retrato && p.retrato.texto !== "" && (
             <p className="meta">
               {p.retrato.nome}
-              {mesAno(p.retrato.ate) === "" ? "" : ` · até ${mesAno(p.retrato.ate)}`}: {p.retrato.texto}
+              {mesAno(diaLocal(p.retrato.ate)) === "" ? "" : ` · até ${mesAno(diaLocal(p.retrato.ate))}`}:{" "}
+              {p.retrato.texto}
             </p>
           )}
           <ul>
@@ -771,7 +795,7 @@ function Rastro({ passos }: { passos: readonly PassoDeFerramenta[] }) {
               <li key={a.id}>
                 <span className="meta">
                   {a.tipo.toLowerCase()}
-                  {a.valido_em === "" ? "" : ` · ${a.valido_em.slice(0, 10)}`}
+                  {diaLocal(a.valido_em) === "" ? "" : ` · ${diaLocal(a.valido_em)}`}
                   {a.sobre.length > 0 ? ` · ${a.sobre.join(", ")}` : ""}
                   {typeof a.similaridade === "number"
                     ? ` · ${a.similaridade.toFixed(2)}`

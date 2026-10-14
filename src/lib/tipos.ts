@@ -1323,20 +1323,43 @@ export const ehPapelMensagem = (v: unknown): v is PapelMensagem =>
   typeof v === "string" && (PAPEIS_MENSAGEM as readonly string[]).includes(v);
 
 /**
- * As quatro ferramentas do agente `chat`. Só leitura, as quatro (regra 5).
+ * Tudo o que um passo gravado pode ter sido. **Só cresce.**
+ *
+ * São duas listas, e não uma: o que o modelo pode chamar hoje
+ * (`FERRAMENTAS_CHAT`) pode perder uma ferramenta, e a mensagem antiga que a
+ * chamou continua no R2 desenhando o (i) dela. Tirar daqui faria o tipo mentir
+ * sobre o que está gravado.
+ */
+export const FERRAMENTAS_DO_RASTRO = [
+  "buscar_atomos",
+  "historico_do_atomo",
+  "buscar_entidades",
+  "ler_retrato",
+  "consultar_grafo",
+] as const;
+
+export type FerramentaDoRastro = (typeof FERRAMENTAS_DO_RASTRO)[number];
+
+/**
+ * As ferramentas que o agente `chat` pode chamar. Só leitura, todas (regra 5).
  *
  * A terceira (slice 9) é sobre um substantivo diferente — a entidade, com
  * ficha, índice e contagens próprios —, e por isso é ferramenta e não
  * parâmetro. Não reverte a decisão da slice 6, que recusou quatro fatias do
  * **mesmo** substantivo. A quarta (slice 10) também é outro substantivo: o
  * retrato do "eu", que mora no R2 e se lê uma dimensão por vez.
+ *
+ * A quinta (slice 12) é a Cypher que o próprio modelo escreve: a que conta,
+ * ordena, compara períodos e anda pelo grafo — a pergunta global, que nenhuma
+ * das quatro alcança.
  */
 export const FERRAMENTAS_CHAT = [
   "buscar_atomos",
   "historico_do_atomo",
   "buscar_entidades",
   "ler_retrato",
-] as const;
+  "consultar_grafo",
+] as const satisfies readonly FerramentaDoRastro[];
 
 export type FerramentaChat = (typeof FERRAMENTAS_CHAT)[number];
 
@@ -1353,7 +1376,7 @@ export interface BuscaDeAtomos {
   entidade?: string;
   /** Lista, não valor único: os tipos se somam com OU. */
   tipo?: TipoAtomo[];
-  /** `AAAA-MM-DD`. Compara contra os dez primeiros caracteres de `valido_em`. */
+  /** `AAAA-MM-DD`. Compara contra o dia de Brasília de `valido_em` (`dia.ts`). */
   desde?: string;
   ate?: string;
 }
@@ -1456,6 +1479,26 @@ export interface EloDoHistorico {
 }
 
 /**
+ * Uma consulta de `consultar_grafo`, como o (i) a mostra: a Cypher e as linhas
+ * que o modelo leu (slice 12). Sem elas, auditar uma resposta pediria rodar a
+ * consulta de novo — e o grafo já seria outro.
+ */
+export interface ConsultaNoRastro {
+  /** A que rodou, sem o `EXPLAIN` que a ferramenta põe. */
+  cypher: string;
+  /** O que virou `$vetor`, quando houve busca por sentido. */
+  texto?: string;
+  colunas: string[];
+  /** As que foram ao modelo, já limpas e cortadas (`consulta.ts`). */
+  linhas: unknown[][];
+  /** Quantas o banco devolveu. */
+  total: number;
+  cortado: boolean;
+  /** O que o banco avisou: label, relação ou propriedade que não existe no grafo. */
+  avisos?: string[];
+}
+
+/**
  * Uma chamada de ferramenta, inteira: o que o modelo pediu e o que voltou.
  *
  * É o material do botão (i), e ele guarda o **rastro completo** — cada chamada,
@@ -1465,7 +1508,7 @@ export interface EloDoHistorico {
  * ele apareceu.
  */
 export interface PassoDeFerramenta {
-  ferramenta: FerramentaChat;
+  ferramenta: FerramentaDoRastro;
   parametros: Record<string, unknown>;
   /** Os átomos que a chamada trouxe, já cortados para caber na tela. */
   achados: AtomoAchado[];
@@ -1478,6 +1521,12 @@ export interface PassoDeFerramenta {
    * deixa o (i) dizer "leu a dimensão do corpo — e só ela".
    */
   retrato?: LeituraDoRetrato;
+  /**
+   * Só de `consultar_grafo` (slice 12): a Cypher que rodou e o que o modelo leu
+   * dela. Opcional, como tudo que veio depois da slice 6: mensagem antiga
+   * continua legível sem retrofill.
+   */
+  consulta?: ConsultaNoRastro;
   /**
    * Quanto a busca achou e quanto mostrou (slice 9). Opcional como os dois
    * abaixo: mensagem gravada antes da slice 9 continua legível sem retrofill.

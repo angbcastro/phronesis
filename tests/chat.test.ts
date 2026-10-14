@@ -18,7 +18,21 @@ vi.mock("ai", async (importOriginal) => {
   const real = (await importOriginal()) as Record<string, unknown>;
   return { ...real, generateText: vi.fn() };
 });
-vi.mock("@/lib/neo4j", () => ({ query: vi.fn(async () => []), queryUm: vi.fn(async () => null) }));
+vi.mock("@/lib/neo4j", () => ({
+  query: vi.fn(async () => []),
+  queryUm: vi.fn(async () => null),
+  // `consultar_grafo` passa por `consulta.ts` de verdade: o EXPLAIN e a execução
+  // chegam aqui, e o caso diz o que o banco responde.
+  executar: vi.fn(async () => ({ fields: [], values: [], queryType: "r", notifications: [] })),
+  Neo4jError: class Neo4jError extends Error {
+    constructor(
+      message: string,
+      readonly code?: string,
+    ) {
+      super(message);
+    }
+  },
+}));
 vi.mock("@/lib/r2", () => ({
   getJson: vi.fn(async () => null),
   putJson: vi.fn(async () => ({ etag: null })),
@@ -53,6 +67,7 @@ import {
   leituraDaPergunta,
   linhaDoRecorte,
   dataSimples,
+  diaEmCypher,
   ferramentas,
   historicoDoAtomo,
   linhaDeAtomo,
@@ -87,11 +102,11 @@ import {
   separarConversas,
 } from "@/components/Chat";
 import { chaveMensagens, chavePromptAgente } from "@/lib/chaves";
-import { AGENTE_IDS, ehAgenteId } from "@/lib/tipos";
+import { AGENTE_IDS, FERRAMENTAS_CHAT, ehAgenteId } from "@/lib/tipos";
 import { acharPorChave, listarEntidades } from "@/lib/entidades";
 import { embutir } from "@/lib/embedding";
 import { ConflitoR2Error, getJson, putJson, remover } from "@/lib/r2";
-import { query, queryUm } from "@/lib/neo4j";
+import { executar, query, queryUm } from "@/lib/neo4j";
 import type {
   AtomoAchado,
   Conversa,
@@ -228,15 +243,18 @@ describe("buscar_atomos", () => {
   });
 
   /**
-   * `left(valido_em, 10)` e não a string inteira: o parâmetro é uma data e o
-   * campo é um instante. Sem o corte, `<= '2026-08-31'` excluiria tudo que
-   * aconteceu no próprio dia 31.
+   * O dia e não o instante: o parâmetro é uma data e o campo é um instante — sem
+   * a conversão, `<= '2026-08-31'` excluiria tudo que aconteceu no próprio dia
+   * 31. E o dia de Brasília, não o de Greenwich (slice 12): `left(valido_em, 10)`
+   * punha a sessão das 22h do dia 31 em setembro.
    */
-  it("o período compara data com data, e átomo sem data fica de fora", async () => {
+  it("o período compara o dia de Brasília com a data, e átomo sem data fica de fora", async () => {
     await buscarAtomos({ desde: "2026-08-01", ate: "2026-08-31" });
     const [cypher, parametros] = consulta.mock.calls[0];
-    expect(String(cypher)).toContain("left(a.valido_em, 10) >= $desde");
-    expect(String(cypher)).toContain("left(a.valido_em, 10) <= $ate");
+    expect(String(cypher)).toContain(`${diaEmCypher("a.valido_em")} >= $desde`);
+    expect(String(cypher)).toContain(`${diaEmCypher("a.valido_em")} <= $ate`);
+    expect(diaEmCypher("a.valido_em")).toContain("timezone: 'America/Sao_Paulo'");
+    expect(String(cypher)).not.toContain("left(a.valido_em, 10)");
     expect(String(cypher)).toContain("coalesce(a.valido_em, '') <> ''");
     expect(parametros).toMatchObject({ desde: "2026-08-01", ate: "2026-08-31" });
   });
@@ -756,6 +774,11 @@ describe("o texto que a ferramenta devolve", () => {
     expect(linhaDeAtomo(atomo())).toContain("[id a1 · FATO · 2026-07-02 · sobre: Isinha]");
   });
 
+  it("a data é o dia de Brasília: a sessão das 22h não vira o dia seguinte", () => {
+    expect(linhaDeAtomo(atomo({ valido_em: "2026-07-03T01:30:00.000Z" }))).toContain("· FATO · 2026-07-02 ·");
+    expect(linhaDeAtomo(atomo({ valido_em: "" }))).toContain("· FATO · sem data ·");
+  });
+
   it("busca vazia diz que está vazia, e não devolve string à toa", () => {
     expect(respostaDaBusca({ achados: [] })).toBe("nenhum trecho encontrado.");
     expect(respostaDaBusca({ achados: [], aviso: "não existe entidade" })).toBe(
@@ -906,6 +929,119 @@ describe("as ferramentas prontas para o SDK", () => {
   });
 });
 
+// ─────────────────────── consultar_grafo (slice 12) ───────────────────────
+
+describe("consultar_grafo", () => {
+  const banco = vi.mocked(executar);
+  /** O que cada ida ao banco recebeu: o EXPLAIN primeiro, depois a execução. */
+  const idas = () => banco.mock.calls.map(([statement, parametros]) => ({ statement, parametros }));
+
+  beforeEach(() => {
+    banco.mockReset();
+    banco.mockImplementation((async (statement: string) =>
+      statement.startsWith("EXPLAIN ")
+        ? { fields: [], values: [], queryType: "r", notifications: [] }
+        : {
+            fields: ["pessoa", "afetivos"],
+            values: [["Nicole Borsato", 15], ["Isinha", 6]],
+            queryType: "r",
+            notifications: [],
+          }) as never);
+  });
+
+  const cypher = "MATCH (p:Pessoa) RETURN p.nome AS pessoa, 1 AS afetivos";
+  const busca =
+    "MATCH (a:Atomo) SEARCH a IN (VECTOR INDEX atomo_embedding FOR $vetor LIMIT 5) SCORE AS s RETURN a.id AS id";
+
+  it("devolve a tabela ao modelo, e o rastro guarda a Cypher e as linhas", async () => {
+    const passos: PassoDeFerramenta[] = [];
+    const f = ferramentas((p) => passos.push(p));
+
+    const r = await f.consultar_grafo.execute!({ cypher } as never, {} as never);
+    expect(r).toBe("2 linhas.\npessoa | afetivos\nNicole Borsato | 15\nIsinha | 6");
+    expect(passos).toHaveLength(1);
+    expect(passos[0]).toMatchObject({
+      ferramenta: "consultar_grafo",
+      parametros: {},
+      achados: [],
+      consulta: {
+        cypher,
+        colunas: ["pessoa", "afetivos"],
+        linhas: [["Nicole Borsato", 15], ["Isinha", 6]],
+        total: 2,
+        cortado: false,
+      },
+    });
+    expect(passos[0].erro).toBeUndefined();
+    expect(passos[0].duracao_ms).toBeTypeOf("number");
+  });
+
+  it("$hoje é o dia de Brasília — às 22h de lá, Greenwich já virou o dia", async () => {
+    const f = ferramentas(undefined, undefined, leituraDaPergunta(), new Date("2026-10-14T01:00:00.000Z"));
+    await f.consultar_grafo.execute!({ cypher: "RETURN date($hoje) AS d" } as never, {} as never);
+    expect(idas().map((i) => i.parametros)).toEqual([{ hoje: "2026-10-13" }, { hoje: "2026-10-13" }]);
+  });
+
+  it("responder passa o seu relógio às ferramentas", async () => {
+    chamar.mockImplementation((async (opcoes: { tools: Record<string, { execute: Function }> }) => {
+      await opcoes.tools.consultar_grafo.execute({ cypher: "RETURN $hoje AS d" }, {});
+      return respostaDoModelo("ok");
+    }) as never);
+    await responder([{ papel: "eu", texto: "que dia é hoje?", criado_em: "" }], {
+      agora: new Date("2026-10-14T02:30:00.000Z"),
+    });
+    expect(idas()[1].parametros).toEqual({ hoje: "2026-10-13" });
+  });
+
+  it("com texto e $vetor, o vetor vem da porta de embedding e o texto vai ao rastro", async () => {
+    const passos: PassoDeFerramenta[] = [];
+    const f = ferramentas((p) => passos.push(p));
+
+    await f.consultar_grafo.execute!({ cypher: busca, texto: " medo, receio " } as never, {} as never);
+    expect(embutir).toHaveBeenCalledWith("medo, receio");
+    expect(idas()[1].parametros).toMatchObject({ vetor: [0.1, 0.2] });
+    expect(passos[0].parametros).toEqual({ texto: "medo, receio" });
+    expect(passos[0].consulta?.texto).toBe("medo, receio");
+  });
+
+  it("texto sem $vetor na consulta não chama o embedding", async () => {
+    const f = ferramentas();
+    await f.consultar_grafo.execute!({ cypher, texto: "medo" } as never, {} as never);
+    expect(embutir).not.toHaveBeenCalled();
+    expect(idas()[1].parametros).toEqual({ hoje: expect.any(String) });
+  });
+
+  it("a recusa vai ao modelo como texto e ao rastro como erro, com a Cypher", async () => {
+    const passos: PassoDeFerramenta[] = [];
+    const f = ferramentas((p) => passos.push(p));
+
+    const r = await f.consultar_grafo.execute!({ cypher: "MATCH (c:Conversa) RETURN c" } as never, {} as never);
+    expect(String(r)).toMatch(/^recusada: :Conversa/);
+    expect(banco).not.toHaveBeenCalled();
+    expect(passos[0].erro).toBe(r);
+    expect(passos[0].consulta).toMatchObject({ cypher: "MATCH (c:Conversa) RETURN c", total: 0 });
+  });
+
+  it("a escrita para no EXPLAIN — a execução nunca é chamada", async () => {
+    banco.mockResolvedValue({ fields: [], values: [], queryType: "rw", notifications: [] } as never);
+    const f = ferramentas();
+    const r = await f.consultar_grafo.execute!({ cypher: "CREATE (x:Teste) RETURN x" } as never, {} as never);
+    expect(String(r)).toContain("nada foi executado");
+    expect(idas().map((i) => i.statement)).toEqual(["EXPLAIN CREATE (x:Teste) RETURN x"]);
+  });
+
+  it("falha que não é da consulta — o embedding, a rede — vira texto, nunca exceção", async () => {
+    vi.mocked(embutir).mockRejectedValueOnce(new Error("429 do Gateway"));
+    const passos: PassoDeFerramenta[] = [];
+    const f = ferramentas((p) => passos.push(p));
+
+    const r = await f.consultar_grafo.execute!({ cypher: busca, texto: "x" } as never, {} as never);
+    expect(String(r)).toBe("a consulta falhou: 429 do Gateway");
+    expect(passos[0].erro).toBe("429 do Gateway");
+    expect(passos[0].consulta?.cypher).toContain("SEARCH");
+  });
+});
+
 // ─────────────────────────── o loop ───────────────────────────
 
 describe("o loop do agente", () => {
@@ -919,6 +1055,8 @@ describe("o loop do agente", () => {
     const s = montarSistema("MEU PROMPT", new Date("2026-09-13T12:00:00.000Z"));
     expect(s.startsWith("MEU PROMPT")).toBe(true);
     expect(s).toContain("Hoje é 2026-09-13.");
+    // Às 22h de Brasília, Greenwich já está no dia seguinte (slice 12).
+    expect(montarSistema("P", new Date("2026-09-14T01:00:00.000Z"))).toContain("Hoje é 2026-09-13.");
     // O prompt salvo não pode carregar a data: ele é imutável por hash, e
     // congelaria "hoje" no dia em que eu o editei.
     expect(INSTRUCOES).not.toContain("Hoje é");
@@ -951,12 +1089,10 @@ describe("o loop do agente", () => {
     expect(r.modelo).toBe("zai/glm-5.3-flash");
 
     const pedido = chamar.mock.calls[0][0] as Record<string, unknown>;
-    expect(Object.keys(pedido.tools as object)).toEqual([
-      "buscar_atomos",
-      "historico_do_atomo",
-      "buscar_entidades",
-      "ler_retrato",
-    ]);
+    // A lista dos tipos e o conjunto oferecido são a mesma: ferramenta nova que
+    // entra numa e não na outra é o (i) desenhando o que o modelo não pode chamar.
+    expect(Object.keys(pedido.tools as object)).toEqual([...FERRAMENTAS_CHAT]);
+    expect(FERRAMENTAS_CHAT).toContain("consultar_grafo");
     // Id em string: é o que faz a chamada sair pelo Gateway (regra 8).
     expect(typeof pedido.model).toBe("string");
   });
@@ -1267,6 +1403,38 @@ describe("o progresso e a lista", () => {
     );
   });
 
+  it("o passo de consulta fala de linhas, e diz o corte", () => {
+    const passo = (consulta: Partial<NonNullable<PassoDeFerramenta["consulta"]>>, erro?: string) =>
+      frasePasso({
+        ferramenta: "consultar_grafo",
+        parametros: {},
+        achados: [],
+        consulta: { cypher: "MATCH …", colunas: [], linhas: [], total: 0, cortado: false, ...consulta },
+        ...(erro ? { erro } : {}),
+      });
+    expect(passo({ linhas: [[1], [2]], total: 15 })).toBe("consultou o grafo — 15 linhas");
+    expect(passo({ linhas: [[1]], total: 1 })).toBe("consultou o grafo — 1 linha");
+    expect(passo({ linhas: Array.from({ length: 150 }, () => [1]), total: 412, cortado: true })).toBe(
+      "consultou o grafo — cortado em 150 de 412",
+    );
+    expect(passo({})).toBe("consultou o grafo — nada");
+    // O erro de sintaxe ecoa a consulta inteira; a linha de progresso leva o começo.
+    const longo = `erro de sintaxe — ${"x".repeat(300)}\n"EXPLAIN MATCH"`;
+    const frase = passo({}, longo);
+    expect(frase.startsWith("consultou o grafo — erro de sintaxe")).toBe(true);
+    expect(frase.length).toBeLessThan(160);
+    expect(frase).not.toContain("EXPLAIN");
+  });
+
+  it("mensagem gravada antes da consulta existir continua desenhando o passo", () => {
+    expect(frasePasso({ ferramenta: "consultar_grafo", parametros: {}, achados: [] })).toBe(
+      "consultou o grafo — nada",
+    );
+    expect(frasePasso({ ferramenta: "historico_do_atomo", parametros: {}, achados: [atomo()] })).toBe(
+      "seguiu o que mudou — 1 trecho",
+    );
+  });
+
   it("passo que falhou diz o erro em vez da contagem", () => {
     expect(
       frasePasso({
@@ -1304,8 +1472,9 @@ describe("o progresso e a lista", () => {
     expect(arquivadas.map((c) => c.id)).toEqual(["b"]);
   });
 
-  it("a lista mostra o dia, não a hora", () => {
+  it("a lista mostra o dia, não a hora — o de Brasília", () => {
     expect(diaCurto("2026-09-13T18:00:00.000Z")).toBe("13/09");
+    expect(diaCurto("2026-09-14T01:30:00.000Z")).toBe("13/09");
     expect(diaCurto("")).toBe("");
   });
 });

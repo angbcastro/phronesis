@@ -26,6 +26,10 @@
  *                        contagens e quem co-ocorre
  *   ler_retrato          dimensao? — o retrato do "eu", uma seção por vez
  *                        (slice 10): sem argumento, o Agora e a lista
+ *   consultar_grafo      cypher, texto? — a Cypher que o próprio modelo escreve,
+ *                        só de leitura (slice 12): a que conta, ordena, compara
+ *                        períodos e anda pelo grafo. A porta e as travas são de
+ *                        `consulta.ts`
  *
  * **Só leitura, e nem por ferramenta** (regra 5 do CLAUDE.md). Uma ferramenta
  * de escrita com confirmação — arquivar um átomo direto do chat — foi
@@ -44,6 +48,8 @@
  * deixa o loop testável sem R2 nenhum.
  */
 import { generateText, jsonSchema, tool } from "ai";
+import { consultar, usaParametro } from "./consulta";
+import { FUSO, diaLocal, hojeLocal } from "./dia";
 import { embutir } from "./embedding";
 import { acharPorChave, listarEntidades, type EntidadeDoGrafo } from "./entidades";
 import { comEsperaDeLimite } from "./limite";
@@ -73,6 +79,7 @@ import {
   type BuscaDeAtomos,
   type BuscaDeEntidades,
   type CoOcorrencia,
+  type ConsultaNoRastro,
   type EntidadeAchada,
   type TipoEntidade,
   type EloDoHistorico,
@@ -229,12 +236,27 @@ Relação sutil é ligação provável, não registro. Diga "parece ligado a", "
  * mentira no objeto imutável do `prompt_hash` — e "esse mês", "semana passada",
  * "depois da viagem" passariam a ser resolvidos contra o dia em que eu editei o
  * prompt.
+ *
+ * É o dia de Brasília (`dia.ts`): às 22h de lá, Greenwich já está no dia
+ * seguinte, e "hoje" seria amanhã.
  */
 export function montarSistema(base: string = INSTRUCOES, agora: Date = new Date()): string {
   return `${base}
 
-Hoje é ${agora.toISOString().slice(0, 10)}.`;
+Hoje é ${hojeLocal(agora)}.`;
 }
+
+/**
+ * O dia de Brasília de um instante ISO, em Cypher: `AAAA-MM-DD`, ou `null` sem
+ * data. A mesma conta de `diaLocal`, feita no banco para o filtro de período e
+ * para as datas da ficha — `left(valido_em, 10)` dava o dia de Greenwich.
+ *
+ * O `CASE` não é enfeite: `datetime('')` é erro, e o `AND` do Cypher não
+ * promete parar no primeiro falso.
+ */
+export const diaEmCypher = (campo: string) =>
+  `CASE WHEN coalesce(${campo}, '') = '' THEN null ` +
+  `ELSE toString(date(datetime({datetime: datetime(${campo}), timezone: '${FUSO}'}))) END`;
 
 // ──────────────────────── ferramenta 1: buscar_atomos ────────────────────────
 
@@ -428,11 +450,11 @@ export async function buscarAtomos(
     condicoes.push(`coalesce(a.valido_em, '') <> ''`);
   }
   if (desde !== "") {
-    condicoes.push(`left(a.valido_em, 10) >= $desde`);
+    condicoes.push(`${diaEmCypher("a.valido_em")} >= $desde`);
     parametros.desde = desde;
   }
   if (ate !== "") {
-    condicoes.push(`left(a.valido_em, 10) <= $ate`);
+    condicoes.push(`${diaEmCypher("a.valido_em")} <= $ate`);
     parametros.ate = ate;
   }
 
@@ -655,7 +677,7 @@ async function lerFichas(ids: readonly string[]): Promise<Map<string, LinhaDeFic
      WHERE coalesce(a.status, 'ativo') = 'ativo'
      WITH id, e, collect(DISTINCT a) AS atomos
      WITH id, e, atomos,
-          [d IN [a IN atomos | left(coalesce(a.valido_em, ''), 10)] WHERE d <> ''] AS datas
+          [d IN [a IN atomos | ${diaEmCypher("a.valido_em")}] WHERE d IS NOT NULL] AS datas
      UNWIND atomos AS a
      OPTIONAL MATCH (a)-[:SOBRE|:MENCIONA]->(o:Entidade)
      WHERE o <> e AND NOT (o)-[:FUNDIDA_EM]->(e) AND toLower(coalesce(o.nome, '')) <> 'eu'
@@ -918,7 +940,10 @@ export interface ResultadoDoRetrato {
   aviso?: string;
 }
 
-const ate = (iso: string) => (mesAno(iso) === "" ? "" : ` (até ${mesAno(iso)})`);
+const ate = (iso: string) => {
+  const mes = mesAno(diaLocal(iso));
+  return mes === "" ? "" : ` (até ${mes})`;
+};
 
 /**
  * A ferramenta 4, por dentro (slice 10): o retrato do "eu", **uma dimensão por
@@ -1108,7 +1133,7 @@ export async function historicoDoAtomo(atomoId: string): Promise<ResultadoDeHist
 
 /** Um átomo, do jeito que ele entra no prompt de volta ao modelo. */
 export function linhaDeAtomo(a: AtomoAchado): string {
-  const quando = a.valido_em === "" ? "sem data" : a.valido_em.slice(0, 10);
+  const quando = diaLocal(a.valido_em) || "sem data";
   const quem = [
     ...(a.sobre.length > 0 ? [`sobre: ${a.sobre.join(", ")}`] : []),
     ...(a.cita.length > 0 ? [`cita: ${a.cita.join(", ")}`] : []),
@@ -1257,6 +1282,48 @@ const ESQUEMA_RETRATO = jsonSchema<{ dimensao?: string }>({
   },
 });
 
+/** O que `consultar_grafo` aceita. */
+export interface PedidoDeConsulta {
+  cypher: string;
+  texto?: string;
+}
+
+const ESQUEMA_CONSULTA = jsonSchema<PedidoDeConsulta>({
+  type: "object",
+  properties: {
+    cypher: {
+      type: "string",
+      description:
+        "a consulta, uma só, sem EXPLAIN e sem ponto e vírgula. Projete só as colunas que vai ler — nunca o nó inteiro — e agregue no banco.",
+    },
+    texto: {
+      type: "string",
+      description:
+        "as palavras de uma busca por sentido: viram $vetor. Só quando a consulta usa $vetor. Escreva a ideia, não a pergunta.",
+    },
+  },
+  required: ["cypher"],
+});
+
+/**
+ * A consulta como o (i) a guarda. Nasce também quando a ferramenta estoura antes
+ * de o banco responder — a Cypher que o modelo escreveu é o que eu preciso ver
+ * para entender o erro.
+ */
+const consultaParaRastro = (
+  cypher: string,
+  texto: string,
+  r?: Awaited<ReturnType<typeof consultar>>,
+): ConsultaNoRastro => ({
+  cypher,
+  ...(texto !== "" ? { texto } : {}),
+  colunas: r?.colunas ?? [],
+  linhas: r?.linhas ?? [],
+  total: r?.total ?? 0,
+  cortado: r?.cortado ?? false,
+  ...(r && r.avisos.length > 0 ? { avisos: r.avisos } : {}),
+});
+
 export interface OpcoesResposta {
   /** Chamado assim que uma ferramenta termina — é o progresso na tela. */
   aoPasso?: (passo: PassoDeFerramenta) => void;
@@ -1273,7 +1340,7 @@ export interface Resposta {
 }
 
 /**
- * As duas ferramentas, prontas para o SDK.
+ * As ferramentas, prontas para o SDK.
  *
  * **Elas nunca propagam erro.** Ferramenta que estoura derruba o loop inteiro e
  * a pergunta fica sem resposta; ferramenta que devolve "não consegui" deixa o
@@ -1284,11 +1351,16 @@ export interface Resposta {
  * de dentro delas: o conjunto atravessa as duas (um átomo que a busca já
  * mostrou não volta inteiro no histórico, e vice-versa) e morre junto com a
  * tentativa. Quem o cria é `responder`, pelo mesmo motivo que zera o rastro.
+ * `consultar_grafo` não o usa: as colunas são do modelo, e uma linha não é um
+ * átomo.
+ *
+ * `agora` é o relógio de `$hoje` — o mesmo do "Hoje é" do sistema.
  */
 export function ferramentas(
   aoPasso?: (p: PassoDeFerramenta) => void,
   vistos?: Set<string>,
   leitura: LeituraDaPergunta = leituraDaPergunta(),
+  agora: Date = new Date(),
 ) {
   const anunciar = (p: PassoDeFerramenta) => {
     try {
@@ -1434,6 +1506,47 @@ export function ferramentas(
         }
       },
     }),
+
+    consultar_grafo: tool({
+      description:
+        "Roda uma consulta Cypher só de leitura no grafo do diário e devolve as linhas numa tabela. É a que conta, ordena, compara períodos e anda pelo grafo. $hoje é a data de hoje (AAAA-MM-DD); com texto, $vetor é o vetor dele, para a cláusula SEARCH no índice atomo_embedding. Escrita, CALL de procedure, LOAD CSV e :Conversa são recusados antes de rodar. A saída tem teto: conte e agregue no banco em vez de trazer tudo.",
+      inputSchema: ESQUEMA_CONSULTA,
+      execute: async (entrada: PedidoDeConsulta) => {
+        const cypher = typeof entrada?.cypher === "string" ? entrada.cypher.trim() : "";
+        // `texto` sem `$vetor` na consulta não vira chamada de embedding: o
+        // modelo pediu um vetor que não ia usar.
+        const pedido = typeof entrada?.texto === "string" ? entrada.texto.trim() : "";
+        const texto = pedido !== "" && usaParametro(cypher, "vetor") ? pedido : "";
+        const parametros = texto === "" ? {} : { texto };
+        const inicio = Date.now();
+        try {
+          const valores: Record<string, unknown> = { hoje: hojeLocal(agora) };
+          if (texto !== "") valores.vetor = await leitura.vetor(texto);
+          const r = await consultar(cypher, valores);
+          anunciar({
+            ferramenta: "consultar_grafo",
+            parametros,
+            achados: [],
+            consulta: consultaParaRastro(cypher, texto, r),
+            duracao_ms: Date.now() - inicio,
+            ...(r.erro ? { erro: r.erro } : {}),
+          });
+          return r.texto;
+        } catch (e) {
+          const erro = e instanceof Error ? e.message : String(e);
+          console.error("[chat] consultar_grafo falhou:", e);
+          anunciar({
+            ferramenta: "consultar_grafo",
+            parametros,
+            achados: [],
+            consulta: consultaParaRastro(cypher, texto),
+            duracao_ms: Date.now() - inicio,
+            erro,
+          });
+          return `a consulta falhou: ${erro}`;
+        }
+      },
+    }),
   };
 }
 
@@ -1506,6 +1619,7 @@ export async function responder(
       },
       new Set<string>(),
       leitura,
+      agora,
     );
   };
 
