@@ -79,8 +79,18 @@ const chamar = (corpo: unknown) =>
 const atomosGravados = () => vi.mocked(gravarAtomos).mock.calls[0][1] as AtomoParaGravar[];
 const entidadesGravadas = () => vi.mocked(gravarEntidades).mock.calls[0][0] as EntidadeParaGravar[];
 
+/**
+ * O R2 desta suíte: a proposta em `extracao.json`, e nada mais. Desde a slice
+ * 11 o confirmar lê também `pedidos.json`, e um mock que devolvesse a proposta
+ * para qualquer chave a leria duas vezes.
+ */
+const soAProposta = (valor: unknown) =>
+  vi.mocked(getJson).mockImplementation((async (key: string) =>
+    key.endsWith("/extracao.json") ? { valor, etag: null } : null) as never);
+
 beforeEach(() => {
-  vi.mocked(getJson).mockReset().mockResolvedValue({ valor: proposta, etag: null } as never);
+  vi.mocked(getJson).mockReset();
+  soAProposta(proposta);
   vi.mocked(buscarSessao)
     .mockReset()
     .mockResolvedValue({
@@ -377,7 +387,7 @@ describe("a grafia falada vira alias", () => {
   };
 
   const confirmarComCitado = () => {
-    vi.mocked(getJson).mockResolvedValue({ valor: comCitado, etag: null } as never);
+    soAProposta(comCitado);
     return chamar({
       aprovados: [
         {
@@ -404,7 +414,7 @@ describe("a grafia falada vira alias", () => {
   });
 
   it("o `citado` é relido da proposta, nunca aceito do corpo (§4.7)", async () => {
-    vi.mocked(getJson).mockResolvedValue({ valor: comCitado, etag: null } as never);
+    soAProposta(comCitado);
     await chamar({
       aprovados: [
         {
@@ -428,7 +438,7 @@ describe("a grafia falada vira alias", () => {
   it("menção acrescentada na tela desalinha as posições, e aí só o sujeito casa", async () => {
     // A referência casa com a posição por índice; acrescentar uma menção desloca
     // tudo, e casar grafia com o nó errado criaria um alias mentindo.
-    vi.mocked(getJson).mockResolvedValue({ valor: comCitado, etag: null } as never);
+    soAProposta(comCitado);
     await chamar({
       aprovados: [
         {

@@ -189,6 +189,28 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   `extracao-anterior.json` e some na segunda vez. A trava está na tela e não no
   servidor, que é o desenho que §4.7 recusa em todos os outros pontos — fica
   como limite conhecido, e não como decisão boa.
+- **O átomo pedido é indistinguível no grafo.** A origem "a pedido" mora em
+  `pedidos.json`, que some com a sessão. Quem quiser saber, daqui a um ano, que
+  um átomo veio de um pedido, não tem onde perguntar.
+- **Re-extrair perde os pedidos** — os átomos e o texto que eu escrevi. O
+  `forcar` zera `pedidos.json` junto com o parcial, porque a proposta nova
+  renumera tudo.
+- **O mesmo texto pedido duas vezes devolve o mesmo resultado** — é a
+  idempotência do pedido (§6). Para pedir de novo, outra redação.
+- **O pedido lê a sessão inteira**: numa sessão longa a chamada custa o que
+  custava o passe único (50–100 s com o modelo de hoje), com a tela esperando e
+  o confirmar travado. O prazo é o da função, 280 s, e o rate limit come o resto.
+- **Pedir o que eu não falei volta vazio por instrução, e instrução é
+  tentativa.** A defesa final é a revisão: átomo cujo trecho não está na
+  transcrição aparece "sem áudio".
+- **O "a pedido" não sobrevive a eu reescrever o átomo inteiro** — continua
+  marcado como pedido mesmo se eu o transformar em outra coisa. É procedência do
+  nascimento, não do conteúdo; e o `faltou` que ele gera leva o texto final, o
+  que eu reescrevi.
+- **Um `forcar` no meio de um pedido o derruba**: o pedido só grava se ainda
+  está em curso, e o zerado faz ele responder que a sessão foi re-extraída. Na
+  prática a rota recusa pedido fora de `em_revisao`, e a re-extração tira a
+  sessão de lá; a janela é o instante entre a guarda da rota e o zerar.
 
 ### §4.8, §4.8.1, §4.10, §4.14 — identidade
 

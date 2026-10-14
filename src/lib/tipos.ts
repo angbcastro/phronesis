@@ -460,6 +460,16 @@ export interface AtomoProposto extends Omit<AtomoCru, "trechos" | "sobre" | "men
   perfila: MarcaPerfil[];
   prompt_version: string;
   modelo: string;
+  /**
+   * O átomo nasceu de um pedido meu na revisão, e não do extrator sozinho
+   * (slice 11). É procedência do nascimento: a tela mostra "a pedido: «…»", e o
+   * confirmar sabe que desmarcá-lo não é `rejeitado` do extrator.
+   *
+   * O texto viaja junto com o id porque a revisão reaberta precisa mostrá-lo, e
+   * o `GET /extracao` não muda de contrato por causa disso. Não vai ao grafo —
+   * lá o átomo pedido é um átomo como os outros (§14).
+   */
+  pedido?: { id: string; texto: string };
 }
 
 /** Item que o modelo devolveu e o parse recusou. Nada some em silêncio. */
@@ -1026,6 +1036,58 @@ export interface Parcial {
   atualizado_em: string;
 }
 
+// ───────── Slice 11: o que faltou, a pedido ─────────
+
+/** Quanto texto um pedido aceita. Pedido é apontar, não ditar o átomo. */
+export const TETO_PEDIDO = 500;
+
+/** A mesma mecânica de lease de `EstadoDaJanela`, com o vocabulário do pedido. */
+export type EstadoDoPedido = "em_curso" | "pronto" | "falhou";
+
+/**
+ * Um pedido que eu fiz na revisão: o texto, o estado e a procedência do que ele
+ * produziu.
+ *
+ * `id` é o hash do texto normalizado — a chave da idempotência: o mesmo pedido
+ * de novo devolve o que já foi gravado, sem chamar modelo.
+ */
+export interface EstadoPedido {
+  id: string;
+  texto: string;
+  estado: EstadoDoPedido;
+  /** ISO da última mudança. É dele que o lease vence. */
+  em: string;
+  /** Só em `falhou`: o que a tela mostra para eu tentar de novo. */
+  motivo?: string;
+  /** Os índices dos átomos que este pedido produziu. Vazio = não achou nada. */
+  indices: number[];
+  /** Procedência (regra 7), como na janela. */
+  prompt_version?: string;
+  modelo?: string;
+  prompt_version_resolucao?: string | null;
+  modelo_resolucao?: string | null;
+  /** As chaves do dossiê que o pedido viu. */
+  candidatas?: string[];
+}
+
+/**
+ * `sessoes/<id>/pedidos.json` — o que eu pedi depois de a proposta fechar.
+ *
+ * Objeto próprio, e não um acréscimo em `extracao.json`: aquele é escrito uma
+ * vez e a escrita única é a trava de idempotência da extração; este tem um
+ * terceiro dono — eu, depois — e é escrito por etag (§9).
+ */
+export interface Pedidos {
+  sessao_id: string;
+  pedidos: EstadoPedido[];
+  /** Os átomos pedidos, já ancorados e resolvidos, cada um com `pedido`. */
+  atomos: AtomoProposto[];
+  /** As candidatas que os átomos pedidos citam, já agregadas na hora do pedido. */
+  entidades: EntidadeCandidata[];
+  descartados: Descarte[];
+  atualizado_em: string;
+}
+
 /**
  * Um átomo que a janela mandou **engordar** em vez de duplicar.
  *
@@ -1469,6 +1531,7 @@ export interface MensagensDaConversa {
  *   finalizar     o `waitUntil` inteiro do `/finalizar`, de ponta a ponta
  *   pronto        o `waitUntil` inteiro do `/chunks/:i/pronto`
  *   extrair       o `waitUntil` inteiro do `/extrair` (re-extração à mão)
+ *   pedido        um pedido da revisão: dossiê + extração + resolução (slice 11)
  */
 export const PASSOS_MEDIDOS = [
   "stt",
@@ -1481,6 +1544,7 @@ export const PASSOS_MEDIDOS = [
   "finalizar",
   "pronto",
   "extrair",
+  "pedido",
 ] as const;
 
 export type PassoMedido = (typeof PASSOS_MEDIDOS)[number];

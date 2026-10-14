@@ -12,6 +12,7 @@ import {
 } from "@/lib/entidades";
 import { normalizarTipo } from "@/lib/extracao";
 import { registrarGrafia } from "@/lib/fusao";
+import { carregarPedidos, gestosDoExtrator, juntarPedidos } from "@/lib/pedidos";
 import { normalizarCampo } from "@/lib/perfil";
 import { getJson } from "@/lib/r2";
 import { mencoesDe, sobreDe } from "@/lib/referencias";
@@ -70,7 +71,8 @@ interface Corpo {
  *
  * O que o cliente pode mandar: quais átomos aprovou e como editou texto, tipo,
  * sujeito e menções. O que ele **não** manda: procedência. `id`, offsets,
- * `prompt_version` e `modelo` são relidos de `extracao.json` pelo índice — se
+ * `prompt_version` e `modelo` são relidos de `extracao.json` — e de
+ * `pedidos.json`, para o átomo que eu pedi (slice 11) — pelo índice. Se
  * viessem do corpo, a procedência seria só uma afirmação do navegador, e um
  * átomo com procedência falsa é pior que átomo nenhum.
  *
@@ -98,15 +100,23 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return erro(`sessão em '${sessao.status}': não há revisão para confirmar`, 409);
   }
 
-  const proposta = await getJson<Extracao>(chaveExtracao(id));
+  const [proposta, pedidos] = await Promise.all([
+    getJson<Extracao>(chaveExtracao(id)),
+    carregarPedidos(id),
+  ]);
   if (!proposta) return erro("proposta de extração não está no R2", 404);
+
+  // A lista que a revisão mostrou: a proposta e, no fim, os átomos que eu pedi
+  // (slice 11). A procedência do átomo pedido vem do R2 como a de qualquer
+  // outro — `pedidos.json` é tão servidor quanto `extracao.json`.
+  const juntada = juntarPedidos(proposta.valor, pedidos);
 
   const corpo = (await req.json().catch(() => null)) as Corpo | null;
   if (!corpo || !Array.isArray(corpo.aprovados) || !Array.isArray(corpo.entidades)) {
     return erro("corpo inválido: espera { aprovados: [], entidades: [] }", 400);
   }
 
-  const porIndice = new Map(proposta.valor.atomos.map((a) => [a.indice, a]));
+  const porIndice = new Map(juntada.atomos.map((a) => [a.indice, a]));
 
   // Nome final → o que vai virar nó. `nome_normalizado` é a chave em tudo.
   const aprovadas = new Map<string, EntidadeParaGravar>();
@@ -264,12 +274,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // chegar nestes átomos sozinha.
   waitUntil(dispararConfronto(req, id));
 
+  // A apuração compara contra a proposta **sem** os pedidos: é o que o
+  // extrator propôs sozinho que ela julga. Desmarcar um átomo pedido não é
+  // `rejeitado` do extrator, e editá-lo não é `texto` — o que o pedido ensina
+  // chega pelo `faltou` dos gestos (§4.11).
   waitUntil(
     capturarCorrecoes({
       proposta: proposta.valor,
       confirmados,
       entidades: [...aprovadas.values()],
-      gestos: normalizarGestos(corpo.gestos),
+      gestos: gestosDoExtrator(normalizarGestos(corpo.gestos), proposta.valor),
     })
       .then((n) => {
         if (n > 0) console.log(`[calibracao] sessão ${id}: ${n} correção(ões) registrada(s)`);
@@ -284,7 +298,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     atomos: atomos.length,
     entidades: entidades.length,
     perfila: atomos.reduce((n, a) => n + a.perfila.length, 0),
-    rejeitados: proposta.valor.atomos.length - atomos.length,
+    rejeitados: juntada.atomos.length - atomos.length,
   });
 }
 

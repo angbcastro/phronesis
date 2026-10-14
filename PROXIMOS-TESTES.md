@@ -14,6 +14,29 @@ Confirme antes de gastar uma sessão com eles.
       do Neo4j e o `R2_BUCKET`). Sem ele o `pnpm dev` escreve em produção
       (§12.1), e os testes em dev da slice 10 não podem rodar.
 
+## Slice 11 — o que faltou, a pedido (`Specs/slice-11.md`)
+
+Construída e coberta pelo `pnpm test`; nada disto rodou contra modelo ainda. Em
+dev, contra o banco de desenvolvimento, numa sessão real em revisão fechada:
+
+- [ ] Pedir algo que eu falei: o átomo chega no fim, aprovado, com player e com
+      a linha "a pedido: «…»". **Medir o tempo da chamada** numa sessão de
+      ~15 min: se passar de 200 s, parar e rever o prazo (ordem de execução 3 da
+      spec — a rota tem 280 s e o rate limit come o resto).
+- [ ] Pedir algo que eu não falei: volta "não achei isso na transcrição", e
+      nenhum átomo inventado. Se vier átomo, ele está "sem áudio"?
+- [ ] O mesmo pedido de novo: volta na hora, sem chamar modelo (sem linha
+      `[pedido]` nova no log).
+- [ ] Fechar a aba no meio de um pedido e reabrir a revisão: o átomo está lá.
+- [ ] Editar o átomo pedido (texto, tipo, sujeito, menções), confirmar, e ver no
+      grafo `prompt_version` e `modelo`, as entidades certas, e o confronto dele
+      rodando de fundo.
+- [ ] Em `/calibracao`, sob `extracao`, a correção `faltou` com o texto final do
+      átomo pedido — e nenhuma `rejeitado`/`texto` por causa dele.
+- [ ] Re-extrair (`forcar`) uma sessão com pedido: a revisão volta sem os
+      átomos pedidos.
+- [ ] No celular: o campo do "+" e o botão cabem na largura.
+
 ## Slice 5.2 — o confronto amplo (`Specs/slice-5.2.md`)
 
 O modelo já foi escolhido (`deepseek-v4.1-flash`, comparação de 13/10) e o

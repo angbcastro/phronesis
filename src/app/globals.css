@@ -832,6 +832,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* O que este átomo vai acrescentar ao perfil de alguém, se eu confirmar. */
 .meta.perfila { display: block; margin-top: 0.25rem; opacity: 0.9; }
 
+/* O átomo que eu pedi (slice 11): procedência, discreta como a linha do perfil. */
+.meta.pedido { display: block; margin-top: 0.25rem; font-style: italic; }
+
+/* O "+" no fim da lista e o campo que ele abre. Fechado por padrão: o caso
+   comum — aprovar tudo — não muda de tamanho nem de cor. */
+.pedido-novo { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.25rem 0 1rem; }
+.pedido-novo form { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.pedido-novo input { flex: 1; min-width: 12rem; }
+
 /* ── /entidades: o topo, a lista e a barra do lote ──
 
    A linha era um `flex` de nove coisas sem `wrap`: caixa do lote, nome, a

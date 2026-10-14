@@ -16,6 +16,10 @@ As travas:
 | a checagem prévia da grafia, e o `WHERE NOT … IN` do `SET` | `fusao.registrarGrafia` | confirmar duas vezes não acrescenta a mesma grafia duas vezes a `aliases` |
 | `extracao.json` existir | `pipeline.extrairSessao` | não rechama o modelo nem sobrescreve proposta que eu já posso ter revisado |
 | `If-None-Match: *` no PUT da proposta | `pipeline.extrairSessao` | dois workers na mesma sessão geram uma proposta só: quem chega em segundo usa a do primeiro |
+| `id` do pedido = hash do texto normalizado, e pedido `pronto` em `pedidos.json` | `pedidos.reivindicarPedido` | o mesmo pedido de novo devolve o que já foi gravado, sem chamar modelo; pedido `falhou` se refaz |
+| lease `em_curso` com prazo (`LEASE_PEDIDO_MS`, 300 s — o `maxDuration` da rota) | `pedidos.reivindicarPedido` | dois toques no mesmo pedido não pagam duas chamadas; a função morta libera o pedido. Não é o `LEASE_MS` da janela porque a chamada sobre a sessão inteira pode ocupar o prazo da função quase todo |
+| `If-Match` + laço de retry em `pedidos.json`, e o `id` do átomo pedido carimbado **na escrita** | `pedidos.aplicarPedido` | dois pedidos concorrentes se somam e não repetem `<sessao_id>-<n>`: o `n` sai de `extracao.json` mais os pedidos do instante |
+| o pedido só se aplica se ainda está `em_curso` | `pedidos.aplicarPedido` | um `forcar` que zerou `pedidos.json` no meio faz o pedido falhar, em vez de gravar um átomo numerado contra a proposta antiga |
 | entrada no manifest por `i` | `manifest.registrarChunk` | reenviar o mesmo bloco não duplica nem reabre bloco transcrito |
 | `id` do átomo = `<sessao_id>-<índice>` | `atomos.gravarAtomos` (`MERGE`) | confirmar duas vezes não duplica átomo |
 | `nome_normalizado` único (constraint) | `atomos.gravarEntidades` (`MERGE`) | duas menções à mesma pessoa viram um nó, mesmo em corrida |

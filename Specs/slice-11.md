@@ -295,3 +295,40 @@ escrevi uma coisa, e o átomo pode ter achado outra.
   nascimento, não do conteúdo.
 
 ## Como ficou
+
+Construída em 13/10/2026, com `pnpm test` verde. **Não verificada contra
+modelo**: nenhum pedido rodou ainda, nem em dev — o ponto de retorno da ordem 3
+(a chamada sobre a sessão inteira passando de 200 s numa sessão de 15 min) está
+em aberto, e é o primeiro item da fatia no `PROXIMOS-TESTES.md`. Não foi para o
+ar: o commit não foi empurrado.
+
+O que saiu diferente do que está escrito acima, e por quê:
+
+- **`AtomoProposto.pedido` é `{ id, texto }`, e não só o id.** A revisão
+  reaberta precisa mostrar "a pedido: «…»", e a spec não muda o contrato do
+  `GET /extracao`. Com o texto no átomo, a linha se desenha sem um campo novo na
+  resposta; o custo é o texto repetido em cada átomo do mesmo pedido, que tem no
+  máximo 500 caracteres.
+- **O lease do pedido é próprio, `LEASE_PEDIDO_MS` = 300 s, e não o `LEASE_MS`
+  da janela.** A spec pede "a mecânica de `reivindicar` da janela", e é a mesma
+  mecânica — mas com 120 s um segundo toque no mesmo pedido, enquanto a primeira
+  chamada ainda trabalha sobre a sessão inteira, pagaria uma segunda. 300 s é o
+  `maxDuration` da rota: passado ele, quem reivindicou está morto.
+- **`gestosDoExtrator`, que a spec não previa.** O §6 manda apurar contra a
+  proposta sem os pedidos, e para átomo isso basta. Mas recusa e renome de
+  entidade chegam pelos gestos sem passar pela proposta: recusar uma candidata
+  que só um pedido trouxe viraria `entidade_recusada` do extrator. O confirmar
+  filtra os gestos para as candidatas e os índices de `extracao.json`, e os
+  `faltantes` passam inteiros.
+- **Um passo medido novo, `pedido`** (`PASSOS_MEDIDOS`), aberto por
+  `comMedicao` na rota, sem `fecha`: o pedido soma ao detalhe da sessão e não
+  reescreve a linha do índice.
+- **O mesmo pedido em curso responde 409** ("este pedido já está sendo
+  procurado"). A spec dizia que ele não se refaz, e não o que responder.
+- **O `forcar` no meio de um pedido o derruba** em vez de gravar: `aplicarPedido`
+  só grava pedido ainda `em_curso`, e o zerado não está. Foi para o §14.
+- Os mocks de `tests/confirmar.test.ts` e `tests/confirmar-correcoes.test.ts`
+  devolviam a proposta para **qualquer** chave do R2; com o confirmar lendo também
+  `pedidos.json`, passaram a devolvê-la só para `extracao.json`.
+- O `gatilho` do `extracao` no painel de agentes (`agentes.ts`) passou a dizer
+  que ele também roda no "+" da revisão fechada.

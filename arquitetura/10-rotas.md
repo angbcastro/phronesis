@@ -16,7 +16,8 @@
 | `GET /api/sessoes/:id/medidas` | o detalhe medido daquela sessão | não há tela: é por aqui que "o objeto é lido sob demanda" acontece |
 | `GET /api/medidas` | o índice; com `?mes=AAAA-MM`, o resumo daquele mês | só leitura; existe porque `r2.ts` não tem `LIST` |
 | `GET /api/sessoes/:id/chunks/:i/audio` | presigned GET do bloco, para o player | 404 se a chave não existe, para o `<audio>` não falhar calado |
-| `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo, com `:PERFILA`, e apura as correções em `waitUntil` | `ja_confirmada` na segunda; procedência relida do R2, não do corpo; `gestos` é **opcional** e corpo sem ele confirma igual |
+| `POST /api/sessoes/:id/pedidos` | `{texto}` — o que faltou: o extrator relê a sessão inteira com o foco apontado e grava o átomo em `pedidos.json` **antes** de responder `{pedido: {id, texto, atomos}, proposta}`, com `proposta` no formato do `GET /extracao`, já juntada (§4.7) | **síncrona**, prazo da função contado do começo dela; 404 sem sessão, 409 fora de `em_revisao` (inclusive `confirmada`), 409 com a proposta ainda crescendo, 409 com o mesmo pedido em curso, 400 com texto vazio ou acima de 500 caracteres. O mesmo texto de novo devolve o que já foi gravado, sem modelo (§6) |
+| `POST /api/sessoes/:id/confirmar` | grava os aprovados no grafo, com `:PERFILA`, e apura as correções em `waitUntil` | `ja_confirmada` na segunda; procedência relida do R2 — `extracao.json` e `pedidos.json`, juntados —, não do corpo; `gestos` é **opcional** e corpo sem ele confirma igual |
 | `GET /api/calibracao` | sem `?agente`, o mapa: quanto material parado cada agente tem. Com `?agente`, as correções dele, a pauta viva e as seções do prompt em vigor | marca `visitado_em` **daquele agente** em `waitUntil` — best-effort, e só se o índice já existe |
 | `GET /api/calibracao/sugestao` | `{ sugerir: boolean }` — se **algum** agente tem o que olhar | **puro, nunca escreve**; a gaveta o consulta ao abrir |
 | `POST /api/calibracao/padroes` | o `calibracao-2` diz que padrão as correções daquele agente revelam | **não escreve nada**; é `POST` porque gasta chamada de modelo |
@@ -74,7 +75,7 @@ detalhe de deploy: o teto de execução é o que decide se um `waitUntil` termin
 
 | `maxDuration` | Rotas |
 |---|---|
-| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/entidades/enriquecer`, `/entidades/retrato/proposta`, `/confronto/rodar`, `/cron/confronto`, `/cron/enriquecimento`, `/chat`, `/extracao/eventos` — as que chamam modelo dentro de `waitUntil`, correm a mesma fila em loop, encadeiam até oito chamadas antes de responder, ou **mantêm um fluxo aberto** |
+| 300 s | `/chunks/:i/pronto`, `/finalizar`, `/extrair`, `/pedidos`, `/entidades/enriquecer`, `/entidades/retrato/proposta`, `/confronto/rodar`, `/cron/confronto`, `/cron/enriquecimento`, `/chat`, `/extracao/eventos` — as que chamam modelo dentro de `waitUntil`, correm a mesma fila em loop, encadeiam até oito chamadas antes de responder, ou **mantêm um fluxo aberto** |
 | 60 s | `/confirmar`, `/atomos/embutir`, `/entidades/embutir`, `/entidades/duplicatas`, `/entidades/fundir`, `/entidades/perfil/rascunho`, `/calibracao/padroes`, `/calibracao/redacao` |
 | padrão | todo o resto |
 

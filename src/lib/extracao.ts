@@ -422,6 +422,34 @@ O JSON ganha então uma terceira chave:
 }
 
 /**
+ * O bloco do que faltou (slice 11): o mesmo extrator, com o foco apontado.
+ *
+ * Pedido ausente devolve `""`, e o prompt sai byte a byte igual ao de antes da
+ * fatia — a disciplina de todo bloco injetado aqui, e um teste a cobra.
+ *
+ * **Sem `estende` e sem a lista do que já foi proposto.** A decisão da fatia é
+ * criar o átomo assim mesmo quando algo que já existe diz parte do pedido:
+ * engordar um átomo que eu talvez já tenha lido — ou editado — mudaria o que
+ * eu já revisei. Quem ainda recebe o que já foi proposto é a resolução, onde é
+ * o prior de quem eu já citei nesta sessão.
+ *
+ * O fim do bloco é a defesa contra o pedido do que eu não disse: lista vazia é
+ * a resposta pedida. Instrução é tentativa, e a defesa final é a revisão — o
+ * átomo cujo trecho não está na transcrição aparece "sem áudio" (§14).
+ */
+export function blocoDoPedido(pedido?: string): string {
+  const texto = pedido?.trim() ?? "";
+  if (texto === "") return "";
+
+  return `O QUE FALTOU
+A revisão desta sessão já está aberta, e eu disse que ficou faltando isto:
+«${texto}»
+Leia a transcrição inteira e devolva somente o átomo — ou os átomos — sobre isso, com todas as regras acima. Não importa se algum átomo que já existe diz parte disso: é exatamente isto que eu pedi. Se a transcrição não fala disso, devolva {"atomos":[],"entidades":[]} — não invente o que eu não disse.
+
+`;
+}
+
+/**
  * O prompt sem a transcrição: é ele que o painel de agentes mostra e edita, e é
  * dele que sai o hash do carimbo. `INSTRUCOES_BASE + FORMATO` **nesta ordem** é
  * o texto de origem — e, desde a slice 7, o texto que o `redacao-1` emenda
@@ -457,27 +485,33 @@ export function inserirAntesDoFormato(base: string, bloco: string): string {
 }
 
 /**
- * O prompt de uma chamada: base + o dossiê + o bloco da janela + o texto. Os
- * dois blocos injetados entram no **mesmo** ponto, na ordem em que aparecem
- * aqui — o dossiê primeiro, porque ele é material; a janela depois, porque ela
- * é sobre esta chamada e mais nenhuma.
+ * O prompt de uma chamada: base + o dossiê + o bloco da janela + o do pedido +
+ * o texto. Os blocos injetados entram no **mesmo** ponto, na ordem em que
+ * aparecem aqui — o dossiê primeiro, porque ele é material; a janela e o pedido
+ * depois, porque são sobre esta chamada e mais nenhuma. Os dois últimos não
+ * convivem: o pedido lê a sessão inteira e vai sem contexto de janela.
  *
  * **Eram três até a slice 7**, e o primeiro era o das regras aprovadas. Ele
  * saiu porque a correção deixou de virar apêndice e passou a virar emenda no
  * corpo do prompt (`redacao.ts`): o que a 4.6 colava aqui a cada chamada agora
  * está escrito dentro do texto que `efetivo("extracao", …)` devolve.
  *
- * Sem `contexto` e sem dossiê, sai byte a byte igual ao de antes da slice 4.8.
+ * Sem `contexto`, sem dossiê e sem pedido, sai byte a byte igual ao de antes
+ * da slice 4.8.
  */
 export const montarPrompt = (
   texto: string,
   base: string = BASE,
   contexto?: ContextoDeJanela,
   dossie: Dossie = [],
+  pedido?: string,
 ): string =>
   inserirAntesDoFormato(
-    inserirAntesDoFormato(base, blocoDasCandidatas(dossie)),
-    blocoDaJanela(contexto),
+    inserirAntesDoFormato(
+      inserirAntesDoFormato(base, blocoDasCandidatas(dossie)),
+      blocoDaJanela(contexto),
+    ),
+    blocoDoPedido(pedido),
   ) + texto.trim();
 
 /**
@@ -962,6 +996,13 @@ export interface OpcoesDeJanela {
    * dossiê, e sem isto a mesma consulta sairia duas vezes por janela.
    */
   catalogo?: EntidadeDoGrafo[];
+  /**
+   * O que eu disse que faltou, na revisão já fechada (slice 11). Com ele a
+   * "janela" é a transcrição inteira, o prompt ganha `blocoDoPedido` no lugar
+   * de `blocoDaJanela`, e `estende` não existe — qualquer um que vier é
+   * descartado com o motivo. `jaPropostos` continua indo só para a resolução.
+   */
+  pedido?: string;
 }
 
 /** Onde a janela começa e termina, em segundos da sessão. */
@@ -994,7 +1035,15 @@ export async function extrairJanela(
 ): Promise<ResultadoDaJanela> {
   garantirGateway(); // falha cedo, antes de mandar a transcrição para qualquer lugar
 
-  const { jaPropostos = [], unica = false, ate, dossie = [], catalogo: catalogoLido } = opcoes;
+  const {
+    jaPropostos = [],
+    unica = false,
+    ate,
+    dossie = [],
+    catalogo: catalogoLido,
+    pedido,
+  } = opcoes;
+  const pedindo = (pedido?.trim() ?? "") !== "";
   const candidatas = dossie.map((d) => d.entidade.nome_normalizado);
 
   if (janela.texto.trim() === "") {
@@ -1029,8 +1078,14 @@ export async function extrairJanela(
     texto: a.texto,
     sobre: sobreDe(a).entidade,
   }));
-  const contexto: ContextoDeJanela = { jaPropostos: anteriores, ...faixaDaJanela(janela), unica };
-  const prompt = montarPrompt(janela.texto, meu.prompt, contexto, dossie);
+  // O pedido vai sem contexto de janela: ele lê a sessão inteira, e a lista do
+  // que já foi proposto é justamente o que ele não deve ver (`blocoDoPedido`).
+  const contexto: ContextoDeJanela | undefined = pedindo
+    ? undefined
+    : { jaPropostos: anteriores, ...faixaDaJanela(janela), unica };
+  const prompt = montarPrompt(janela.texto, meu.prompt, contexto, dossie, pedido);
+  /** A faixa válida de `ref` no `estende`. Zero no pedido: nenhum vale. */
+  const faixaDoEstende = pedindo ? 0 : jaPropostos.length;
 
   async function chamar(teto: number) {
     try {
@@ -1073,7 +1128,7 @@ export async function extrairJanela(
   let motivoDaRepeticao: string | null = null;
 
   try {
-    lido = ler(resposta, janela.sessao_id, jaPropostos.length);
+    lido = ler(resposta, janela.sessao_id, faixaDoEstende);
     // Salvou átomos de uma resposta cortada. Vale repetir com mais orçamento —
     // o que veio pode estar faltando o fim da lista —, mas agora **com rede**:
     // se a segunda vier pior, é a primeira que fica.
@@ -1100,7 +1155,7 @@ export async function extrairJanela(
     const segundaResposta = await chamar(teto);
     let segundaLeitura: RespostaExtrator | null = null;
     try {
-      segundaLeitura = ler(segundaResposta, janela.sessao_id, jaPropostos.length);
+      segundaLeitura = ler(segundaResposta, janela.sessao_id, faixaDoEstende);
     } catch (segunda) {
       // Só derruba a janela se não houver nada salvo da primeira. O diagnóstico
       // da SEGUNDA resposta sobe junto com a mensagem porque quem loga o erro

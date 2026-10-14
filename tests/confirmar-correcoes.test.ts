@@ -111,8 +111,18 @@ const corpoDaRevisao = (gestos?: unknown) => ({
 
 const capturado = () => vi.mocked(capturarCorrecoes).mock.calls[0][0];
 
+/**
+ * O R2 desta suíte: a proposta em `extracao.json`, e nada mais. Desde a slice
+ * 11 o confirmar lê também `pedidos.json`, e um mock que devolvesse a proposta
+ * para qualquer chave a leria duas vezes.
+ */
+const soAProposta = (valor: unknown) =>
+  vi.mocked(getJson).mockImplementation((async (key: string) =>
+    key.endsWith("/extracao.json") ? { valor, etag: null } : null) as never);
+
 beforeEach(() => {
-  vi.mocked(getJson).mockReset().mockResolvedValue({ valor: proposta, etag: null } as never);
+  vi.mocked(getJson).mockReset();
+  soAProposta(proposta);
   vi.mocked(buscarSessao)
     .mockReset()
     .mockResolvedValue({

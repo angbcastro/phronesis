@@ -10,6 +10,7 @@
  *   sessoes/<id>/parcial.json
  *   sessoes/<id>/extracao.json
  *   sessoes/<id>/extracao-anterior.json
+ *   sessoes/<id>/pedidos.json
  *   sessoes/<id>/correcoes.json
  *   sessoes/<id>/medidas.json
  *   conversas/<id>/mensagens.json
@@ -62,6 +63,17 @@ export const chaveExtracao = (id: string) => `${prefixoSessao(id)}/extracao.json
  * idempotência da extração. Um objeto só não poderia ser as duas coisas.
  */
 export const chaveParcial = (id: string) => `${prefixoSessao(id)}/parcial.json`;
+
+/**
+ * O que eu pedi na revisão depois de a proposta fechar (slice 11).
+ *
+ * Terceiro objeto da proposta, pelo mesmo motivo que fez o parcial e a proposta
+ * serem dois: donos diferentes no tempo. `extracao.json` é escrito uma vez, com
+ * `If-None-Match`, e essa escrita única é a trava da extração; o pedido é meu,
+ * chega depois, pode chegar duas vezes ao mesmo tempo, e é escrito por etag.
+ * A leitura junta os dois (`juntarPedidos`).
+ */
+export const chavePedidos = (id: string) => `${prefixoSessao(id)}/pedidos.json`;
 
 /**
  * A proposta que o `forcar` sobrescreveu — **só a última**, não um histórico.
@@ -288,6 +300,7 @@ export function chavesDaSessao(m: Manifest): string[] {
     chaveParcial(id),
     chaveExtracao(id),
     chaveExtracaoAnterior(id),
+    chavePedidos(id),
     chaveCorrecoes(id),
     // O detalhe da medida morre com a sessão; a linha dela em `medidas/indice.json`
     // **não** entra nesta lista, pelo mesmo motivo que `calibracao/indice.json`

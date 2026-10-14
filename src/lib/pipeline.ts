@@ -27,6 +27,7 @@ import {
 import { listarEntidades } from "./entidades";
 import type { EntidadeDoGrafo } from "./entidades";
 import { extrair, extrairJanela } from "./extracao";
+import { carregarPedidos, juntarPedidos, zerarPedidos } from "./pedidos";
 import { candidatasDaJanela, dossieDaJanela, entidadesJaAtribuidas } from "./recuperacao";
 import type { Dossie } from "./recuperacao";
 import {
@@ -569,7 +570,13 @@ export async function extrairSessao(
     // Forçar recalibra o caminho que **roda de verdade**, e não um paralelo:
     // zera o acumulado e refaz janela por janela. Sem isso, calibrar o prompt
     // exercitaria o passe único enquanto a gravação usa as janelas.
-    if (forcar) await zerarParcial(sessao_id);
+    //
+    // Os pedidos vão junto (slice 11): a proposta nova renumera tudo, e um
+    // átomo pedido colidiria com ela. Re-extrair é recomeçar.
+    if (forcar) {
+      await zerarParcial(sessao_id);
+      await zerarPedidos(sessao_id);
+    }
 
     // Um retrato do grafo para a finalização inteira: as janelas que faltam
     // fechar e a montagem da proposta depois delas (slice 8).
@@ -836,15 +843,22 @@ export interface PropostaAtual {
  * leituras não têm o que dizer enquanto a resposta for não — no caminho que
  * cresce, `transcricao.json` nem existe e `extracao-anterior.json` quase nunca.
  * Pagá-las por tick seria triplicar o custo do laço para nada.
+ *
+ * **É aqui que os pedidos entram na proposta** (slice 11): `extracao.json`
+ * continua sendo só o que o extrator propôs sozinho, e a leitura junta os dois
+ * (`juntarPedidos`). Por esta função passam `propostaAtual`, o `GET /extracao`
+ * e o fluxo de eventos — nenhum contrato muda, e custa uma leitura a mais no R2
+ * por abertura de revisão fechada.
  */
 async function fechadaDe(sessao_id: string, extracao: Extracao): Promise<PropostaAtual> {
-  const [transcricao, anterior] = await Promise.all([
+  const [transcricao, anterior, pedidos] = await Promise.all([
     getJson<Transcricao>(chaveTranscricao(sessao_id)),
     getJson<Extracao>(chaveExtracaoAnterior(sessao_id)),
+    carregarPedidos(sessao_id),
   ]);
 
   return {
-    extracao,
+    extracao: juntarPedidos(extracao, pedidos),
     blocos: transcricao?.valor.blocos ?? [],
     crescendo: false,
     anterior: anterior

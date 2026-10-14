@@ -108,6 +108,7 @@ describe("as chaves de uma sessão inteira — o que o apagar percorre", () => {
         "sessoes/abc123xy/parcial.json",
         "sessoes/abc123xy/extracao.json",
         "sessoes/abc123xy/extracao-anterior.json",
+        "sessoes/abc123xy/pedidos.json",
         "sessoes/abc123xy/correcoes.json",
         "sessoes/abc123xy/medidas.json",
         "sessoes/abc123xy/manifest.json",
@@ -142,8 +143,8 @@ describe("as chaves de uma sessão inteira — o que o apagar percorre", () => {
     expect(chaves.join(" ")).not.toContain("medidas/indice.json");
   });
 
-  it("uma sessão de 17 min fatiada dá 35 blocos e 112 objetos", () => {
+  it("uma sessão de 17 min fatiada dá 35 blocos e 113 objetos", () => {
     const trinta = Array.from({ length: 35 }, (_, i) => ({ i, ext: "wav" }));
-    expect(chavesDaSessao(manifest(trinta))).toHaveLength(35 * 3 + 7);
+    expect(chavesDaSessao(manifest(trinta))).toHaveLength(35 * 3 + 8);
   });
 });

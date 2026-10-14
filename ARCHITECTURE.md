@@ -41,6 +41,7 @@ construído e ainda não foi validado está em `PROXIMOS-TESTES.md`.
 | 8.2 | a revisão abre antes de a proposta fechar | sim |
 | 9 | a resposta do chat vem antes do despejo | sim |
 | 10 | o retrato do "eu" | sim |
+| 11 | o que faltou, a pedido | não |
 
 "No ar" é estar em `master` no remoto: push é deploy, e a migration roda no
 build (`CLAUDE.md`). Se uma fatia no ar já foi validada é pergunta do
@@ -53,9 +54,13 @@ revisar, confirmar. O áudio sobe em blocos de 30 s direto para o R2 (§3), cada
 bloco é transcrito assim que chega, e a cada quatro blocos uma **janela** de
 2 min é extraída durante a própria gravação (§4.1, §4.6): quando eu paro, sobra
 a janela do fim. A revisão abre no primeiro átomo que existir e cresce enquanto
-o fim é extraído (§4.19). O confirmar grava `:Atomo` e `:Entidade` no grafo, com
-procedência relida do R2 (§4.7) — nada entra no grafo antes dele (regra 5). A
-transcrição literal é porta de serviço, e não passo da jornada (§11).
+o fim é extraído (§4.19). Fechada, ela sabe pedir o que o extrator deixou de
+fora: um "+" no fim da lista, eu digo em poucas palavras o que faltou, e o mesmo
+extrator relê a sessão inteira e devolve o átomo, aprovado e marcado "a pedido"
+(§4.6, §4.7) — que vira correção `faltou` quando eu o confirmo (§4.11). O
+confirmar grava `:Atomo` e `:Entidade` no grafo, com procedência relida do R2
+(§4.7) — nada entra no grafo antes dele (regra 5). A transcrição literal é porta
+de serviço, e não passo da jornada (§11).
 
 **Identidade.** Quem eu cito se descobre pelo contexto, e não pela grafia: o
 `extracao-9` extrai e propõe o nó, sabendo das candidatas que uma busca de cinco
@@ -162,9 +167,13 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   caminho de volta, do segundo para o bloco que o contém  (client)
   texto.ts        normalização, nome_normalizado e lista de pronomes       (client)
   extracao.ts     átomos a partir de uma janela: prompt, JSON estrito, procedência
-                  — e o bloco que diz de que minutos ela é e o que já foi proposto
+                  — e o bloco que diz de que minutos ela é e o que já foi proposto,
+                  ou o do pedido, que aponta o foco para o que faltou
   janela.ts       a unidade de extração: fatiar o manifest, reivindicar a janela,
                   somar o que ela produziu ao acumulado. NÃO fala com modelo
+  pedidos.ts      o que faltou, a pedido: `pedidos.json`, reivindicar o pedido,
+                  carimbar os ids na escrita, juntar pedido e proposta na
+                  leitura, e a orquestração da rota. NÃO fala com modelo
   offsets.ts      trecho do modelo → segundo do áudio (modelo não dá timestamp)
   recuperacao.ts  o RAG por bloco: quem o grafo acha que este trecho cita, em
                   cinco camadas — e o dossiê que a janela mostra ao extrator
@@ -271,7 +280,7 @@ src/components/   as telas, todas client
   Processando.tsx fechar a sessão e esperar; ponte curta, sai no primeiro átomo
                   que existir
   Revisao.tsx     aprovar, editar, escutar, confirmar — e crescer debaixo da mão
-                  enquanto o fim é extraído
+                  enquanto o fim é extraído; fechada, o "+" que pede o que faltou
   SeletorEntidade.tsx a barra pesquisável de entidade, nos dois lugares da
                   revisão
   Leitura.tsx     a transcrição literal — porta de serviço

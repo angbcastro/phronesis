@@ -43,6 +43,12 @@
  * no rodapé diz por quê. Confirmar metade da sessão partiria em duas tudo que é
  * chaveado por `sessao_id` — a captura de correções, os embeddings, o confronto.
  * Nem o teto da espera destrava: ele só troca a mensagem por uma honesta.
+ *
+ * **Desde a slice 11, a revisão fechada sabe pedir o que faltou.** Um "+" no
+ * fim da lista abre um campo; eu escrevo em poucas palavras o que o extrator
+ * deixou de fora, e o átomo volta pelo processo de sempre e entra no fim,
+ * aprovado e com a linha "a pedido: «…»". Enquanto o pedido roda, o confirmar
+ * trava pela mesma regra do `crescendo`: não gravar metade.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -55,7 +61,13 @@ import { CATALOGO_VAZIO, montarCatalogo, resolver } from "@/lib/catalogo";
 import { mencoesDe, sobreDe } from "@/lib/referencias";
 import { localizarNoAudio } from "@/lib/transcricao";
 import { ehPronome, normalizarNome, reescreverNomes } from "@/lib/texto";
-import { CAMPOS_GESTO, ROTULO_TIPO_ENTIDADE, TIPOS_ATOMO, TIPOS_ENTIDADE } from "@/lib/tipos";
+import {
+  CAMPOS_GESTO,
+  ROTULO_TIPO_ENTIDADE,
+  TETO_PEDIDO,
+  TIPOS_ATOMO,
+  TIPOS_ENTIDADE,
+} from "@/lib/tipos";
 import type { Catalogo, EntidadeDoCatalogo } from "@/lib/catalogo";
 import type { EventoDaProposta } from "@/lib/pipeline";
 import type {
@@ -303,7 +315,7 @@ export function montarGestos(entrada: {
   finalDe: (e: EntidadeCandidata) => { nome: string };
   /** Chaves **da proposta** das candidatas que de fato não viraram nó. */
   recusadas: ReadonlySet<string>;
-  /** O que o extrator não viu e eu digitei. Vazio enquanto o botão não existe. */
+  /** O que o extrator não viu e eu pedi — `faltantesDosPedidos` (slice 11). */
   faltantes?: { texto: string }[];
 }): Gestos {
   const { edicoes, entidades, finalDe, recusadas, faltantes = [] } = entrada;
@@ -329,6 +341,24 @@ export function montarGestos(entrada: {
     renomes,
     faltantes,
   };
+}
+
+/**
+ * O "faltou um" da 4.6, enfim com botão (slice 11): cada átomo pedido que eu
+ * **aprovei** vira um faltante, com o texto final — o que eu confirmei, e não o
+ * que eu escrevi no pedido. Pedido de coisa que eu nem falei volta vazio e não
+ * manda nada; átomo pedido desmarcado também não: nos dois casos o extrator
+ * não deixou nada de fora.
+ */
+export function faltantesDosPedidos(
+  aprovados: readonly AtomoProposto[],
+  textoDe: (a: AtomoProposto) => string,
+): { texto: string }[] {
+  return aprovados.flatMap((a) => {
+    if (!a.pedido) return [];
+    const texto = textoDe(a).trim();
+    return texto === "" ? [] : [{ texto }];
+  });
 }
 
 /**
@@ -547,6 +577,13 @@ export function Revisao({ id }: { id: string }) {
   const [travouEspera, setTravouEspera] = useState(false);
   /** A lista da proposta anterior, buscada só quando eu peço para ver. */
   const [anterior, setAnterior] = useState<AtomoProposto[] | null>(null);
+  /** O campo do "+" está aberto. Fechado por padrão: aprovar tudo não muda. */
+  const [pedindo, setPedindo] = useState(false);
+  const [textoPedido, setTextoPedido] = useState("");
+  /** Um pedido está rodando. Trava o confirmar, como o `crescendo`. */
+  const [procurando, setProcurando] = useState(false);
+  /** A resposta do último pedido que não trouxe átomo: vazio ou falha. */
+  const [avisoPedido, setAvisoPedido] = useState<string | null>(null);
 
   const audio = useRef<HTMLAudioElement | null>(null);
   const mediu = useRef(false);
@@ -946,11 +983,66 @@ export function Revisao({ id }: { id: string }) {
     }));
   }
 
+  /**
+   * O "+": pede ao extrator o que faltou, e espera a resposta (slice 11).
+   *
+   * A proposta da resposta entra por `mesclarProposta` — a lista só cresce, e o
+   * que eu já editei sobrevive porque tudo é chaveado por índice. Os átomos
+   * pedidos entram **aprovados**: `rejeitados` não os conhece. O texto só sai
+   * do campo quando achou; vazio ou falha, ele fica para eu reescrever.
+   */
+  async function pedir() {
+    const texto = textoPedido.trim();
+    if (!proposta || procurando || gravando || proposta.crescendo || texto === "") return;
+    setProcurando(true);
+    setAvisoPedido(null);
+
+    const r = await fetch(`/api/sessoes/${id}/pedidos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texto }),
+    }).catch(() => null);
+
+    if (!r || !r.ok) {
+      const motivo = r
+        ? ((await r.json().catch(() => ({}))) as { erro?: string }).erro
+        : "sem resposta do servidor";
+      setAvisoPedido(motivo ?? "o pedido falhou");
+      setProcurando(false);
+      return;
+    }
+
+    const d = (await r.json()) as {
+      pedido: { atomos: AtomoProposto[] };
+      proposta: Proposta | null;
+    };
+    if (d.proposta) {
+      const nova = d.proposta;
+      setProposta((p) =>
+        mesclarProposta(p, {
+          status: nova.status,
+          crescendo: nova.crescendo,
+          extracao: nova.extracao,
+          blocos: nova.blocos,
+          anterior: nova.anterior ?? null,
+        }),
+      );
+    }
+    if (d.pedido.atomos.length === 0) {
+      setAvisoPedido("não achei isso na transcrição");
+    } else {
+      setTextoPedido("");
+      setPedindo(false);
+    }
+    setProcurando(false);
+  }
+
   async function confirmar() {
     // `crescendo` entra na guarda, e não só no `disabled`: o botão é uma
     // aparência, esta linha é a regra. Gravar metade da sessão partiria em duas
-    // tudo que é chaveado por `sessao_id`.
-    if (!proposta || gravando || pendentes.length > 0 || proposta.crescendo) return;
+    // tudo que é chaveado por `sessao_id`. O pedido em curso entra pelo mesmo
+    // motivo (slice 11): o átomo que ele vai trazer ficaria para trás.
+    if (!proposta || gravando || pendentes.length > 0 || proposta.crescendo || procurando) return;
     setGravando(true);
     setFalha(null);
 
@@ -994,6 +1086,7 @@ export function Revisao({ id }: { id: string }) {
         recusadas: new Set(
           naoUsadas.filter((e) => daProposta.includes(e)).map((e) => e.nome_normalizado),
         ),
+        faltantes: faltantesDosPedidos(aprovados, textoDe),
       }),
     };
 
@@ -1171,6 +1264,13 @@ export function Revisao({ id }: { id: string }) {
                     )}
                   </p>
 
+                  {a.pedido && (
+                    // Procedência do nascimento, e não marca de novidade: eu
+                    // escrevi uma coisa, e o átomo pode ter achado outra. É a
+                    // única linha que a slice 11 acrescenta ao átomo.
+                    <p className="meta pedido">a pedido: «{a.pedido.texto}»</p>
+                  )}
+
                   {incerto && (
                     // Destaca, não trava. A sugestão já está preenchida no
                     // seletor — só a decisão, sem explicar o motivo (o
@@ -1342,6 +1442,57 @@ export function Revisao({ id }: { id: string }) {
         })}
       </ol>
 
+      {!crescendo && (
+        // O "+" só existe com a proposta fechada: durante o `crescendo` o que
+        // falta pode chegar na janela seguinte (slice 11).
+        <div className="pedido-novo">
+          {pedindo ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void pedir();
+              }}
+            >
+              <input
+                type="text"
+                value={textoPedido}
+                autoFocus
+                maxLength={TETO_PEDIDO}
+                placeholder="o que faltou?"
+                aria-label="o que faltou"
+                disabled={procurando}
+                onChange={(e) => setTextoPedido(e.target.value)}
+              />
+              <button type="submit" disabled={procurando || textoPedido.trim() === ""}>
+                pedir
+              </button>
+              {!procurando && (
+                <button
+                  type="button"
+                  className="ver-anterior"
+                  onClick={() => {
+                    setPedindo(false);
+                    setAvisoPedido(null);
+                  }}
+                >
+                  fechar
+                </button>
+              )}
+            </form>
+          ) : (
+            <button
+              className="acrescentar"
+              aria-label="pedir o que faltou"
+              onClick={() => setPedindo(true)}
+            >
+              +
+            </button>
+          )}
+          {procurando && <p className="aguardando">procurando na transcrição…</p>}
+          {!procurando && avisoPedido && <p className="aguardando">{avisoPedido}</p>}
+        </div>
+      )}
+
       {mudouDeVersao && (
         // Uma linha, no fim da lista, e fechada por padrão: comparar duas
         // propostas é trabalho de calibração, não de revisão — e a revisão
@@ -1492,7 +1643,7 @@ export function Revisao({ id }: { id: string }) {
         <button
           className="confirmar"
           onClick={() => void confirmar()}
-          disabled={gravando || pendentes.length > 0 || crescendo}
+          disabled={gravando || pendentes.length > 0 || crescendo || procurando}
         >
           {gravando ? "gravando…" : `confirmar ${aprovados.length} item(ns)`}
         </button>

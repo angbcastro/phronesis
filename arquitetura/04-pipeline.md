@@ -350,6 +350,34 @@ acumulado está vazio.** Não é detalhe: é o que faz o arquivo importado e a
 gravação de menos de dois minutos receberem o prompt sem bloco de janela, o
 mesmo de um passe único.
 
+#### O pedido: o mesmo extrator, com o foco apontado
+
+Quando a revisão já fechou e eu digo pelo "+" que algo ficou de fora (§4.7),
+quem procura é o mesmo `extracao`, e não um agente próprio: um prompt a mais
+para calibrar à mão faria o mesmo trabalho, e as correções `faltou` são material
+justamente deste (§4.11). `extrairJanela` recebe a opção `pedido` — o texto que
+eu escrevi —, e com ela:
+
+| O que muda | Por quê |
+|---|---|
+| a "janela" é `transcricao.json` inteira | o que faltou pode estar em qualquer minuto, e dito em dois |
+| o dossiê é o da sessão: as candidatas de todos os blocos mais o que a proposta já atribuiu | a mesma montagem de `dossieDaJanela`; tropeço na busca vira dossiê vazio |
+| `blocoDoPedido` entra no lugar de `blocoDaJanela` | `INSTRUCOES_BASE → blocoDasCandidatas → blocoDoPedido → FORMATO → texto` |
+| sem `estende`, e sem a lista do que já foi proposto no prompt | engordar um átomo que eu já li — ou editei — mudaria o que eu já revisei; um `estende` que vier é descartado com o motivo |
+| `jaPropostos` vai só para a resolução | lá é o prior de quem eu já citei nesta sessão |
+
+O bloco diz o que eu pedi entre aspas angulares, manda devolver só o átomo — ou
+os átomos — sobre isso, "não importa se algum átomo que já existe diz parte
+disso", e pede `{"atomos":[],"entidades":[]}` quando a transcrição não fala
+disso. **Pedido ausente devolve `""`**, e o prompt sai byte a byte o de sempre: a
+disciplina de todo bloco injetado aqui, e `tests/pedidos.test.ts` a cobra. O
+resto é o caminho de sempre — `efetivo("extracao", …)` com o prompt editado e as
+emendas, o carimbo, o teto e o escalonamento, `fecharJsonTruncado`,
+`comEsperaDeLimite`, resolução e desempate, e `ancorar` contra as palavras da
+transcrição inteira. Quem orquestra (reivindicar, ler, carimbar, gravar) é
+`pedidos.ts`, que não fala com modelo nenhum; o átomo vai para `pedidos.json`, e
+não para `extracao.json` (§9).
+
 #### `estende`: o que substitui a passada de costura
 
 A janela devolve, além de `atomos`, uma lista `estende` de
@@ -807,6 +835,41 @@ entidade, é o que tira a marca. Elas viajam no corpo do confirmar com o nome
 renomeado a entidade. O servidor recusa campo fora do schema e entidade fora da
 lista aprovada.
 
+#### O "+": o que faltou, a pedido
+
+Quando o extrator deixa algo de fora, a revisão **fechada** tem um **+** no fim
+da lista de átomos. Tocar abre, no mesmo lugar, um campo ("o que faltou?") e um
+botão; fechado por padrão, porque o caso comum — aprovar tudo — não muda, e
+ignorar o "+" não custa nada. O pedido vai a `POST /api/sessoes/:id/pedidos`,
+síncrono, e o extrator relê a sessão inteira com o foco apontado (§4.6).
+
+**Só com a proposta fechada.** Durante o `crescendo` o "+" não existe: o que
+falta pode chegar na janela seguinte, e os ids das janelas são carimbados contra
+o fim da lista, que é onde o átomo pedido estaria. Depois de confirmada também
+não: o átomo nasceria sem revisão em volta.
+
+| Enquanto | A tela |
+|---|---|
+| roda | "procurando na transcrição…"; o campo, o "+" e o **confirmar** travados — a mesma regra do `crescendo` (§4.19): não gravar metade. A trava está na guarda de `confirmar()`, e não só no `disabled` |
+| achou | a proposta da resposta entra por `mesclarProposta`: a lista só cresce, e o que eu já editei sobrevive porque tudo é chaveado por índice. Os átomos pedidos entram **aprovados**, no fim, com a linha "a pedido: «…»" logo abaixo do resumo |
+| não achou | "não achei isso na transcrição", e o texto fica no campo |
+| falhou | a mensagem do servidor, e o texto fica no campo para tentar de novo |
+
+**A linha "a pedido" é procedência, e não indicador de novidade**: eu escrevi
+uma coisa, e o átomo pode ter achado outra — a tela mostra as duas. Ela é a
+única coisa que o átomo pedido tem de diferente; o editor é o de todo átomo, e
+desmarcá-lo, editar o texto, o tipo, o sujeito e as menções é igual.
+
+**Pedir o mesmo texto de novo devolve o mesmo resultado** — o id do pedido é o
+hash do texto normalizado (§6) —, e a resposta perdida não perde o átomo: ele é
+gravado em `pedidos.json` **antes** da resposta, e a leitura da revisão já junta
+os pedidos (`juntarPedidos`, em `fechadaDe`). Reabrir a revisão o traz.
+
+**No confirmar**, `montarGestos` recebe `faltantes`: o texto final (`textoDe`) de
+cada átomo pedido **aprovado** (`faltantesDosPedidos`). Pedido que voltou vazio,
+ou com todos os átomos desmarcados, não manda nada — nos dois casos o extrator
+não deixou nada de fora. É o "faltou um" da 4.6, enfim com botão (§4.11).
+
 #### O que o cliente pode mandar, e o que não pode
 
 `POST /api/sessoes/:id/confirmar` recebe quais átomos foram aprovados e como
@@ -818,8 +881,13 @@ depois. Toda menção que eu acrescentei entra na lista junto; toda entidade que
 desmarquei no rodapé sai dela, e sai também das menções — o alcance do checkbox é
 o nó, não só o sujeito. **Procedência não vem no corpo.**
 `id`, offsets, âncoras, `prompt_version` e `modelo` são relidos de
-`extracao.json` pelo índice do átomo. Se viessem do navegador, seriam uma
-afirmação dele, e átomo com procedência falsa é pior que átomo nenhum.
+`extracao.json` pelo índice do átomo — e de `pedidos.json` o átomo que eu pedi:
+o confirmar junta os dois pela mesma `juntarPedidos` da leitura e acha o átomo
+na lista juntada. Se viessem do navegador, seriam uma afirmação dele, e átomo
+com procedência falsa é pior que átomo nenhum.
+
+A apuração das correções recebe a proposta **sem** os pedidos: é contra o que o
+extrator propôs sozinho que ela julga (§4.11).
 
 Entidade só é gravada se algum átomo aprovado de fato a usa: aprovar na tela e
 depois rejeitar todos os átomos dela não pode deixar nó órfão.

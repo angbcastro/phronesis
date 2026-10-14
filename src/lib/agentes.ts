@@ -141,7 +141,8 @@ export const AGENTES: readonly Agente[] = [
     papel:
       "lê uma janela de 2 min, com o dossiê de quem o grafo acha que ela cita, e propõe os átomos já apontando o nó",
     quando: "automatico",
-    gatilho: "a cada 4 blocos transcritos, durante a própria gravação",
+    gatilho:
+      "a cada 4 blocos transcritos, durante a própria gravação — e no + da revisão fechada, sobre a sessão inteira, com o que eu disse que faltou",
     base: BASE_EXTRACAO,
     padrao: modeloExtracao,
     variavel: "EXTRACAO_MODEL",
