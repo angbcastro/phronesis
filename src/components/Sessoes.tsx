@@ -247,7 +247,11 @@ export function Sessoes() {
         </p>
       </header>
 
-      {falha && <p className="aguardando">{falha}</p>}
+      {falha && (
+        <p className="aviso erro" role="alert">
+          {falha}
+        </p>
+      )}
 
       <ul className="lista-sessoes">
         {(sessoes ?? []).map((s) => (

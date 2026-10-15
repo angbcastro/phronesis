@@ -135,7 +135,13 @@ export function Agentes({ fluxo }: { fluxo: Fluxo }) {
     return (
       <main className="agentes">
         <h1>quem faz o trabalho</h1>
-        <p className="aguardando">{falha ?? "…"}</p>
+        {falha ? (
+          <p className="aviso erro" role="alert">
+            {falha}
+          </p>
+        ) : (
+          <p className="aguardando">…</p>
+        )}
       </main>
     );
   }
@@ -524,7 +530,11 @@ function Editor({
         </section>
       )}
 
-      {erro && <p className="alerta">{erro}</p>}
+      {erro && (
+        <p className="aviso erro" role="alert">
+          {erro}
+        </p>
+      )}
 
       <footer>
         <button

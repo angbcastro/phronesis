@@ -1124,7 +1124,9 @@ export function Revisao({ id }: { id: string }) {
     return (
       <main className="leitura">
         <h1>revisão</h1>
-        <p className="aguardando">{falha}</p>
+        <p className="aviso erro" role="alert">
+          {falha}
+        </p>
       </main>
     );
   }
@@ -1663,7 +1665,11 @@ export function Revisao({ id }: { id: string }) {
             </p>
           )
         )}
-        {falha && <p className="aguardando">{falha}</p>}
+        {falha && (
+          <p className="aviso erro" role="alert">
+            {falha}
+          </p>
+        )}
         <button
           className="confirmar"
           onClick={() => void confirmar()}

@@ -176,6 +176,13 @@ export function corpoDaSecao(prompt: string, secao: string): string {
     .trim();
 }
 
+/** O motivo de uma resposta que falhou — e um 502 da plataforma nem é JSON. */
+async function motivoDaFalha(r: Response | null): Promise<string> {
+  if (!r) return "sem resposta";
+  const d = (await r.json().catch(() => ({}))) as { erro?: string };
+  return d.erro ?? `o servidor respondeu ${r.status}`;
+}
+
 export function Calibracao() {
   const [porta, setPorta] = useState<Porta | null>(null);
   const [escolhido, setEscolhido] = useState<string | null>(null);
@@ -192,7 +199,14 @@ export function Calibracao() {
   const [rascunhando, setRascunhando] = useState(false);
   const [redigindo, setRedigindo] = useState(false);
   const [aprovando, setAprovando] = useState(false);
-  const [recado, setRecado] = useState<string | null>(null);
+  /**
+   * O que a última ação disse. Falha, vazio legítimo e sucesso moram no mesmo
+   * lugar da tela, e o tom é o que os separa: a falha em vermelho, o sucesso em
+   * verde, o vazio no cinza de sempre.
+   */
+  const [recado, setRecado] = useState<{ texto: string; tom: "erro" | "ok" | "neutro" } | null>(
+    null,
+  );
 
   const audio = useRef<HTMLAudioElement | null>(null);
 
@@ -295,14 +309,16 @@ export function Calibracao() {
     setRascunhando(false);
 
     if (!r || !r.ok) {
-      setRecado(r ? (((await r.json()) as { erro?: string }).erro ?? "falhou") : "sem resposta");
+      setRecado({ texto: await motivoDaFalha(r), tom: "erro" });
       return;
     }
     const d = (await r.json()) as { padroes: PadraoNaTela[] };
     if (d.padroes.length === 0) {
-      setRecado(
-        "o agente não achou padrão suficiente para propor — o que é uma resposta legítima, e frequente",
-      );
+      setRecado({
+        texto:
+          "o agente não achou padrão suficiente para propor — o que é uma resposta legítima, e frequente",
+        tom: "neutro",
+      });
       return;
     }
     setPauta((atual) => [...atual, ...d.padroes.map((p) => ({ ...p, novo: true }))]);
@@ -325,7 +341,7 @@ export function Calibracao() {
     setRedigindo(false);
 
     if (!r || !r.ok) {
-      setRecado(r ? (((await r.json()) as { erro?: string }).erro ?? "falhou") : "sem resposta");
+      setRecado({ texto: await motivoDaFalha(r), tom: "erro" });
       return;
     }
     const d = (await r.json()) as Emenda;
@@ -333,7 +349,10 @@ export function Calibracao() {
     setPauta((atual) => atual.map(({ novo: _, ...p }) => p));
 
     if (d.edicoes.length === 0) {
-      setRecado("o redator não achou onde isto entra no prompt — a pauta continua guardada");
+      setRecado({
+        texto: "o redator não achou onde isto entra no prompt — a pauta continua guardada",
+        tom: "neutro",
+      });
       return;
     }
     setEmenda(d);
@@ -353,16 +372,20 @@ export function Calibracao() {
     setAprovando(false);
 
     if (!r || !r.ok) {
-      setRecado(r ? (((await r.json()) as { erro?: string }).erro ?? "falhou") : "sem resposta");
+      setRecado({ texto: await motivoDaFalha(r), tom: "erro" });
       return;
     }
     const d = (await r.json()) as { hash: string | null; secoes: number; fechadas: number };
     setEmenda(null);
-    setRecado(
-      `em vigor a partir da próxima chamada · ${d.hash ? `${d.hash} · ` : ""}${d.secoes} seção(ões)` +
-        (d.fechadas > 0 ? ` · ${d.fechadas} correção(ões) endereçada(s)` : ""),
-    );
+    // Depois de reler o agente, e não antes: `abrirAgente` limpa o recado, e o
+    // "em vigor" sumia no mesmo instante em que aparecia.
     await abrirAgente(escolhido);
+    setRecado({
+      texto:
+        `em vigor a partir da próxima chamada · ${d.hash ? `${d.hash} · ` : ""}${d.secoes} seção(ões)` +
+        (d.fechadas > 0 ? ` · ${d.fechadas} correção(ões) endereçada(s)` : ""),
+      tom: "ok",
+    });
   }
 
   async function abrirRefugo() {
@@ -377,7 +400,9 @@ export function Calibracao() {
     return (
       <main className="leitura">
         <h1>calibração</h1>
-        <p className="aguardando">{falha}</p>
+        <p className="aviso erro" role="alert">
+          {falha}
+        </p>
       </main>
     );
   }
@@ -452,7 +477,13 @@ export function Calibracao() {
     return (
       <main className="leitura">
         <h1>calibração</h1>
-        <p className="aguardando">{falha ?? "…"}</p>
+        {falha ? (
+          <p className="aviso erro" role="alert">
+            {falha}
+          </p>
+        ) : (
+          <p className="aguardando">…</p>
+        )}
         {falha && (
           <button className="botao discreto" onClick={() => setEscolhido(null)}>
             ← voltar à lista
@@ -530,7 +561,14 @@ export function Calibracao() {
           </button>
         </div>
 
-        {recado && <p className="aguardando">{recado}</p>}
+        {recado && (
+          <p
+            className={recado.tom === "neutro" ? "aguardando" : `aviso ${recado.tom}`}
+            role={recado.tom === "erro" ? "alert" : "status"}
+          >
+            {recado.texto}
+          </p>
+        )}
       </section>
 
       {emenda && emenda.texto !== null && (

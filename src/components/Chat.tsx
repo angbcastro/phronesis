@@ -630,7 +630,11 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
 
           {vista === "lista" ? (
             <div className="corpo lista-conversas">
-              {problema && <p className="aviso">{problema}</p>}
+              {problema && (
+                <p className="aviso erro" role="alert">
+                  {problema}
+                </p>
+              )}
               {listaLida && ativas.length === 0 && (
                 <p className="aguardando">
                   {arquivadas.length > 0 ? "nenhuma conversa ativa." : "nenhuma conversa ainda."}
@@ -717,7 +721,11 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
                 <div ref={fim} />
               </div>
 
-              {problema && <p className="aviso">{problema}</p>}
+              {problema && (
+                <p className="aviso erro" role="alert">
+                  {problema}
+                </p>
+              )}
 
               {aberta?.arquivada_em ? (
                 <p className="aviso">

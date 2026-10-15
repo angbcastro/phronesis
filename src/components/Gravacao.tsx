@@ -213,7 +213,7 @@ export function Gravacao() {
 
       {/* `alert`: quem não vê a tela tem de saber que a gravação não começou. */}
       {problema && (
-        <p className="aviso" role="alert">
+        <p className="aviso erro" role="alert">
           {problema}
         </p>
       )}

@@ -848,7 +848,11 @@ export function Entidades() {
         </p>
       </header>
 
-      {falha && <p className="aviso">{falha}</p>}
+      {falha && (
+        <p className="aviso erro" role="alert">
+          {falha}
+        </p>
+      )}
 
       {/* O topo: achar. A busca é a de `catalogo.ts` — atravessa alias, então
           digitar a grafia antiga acha a vencedora da fusão. */}
@@ -1119,6 +1123,15 @@ export function Entidades() {
                     {emFoco.canonico ? "★ canônica" : "☆ canônica"}
                   </button>
                 </header>
+
+                {/* A falha de uma ação da ficha aparece **aqui**, e não só no topo
+                    da página — que fica atrás do véu e da ficha de tela cheia, e
+                    só se lia depois de fechar, fora de contexto. */}
+                {falha && (
+                  <p className="aviso erro" role="alert">
+                    {falha}
+                  </p>
+                )}
 
                 <p className="aguardando">
                   é isto que o agente lê para saber de quem eu estou falando quando dois nomes
@@ -1493,7 +1506,9 @@ export function Entidades() {
                     deles fica. Só sai quem não é o sujeito de nenhum átomo.
                   </p>
                   {recusaExcluir?.chave === chave && (
-                    <p className="aviso">{recusaExcluir.motivo}</p>
+                    <p className="aviso erro" role="alert">
+                      {recusaExcluir.motivo}
+                    </p>
                   )}
                   <div className="acoes-sessao">
                     <button

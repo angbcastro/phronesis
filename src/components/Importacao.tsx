@@ -260,7 +260,11 @@ export function Importacao() {
       <button className="item" onClick={() => entrada.current?.click()} disabled={ocupado}>
         {rotulo()}
       </button>
-      {problema && <p className="aviso">{problema}</p>}
+      {problema && (
+        <p className="aviso erro" role="alert">
+          {problema}
+        </p>
+      )}
     </>
   );
 }

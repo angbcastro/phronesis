@@ -248,13 +248,13 @@ export function Processando({ id }: { id: string }) {
       {status === "confirmada" ? (
         <p className="aguardando">Essa sessão já foi confirmada — os átomos dela estão no Neo4j.</p>
       ) : travou ? (
-        <p className="aguardando">
+        <p className="aviso erro" role="alert">
           Isso já passou do tempo que o servidor tem para trabalhar — o mais provável é que a
           extração tenha ficado pendurada. O áudio e a transcrição estão inteiros: dá para mandar
           extrair de novo pela lista de <Link href="/sessoes">sessões</Link>.
         </p>
       ) : falhou ? (
-        <p className="aguardando">
+        <p className="aviso erro" role="alert">
           Alguma coisa falhou no meio do caminho. O áudio está inteiro no servidor — dá para tentar
           de novo pela lista de <Link href="/sessoes">sessões</Link>.
         </p>

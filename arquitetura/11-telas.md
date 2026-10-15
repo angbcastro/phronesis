@@ -12,7 +12,7 @@
 | `/agentes` | `Agentes` | **o que entra**: a espinha do áudio ao grafo — STT, extração (com resolução e desempate rodando dentro dela), a revisão e o leque dos sete que partem do grafo gravado. Clicar num agente abre o prompt, o modelo e (na resolução e no confronto) o limiar |
 | `/agentes/consulta` | `Agentes` | **o que sai**: pergunta, chat, resposta, título, conversa. Mesma gaveta de edição; nada nesta tela escreve no grafo |
 | `/confronto` | `Confronto` | quantos átomos esperam a varredura, o botão "rodar agora", a busca, os últimos átomos tocados com o desfazer por linha (slice 5) — e o radial de um átomo, onde eu corrijo relação por relação (slice 5.2, §4.15.3) |
-| `/entrar` | página de login | pede o e-mail permitido |
+| `/entrar` | página de login | pede o e-mail permitido; o botão vira "pedindo…" e não aceita o segundo toque, e sem rede diz que não alcançou o servidor — a resposta do servidor, quando há, continua idêntica nos três caminhos (§7) |
 
 **Clicar na sessão leva sempre para onde ainda há o que fazer** (`destino()`,
 em `Sessoes`). Proposta esperando abre na revisão; sessão `confirmada` abre no
@@ -439,6 +439,17 @@ alvo por fora. Nome de classe que sobrou junto do `.botao` (`.editar`,
 Ficam fora o círculo de gravar e o "parar", que são do ritual, o confirmar da
 revisão, o entrar, e os controles internos do chat.
 
+#### O recado
+
+O `.aviso` é o recado da tela, e **tem tom**: neutro por padrão, `.erro` no
+`--erro`, `.ok` no `--ok`. Falha, carregando e dica saíam no mesmo cinza, e uma
+falha passava por instrução. Todo erro sai como `.aviso.erro` com
+`role="alert"`, para quem ouve a tela também saber. O recado fica à esquerda,
+como o texto em volta, e centrado só na `.tela` — sob o círculo, ou sob o campo
+de `/entrar`. Na calibração o mesmo lugar diz falha, vazio legítimo ("o agente
+não achou padrão") e sucesso ("em vigor a partir da próxima chamada"), e o tom é
+o que os separa.
+
 **No toque, todo campo tem 16 px** (`@media (pointer: coarse)`, com o único
 `!important` do arquivo): abaixo disso o Safari do iPhone dá zoom na página ao
 focar. No mouse os campos de gestão continuam compactos. **E o hover só existe
@@ -589,8 +600,10 @@ fusões antigas também — sem o vencedor, a chave delas ficaria pendurada num 
 que nenhuma leitura mostra, e o `MERGE` do confirmar reencontraria o morto. Por
 isso **o nome pode voltar**: dito outra vez, aparece na revisão como candidata
 nova. Entidade que é **sujeito** de algum átomo não sai — `:SOBRE` é
-obrigatório —, e a recusa aparece dentro da ficha, e não no aviso do topo, que
-fica atrás do véu: ela diz quantos átomos e manda fundir com a entidade certa.
+obrigatório —, e a recusa aparece dentro da ficha, em vermelho: ela diz quantos
+átomos e manda fundir com a entidade certa. **Toda falha de ação da ficha aparece
+dentro dela**, logo abaixo do cabeçalho, e não só no aviso do topo da página, que
+fica atrás do véu e só se lia depois de fechar.
 O "eu" não tem o botão. É a segunda exceção à regra 6, aprovada no pedido, e não
 pediu migration: nenhum label, propriedade ou valor de `status` mudou.
 

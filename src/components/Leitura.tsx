@@ -75,7 +75,7 @@ export function Leitura({ id }: { id: string }) {
       )}
 
       {estado?.status === "erro" && (
-        <p className="aguardando">
+        <p className="aviso erro" role="alert">
           A transcrição falhou. O áudio está inteiro no servidor — dá para tentar de novo pela
           lista de <Link href="/sessoes">sessões</Link>.
         </p>

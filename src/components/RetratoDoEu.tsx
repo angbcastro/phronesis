@@ -199,7 +199,13 @@ export function RetratoDoEu({
   if (!config) {
     return (
       <div className="secao">
-        <p className="aguardando">{falha ?? "lendo o retrato…"}</p>
+        {falha ? (
+          <p className="aviso erro" role="alert">
+            {falha}
+          </p>
+        ) : (
+          <p className="aguardando">lendo o retrato…</p>
+        )}
       </div>
     );
   }
@@ -212,7 +218,11 @@ export function RetratoDoEu({
 
   return (
     <>
-      {falha && <p className="aviso">{falha}</p>}
+      {falha && (
+        <p className="aviso erro" role="alert">
+          {falha}
+        </p>
+      )}
 
       {contexto !== "" && (
         <div className="secao">

@@ -318,7 +318,11 @@ export function Confronto() {
           )}
         </header>
 
-        {falha && <p className="aviso">{falha}</p>}
+        {falha && (
+          <p className="aviso erro" role="alert">
+            {falha}
+          </p>
+        )}
 
         {!radial ? (
           <p className="aguardando">carregando…</p>
@@ -348,7 +352,11 @@ export function Confronto() {
         </p>
       </header>
 
-      {falha && <p className="aviso">{falha}</p>}
+      {falha && (
+        <p className="aviso erro" role="alert">
+          {falha}
+        </p>
+      )}
 
       <div className="acoes-sessao">
         <button className="botao" onClick={() => void rodar()} disabled={rodando}>

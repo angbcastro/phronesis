@@ -551,7 +551,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
    mais são 32 px de tela ocupados o tempo todo. */
 .leitura .voltar { margin-top: 2rem; }
 
-.aviso { color: var(--texto-fraco); font-size: var(--fs-3); text-align: center; }
+/* O recado da tela: neutro por padrão, e com tom quando é falha ou sucesso.
+   Antes, erro, carregando e dica saíam no mesmo cinza — e uma falha passava
+   por instrução. À esquerda, como o texto em volta; centrado só na `.tela`,
+   onde o recado mora sob o círculo ou sob o campo de entrar. Quem o renderiza
+   põe `role="alert"` no erro, para quem ouve a tela também saber. */
+.aviso { color: var(--texto-fraco); font-size: var(--fs-3); }
+.tela .aviso { text-align: center; }
+.aviso.erro { color: var(--erro); }
+.aviso.ok { color: var(--ok); }
 
 /* ---- entrar ---- */
 
@@ -573,6 +581,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--sobre-acento);
   font-size: var(--fs-4);
 }
+.entrar button:disabled { opacity: 0.6; cursor: default; }
 
 /* ---- revisar ---- */
 
@@ -1319,14 +1328,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .comparacao .lado .resumo.vazio { color: var(--texto-fraco); font-style: italic; }
 .comparacao .lado .botao { margin-top: auto; }
 
-/* Terracota e não vermelho: este sistema não tem cor de perigo, e o acento já
-   quer dizer "isto muda o grafo". Mesma barra da proposta do agente 3. */
+/* Vermelho, e não terracota: fundir não tem desfazer, e o `--erro` é a cor do
+   que não volta. Mesma barra da proposta do agente 3, na cor do perigo. */
 .aviso-fusao {
   margin: 0;
   font-size: var(--fs-2);
   line-height: 1.45;
   color: var(--texto-fraco);
-  border-left: 2px solid var(--acento);
+  border-left: 2px solid var(--erro);
   padding-left: 0.7rem;
 }
 
@@ -2254,7 +2263,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 0.35rem 0.3rem;
 }
 @media (hover: hover) { .lista-conversas .acao:hover { color: var(--texto); } }
-@media (hover: hover) { .lista-conversas .acao.apagar:hover { color: var(--rec); } }
+@media (hover: hover) { .lista-conversas .acao.apagar:hover { color: var(--erro); } }
 
 .lista-conversas .separador {
   align-self: flex-start;
