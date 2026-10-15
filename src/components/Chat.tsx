@@ -263,6 +263,13 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
   // Sem isto, a montagem da página (fechada, e nunca aberta) contaria como um
   // fechamento e o painel piscaria inteiro por 384 ms na tela de gravar.
   const jaAbriu = useRef(false);
+  const barra = useRef<HTMLButtonElement | null>(null);
+  /**
+   * O fechamento veio do teclado — o Esc, ou o "×" acionado por Enter. Só aí o
+   * foco volta para a barra: no toque, focá-la a deixaria acesa (`:focus-within`)
+   * em vez da opacidade discreta de sempre.
+   */
+  const fechouPorTeclado = useRef(false);
 
   const carregarMensagens = useCallback(async (id: string) => {
     setProblema(null);
@@ -302,6 +309,10 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
       jaAbriu.current = true;
       setSaindo(false);
       return;
+    }
+    if (fechouPorTeclado.current) {
+      fechouPorTeclado.current = false;
+      barra.current?.focus();
     }
     // `usaTransicao()` dentro do efeito, e não no corpo do componente: no
     // servidor não há `document`, e ler isso na renderização divergiria da
@@ -413,7 +424,10 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
     const aoTeclar = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (parada.current) parada.current.abort();
-      else aoFechar();
+      else {
+        fechouPorTeclado.current = true;
+        aoFechar();
+      }
     };
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
@@ -557,7 +571,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
   return (
     <section ref={caixa} className={`chat ${aberto ? "aberto" : ""}`}>
       {!aberto && (
-        <button className="barra" onClick={aoAbrir} aria-label="perguntar ao diário">
+        <button ref={barra} className="barra" onClick={aoAbrir} aria-label="perguntar ao diário">
           {/* Só três pontos, por pedido: a barra convida sem prometer assunto.
               Um `<input>` aqui mentiria — ela abre o painel, não recebe texto. */}
           <span className="dica" aria-hidden="true">
@@ -569,7 +583,9 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
       {/* `saindo` mantém o painel montado enquanto a caixa encolhe de volta até a
           barra; `inert` tira do caminho o que já não é mais alcançável. */}
       {(aberto || saindo) && (
-        <div className="painel" aria-label="conversa sobre o diário" inert={!aberto}>
+        // `role="dialog"`: sem papel, o `aria-label` de um `div` é ignorado.
+        // Não é modal — o círculo continua tocável por cima.
+        <div className="painel" role="dialog" aria-label="conversa sobre o diário" inert={!aberto}>
           <header>
             {vista === "conversa" ? (
               <button className="icone" onClick={() => setVista("lista")} aria-label="conversas">
@@ -598,7 +614,14 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
                 <path d="M12 5v14M5 12h14" />
               </svg>
             </button>
-            <button className="icone fechar" onClick={aoFechar} aria-label="fechar">
+            <button
+              className="icone fechar"
+              onClick={(e) => {
+                fechouPorTeclado.current = e.detail === 0;
+                aoFechar();
+              }}
+              aria-label="fechar"
+            >
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M6 6l12 12M18 6L6 18" />
               </svg>
@@ -735,7 +758,12 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
                       parar
                     </button>
                   ) : (
-                    <button type="submit" className="mandar" disabled={rascunho.trim() === ""}>
+                    <button
+                      type="submit"
+                      className="mandar"
+                      aria-label="mandar"
+                      disabled={rascunho.trim() === ""}
+                    >
                       ↑
                     </button>
                   )}

@@ -586,6 +586,7 @@ export function Revisao({ id }: { id: string }) {
   const [avisoPedido, setAvisoPedido] = useState<string | null>(null);
 
   const audio = useRef<HTMLAudioElement | null>(null);
+  const modalFontes = useRef<HTMLDivElement | null>(null);
   const mediu = useRef(false);
 
   /**
@@ -692,14 +693,24 @@ export function Revisao({ id }: { id: string }) {
     };
   }, []);
 
-  /** Fecha o modal de fontes no Escape, do mesmo jeito que a gaveta de agentes. */
+  /**
+   * O modal de fontes: fecha no Escape, do mesmo jeito que a gaveta de agentes,
+   * e leva o foco junto — entra no "×" ao abrir e volta ao ⓘ que o abriu ao
+   * fechar. Sem isto, quem navega por teclado abria o modal com o foco atrás do
+   * véu.
+   */
   useEffect(() => {
     if (!fontesAbertas) return;
+    const quemAbriu = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    modalFontes.current?.querySelector<HTMLElement>("button")?.focus();
     const aoTeclar = (e: KeyboardEvent) => {
       if (e.key === "Escape") setFontesAbertas(null);
     };
     window.addEventListener("keydown", aoTeclar);
-    return () => window.removeEventListener("keydown", aoTeclar);
+    return () => {
+      window.removeEventListener("keydown", aoTeclar);
+      quemAbriu?.focus();
+    };
   }, [fontesAbertas]);
 
   /** Índice de busca do grafo — inclusive por alias, para o seletor. */
@@ -1191,7 +1202,9 @@ export function Revisao({ id }: { id: string }) {
                 <input
                   type="checkbox"
                   checked={!rejeitado}
-                  aria-label="manter este item"
+                  // O texto do átomo no nome: "manter este item" igual em toda
+                  // linha não dizia, a quem ouve, qual item.
+                  aria-label={`manter: ${texto}`}
                   onChange={() =>
                     setRejeitados((s) => {
                       const n = new Set(s);
@@ -1237,7 +1250,6 @@ export function Revisao({ id }: { id: string }) {
                       className="texto-atomo"
                       tabIndex={0}
                       role="button"
-                      aria-label="editar texto do átomo"
                       onClick={() => setEditandoTexto((s) => new Set(s).add(a.indice))}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
@@ -1247,6 +1259,9 @@ export function Revisao({ id }: { id: string }) {
                       }}
                     >
                       {texto}
+                      {/* O nome do botão é o próprio texto; um `aria-label` aqui
+                          o escondia de quem ouve a revisão. */}
+                      <span className="so-leitor"> (editar)</span>
                     </p>
                   )}
                   <p className="meta">
@@ -1308,7 +1323,12 @@ export function Revisao({ id }: { id: string }) {
 
                   <div className="trechos">
                     {ancorados.map((t, k) => (
-                      <button key={k} className="ouvir" onClick={() => void escutar(t.inicio_s!)}>
+                      <button
+                        key={k}
+                        className="ouvir"
+                        aria-label={`ouvir a partir de ${mmss(t.inicio_s!)}${t.ancora === "aproximada" ? ", trecho aproximado" : ""}`}
+                        onClick={() => void escutar(t.inicio_s!)}
+                      >
                         ▶ {mmss(t.inicio_s!)}
                         {t.ancora === "aproximada" && <span title="casamento aproximado">~</span>}
                       </button>
@@ -1666,6 +1686,7 @@ export function Revisao({ id }: { id: string }) {
         <>
           <div className="veu aberto" onClick={() => setFontesAbertas(null)} />
           <div
+            ref={modalFontes}
             className="modal-fontes"
             role="dialog"
             aria-modal="true"

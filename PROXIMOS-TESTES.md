@@ -14,6 +14,30 @@ Confirme antes de gastar uma sessão com eles.
       do Neo4j e o `R2_BUCKET`). Sem ele o `pnpm dev` escreve em produção
       (§12.1), e os testes em dev da slice 10 não podem rodar.
 
+## Interface — onda 1 (`Specs/interface.md`)
+
+Construída e coberta por `pnpm typecheck` e `pnpm test`; nenhuma tela foi
+olhada rodando, porque sem o arquivo de dev o `pnpm dev` lê produção. Num
+celular, ou nos 390 px do DevTools, contra o banco de desenvolvimento:
+
+- [ ] `/agentes`: o ponto "editado" aparece no cartão e não no canto da tela; o
+      h1 não passa por baixo da marca; a gaveta desliza ao abrir e ao fechar.
+- [ ] Na tela de gravar, com o chat aberto: a engrenagem não cobre a borda
+      esquerda do painel.
+- [ ] A revisão: a instrução do topo e as linhas do rodapé em cinza, menores
+      que os átomos. **É a única mudança visível na tela sagrada** — se ficou
+      apagada demais, é uma linha no `globals.css`.
+- [ ] `/sessoes`: "em revisão" com acento; depois de um reextrair, a linha muda
+      sozinha de status sem recarregar a página.
+- [ ] `/calibracao`: com a rede cortada no DevTools, abrir um agente mostra a
+      falha e o "← voltar à lista", e não "…".
+- [ ] Só teclado: Tab mostra o anel terracota em todo controle; Esc fecha o
+      modal de fontes, o chat e o editor de agente, e o foco volta de onde saiu;
+      Enter no ✕ de uma menção a tira.
+- [ ] Importar um áudio, fechar a gaveta no meio do upload e começar a gravar:
+      a gravação não é interrompida quando o upload termina, e a sessão
+      importada aparece em `/sessoes`.
+
 ## Slice 11 — o que faltou, a pedido (`Specs/slice-11.md`)
 
 Construída e coberta pelo `pnpm test`; nada disto rodou contra modelo ainda. Em

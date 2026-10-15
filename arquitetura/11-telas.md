@@ -176,6 +176,13 @@ querer, só tentando sair do chat, custa mais que um toque. O `Esc` segue a mesm
 lógica em outra dimensão — com o agente respondendo ele **para a geração**, e só
 fecha o painel quando não há nada em curso.
 
+**O foco volta para a barra só quando o fechamento veio do teclado** — o `Esc`,
+ou o × acionado por Enter (`detail` zero). No toque, não: a barra focada fica
+acesa por `:focus-within`, e o fechamento por toque perderia a opacidade
+discreta que ela tem de propósito. O painel é `role="dialog"`, sem `aria-modal`,
+porque não é modal: o círculo continua tocável por cima dele. O modal de fontes
+da revisão faz a volta inteira — o foco entra no × e volta ao ⓘ que o abriu.
+
 Dentro do painel: a lista de conversas (ativas, com as arquivadas atrás de um
 separador que conta quantas são), o botão de nova conversa, a conversa aberta
 com as mensagens, o campo de texto, e o "parar" no lugar do enviar enquanto o
@@ -404,6 +411,22 @@ gravar foi desenhado sobre `#0d0d0d` — halo terracota sobre papel é outro
 efeito, não o mesmo mais claro. `:root` declara `color-scheme: dark`, sem o que
 o navegador desenharia os controles nativos (input, select, checkbox, barra de
 rolagem) no tema claro do sistema em cima do fundo escuro.
+
+#### O anel de foco, e o texto só para quem ouve
+
+**Um anel de foco para o sistema inteiro**, logo abaixo da regra de `button`:
+tudo que o teclado alcança — link, botão, campo, `[role="button"]`, `[tabindex]`
+— acende em 2 px de `--acento` quando o foco veio do teclado (`:focus-visible`).
+O seletor vai dentro de `:where()`, que zera a especificidade: as regras de foco
+de componente que já existiam (a marca, a engrenagem, o chat, a ficha) continuam
+vencendo esta, e componente novo nasce com anel sem ninguém lembrar. O acento
+sobre `--fundo` dá ~5:1. Nenhuma regra apaga o anel sem pôr outro no lugar; o
+radial do confronto, que troca o anel pela espessura do traço, é a exceção
+anotada no código.
+
+`.so-leitor` é texto fora da tela e dentro do leitor — o "editado" do ponto que
+é só cor no painel de agentes, o "(editar)" do parágrafo da revisão que vira
+campo. `display: none` o tiraria do leitor também.
 
 ### 11.3 Tipografia
 

@@ -93,6 +93,16 @@ html, body {
 
 button { font: inherit; color: inherit; cursor: pointer; }
 
+/* O anel de foco do sistema: tudo que se alcança pelo teclado acende no acento
+   quando o foco veio do teclado. Antes, 48 das 63 classes interativas caíam no
+   anel padrão do navegador, cada uma de um jeito, e duas o apagavam. `:where()`
+   zera a especificidade do seletor: toda regra de foco de componente que já
+   existe continua vencendo esta. O acento sobre `--fundo` dá ~5:1. */
+:where(a, button, input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
 /* Texto que só o leitor de tela lê: o "editado" de um ponto que é só cor, o
    "(editar)" de um parágrafo que vira campo. Fora da tela, e não `display:
    none`, que o tiraria do leitor também. */
@@ -449,7 +459,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   transition: background 0.1s;
 }
 .texto-atomo:hover,
-.texto-atomo:focus-visible { background: color-mix(in srgb, var(--acento) 8%, transparent); outline: none; }
+.texto-atomo:focus-visible { background: color-mix(in srgb, var(--acento) 8%, transparent); }
 /* Mesma caixa do parágrafo — margem, fonte e entrelinha idênticas — para o
    campo não encolher quando o texto vira editável. `resize: none` porque a
    altura já segue o conteúdo sozinha (via `ref`/`onChange` no componente);
@@ -1511,7 +1521,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
   resize: vertical;
   padding: 0;
 }
-.regra textarea:focus-visible { outline: none; }
 
 .meta-regra {
   display: flex;
@@ -2584,6 +2593,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .radial .sigla text { fill: var(--cor); font-size: 11px; font-weight: 600; text-anchor: middle; }
 .radial .sigla.ativa circle { fill: var(--cor); }
 .radial .sigla.ativa text { fill: var(--fundo); }
+/* A única troca do anel de foco do sistema: num `<g>` de SVG o contorno não é
+   desenhado de forma confiável, e o foco vira a espessura do traço. Fraco ainda
+   — engrossá-lo é da onda 4 (`Specs/interface.md`). */
 .radial g:focus-visible { outline: none; }
 .radial g:focus-visible circle { stroke-width: 3; }
 

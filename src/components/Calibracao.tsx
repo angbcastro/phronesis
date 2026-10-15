@@ -467,7 +467,7 @@ export function Calibracao() {
   return (
     <main className="calibracao">
       <header>
-        <button className="voltar" onClick={() => setEscolhido(null)}>
+        <button className="voltar" aria-label="voltar à lista" onClick={() => setEscolhido(null)}>
           ←
         </button>
         <h1>{dados.agente.rotulo}</h1>
@@ -627,7 +627,12 @@ export function Calibracao() {
 
               <div className="rodape">
                 {c.inicios_s.map((s, k) => (
-                  <button key={k} className="ouvir" onClick={() => void escutar(c.sessao_id, s)}>
+                  <button
+                    key={k}
+                    className="ouvir"
+                    aria-label={`ouvir a partir de ${mmss(s)}`}
+                    onClick={() => void escutar(c.sessao_id, s)}
+                  >
                     ▶ {mmss(s)}
                   </button>
                 ))}

@@ -139,3 +139,42 @@ Depende da decisão 3. Parte dela muda contrato de rota.
   original" de dois toques; a calibração com "descartar" emenda de dois toques.
 
 ## Como ficou
+
+**Onda 1, em 14/10/2026** — três commits depois da tag `ui-antes-da-avaliacao`,
+sem push (a slice 12 ainda estava na frente do remoto).
+
+Os dezessete consertos, todos conferidos no código antes de mexer:
+
+- o ponto "editado" de `/agentes` usava a classe `.marca`, `position: fixed`, e
+  empilhava no canto da tela — virou `.ponto-editado`;
+- `/agentes` sem o recuo da marca no topo;
+- o editor de agente montava já aberto e desmontava ao fechar, e a transição
+  nunca rodava; virou gaveta montada sempre, como a ficha, e o foco parou de
+  pular para o × a cada recarga;
+- calibração: a falha de um agente ficava em "…" para sempre; o refugo dizia
+  "nada" enquanto carregava; "· null ·" na aprovação;
+- quatro `.meta` do confronto sem regra nenhuma;
+- `.aguardando` sem regra em `.revisao` e em `.sessoes`: a instrução da revisão
+  saía com o peso dos átomos;
+- o confirmar preso em "gravando…" com resposta não-JSON;
+- o "parar" sem try/catch;
+- a lista de conversas escondendo a própria falha atrás de "nenhuma conversa
+  ainda.";
+- o ✕ de menção surdo ao teclado;
+- o Esc do renomear fechando a ficha junto;
+- a importação navegando depois de desmontada — o que podia matar uma gravação
+  começada durante o upload;
+- sessões: "em revisao" sem acento, "50 sessão(ões)" parecendo total, e o
+  "reextraindo…" que nunca saía;
+- corredor e transcrição com título contradizendo o corpo, e o verbo do
+  corredor andando para trás;
+- a engrenagem por cima do chat aberto, contra o que o próprio comentário do
+  CSS dizia.
+
+E a base de acessibilidade: um anel de foco único por `:where()`, as duas
+regras que o apagavam removidas, `.so-leitor`, nomes acessíveis no checkbox, no
+parágrafo e no ▶ da revisão, no `↑` do chat e no ← da calibração, `role="alert"`
+no erro de gravar, e o foco entrando e voltando no modal de fontes, no editor
+de agente e — só pelo teclado — no chat.
+
+O que não foi feito: olhar as telas rodando. Está no `PROXIMOS-TESTES.md`.
