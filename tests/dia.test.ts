@@ -6,7 +6,7 @@
  * Cortar a string erra esse dia, calado, num diário que se grava à noite.
  */
 import { describe, expect, it } from "vitest";
-import { FUSO, diaLocal, hojeLocal } from "@/lib/dia";
+import { FUSO, dataCurta, dataEHora, diaLocal, hojeLocal } from "@/lib/dia";
 
 describe("diaLocal", () => {
   it("01:30 em Greenwich ainda é o dia anterior em Brasília", () => {
@@ -47,5 +47,40 @@ describe("hojeLocal", () => {
 
   it("o fuso é o de São Paulo", () => {
     expect(FUSO).toBe("America/Sao_Paulo");
+  });
+});
+
+
+describe("a data das telas", () => {
+  const agora = new Date("2026-10-14T15:00:00.000Z"); // 12:00 de 14/10 em Brasília
+
+  it("dia/mês, que é como eu leio", () => {
+    expect(dataCurta("2026-09-04T12:00:00.000Z", agora)).toBe("04/09");
+  });
+
+  it("o dia é o de Brasília, e não o de Greenwich", () => {
+    // 00:55Z de 04/09 é 21:55 de 03/09 em São Paulo.
+    expect(dataCurta("2026-09-04T00:55:25.710Z", agora)).toBe("03/09");
+  });
+
+  it("o ano só entra quando não é o corrente", () => {
+    expect(dataCurta("2025-12-31T15:00:00.000Z", agora)).toBe("31/12/2025");
+  });
+
+  it("aceita um dia sem hora, e lixo dá vazio", () => {
+    expect(dataCurta("2026-09-13", agora)).toBe("13/09");
+    expect(dataCurta("", agora)).toBe("");
+    expect(dataCurta("ontem", agora)).toBe("");
+  });
+
+  it("com hora: hoje, ontem, e o dia nos outros", () => {
+    expect(dataEHora("2026-10-14T13:05:00.000Z", agora)).toBe("hoje, 10:05");
+    // 01:30Z de 14/10 é 22:30 de 13/10 em Brasília: ontem.
+    expect(dataEHora("2026-10-14T01:30:00.000Z", agora)).toBe("ontem, 22:30");
+    expect(dataEHora("2026-08-31T02:49:33.716Z", agora)).toBe("30/08, 23:49");
+  });
+
+  it("com hora, lixo dá vazio", () => {
+    expect(dataEHora("não é data", agora)).toBe("");
   });
 });

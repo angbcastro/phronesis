@@ -6,7 +6,7 @@
 | `/sessao/:id` | `Processando` | o corredor, uma **ponte curta**: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e sai para a revisão no primeiro átomo que existir |
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar — e **crescer** enquanto o fim é extraído, com o confirmar travado e uma linha no rodapé até fechar. Fechada, um **+** no fim da lista pede ao extrator o que faltou, e o átomo volta aprovado com a linha "a pedido: «…»" (§4.7) |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
-| `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado. São as 50 mais recentes (`LIMITE_LISTA_SESSOES`), e o cabeçalho diz isso quando bate no teto; o status vem por extenso (`rotuloStatus`). Depois de um reextrair pedido dali, a lista relê a cada 4 s até a sessão voltar a parar, com o teto do corredor |
+| `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado. São as 50 mais recentes (`LIMITE_LISTA_SESSOES`), e o cabeçalho diz isso quando bate no teto; o status vem por extenso (`rotuloStatus`), e a data diz "hoje" e "ontem". Depois de um reextrair pedido dali, a lista relê a cada 4 s até a sessão voltar a parar, com o teto do corredor |
 | `/entidades` | `Entidades` | o que está no grafo, buscável por nome e por grafia, filtrável por tipo e por "sem resumo", em ordem de mais falada. Cada linha é um nome e uma linha de meta; tocá-la abre a **ficha** num painel de tela cheia — tipo, renomear, canônica, resumo, grafias, os três campos de perfil, o enriquecer/desfazer e **fundir com…**, que funde duas entidades quaisquer à mão. **A ficha do "eu" é o retrato** (slice 10, `RetratoDoEu`): no lugar dos três campos e do enriquecer, o Agora com o "até", uma seção por dimensão com o (i) das fontes, reescrever/desfazer, e a lista de dimensões para editar, com a proposta do agente ao lado. O lote é modo: "enriquecer" acende os checkboxes e uma barra grudada no topo. Enquanto houver fila, relê a cada 4 s e retoma a corrente quando a vê parada (§4.9) |
 | `/calibracao` | `Calibracao` | os agentes com material parado; em cada um, o que eu já corrigi — com o `antes → depois` e o áudio à mão —, a pauta de padrões e a emenda, seção por seção |
 | `/agentes` | `Agentes` | **o que entra**: a espinha do áudio ao grafo — STT, extração (com resolução e desempate rodando dentro dela), a revisão e o leque dos sete que partem do grafo gravado. Clicar num agente abre o prompt, o modelo e (na resolução e no confronto) o limiar |
@@ -449,6 +449,22 @@ como o texto em volta, e centrado só na `.tela` — sob o círculo, ou sob o ca
 de `/entrar`. Na calibração o mesmo lugar diz falha, vazio legítimo ("o agente
 não achou padrão") e sucesso ("em vigor a partir da próxima chamada"), e o tom é
 o que os separa.
+
+#### A data e o plural
+
+**Uma data só, dia/mês**, que é como eu leio: `14/09`, e `14/09/2025` fora do
+ano corrente; com hora, `hoje, 21:03`, `ontem, 21:03`, `12/08, 21:03`. Moram em
+`dia.ts` (`dataCurta`, `dataEHora`) e passam pelo dia de Brasília. Eram quatro
+formatos — `12 de ago`, `12 ago 26`, `13/09`, `14/09/2026` —, e os que cortavam
+a string davam o dia de Greenwich: a sessão gravada depois das 21h aparecia com
+o dia seguinte.
+
+**O plural é por extenso** (`plural`, em `texto.ts`): `1 item`, `3 itens`. Os
+parênteses — "item(ns)", "sessão(ões)", "sutil(is)" — eram o jeito de
+formulário falar. O texto das telas começa em minúscula, sem ponto final no
+recado curto; "salvando…" é salvar, e "guardando…", no confirmar da revisão, é
+guardar — "gravando" é só gravar áudio. Nome de banco e de bucket ("Neo4j",
+"R2") não aparece em tela do ritual.
 
 **No toque, todo campo tem 16 px** (`@media (pointer: coarse)`, com o único
 `!important` do arquivo): abaixo disso o Safari do iPhone dá zoom na página ao

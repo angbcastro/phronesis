@@ -54,6 +54,16 @@ const PRONOMES = new Set([
 /** `true` quando o nome não é nome — a revisão vai perguntar quem é. */
 export const ehPronome = (nome: string): boolean => PRONOMES.has(normalizarNome(nome));
 
+/**
+ * O plural das telas: `1 item`, `3 itens`, `0 itens`.
+ *
+ * Eram parênteses — "item(ns)", "sessão(ões)", "sutil(is)" —, que é o jeito de
+ * formulário falar, e não o de quem conta. As duas formas vêm inteiras, porque
+ * o português não pluraliza por sufixo fixo.
+ */
+export const plural = (n: number, um: string, varios: string): string =>
+  `${n} ${n === 1 ? um : varios}`;
+
 /** As referências de um átomo por nome — o sujeito e as menções, na ordem. */
 export interface NomesDoAtomo {
   sobre: string;

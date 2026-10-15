@@ -23,6 +23,8 @@
  * middleware. Este componente não sabe do grafo nem do R2.
  */
 import { useCallback, useEffect, useState } from "react";
+import { dataCurta } from "@/lib/dia";
+import { plural } from "@/lib/texto";
 import {
   ID_AGORA,
   mesAno,
@@ -81,7 +83,6 @@ const mesmaLista = (a: readonly DimensaoEditada[], b: readonly DimensaoDoRetrato
   a.length === b.length &&
   a.every((d, i) => d.id === b[i].id && d.nome === b[i].nome && d.o_que_entra === b[i].o_que_entra);
 
-const dia = (iso: string) => (iso === "" ? "" : iso.slice(0, 10).split("-").reverse().join("/"));
 
 const erroDe = async (r: Response | null) =>
   r ? (((await r.json().catch(() => ({}))) as { erro?: string }).erro ?? "falhou") : "sem resposta";
@@ -281,7 +282,7 @@ export function RetratoDoEu({
                   {aberto.map((f) => (
                     <li key={f.id} className={f.status === "ativo" ? "" : "saiu"}>
                       <span className="meta">
-                        {f.tipo} · {dia(f.valido_em) || "sem data"}
+                        {f.tipo} · {dataCurta(f.valido_em) || "sem data"}
                         {f.status === "ativo" ? "" : ` · ${f.status} depois`}
                       </span>
                       <span className="texto-fonte">{f.texto}</span>
@@ -413,7 +414,9 @@ export function RetratoDoEu({
         {config.sugestao && (
           // Ao lado, nunca por cima: a lista atual é minha.
           <div className="proposta-perfil">
-            <p className="meta">proposta do agente — {config.sugestao.length} dimensão(ões)</p>
+            <p className="meta">
+              proposta do agente — {plural(config.sugestao.length, "dimensão", "dimensões")}
+            </p>
             <ol className="sugestao-dimensoes">
               {config.sugestao.map((d) => (
                 <li key={d.id}>

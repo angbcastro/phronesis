@@ -188,7 +188,7 @@ export function Agentes({ fluxo }: { fluxo: Fluxo }) {
         {comOverride === 0
           ? "nenhum agente desta tela foi tocado por aqui — todos na base do git. "
           : `${comOverride} ${comOverride === 1 ? "agente desta tela está editado" : "agentes desta tela estão editados"}; o resto está na base do git. `}
-        Clique num agente para ver e editar o que o comanda. Toda chamada de
+        Toque num agente para ver e editar o que o comanda. Toda chamada de
         modelo deste sistema sai pelo Vercel AI Gateway.
       </p>
 
@@ -549,7 +549,7 @@ function Editor({
             })
           }
         >
-          {gravando ? "gravando…" : "salvar"}
+          {gravando ? "salvando…" : "salvar"}
         </button>
         {(a.promptEditado || a.modeloEditado || a.limiarEditado) && (
           <button

@@ -24,6 +24,8 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AtomoRecente } from "@/lib/confronto";
+import { dataCurta } from "@/lib/dia";
+import { plural } from "@/lib/texto";
 import type {
   AcaoNaRelacao,
   AtomoNoRadial,
@@ -66,15 +68,8 @@ const SIGLA: Record<TipoRelacaoConfronto, string> = {
   COMPLEMENTA: "+",
 };
 
-/** "2026-08-12T…" → "12 ago 26". O ano entra porque o radial atravessa anos. */
-function data(iso: string): string {
-  const d = new Date(iso);
-  if (iso === "" || Number.isNaN(d.getTime())) return "sem data";
-  return d
-    .toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "2-digit" })
-    .replace(/\./g, "")
-    .replace(/ de /g, " ");
-}
+/** A data do confronto: a das telas (`dia.ts`), com o ano quando não é o corrente — o radial atravessa anos. */
+const data = (iso: string): string => dataCurta(iso) || "sem data";
 
 const curto = (t: string, n: number) => (t.length <= n ? t : `${t.slice(0, n - 1)}…`);
 
@@ -372,7 +367,7 @@ export function Confronto() {
           {armado ? "apagar as do agente e rodar de novo?" : "reprocessar tudo"}
         </button>
         {estado && estado.fila > 0 && (
-          <span className="meta">{estado.fila} átomo(s) na fila — pode fechar a aba</span>
+          <span className="meta">{plural(estado.fila, "átomo", "átomos")} na fila — pode fechar a aba</span>
         )}
       </div>
 
@@ -419,14 +414,14 @@ export function Confronto() {
             <li key={a.id}>
               <button className="quando abre-radial" onClick={() => abrir(a.id)}>
                 <span className="meta">
-                  [{a.tipo}] {a.em.slice(0, 10)} —{" "}
+                  [{a.tipo}] {dataCurta(a.em)} —{" "}
                   {a.estado === "falhou"
                     ? `falhou: ${a.motivo}`
                     : a.fortes + a.sutis === 0
                       ? "nenhuma relação"
                       : [
-                          a.fortes > 0 ? `${a.fortes} forte(s)` : "",
-                          a.sutis > 0 ? `${a.sutis} sutil(is)` : "",
+                          a.fortes > 0 ? plural(a.fortes, "forte", "fortes") : "",
+                          a.sutis > 0 ? plural(a.sutis, "sutil", "sutis") : "",
                         ]
                           .filter(Boolean)
                           .join(", ")}
@@ -492,7 +487,7 @@ function VistaRadial({
           className="radial"
           viewBox={`0 0 ${LADO} ${LADO}`}
           role="group"
-          aria-label={`${postos.length} relação(ões) deste átomo`}
+          aria-label={`${plural(postos.length, "relação", "relações")} deste átomo`}
         >
           <defs>
             {TIPOS.map((t) => (
@@ -662,7 +657,7 @@ function PainelDaRelacao({
       </button>
 
       <p className="meta">
-        {rel.camada} · confiança {rel.confianca.toFixed(2)}
+        {rel.camada} · confiança {rel.confianca.toFixed(2).replace(".", ",")}
         {rel.origem === "eu" ? " · editada por mim — o agente não a toca mais" : ""}
         {rel.modelo !== "" && ` · ${rel.modelo}`}
         {rel.prompt_version !== "" && ` · ${rel.prompt_version}`}

@@ -38,7 +38,8 @@ describe("quando o áudio foi gravado", () => {
     const dia = String(new Date(iso).getDate()).padStart(2, "0");
     const texto = quando(iso);
     expect(texto).toContain(dia);
-    expect(texto).toMatch(/[a-z]{3}/i);
+    // dia/mês, que é como eu leio (`dataEHora`, em `dia.ts`).
+    expect(texto).toMatch(/\d{2}\/\d{2}/);
     expect(texto).toMatch(/\d{2}:\d{2}/);
   });
 
@@ -74,8 +75,9 @@ describe("o status como se fala", () => {
 });
 
 describe("a contagem do cabeçalho", () => {
-  it("abaixo do teto, conta", () => {
-    expect(contagem(12)).toBe("12 sessão(ões)");
+  it("abaixo do teto, conta — no singular quando é uma", () => {
+    expect(contagem(12)).toBe("12 sessões");
+    expect(contagem(1)).toBe("1 sessão");
   });
 
   it("no teto, diz que são as mais recentes — não o total", () => {

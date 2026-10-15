@@ -73,7 +73,7 @@
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { apelidoQueCasa, buscar, montarCatalogo } from "@/lib/catalogo";
-import { ehPronome, normalizarNome } from "@/lib/texto";
+import { ehPronome, normalizarNome, plural } from "@/lib/texto";
 import {
   CAMPOS_PERFIL,
   ROTULO_TIPO_ENTIDADE,
@@ -82,6 +82,7 @@ import {
 } from "@/lib/tipos";
 import type { CampoPerfil, Enriquecimento, Perfil, TipoEntidade } from "@/lib/tipos";
 import { LEASE_ENRIQUECIMENTO_MS } from "@/lib/tipos";
+import { dataCurta } from "@/lib/dia";
 import { RetratoDoEu } from "./RetratoDoEu";
 
 export interface Entidade {
@@ -175,7 +176,6 @@ const DURACAO_FICHA_MS = 220;
 const TETO_CANDIDATAS = 12;
 
 /** Só a data. A hora não muda o que eu faço, e a linha já é longa. */
-const dia = (iso: string) => (iso === "" ? "" : iso.slice(0, 10).split("-").reverse().join("/"));
 
 /**
  * O estado do lote **na própria linha** — a fatia decidiu que nenhum aviso mora
@@ -194,8 +194,8 @@ export function selo(e: Enriquecimento): string {
     // rodada valeu, e alguma seção ficou com o texto anterior.
     const parcial = e.motivo === "" ? "" : ` — ${e.motivo}`;
     return e.atomos === 0
-      ? ` · sem átomo para ler${e.em === "" ? "" : ` em ${dia(e.em)}`}`
-      : ` · ficha de ${e.atomos} átomo(s)${e.em === "" ? "" : ` em ${dia(e.em)}`}${parcial}`;
+      ? ` · sem átomo para ler${e.em === "" ? "" : ` em ${dataCurta(e.em)}`}`
+      : ` · ficha de ${plural(e.atomos, "átomo", "átomos")}${e.em === "" ? "" : ` em ${dataCurta(e.em)}`}${parcial}`;
   }
   return "";
 }
@@ -821,7 +821,7 @@ export function Entidades() {
       <div className="lado" key={e.id}>
         <h4>{e.nome}</h4>
         <span className="meta">
-          {ROTULO_TIPO_ENTIDADE[e.tipo]} · {e.atomos} átomo(s) · {e.sessoes} sessão(ões)
+          {ROTULO_TIPO_ENTIDADE[e.tipo]} · {plural(e.atomos, "átomo", "átomos")} · {plural(e.sessoes, "sessão", "sessões")}
           {escritos > 0 && ` · perfil ${escritos}/3`}
         </span>
         <p className={e.resumo === "" ? "resumo vazio" : "resumo"}>
@@ -979,7 +979,9 @@ export function Entidades() {
           >
             {ocupado === "lote"
               ? "enfileirando…"
-              : `enriquecer ${marcadas.size === 0 ? "" : `${marcadas.size} `}marcada(s)`}
+              : marcadas.size === 0
+                ? "enriquecer marcadas"
+                : `enriquecer ${plural(marcadas.size, "marcada", "marcadas")}`}
           </button>
           <button className="botao" onClick={sairDaSelecao}>
             cancelar
@@ -997,7 +999,7 @@ export function Entidades() {
               <strong>{p.nome_a}</strong> e <strong>{p.nome_b}</strong> são a mesma coisa?
             </p>
             <p className="aguardando">
-              {p.explicacao || p.motivo} · {p.sessoes_a} e {p.sessoes_b} sessão(ões)
+              {p.explicacao || p.motivo} · {p.sessoes_a} e {p.sessoes_b} sessões
             </p>
             <div className="acoes-sessao">
               {/* Qual sobrevive é escolha minha: o nome do vencedor vira o nome
@@ -1066,7 +1068,7 @@ export function Entidades() {
                 )}
               </span>
               <span className="meta">
-                {e.atomos} átomo(s) · {e.sessoes} sessão(ões)
+                {plural(e.atomos, "átomo", "átomos")} · {plural(e.sessoes, "sessão", "sessões")}
                 {e.resumo === "" && " · sem resumo"}
                 {selo(e.enriquecimento)}
               </span>
@@ -1192,7 +1194,7 @@ export function Entidades() {
                     </button>
                   )}
                   <span className="conta">
-                    {emFoco.atomos} átomo(s) · {emFoco.sessoes} sessão(ões)
+                    {plural(emFoco.atomos, "átomo", "átomos")} · {plural(emFoco.sessoes, "sessão", "sessões")}
                   </span>
                 </div>
 
@@ -1345,7 +1347,7 @@ export function Entidades() {
                               // agente 3 é quem mais pode contaminar a resolução.
                               <div className="proposta-perfil">
                                 <p className="meta">
-                                  proposto de {proposta.atomos} átomo(s) marcado(s) · {proposta.modelo}
+                                  proposto de {plural(proposta.atomos, "átomo marcado", "átomos marcados")} · {proposta.modelo}
                                 </p>
                                 <p>{proposta.texto}</p>
                                 <div className="acoes-sessao">
@@ -1455,8 +1457,8 @@ export function Entidades() {
                                     {apelido && <em> — por “{apelido}”</em>}
                                   </span>
                                   <span className="meta">
-                                    {ROTULO_TIPO_ENTIDADE[c.tipo]} · {c.atomos} átomo(s) ·{" "}
-                                    {c.sessoes} sessão(ões)
+                                    {ROTULO_TIPO_ENTIDADE[c.tipo]} · {plural(c.atomos, "átomo", "átomos")} ·{" "}
+                                    {plural(c.sessoes, "sessão", "sessões")}
                                   </span>
                                 </button>
                               </li>

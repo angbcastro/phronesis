@@ -170,9 +170,11 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   vocabulario.ts  nomes próprios → keyterms do STT
   transcricao.ts  offsets absolutos, prefixo contíguo, concatenação — e o
                   caminho de volta, do segundo para o bloco que o contém  (client)
-  texto.ts        normalização, nome_normalizado e lista de pronomes       (client)
+  texto.ts        normalização, nome_normalizado, lista de pronomes e o
+                  plural das telas                                        (client)
   dia.ts          o dia de Brasília de um instante, e o de hoje: a data que
-                  o chat diz, no servidor e na tela                       (client)
+                  o chat diz, no servidor e na tela — e a data das telas,
+                  dia/mês com ou sem hora                                 (client)
   extracao.ts     átomos a partir de uma janela: prompt, JSON estrito, procedência
                   — e o bloco que diz de que minutos ela é e o que já foi proposto,
                   ou o do pedido, que aponta o foco para o que faltou

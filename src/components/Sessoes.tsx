@@ -21,7 +21,9 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { esperouDemais } from "@/client/espera";
+import { dataEHora } from "@/lib/dia";
 import { temTranscricao, terminouDeProcessar } from "@/lib/estados";
+import { plural } from "@/lib/texto";
 import { LIMITE_LISTA_SESSOES, type StatusSessao } from "@/lib/tipos";
 
 interface Sessao {
@@ -32,17 +34,8 @@ interface Sessao {
   chunks_total: number;
 }
 
-const QUANDO = new Intl.DateTimeFormat("pt-BR", {
-  day: "2-digit",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-export const quando = (iso: string): string => {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "data desconhecida" : QUANDO.format(d);
-};
+/** "hoje, 21:03", "ontem, 21:03", "12 ago, 21:03" — no dia de Brasília (`dia.ts`). */
+export const quando = (iso: string): string => dataEHora(iso) || "data desconhecida";
 
 export const duracao = (s: number): string =>
   s >= 60 ? `${Math.round(s / 60)} min` : `${Math.max(1, Math.round(s))} s`;
@@ -71,7 +64,7 @@ export const rotuloStatus = (status: string): string =>
  * sessão(ões)" ali parecia o total.
  */
 export const contagem = (n: number): string =>
-  n >= LIMITE_LISTA_SESSOES ? `as ${n} mais recentes` : `${n} sessão(ões)`;
+  n >= LIMITE_LISTA_SESSOES ? `as ${n} mais recentes` : plural(n, "sessão", "sessões");
 
 /** A cadência da releitura durante uma re-extração — a mesma da fila de `/entidades`. */
 const INTERVALO_RELEITURA_MS = 4000;

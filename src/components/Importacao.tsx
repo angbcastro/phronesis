@@ -220,7 +220,7 @@ export function Importacao() {
         if (vivo.current) router.push(`/sessao/${id}`);
       } catch (e) {
         console.error("[importacao]", e);
-        setProblema("Não consegui subir esse arquivo. Tente de novo.");
+        setProblema("não consegui subir esse arquivo — tente de novo");
         setFase("parado");
         setProgresso(null);
       }

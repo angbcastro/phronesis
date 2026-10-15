@@ -36,7 +36,7 @@ export default function Entrar() {
     <main className="tela">
       {enviado ? (
         <div className="entrar">
-          <p className="aviso">Se esse e-mail for o certo, o link está a caminho.</p>
+          <p className="aviso">se esse e-mail for o certo, o link está a caminho</p>
           {link && (
             <p className="aviso">
               <a href={link}>entrar agora</a> (dev)

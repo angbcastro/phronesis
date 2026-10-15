@@ -33,6 +33,8 @@
  * solto não diz se eu tinha razão; o trecho tocando diz.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { dataCurta } from "@/lib/dia";
+import { plural } from "@/lib/texto";
 import { localizarNoAudio } from "@/lib/transcricao";
 import { MAX_PADROES_POR_RODADA } from "@/lib/tipos";
 import type { BlocoAbsoluto, Correcao, Edicao, Padrao, TipoCorrecao } from "@/lib/tipos";
@@ -75,16 +77,6 @@ export const cabeEmLinha = (antes: string, depois: string): boolean =>
 
 const mmss = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-
-/**
- * "2026-09-04T00:55Z" → "03 de set", no fuso de quem lê. Situa a correção sem
- * pesar a linha — e a data que importa é a local, que é quando eu revisei.
- */
-export function diaMes(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
-}
 
 /** O que a tela precisa de uma sessão para tocar o áudio e mostrar o refugo. */
 interface DaSessao {
@@ -382,8 +374,8 @@ export function Calibracao() {
     await abrirAgente(escolhido);
     setRecado({
       texto:
-        `em vigor a partir da próxima chamada · ${d.hash ? `${d.hash} · ` : ""}${d.secoes} seção(ões)` +
-        (d.fechadas > 0 ? ` · ${d.fechadas} correção(ões) endereçada(s)` : ""),
+        `em vigor a partir da próxima chamada · ${d.hash ? `${d.hash} · ` : ""}${plural(d.secoes, "seção", "seções")}` +
+        (d.fechadas > 0 ? ` · ${plural(d.fechadas, "correção endereçada", "correções endereçadas")}` : ""),
       tom: "ok",
     });
   }
@@ -460,7 +452,7 @@ export function Calibracao() {
           // minha. Não há prompt para emendar com isso — o que conserta grafia
           // é o vocabulário do STT. Esconder faria a soma não bater.
           <p className="aguardando">
-            {porta.grafo} correção(ões) de grafia do grafo, que não emendam prompt nenhum: quem
+            {plural(porta.grafo, "correção", "correções")} de grafia do grafo, que não emendam prompt nenhum: quem
             erra nome próprio é a transcrição, e nenhuma instrução faz um agente adivinhar um nome
             que nunca chegou até ele.
           </p>
@@ -513,7 +505,7 @@ export function Calibracao() {
         <p className="aguardando">
           {pauta.length === 0
             ? "nada confirmado ainda — peça os padrões e veja se eles fazem sentido"
-            : `${pauta.length} padrão(ões) · nada entra no prompt antes de eu ler a emenda`}
+            : `${plural(pauta.length, "padrão", "padrões")} · nada entra no prompt antes de eu ler a emenda`}
         </p>
 
         {pauta.map((p, k) => (
@@ -533,7 +525,7 @@ export function Calibracao() {
               {p.substitui && <span>contradiz {p.substitui}</span>}
               {/* `cita` é do agente e imutável na tela: é a procedência do que
                   motivou o padrão, não coisa minha para editar. */}
-              <span>a partir de {p.cita.length} correção(ões)</span>
+              <span>a partir de {plural(p.cita.length, "correção", "correções")}</span>
               <button
                 className="botao discreto apagar-regra"
                 onClick={() => setPauta((atual) => atual.filter((x) => x.id !== p.id))}
@@ -575,7 +567,7 @@ export function Calibracao() {
         <section className="emenda">
           <h2>o que muda no prompt</h2>
           <p className="aguardando">
-            {emenda.edicoes.length} seção(ões) de {dados.secoes.length}. O resto volta byte a byte:
+            {plural(emenda.edicoes.length, "seção", "seções")} de {dados.secoes.length}. O resto volta byte a byte:
             o redator devolve emendas, não o prompt inteiro.
           </p>
 
@@ -611,7 +603,7 @@ export function Calibracao() {
 
           <div className="acoes-regras">
             <button className="botao primario" disabled={aprovando} onClick={() => void aprovar()}>
-              {aprovando ? "gravando…" : "aprovar a emenda"}
+              {aprovando ? "salvando…" : "aprovar a emenda"}
             </button>
             <button className="botao discreto apagar-regra" onClick={() => setEmenda(null)}>
               descartar
@@ -633,7 +625,7 @@ export function Calibracao() {
               <div className="cabecalho">
                 <span className="acao">{ROTULO[c.tipo] ?? c.tipo}</span>
                 {c.tipo_atomo && <span className="tipo-atomo">{c.tipo_atomo}</span>}
-                <span className="quando">{diaMes(c.em)}</span>
+                <span className="quando">{dataCurta(c.em)}</span>
               </div>
 
               {contexto !== "" && <p className="contexto">{contexto}</p>}

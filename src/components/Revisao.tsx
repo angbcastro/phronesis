@@ -60,7 +60,8 @@ import { SeletorEntidade } from "@/components/SeletorEntidade";
 import { CATALOGO_VAZIO, montarCatalogo, resolver } from "@/lib/catalogo";
 import { mencoesDe, sobreDe } from "@/lib/referencias";
 import { localizarNoAudio } from "@/lib/transcricao";
-import { ehPronome, normalizarNome, reescreverNomes } from "@/lib/texto";
+import { dataCurta } from "@/lib/dia";
+import { ehPronome, normalizarNome, plural, reescreverNomes } from "@/lib/texto";
 import {
   CAMPOS_GESTO,
   ROTULO_TIPO_ENTIDADE,
@@ -150,13 +151,6 @@ const ROTULO_CAMPO: Record<CampoPerfil, string> = {
   pode_ajudar_com: "pode ajudar com",
   fizemos_juntos: "fizemos juntos",
 };
-
-/** "2026-08-12T…" → "12 de ago", no fuso de quem lê. Só a data, que é o que situa a lembrança. */
-function diaMes(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
-}
 
 const mmss = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -1109,7 +1103,7 @@ export function Revisao({ id }: { id: string }) {
 
     if (!r || !r.ok) {
       // O corpo pode nem ser JSON — um 502 da plataforma é página HTML —, e um
-      // `json()` que estoura aqui deixava o botão preso em "gravando…".
+      // `json()` que estoura aqui deixava o botão preso em "guardando…".
       const motivo = r
         ? ((await r.json().catch(() => ({}))) as { erro?: string }).erro
         : "sem resposta do servidor";
@@ -1526,7 +1520,8 @@ export function Revisao({ id }: { id: string }) {
         // regressão que esta fatia oferece é olho no olho, não placar.
         <div className="anterior">
           <p className="aguardando">
-            esta sessão foi re-extraída · antes eram {proposta.anterior?.atomos} item(ns), por{" "}
+            esta sessão foi re-extraída · antes eram{" "}
+            {plural(proposta.anterior?.atomos ?? 0, "item", "itens")}, por{" "}
             {proposta.anterior?.prompt_version}
             {anterior === null ? (
               <button className="botao discreto" onClick={() => void verAnterior()}>
@@ -1627,9 +1622,9 @@ export function Revisao({ id }: { id: string }) {
 
               <span className="meta">
                 {pedindoNome
-                  ? `quem é "${e.nome}"? · ${e.ocorrencias} menção(ões)`
+                  ? `quem é "${e.nome}"? · ${plural(e.ocorrencias, "menção", "menções")}`
                   : e.conhecida
-                    ? `${ROTULO_TIPO_ENTIDADE[e.tipo]} · conhecida (${e.sessoes} sessões)`
+                    ? `${ROTULO_TIPO_ENTIDADE[e.tipo]} · conhecida (${plural(e.sessoes, "sessão", "sessões")})`
                     : daProposta.includes(e)
                       ? `nova, citada ${e.ocorrencias}x`
                       : "nova, criada aqui"}
@@ -1655,13 +1650,13 @@ export function Revisao({ id }: { id: string }) {
         {travouEspera ? (
           <p className="aguardando">
             os últimos trechos não chegaram no tempo que o servidor tem para trabalhar. O que está
-            aqui está inteiro no R2 — recarregue a página, ou mande extrair de novo pela lista de{" "}
+            aqui está inteiro no servidor — recarregue a página, ou mande extrair de novo pela lista de{" "}
             <Link href="/sessoes">sessões</Link>.
           </p>
         ) : (
           faltando && (
             <p className="aguardando">
-              faltam {faltando.faltam} de {faltando.total} trecho(s)
+              faltam {faltando.faltam} de {plural(faltando.total, "trecho", "trechos")}
             </p>
           )
         )}
@@ -1675,7 +1670,8 @@ export function Revisao({ id }: { id: string }) {
           onClick={() => void confirmar()}
           disabled={gravando || pendentes.length > 0 || crescendo || procurando}
         >
-          {gravando ? "gravando…" : `confirmar ${aprovados.length} item(ns)`}
+          {/* "guardando", e não "gravando": na tela anterior, gravar é gravar áudio. */}
+          {gravando ? "guardando…" : `confirmar ${plural(aprovados.length, "item", "itens")}`}
         </button>
         <Link className="botao discreto" href="/">
           depois
@@ -1715,8 +1711,8 @@ export function Revisao({ id }: { id: string }) {
             <ul className="citacoes">
               {fontesAbertas.ref.porque.map((e) => (
                 <li key={e.atomo_id}>
-                  {diaMes(e.valido_em) !== ""
-                    ? `você disse em ${diaMes(e.valido_em)}: `
+                  {dataCurta(e.valido_em) !== ""
+                    ? `você disse em ${dataCurta(e.valido_em)}: `
                     : "você disse: "}
                   “{e.texto}”
                 </li>

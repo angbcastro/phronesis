@@ -686,9 +686,13 @@ describe("a tela do retrato", async () => {
 describe("o selo da linha", async () => {
   const { selo } = await import("@/components/Entidades");
 
-  it("`pronta` com motivo mostra o motivo — é a falha parcial do retrato", () => {
+  it("`pronta` com motivo mostra o motivo — é a falha parcial do retrato", async () => {
+    const { dataCurta } = await import("@/lib/dia");
     const e = { estado: "pronta" as const, motivo: "1 parte(s) falharam: Corpo: 429", em: "2026-09-29T00:00:00.000Z", atomos: 151, tem_anterior: true };
-    expect(selo(e)).toBe(" · ficha de 151 átomo(s) em 29/09/2026 — 1 parte(s) falharam: Corpo: 429");
-    expect(selo({ ...e, motivo: "" })).toBe(" · ficha de 151 átomo(s) em 29/09/2026");
+    // 00:00Z de 29/09 é 21:00 de 28/09 em Brasília — o dia que a linha mostra.
+    const dia = dataCurta(e.em);
+    expect(dia).toMatch(/^28\/09/);
+    expect(selo(e)).toBe(` · ficha de 151 átomos em ${dia} — 1 parte(s) falharam: Corpo: 429`);
+    expect(selo({ ...e, motivo: "" })).toBe(` · ficha de 151 átomos em ${dia}`);
   });
 });

@@ -7,7 +7,7 @@
  * refugo do parser, que a revisão carregava e nunca mostrou.
  */
 import { describe, expect, it } from "vitest";
-import { agruparDescartes, cabeEmLinha, diaMes, LIMITE_LINHA } from "@/components/Calibracao";
+import { agruparDescartes, cabeEmLinha, LIMITE_LINHA } from "@/components/Calibracao";
 
 describe("par curto em linha, par longo empilhado", () => {
   it("renome e troca de tipo cabem numa linha", () => {
@@ -55,15 +55,3 @@ describe("o refugo do parser, agrupado por motivo", () => {
   });
 });
 
-describe("a data da correção", () => {
-  it("situa sem pesar: dia e mês, no fuso de quem lê", () => {
-    // 00:55Z de 04/09 é 21:55 de 03/09 em São Paulo — e é a data local que
-    // situa a lembrança, não a que o servidor carimbou.
-    const texto = diaMes("2026-09-04T00:55:25.710Z");
-    expect(texto).toMatch(/^\d{2} de [a-z]{3}/i);
-  });
-
-  it("data quebrada não estoura a lista inteira", () => {
-    expect(diaMes("não é data")).toBe("");
-  });
-});

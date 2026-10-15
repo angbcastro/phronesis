@@ -81,7 +81,7 @@ export function Gravacao() {
   const comecar = useCallback(
     async () => {
       if (!suportado()) {
-        setProblema("Este navegador não grava áudio no formato que o sistema usa.");
+        setProblema("este navegador não grava áudio no formato que o sistema usa");
         return;
       }
       setProblema(null);
@@ -107,7 +107,7 @@ export function Gravacao() {
         setFase("gravando");
       } catch (e) {
         console.error(e);
-        setProblema("Não consegui começar a gravar. O microfone está liberado?");
+        setProblema("não consegui começar a gravar — o microfone está liberado?");
         setFase("parado");
       }
     },

@@ -155,12 +155,14 @@ describe("o selo da fila, na linha", () => {
     const vazia = selo({ ...NUNCA_ENRIQUECIDA, estado: "pronta", atomos: 0 });
     const cheia = selo({ ...NUNCA_ENRIQUECIDA, estado: "pronta", atomos: 7 });
     expect(vazia).toContain("sem átomo para ler");
-    expect(cheia).toContain("7 átomo(s)");
+    expect(cheia).toContain("7 átomos");
   });
 
   it("a data sai em dia/mês/ano, que é como eu leio", () => {
+    // O ano só aparece fora do ano corrente (`dataCurta`, em `dia.ts`): o
+    // teste não pode depender de em que ano roda.
     const s = selo({ ...NUNCA_ENRIQUECIDA, estado: "pronta", atomos: 2, em: "2026-09-14T10:00:00Z" });
-    expect(s).toContain("14/09/2026");
+    expect(s).toMatch(/em 14\/09(\/2026)?$/);
   });
 });
 

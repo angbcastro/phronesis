@@ -5,7 +5,7 @@
  * assim criaria um segundo nó no grafo.
  */
 import { describe, expect, it } from "vitest";
-import { normalizar, reescreverNomes, tokenizar } from "@/lib/texto";
+import { normalizar, plural, reescreverNomes, tokenizar } from "@/lib/texto";
 
 describe("normalização", () => {
   it("tira acento, caixa e pontuação — o modelo pontua do jeito dele", () => {
@@ -81,5 +81,13 @@ describe("reescreverNomes — o nome no texto acompanha a entidade", () => {
   it("sem mudança de referência, o texto é o mesmo", () => {
     const texto = "Raffa contou.";
     expect(reescreverNomes(texto, nomes("Raffa"), nomes("raffa"))).toBe(texto);
+  });
+});
+
+describe("o plural das telas", () => {
+  it("um é singular; zero e muitos são plural", () => {
+    expect(plural(1, "item", "itens")).toBe("1 item");
+    expect(plural(3, "item", "itens")).toBe("3 itens");
+    expect(plural(0, "sessão", "sessões")).toBe("0 sessões");
   });
 });

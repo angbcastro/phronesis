@@ -40,7 +40,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { lerEventos, partirLinhas } from "@/client/ndjson";
 import { usaTransicao } from "@/client/transicao";
-import { diaLocal } from "@/lib/dia";
+import { dataCurta, diaLocal } from "@/lib/dia";
 import { mesAno, type Conversa, type Mensagem, type PassoDeFerramenta } from "@/lib/tipos";
 
 export { partirLinhas };
@@ -222,15 +222,6 @@ export function separarConversas(conversas: readonly Conversa[]): {
   };
 }
 
-/**
- * `2026-09-13T...` → `13/09`. A lista mostra o dia, não a hora — e o dia de
- * Brasília (`dia.ts`): a conversa das 22h não pode aparecer como de amanhã.
- */
-export function diaCurto(iso: string): string {
-  const d = diaLocal(iso);
-  return d === "" ? "" : `${d.slice(8, 10)}/${d.slice(5, 7)}`;
-}
-
 // ─────────────────────────── o componente ───────────────────────────
 
 type Vista = "lista" | "conversa";
@@ -283,7 +274,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
       setMensagens(d.mensagens);
     } catch (e) {
       console.error("[chat]", e);
-      setProblema("Não consegui abrir a conversa.");
+      setProblema("não consegui abrir a conversa");
     }
   }, []);
 
@@ -408,7 +399,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
         setListaLida(true);
       } catch (e) {
         console.error("[chat]", e);
-        if (vivo) setProblema("Não consegui listar as conversas.");
+        if (vivo) setProblema("não consegui listar as conversas");
       }
     })();
 
@@ -464,7 +455,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
         const d = (await r.json().catch(() => null)) as { erro?: string } | null;
         // O status cru vai para o log; na tela, a frase.
         console.error(`[chat] /api/chat respondeu ${r.status}`);
-        throw new Error(d?.erro ?? "Não consegui responder.");
+        throw new Error(d?.erro ?? "não consegui responder");
       }
 
       // O id vive aqui, e não no estado: numa conversa nova ele só existe
@@ -504,7 +495,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
         setProblema(null);
       } else {
         console.error("[chat]", e);
-        setProblema(e instanceof Error ? e.message : "Não consegui responder.");
+        setProblema(e instanceof Error ? e.message : "não consegui responder");
       }
     } finally {
       parada.current = null;
@@ -538,7 +529,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
         setAberta((a) => (a?.id === c.id ? d.conversa : a));
       } catch (e) {
         console.error("[chat]", e);
-        setProblema("Não consegui arquivar a conversa.");
+        setProblema("não consegui arquivar a conversa");
       }
     },
     [],
@@ -559,7 +550,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
         }
       } catch (e) {
         console.error("[chat]", e);
-        setProblema("Não consegui apagar a conversa.");
+        setProblema("não consegui apagar a conversa");
       }
     },
     [aberta],
@@ -803,7 +794,7 @@ function LinhaDaConversa({
     <li className={`${atual ? "atual" : ""} ${arquivada ? "arquivada" : ""}`}>
       <button className="titulo" onClick={aoAbrir}>
         <span>{rotuloDaConversa(conversa)}</span>
-        <span className="meta">{diaCurto(conversa.atualizada_em)}</span>
+        <span className="meta">{dataCurta(conversa.atualizada_em)}</span>
       </button>
       <button className="acao" onClick={aoArquivar}>
         {arquivada ? "desarquivar" : "arquivar"}
@@ -844,7 +835,7 @@ function Rastro({ passos }: { passos: readonly PassoDeFerramenta[] }) {
               <li key={a.id}>
                 <span className="meta">
                   {a.tipo.toLowerCase()}
-                  {diaLocal(a.valido_em) === "" ? "" : ` · ${diaLocal(a.valido_em)}`}
+                  {dataCurta(a.valido_em) === "" ? "" : ` · ${dataCurta(a.valido_em)}`}
                   {a.sobre.length > 0 ? ` · ${a.sobre.join(", ")}` : ""}
                   {typeof a.similaridade === "number"
                     ? ` · ${a.similaridade.toFixed(2)}`

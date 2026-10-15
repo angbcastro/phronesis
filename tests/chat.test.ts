@@ -92,9 +92,9 @@ import {
   parsearTitulo,
   titularConversa,
 } from "@/lib/conversas";
+import { dataCurta } from "@/lib/dia";
 import {
   TETO_ROTULO,
-  diaCurto,
   frasePasso,
   fraseRecorte,
   partirLinhas,
@@ -1473,8 +1473,10 @@ describe("o progresso e a lista", () => {
   });
 
   it("a lista mostra o dia, não a hora — o de Brasília", () => {
-    expect(diaCurto("2026-09-13T18:00:00.000Z")).toBe("13/09");
-    expect(diaCurto("2026-09-14T01:30:00.000Z")).toBe("13/09");
-    expect(diaCurto("")).toBe("");
+    // A data das telas mora em `dia.ts` desde a onda 2 da interface.
+    const agora = new Date("2026-10-14T15:00:00.000Z");
+    expect(dataCurta("2026-09-13T18:00:00.000Z", agora)).toBe("13/09");
+    expect(dataCurta("2026-09-14T01:30:00.000Z", agora)).toBe("13/09");
+    expect(dataCurta("", agora)).toBe("");
   });
 });
