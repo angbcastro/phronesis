@@ -102,6 +102,12 @@ export function Processando({ id }: { id: string }) {
   const [estado, setEstado] = useState<Estado | null>(null);
   const [falhou, setFalhou] = useState(false);
   const [travou, setTravou] = useState(false);
+  /**
+   * Quantas vezes eu toquei em "tentar de novo". Entra nas dependências dos
+   * dois efeitos: tentar de novo é recomeçar a visita — o relógio do teto, o
+   * acompanhamento e o fluxo da ponte.
+   */
+  const [tentativa, setTentativa] = useState(0);
   const finalizou = useRef(false);
 
   useEffect(() => {
@@ -173,12 +179,33 @@ export function Processando({ id }: { id: string }) {
       timer = setTimeout(volta, INTERVALO_POLL_MS);
     }
 
-    void volta();
+    void (async () => {
+      // O "tentar de novo" (onda 3): o mesmo `/finalizar`, que é o retry do
+      // pipeline em qualquer passo — ele recomeça de onde a sessão parou, e não
+      // reprocessa o que está pronto (regra 4). Esperado **antes** de voltar a
+      // olhar: a rota troca o status para `finalizando` antes de responder, e
+      // olhar antes leria o `erro` velho e mostraria a falha de novo.
+      if (tentativa > 0) {
+        finalizou.current = true;
+        const guardada = sessionStorage.getItem(`duracao:${id}`);
+        const r = await fetch(`/api/sessoes/${id}/finalizar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(guardada ? { duracao_s: Number(guardada) } : {}),
+        }).catch(() => null);
+        if (!vivo) return;
+        if (!r?.ok) {
+          setFalhou(true);
+          return;
+        }
+      }
+      void volta();
+    })();
     return () => {
       vivo = false;
       clearTimeout(timer);
     };
-  }, [id, router]);
+  }, [id, router, tentativa]);
 
   /**
    * A ponte saindo (slice 8.2): o fluxo avisa no instante em que existe átomo.
@@ -226,7 +253,14 @@ export function Processando({ id }: { id: string }) {
       vivo = false;
       controle.abort();
     };
-  }, [id, router]);
+  }, [id, router, tentativa]);
+
+  /** Recomeça a visita: some a falha, e os dois efeitos rodam de novo. */
+  const tentarDeNovo = () => {
+    setFalhou(false);
+    setTravou(false);
+    setTentativa((t) => t + 1);
+  };
 
   const status = estado?.status;
 
@@ -241,27 +275,34 @@ export function Processando({ id }: { id: string }) {
           ? "falhou"
           : "um instante";
 
+  // No centro, onde o círculo estava (onda 3, decisão 10): sair de gravar e
+  // cair no alto à esquerda era um pulo, numa tela que dura menos de um segundo.
+  // O título fica para o leitor de tela; o que se vê é o verbo.
   return (
-    <main className="leitura">
-      <h1>{titulo}</h1>
+    <main className="corredor">
+      <h1 className="so-leitor">{titulo}</h1>
 
       {status === "confirmada" ? (
         <p className="aguardando">essa sessão já foi confirmada — os átomos dela estão no grafo.</p>
-      ) : travou ? (
-        <p className="aviso erro" role="alert">
-          isso já passou do tempo que o servidor tem para trabalhar — o mais provável é que a
-          extração tenha ficado pendurada. O áudio e a transcrição estão inteiros: dá para mandar
-          extrair de novo pela lista de <Link href="/sessoes">sessões</Link>.
-        </p>
-      ) : falhou ? (
-        <p className="aviso erro" role="alert">
-          alguma coisa falhou no meio do caminho. O áudio está inteiro no servidor — dá para tentar
-          de novo pela lista de <Link href="/sessoes">sessões</Link>.
-        </p>
+      ) : travou || falhou ? (
+        <>
+          <p className="aviso erro" role="alert">
+            {travou
+              ? "isso já passou do tempo que o servidor tem para trabalhar — o mais provável é que a extração tenha ficado pendurada. O áudio e a transcrição estão inteiros."
+              : "alguma coisa falhou no meio do caminho. O áudio está inteiro no servidor."}
+          </p>
+          <button className="botao" onClick={tentarDeNovo}>
+            tentar de novo
+          </button>
+          <Link className="botao discreto" href="/sessoes">
+            ver na lista de sessões
+          </Link>
+        </>
       ) : (
-        <p className="aguardando">{legenda(status, estado?.completa ?? false)}</p>
+        <p className="verbo" role="status">
+          {legenda(status, estado?.completa ?? false)}
+        </p>
       )}
-
     </main>
   );
 }
