@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  contagem,
   destino,
   duracao,
   jaRevisada,
@@ -16,7 +17,9 @@ import {
   podeLerTranscricao,
   podeReextrair,
   quando,
+  rotuloStatus,
 } from "@/components/Sessoes";
+import { LIMITE_LISTA_SESSOES, STATUS_SESSAO } from "@/lib/tipos";
 
 const sessao = (status: string, extra: Record<string, unknown> = {}) => ({
   id: "mtgn3zf7",
@@ -53,6 +56,30 @@ describe("duração", () => {
   it("sessão de duração zero não vira '0 s'", () => {
     // Áudio existe; zero é o valor que o nó tinha antes de finalizar.
     expect(duracao(0)).toBe("1 s");
+  });
+});
+
+describe("o status como se fala", () => {
+  it("nenhum status chega à tela com sublinhado", () => {
+    for (const s of STATUS_SESSAO) expect(rotuloStatus(s)).not.toContain("_");
+  });
+
+  it("em revisão leva o acento", () => {
+    expect(rotuloStatus("em_revisao")).toBe("em revisão");
+  });
+
+  it("status que o mapa não conhece aparece cru, em vez de sumir", () => {
+    expect(rotuloStatus("descartada")).toBe("descartada");
+  });
+});
+
+describe("a contagem do cabeçalho", () => {
+  it("abaixo do teto, conta", () => {
+    expect(contagem(12)).toBe("12 sessão(ões)");
+  });
+
+  it("no teto, diz que são as mais recentes — não o total", () => {
+    expect(contagem(LIMITE_LISTA_SESSOES)).toBe(`as ${LIMITE_LISTA_SESSOES} mais recentes`);
   });
 });
 

@@ -238,6 +238,11 @@ type Vista = "lista" | "conversa";
 export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
   const [vista, setVista] = useState<Vista>("conversa");
   const [conversas, setConversas] = useState<Conversa[]>([]);
+  /**
+   * A lista chegou de fato. Sem isto "nenhuma conversa ainda." aparecia antes
+   * de a lista voltar — e também quando ela falhava, que é mentir.
+   */
+  const [listaLida, setListaLida] = useState(false);
   const [aberta, setAberta] = useState<Conversa | null>(null);
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
   const [passos, setPassos] = useState<PassoDeFerramenta[]>([]);
@@ -389,6 +394,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
         const d = (await r.json()) as { conversas: Conversa[] };
         if (!vivo) return;
         setConversas(d.conversas);
+        setListaLida(true);
       } catch (e) {
         console.error("[chat]", e);
         if (vivo) setProblema("Não consegui listar as conversas.");
@@ -442,7 +448,9 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
       });
       if (!r.ok || !r.body) {
         const d = (await r.json().catch(() => null)) as { erro?: string } | null;
-        throw new Error(d?.erro ?? `/api/chat respondeu ${r.status}`);
+        // O status cru vai para o log; na tela, a frase.
+        console.error(`[chat] /api/chat respondeu ${r.status}`);
+        throw new Error(d?.erro ?? "Não consegui responder.");
       }
 
       // O id vive aqui, e não no estado: numa conversa nova ele só existe
@@ -599,7 +607,12 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
 
           {vista === "lista" ? (
             <div className="corpo lista-conversas">
-              {ativas.length === 0 && <p className="aguardando">nenhuma conversa ainda.</p>}
+              {problema && <p className="aviso">{problema}</p>}
+              {listaLida && ativas.length === 0 && (
+                <p className="aguardando">
+                  {arquivadas.length > 0 ? "nenhuma conversa ativa." : "nenhuma conversa ainda."}
+                </p>
+              )}
               <ul>
                 {ativas.map((c) => (
                   <LinhaDaConversa

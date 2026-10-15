@@ -127,10 +127,17 @@ export function Gravacao() {
     // — mandar agora seria mandar no pior instante possível (`client/medidas.ts`).
     if (id) marcarParada(id, "gravacao");
 
-    await g?.parar();
+    // Falhar aqui não pode prender a tela em "encerrando…": os blocos já estão
+    // na fila e no IndexedDB, e o corredor é quem sabe esperar por eles. O que
+    // der errado vai para o log, e a sessão segue para onde seguiria.
+    try {
+      await g?.parar();
+    } catch (e) {
+      console.error("[gravador] parar", e);
+    }
     gravador.current = null;
     setFaixa(null);
-    await limparSessaoAtual();
+    await limparSessaoAtual().catch((e) => console.error("[deposito]", e));
     acordar();
 
     if (id) {

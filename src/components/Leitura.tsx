@@ -28,6 +28,8 @@ const INTERVALO_POLL_MS = 2000;
 
 export function Leitura({ id }: { id: string }) {
   const [estado, setEstado] = useState<Estado | null>(null);
+  /** A última leitura falhou. Sem isto a tela repetia "…" para sempre. */
+  const [semResposta, setSemResposta] = useState(false);
 
   useEffect(() => {
     let vivo = true;
@@ -37,6 +39,7 @@ export function Leitura({ id }: { id: string }) {
       const r = await fetch(`/api/sessoes/${id}`, { cache: "no-store" }).catch(() => null);
       if (!vivo) return;
 
+      setSemResposta(!r?.ok);
       if (r?.ok) {
         const atual = (await r.json()) as Estado;
         if (!vivo) return;
@@ -60,15 +63,21 @@ export function Leitura({ id }: { id: string }) {
 
   return (
     <main className="leitura">
-      <h1>{estado?.completa ? "transcrição" : "transcrevendo"}</h1>
+      {/* Com erro não há mais nada transcrevendo, e o título não pode dizer que há. */}
+      <h1>{estado?.completa || estado?.status === "erro" ? "transcrição" : "transcrevendo"}</h1>
 
       {texto ? <p>{texto}</p> : <p className="aguardando">…</p>}
 
       {!estado?.completa && texto && <p className="aguardando">…</p>}
 
+      {semResposta && (
+        <p className="aguardando">não consegui ler a sessão — tentando de novo</p>
+      )}
+
       {estado?.status === "erro" && (
         <p className="aguardando">
-          A transcrição falhou. O áudio está inteiro no servidor — dá para tentar de novo.
+          A transcrição falhou. O áudio está inteiro no servidor — dá para tentar de novo pela
+          lista de <Link href="/sessoes">sessões</Link>.
         </p>
       )}
 

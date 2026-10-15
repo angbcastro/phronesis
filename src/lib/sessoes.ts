@@ -5,7 +5,7 @@
  */
 import { query, queryUm } from "./neo4j";
 import { chaveTranscricao, prefixoSessao } from "./chaves";
-import type { Sessao, StatusSessao } from "./tipos";
+import { LIMITE_LISTA_SESSOES, type Sessao, type StatusSessao } from "./tipos";
 
 /** id em base36: ordenável por tempo e casa com `idValido`. */
 export function novoId(agora: number = Date.now()): string {
@@ -84,7 +84,7 @@ export async function atualizarSessao(
  * Sessão descartada some daqui, e é só daqui: o nó continua no grafo, com os
  * átomos que ele gerou pendurados (regra 6).
  */
-export async function todasSessoes(limite = 50): Promise<Sessao[]> {
+export async function todasSessoes(limite = LIMITE_LISTA_SESSOES): Promise<Sessao[]> {
   const r = await query<{ sessao: Sessao }>(
     `MATCH (s:Sessao)
      WHERE s.descartada_em IS NULL

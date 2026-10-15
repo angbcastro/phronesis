@@ -175,6 +175,13 @@ export function SeletorEntidade({
             ev.preventDefault();
             aoRemover();
           }}
+          // E o teclado: Enter e espaço disparam `click` com `detail` zero, e o
+          // `onMouseDown` acima não os ouvia. Só o clique de teclado — o do mouse
+          // já removeu no `mousedown`, e o nó, reusado pela chave por índice,
+          // tiraria a menção seguinte.
+          onClick={(ev) => {
+            if (ev.detail === 0) aoRemover();
+          }}
         >
           ✕
         </button>

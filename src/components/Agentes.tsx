@@ -23,6 +23,9 @@
  *
  * A gaveta de edição é a mesma forma do menu de gestão — véu que fecha ao toque,
  * Esc, e o foco entrando e voltando. Quem edita prompt de madrugada merece Esc.
+ * E é a mesma mecânica da ficha de `/entidades`: montada sempre, com a classe
+ * `.aberta` ligando e desligando — montar já aberta e desmontar ao fechar era
+ * aparecer e sumir, e a transição do CSS nunca rodava.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -51,12 +54,66 @@ const ROTA: Record<Fluxo, string> = {
 
 const editado = (a: AgenteNaTela) => a.promptEditado || a.modeloEditado || a.limiarEditado;
 
+/** O tempo da transição da gaveta — o mesmo número do `globals.css`. */
+const DURACAO_GAVETA_MS = 220;
+
 // ───────────────────────────── a tela ─────────────────────────────
 
 export function Agentes({ fluxo }: { fluxo: Fluxo }) {
   const [dados, setDados] = useState<Dados | null>(null);
   const [falha, setFalha] = useState<string | null>(null);
+  /** O agente na gaveta. Sobrevive ao fechar por `DURACAO_GAVETA_MS`. */
   const [aberto, setAberto] = useState<AgenteId | null>(null);
+  const [gavetaAberta, setGavetaAberta] = useState(false);
+  const gaveta = useRef<HTMLElement | null>(null);
+  const cartaoTocado = useRef<HTMLButtonElement | null>(null);
+  const esvaziar = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const abrir = useCallback((id: AgenteId, botao: HTMLButtonElement) => {
+    // Abrir outro agente dentro dos 220 ms de um fechamento não pode ser
+    // esvaziado pelo timer do fechamento anterior.
+    if (esvaziar.current) clearTimeout(esvaziar.current);
+    cartaoTocado.current = botao;
+    setAberto(id);
+    setGavetaAberta(true);
+  }, []);
+
+  /**
+   * Estável, e é isso que importa: o Esc e o foco moravam num efeito do editor
+   * que dependia de um `aoFechar` novo a cada render — e cada recarga depois de
+   * salvar jogava o foco de volta no "×".
+   */
+  const fechar = useCallback(() => {
+    setGavetaAberta(false);
+    esvaziar.current = setTimeout(() => setAberto(null), DURACAO_GAVETA_MS);
+  }, []);
+
+  useEffect(() => () => {
+    if (esvaziar.current) clearTimeout(esvaziar.current);
+  }, []);
+
+  useEffect(() => {
+    if (!gavetaAberta) return;
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === "Escape") fechar();
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [gavetaAberta, fechar]);
+
+  /**
+   * O foco entra na gaveta ao abrir e volta ao cartão ao fechar — a mesma forma
+   * da `Gestao` e da ficha. `tocado` impede o primeiro render de roubar o foco.
+   */
+  const tocado = useRef(false);
+  useEffect(() => {
+    if (!tocado.current) {
+      tocado.current = true;
+      return;
+    }
+    if (gavetaAberta) gaveta.current?.querySelector<HTMLElement>("button, input, textarea")?.focus();
+    else cartaoTocado.current?.focus();
+  }, [gavetaAberta]);
 
   const carregar = useCallback(async () => {
     try {
@@ -118,7 +175,7 @@ export function Agentes({ fluxo }: { fluxo: Fluxo }) {
       </header>
 
       {tela.secoes.map((s) => (
-        <Bloco key={s.id} secao={s} porId={porId} rotulos={rotulos} aoAbrir={setAberto} />
+        <Bloco key={s.id} secao={s} porId={porId} rotulos={rotulos} aoAbrir={abrir} />
       ))}
 
       <p className="rodape-fluxo">
@@ -129,22 +186,32 @@ export function Agentes({ fluxo }: { fluxo: Fluxo }) {
         modelo deste sistema sai pelo Vercel AI Gateway.
       </p>
 
-      {editando && (
-        <Editor
-          a={editando}
-          aoFechar={() => setAberto(null)}
-          aoSalvar={async (corpo) => {
-            const r = await fetch(`/api/agentes/${editando.id}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(corpo),
-            });
-            const j = (await r.json()) as { erro?: string };
-            if (!r.ok) throw new Error(j.erro ?? "não consegui gravar");
-            await carregar();
-          }}
-        />
-      )}
+      <div className={`veu${gavetaAberta ? " aberto" : ""}`} onClick={fechar} />
+      <aside
+        ref={gaveta}
+        className={`editor-agente${gavetaAberta ? " aberta" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={editando ? `agente ${editando.rotulo}` : "agente"}
+        aria-hidden={!gavetaAberta}
+      >
+        {editando && (
+          <Editor
+            a={editando}
+            aoFechar={fechar}
+            aoSalvar={async (corpo) => {
+              const r = await fetch(`/api/agentes/${editando.id}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(corpo),
+              });
+              const j = (await r.json()) as { erro?: string };
+              if (!r.ok) throw new Error(j.erro ?? "não consegui gravar");
+              await carregar();
+            }}
+          />
+        )}
+      </aside>
     </main>
   );
 }
@@ -183,7 +250,7 @@ function Bloco({
   secao: Secao;
   porId: Map<AgenteId, AgenteNaTela>;
   rotulos: Map<string, string>;
-  aoAbrir: (id: AgenteId) => void;
+  aoAbrir: (id: AgenteId, botao: HTMLButtonElement) => void;
 }) {
   const Lista = secao.forma === "espinha" ? "ol" : "ul";
   return (
@@ -218,7 +285,7 @@ function Cartao({
   passo: Passo;
   porId: Map<AgenteId, AgenteNaTela>;
   rotulos: Map<string, string>;
-  aoAbrir: (id: AgenteId) => void;
+  aoAbrir: (id: AgenteId, botao: HTMLButtonElement) => void;
   miudo?: boolean;
 }) {
   const a = passo.agente ? porId.get(passo.agente) : undefined;
@@ -230,7 +297,12 @@ function Cartao({
     <>
       <span className="rotulo">
         {passo.rotulo}
-        {a && editado(a) && <i className="marca" aria-label="editado" />}
+        {a && editado(a) && (
+          <>
+            <i className="ponto-editado" aria-hidden="true" />
+            <span className="so-leitor">editado</span>
+          </>
+        )}
         {a && <span className={`quando ${a.quando}`}>{QUANDO[a.quando]}</span>}
       </span>
       {a && <span className="modelo">{a.modelo}</span>}
@@ -253,7 +325,7 @@ function Cartao({
         <button
           type="button"
           className={`caixa agente${editado(a) ? " editado" : ""}`}
-          onClick={() => aoAbrir(a.id)}
+          onClick={(e) => aoAbrir(a.id, e.currentTarget)}
         >
           {miolo}
         </button>
@@ -307,7 +379,6 @@ function Editor({
   const [editandoPrompt, setEditandoPrompt] = useState(false);
   const [gravando, setGravando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const gaveta = useRef<HTMLElement | null>(null);
 
   // Trocar de agente com a gaveta aberta tem de recarregar os campos; sem isto o
   // texto do agente anterior ficaria na tela sobre o nome do novo.
@@ -318,15 +389,6 @@ function Editor({
     setEditandoPrompt(false);
     setErro(null);
   }, [a]);
-
-  useEffect(() => {
-    const aoTeclar = (e: KeyboardEvent) => {
-      if (e.key === "Escape") aoFechar();
-    };
-    window.addEventListener("keydown", aoTeclar);
-    gaveta.current?.querySelector<HTMLElement>("button, input, textarea")?.focus();
-    return () => window.removeEventListener("keydown", aoTeclar);
-  }, [aoFechar]);
 
   const promptMudou = a.prompt !== null && prompt.trim() !== (a.prompt ?? "").trim();
   const modeloMudou = modelo.trim() !== a.modelo;
@@ -359,150 +421,148 @@ function Editor({
     }
   }
 
+  // O véu, a gaveta, o Esc e o foco são do pai (`Agentes`): este é só o miolo.
   return (
     <>
-      <div className="veu aberto" onClick={aoFechar} />
-      <aside className="editor-agente aberta" ref={gaveta} aria-label={`agente ${a.rotulo}`}>
-        <header>
-          <div>
-            <h2>{a.rotulo}</h2>
-            <p className="versao">{a.versao ?? "sem prompt — só modelo"}</p>
-          </div>
-          <button type="button" className="fechar" onClick={aoFechar} aria-label="fechar">
-            ×
-          </button>
-        </header>
+      <header>
+        <div>
+          <h2>{a.rotulo}</h2>
+          <p className="versao">{a.versao ?? "sem prompt — só modelo"}</p>
+        </div>
+        <button type="button" className="fechar" onClick={aoFechar} aria-label="fechar">
+          ×
+        </button>
+      </header>
 
-        <p className="papel">{a.papel}</p>
-        <p className="gatilho">
-          <span className={`quando ${a.quando}`}>{QUANDO[a.quando]}</span> {a.gatilho}
-        </p>
+      <p className="papel">{a.papel}</p>
+      <p className="gatilho">
+        <span className={`quando ${a.quando}`}>{QUANDO[a.quando]}</span> {a.gatilho}
+      </p>
 
-        {/* ── o modelo ── */}
-        <section className="campo">
-          <label htmlFor={`modelo-${a.id}`}>modelo</label>
-          {a.modeloEditavel ? (
-            <>
-              <input
-                id={`modelo-${a.id}`}
-                value={modelo}
-                spellCheck={false}
-                autoCapitalize="off"
-                autoCorrect="off"
-                onChange={(e) => setModelo(e.target.value)}
-                placeholder={a.modeloPadrao}
-              />
-              <p className="dica">
-                padrão <code>{a.modeloPadrao}</code>, de <code>{a.variavel}</code>
-                {a.modeloEditado && " · você trocou por aqui"}
-              </p>
-            </>
-          ) : (
-            <p className="dica travado">
-              <code>{a.modelo}</code> — {a.travado}
-            </p>
-          )}
-
-          {a.limiar !== null && (
-            <>
-              <label htmlFor={`limiar-${a.id}`}>limiar de confiança</label>
-              <input
-                id={`limiar-${a.id}`}
-                type="number"
-                min={0}
-                max={1}
-                step={0.05}
-                value={limiar}
-                inputMode="decimal"
-                onChange={(e) => setLimiar(e.target.value)}
-                placeholder={String(a.limiarPadrao ?? "")}
-              />
-              <p className="dica">
-                abaixo disto a menção vai para a segunda leitura, com a ficha completa dos
-                candidatos. Padrão <code>{a.limiarPadrao}</code>, do git
-                {a.limiarEditado && " · você trocou por aqui"}
-              </p>
-            </>
-          )}
-
-          {a.aceitaVocabulario === false && (
-            <p className="alerta">
-              Este provedor não tem canal de vocabulário: a lista de nomes próprios do grafo some
-              sem avisar, e nome próprio errado custa mais que prosa torta neste sistema.
-            </p>
-          )}
-        </section>
-
-        {/* ── o prompt ── */}
-        {a.prompt !== null && (
-          <section className="campo prompt">
-            <div className="cabecalho">
-              <label htmlFor={`prompt-${a.id}`}>prompt</label>
-              <button
-                type="button"
-                className="fraco"
-                onClick={() => setEditandoPrompt((v) => !v)}
-                disabled={gravando}
-              >
-                {editandoPrompt ? "só ler" : "editar"}
-              </button>
-            </div>
-            <textarea
-              id={`prompt-${a.id}`}
-              value={prompt}
-              readOnly={!editandoPrompt}
+      {/* ── o modelo ── */}
+      <section className="campo">
+        <label htmlFor={`modelo-${a.id}`}>modelo</label>
+        {a.modeloEditavel ? (
+          <>
+            <input
+              id={`modelo-${a.id}`}
+              value={modelo}
               spellCheck={false}
-              rows={editandoPrompt ? 22 : 12}
-              onChange={(e) => setPrompt(e.target.value)}
+              autoCapitalize="off"
+              autoCorrect="off"
+              onChange={(e) => setModelo(e.target.value)}
+              placeholder={a.modeloPadrao}
             />
             <p className="dica">
-              {a.promptEditado
-                ? "editado por aqui · o original continua no git, e o botão abaixo volta a ele"
-                : "é o texto do git, byte a byte"}
+              padrão <code>{a.modeloPadrao}</code>, de <code>{a.variavel}</code>
+              {a.modeloEditado && " · você trocou por aqui"}
             </p>
-          </section>
+          </>
+        ) : (
+          <p className="dica travado">
+            <code>{a.modelo}</code> — {a.travado}
+          </p>
         )}
 
-        {erro && <p className="alerta">{erro}</p>}
+        {a.limiar !== null && (
+          <>
+            <label htmlFor={`limiar-${a.id}`}>limiar de confiança</label>
+            <input
+              id={`limiar-${a.id}`}
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={limiar}
+              inputMode="decimal"
+              onChange={(e) => setLimiar(e.target.value)}
+              placeholder={String(a.limiarPadrao ?? "")}
+            />
+            <p className="dica">
+              abaixo disto a menção vai para a segunda leitura, com a ficha completa dos
+              candidatos. Padrão <code>{a.limiarPadrao}</code>, do git
+              {a.limiarEditado && " · você trocou por aqui"}
+            </p>
+          </>
+        )}
 
-        <footer>
-          <button
-            type="button"
-            className="principal"
-            disabled={!podeSalvar}
-            onClick={() =>
-              salvar({
-                ...(promptMudou ? { prompt } : {}),
-                ...(modeloMudou ? { modelo: modelo.trim() } : {}),
-                ...(limiarMudou ? { limiar: limiarNovo } : {}),
-              })
-            }
-          >
-            {gravando ? "gravando…" : "salvar"}
-          </button>
-          {(a.promptEditado || a.modeloEditado || a.limiarEditado) && (
+        {a.aceitaVocabulario === false && (
+          <p className="alerta">
+            Este provedor não tem canal de vocabulário: a lista de nomes próprios do grafo some
+            sem avisar, e nome próprio errado custa mais que prosa torta neste sistema.
+          </p>
+        )}
+      </section>
+
+      {/* ── o prompt ── */}
+      {a.prompt !== null && (
+        <section className="campo prompt">
+          <div className="cabecalho">
+            <label htmlFor={`prompt-${a.id}`}>prompt</label>
             <button
               type="button"
               className="fraco"
+              onClick={() => setEditandoPrompt((v) => !v)}
               disabled={gravando}
-              onClick={() =>
-              salvar({
-                prompt: a.prompt === null ? undefined : null,
-                modelo: null,
-                ...(a.limiar === null ? {} : { limiar: null }),
-              })
-            }
             >
-              voltar ao original
+              {editandoPrompt ? "só ler" : "editar"}
             </button>
-          )}
-        </footer>
+          </div>
+          <textarea
+            id={`prompt-${a.id}`}
+            value={prompt}
+            readOnly={!editandoPrompt}
+            spellCheck={false}
+            rows={editandoPrompt ? 22 : 12}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+          <p className="dica">
+            {a.promptEditado
+              ? "editado por aqui · o original continua no git, e o botão abaixo volta a ele"
+              : "é o texto do git, byte a byte"}
+          </p>
+        </section>
+      )}
 
-        <p className="dica final">
-          Vale na próxima vez que este agente rodar — sem deploy. O que ele produzir vai carimbado
-          com a versão do prompt que de fato usou.
-        </p>
-      </aside>
+      {erro && <p className="alerta">{erro}</p>}
+
+      <footer>
+        <button
+          type="button"
+          className="principal"
+          disabled={!podeSalvar}
+          onClick={() =>
+            salvar({
+              ...(promptMudou ? { prompt } : {}),
+              ...(modeloMudou ? { modelo: modelo.trim() } : {}),
+              ...(limiarMudou ? { limiar: limiarNovo } : {}),
+            })
+          }
+        >
+          {gravando ? "gravando…" : "salvar"}
+        </button>
+        {(a.promptEditado || a.modeloEditado || a.limiarEditado) && (
+          <button
+            type="button"
+            className="fraco"
+            disabled={gravando}
+            onClick={() =>
+            salvar({
+              prompt: a.prompt === null ? undefined : null,
+              modelo: null,
+              ...(a.limiar === null ? {} : { limiar: null }),
+            })
+          }
+          >
+            voltar ao original
+          </button>
+        )}
+      </footer>
+
+      <p className="dica final">
+        Vale na próxima vez que este agente rodar — sem deploy. O que ele produzir vai carimbado
+        com a versão do prompt que de fato usou.
+      </p>
     </>
   );
 }

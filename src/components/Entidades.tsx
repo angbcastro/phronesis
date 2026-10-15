@@ -1151,7 +1151,12 @@ export function Entidades() {
                         onChange={(ev) => setRascunho(ev.target.value)}
                         onKeyDown={(ev) => {
                           if (ev.key === "Enter") void salvarNome(chave);
-                          if (ev.key === "Escape") setEditando(null);
+                          if (ev.key === "Escape") {
+                            // Sem isto o Esc subia até o listener da janela e
+                            // fechava a ficha junto com o renomear.
+                            ev.stopPropagation();
+                            setEditando(null);
+                          }
                         }}
                       />
                       <button

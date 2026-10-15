@@ -20,8 +20,9 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { esperouDemais } from "@/client/espera";
 import { temTranscricao, terminouDeProcessar } from "@/lib/estados";
-import type { StatusSessao } from "@/lib/tipos";
+import { LIMITE_LISTA_SESSOES, type StatusSessao } from "@/lib/tipos";
 
 interface Sessao {
   id: string;
@@ -45,6 +46,35 @@ export const quando = (iso: string): string => {
 
 export const duracao = (s: number): string =>
   s >= 60 ? `${Math.round(s / 60)} min` : `${Math.max(1, Math.round(s))} s`;
+
+/**
+ * O status como se fala, e não o enum: `replace("_", " ")` dava "em revisao",
+ * sem acento, e só trocava o primeiro sublinhado. Status que este mapa não
+ * conhece aparece cru — melhor que sumir.
+ */
+const ROTULO_STATUS: Record<StatusSessao, string> = {
+  gravando: "gravando",
+  finalizando: "guardando o áudio",
+  transcrevendo: "transcrevendo",
+  transcrito: "transcrito",
+  extraindo: "extraindo",
+  em_revisao: "em revisão",
+  confirmada: "confirmada",
+  erro: "erro",
+};
+
+export const rotuloStatus = (status: string): string =>
+  ROTULO_STATUS[status as StatusSessao] ?? status;
+
+/**
+ * A contagem do cabeçalho. A rota corta em `LIMITE_LISTA_SESSOES`, e "50
+ * sessão(ões)" ali parecia o total.
+ */
+export const contagem = (n: number): string =>
+  n >= LIMITE_LISTA_SESSOES ? `as ${n} mais recentes` : `${n} sessão(ões)`;
+
+/** A cadência da releitura durante uma re-extração — a mesma da fila de `/entidades`. */
+const INTERVALO_RELEITURA_MS = 4000;
 
 /**
  * Para onde a sessão leva quando eu clico nela: **sempre para onde ainda há o
@@ -106,7 +136,8 @@ export function Sessoes() {
   const [armado, setArmado] = useState<string | null>(null);
   const [armadoApagar, setArmadoApagar] = useState<string | null>(null);
   const [rodando, setRodando] = useState<string | null>(null);
-  const [feito, setFeito] = useState<Set<string>>(new Set());
+  /** Re-extrações que eu pedi daqui, e quando: id → instante do pedido. */
+  const [feito, setFeito] = useState<Map<string, number>>(new Map());
 
   const carregar = useCallback(async () => {
     const r = await fetch("/api/sessoes", { cache: "no-store" }).catch(() => null);
@@ -114,12 +145,40 @@ export function Sessoes() {
       setFalha("não deu para carregar a lista");
       return;
     }
-    setSessoes(((await r.json()) as { sessoes: Sessao[] }).sessoes);
+    const lidas = ((await r.json()) as { sessoes: Sessao[] }).sessoes;
+    setSessoes(lidas);
+
+    // O "reextraindo…" sai quando a sessão volta a parar. Não na primeira
+    // leitura: a rota responde antes de o `waitUntil` trocar o status, e logo
+    // depois do pedido a sessão ainda aparece no estado de antes. Um intervalo
+    // inteiro de folga cobre isso — extração nenhuma termina em 4 s. O teto é o
+    // mesmo do corredor: passado ele, a linha para de prometer.
+    const agora = Date.now();
+    setFeito((atual) => {
+      if (atual.size === 0) return atual;
+      const status = new Map(lidas.map((s) => [s.id, s.status]));
+      const segue = new Map(
+        [...atual].filter(([id, desde]) => {
+          const s = status.get(id);
+          if (s === undefined || esperouDemais(desde, agora)) return false;
+          return !(agora - desde > INTERVALO_RELEITURA_MS && terminouDeProcessar(s as StatusSessao));
+        }),
+      );
+      return segue.size === atual.size ? atual : segue;
+    });
   }, []);
 
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  // Enquanto houver re-extração em curso, a lista relê sozinha: sem isto o
+  // status ficava parado no que era no instante do pedido.
+  useEffect(() => {
+    if (feito.size === 0) return;
+    const t = setInterval(() => void carregar(), INTERVALO_RELEITURA_MS);
+    return () => clearInterval(t);
+  }, [feito.size, carregar]);
 
   /**
    * Dois toques, não um: forçar sobrescreve uma proposta que eu posso já ter
@@ -145,7 +204,7 @@ export function Sessoes() {
       setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
       return;
     }
-    setFeito((s) => new Set(s).add(id));
+    setFeito((s) => new Map(s).set(id, Date.now()));
     void carregar();
   }
 
@@ -182,7 +241,7 @@ export function Sessoes() {
       <header>
         <h1>sessões</h1>
         <p className="aguardando">
-          {sessoes ? `${sessoes.length} sessão(ões)` : "…"} · verde é o que eu já revisei —
+          {sessoes ? contagem(sessoes.length) : "…"} · verde é o que eu já revisei —
           reextrair chama o modelo de novo e sobrescreve a proposta atual; transcrição abre o
           texto literal; apagar tira o áudio e a proposta do R2 e some com a linha
         </p>
@@ -196,7 +255,7 @@ export function Sessoes() {
             <Link href={destino(s)} className="quando">
               <span>{quando(s.iniciada_em)}</span>
               <span className="meta">
-                {duracao(s.duracao_s)} · {s.status.replace("_", " ")}
+                {duracao(s.duracao_s)} · {rotuloStatus(s.status)}
                 {feito.has(s.id) && " · reextraindo…"}
               </span>
             </Link>

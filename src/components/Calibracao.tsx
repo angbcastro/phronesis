@@ -183,6 +183,8 @@ export function Calibracao() {
   const [falha, setFalha] = useState<string | null>(null);
   const [sessoes, setSessoes] = useState<Record<string, DaSessao | undefined>>({});
   const [refugoAberto, setRefugoAberto] = useState(false);
+  /** As propostas do refugo ainda chegando: sem isto o vazio falso aparecia. */
+  const [lendoRefugo, setLendoRefugo] = useState(false);
 
   /** A pauta inteira: o que já vale mais o que o agente acabou de propor. */
   const [pauta, setPauta] = useState<PadraoNaTela[]>([]);
@@ -211,6 +213,7 @@ export function Calibracao() {
   const abrirAgente = useCallback(async (id: string) => {
     setEscolhido(id);
     setDados(null);
+    setFalha(null);
     setEmenda(null);
     setRecado(null);
     setRefugoAberto(false);
@@ -356,7 +359,7 @@ export function Calibracao() {
     const d = (await r.json()) as { hash: string | null; secoes: number; fechadas: number };
     setEmenda(null);
     setRecado(
-      `em vigor a partir da próxima chamada · ${d.hash} · ${d.secoes} seção(ões)` +
+      `em vigor a partir da próxima chamada · ${d.hash ? `${d.hash} · ` : ""}${d.secoes} seção(ões)` +
         (d.fechadas > 0 ? ` · ${d.fechadas} correção(ões) endereçada(s)` : ""),
     );
     await abrirAgente(escolhido);
@@ -364,8 +367,10 @@ export function Calibracao() {
 
   async function abrirRefugo() {
     setRefugoAberto(true);
+    setLendoRefugo(true);
     const ids = [...new Set((dados?.correcoes ?? []).map((c) => c.sessao_id))];
     for (const id of ids) await carregarSessao(id);
+    setLendoRefugo(false);
   }
 
   if (falha && !porta) {
@@ -442,10 +447,17 @@ export function Calibracao() {
   // ───────────────────────── a tela de um agente ─────────────────────────
 
   if (!dados) {
+    // A falha daqui é de um agente só, com a porta já carregada: sem este ramo
+    // a tela ficava nas reticências para sempre, e sem caminho de volta.
     return (
       <main className="leitura">
         <h1>calibração</h1>
-        <p className="aguardando">…</p>
+        <p className="aguardando">{falha ?? "…"}</p>
+        {falha && (
+          <button className="ver-anterior" onClick={() => setEscolhido(null)}>
+            ← voltar à lista
+          </button>
+        )}
       </main>
     );
   }
@@ -638,7 +650,9 @@ export function Calibracao() {
           {refugoAberto ? (
             <>
               <h2>o que o parser recusou</h2>
-              {descartes.length === 0 ? (
+              {lendoRefugo ? (
+                <p className="aguardando">lendo…</p>
+              ) : descartes.length === 0 ? (
                 <p className="aguardando">nada — todo item que o modelo devolveu passou</p>
               ) : (
                 <ul>

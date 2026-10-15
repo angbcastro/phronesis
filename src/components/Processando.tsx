@@ -82,8 +82,15 @@ export function deveSairParaRevisao(proposta: {
   return (proposta?.extracao?.atomos?.length ?? 0) > 0;
 }
 
-/** O que dizer em cada passo. Um verbo, sem barra de progresso. */
+/**
+ * O que dizer em cada passo. Um verbo, sem barra de progresso.
+ *
+ * Antes da primeira resposta não há passo a dizer. Chutar "transcrevendo…" ali
+ * fazia o verbo andar para trás — transcrevendo, guardando o áudio,
+ * transcrevendo — numa tela que dura um segundo.
+ */
 export function legenda(status: string | undefined, completa: boolean): string {
+  if (status === undefined) return "…";
   if (status === "extraindo") return "lendo o que você disse…";
   if (completa || status === "transcrito") return "lendo o que você disse…";
   if (status === "finalizando") return "guardando o áudio…";
@@ -223,9 +230,20 @@ export function Processando({ id }: { id: string }) {
 
   const status = estado?.status;
 
+  // O título acompanha o corpo: "um instante" em cima de "alguma coisa falhou"
+  // dizia duas coisas ao mesmo tempo.
+  const titulo =
+    status === "confirmada"
+      ? "já está no grafo"
+      : travou
+        ? "parou no caminho"
+        : falhou
+          ? "falhou"
+          : "um instante";
+
   return (
     <main className="leitura">
-      <h1>{status === "confirmada" ? "já está no grafo" : "um instante"}</h1>
+      <h1>{titulo}</h1>
 
       {status === "confirmada" ? (
         <p className="aguardando">Essa sessão já foi confirmada — os átomos dela estão no Neo4j.</p>

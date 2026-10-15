@@ -3,6 +3,13 @@
 /** Duração alvo de cada bloco. É também o passo do offset absoluto. */
 export const DURACAO_CHUNK_S = 30;
 
+/**
+ * Quantas sessões a lista traz, da mais recente para trás. É uma lista para
+ * achar uma sessão, não um histórico — e a tela diz quando bateu no teto, para
+ * a contagem não parecer o total.
+ */
+export const LIMITE_LISTA_SESSOES = 50;
+
 export const STATUS_SESSAO = [
   "gravando",
   "finalizando",

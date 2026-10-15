@@ -46,6 +46,12 @@ describe("o verbo do passo atual", () => {
     expect(legenda("finalizando", false)).toBe("guardando o áudio…");
     expect(legenda("transcrevendo", false)).toBe("transcrevendo…");
   });
+
+  it("antes da primeira resposta não chuta passo nenhum", () => {
+    // Chutar "transcrevendo…" fazia o verbo andar para trás logo depois, ao
+    // chegar o "finalizando".
+    expect(legenda(undefined, false)).toBe("…");
+  });
 });
 
 /**

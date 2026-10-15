@@ -28,7 +28,7 @@
  * de formato aparece logo abaixo — os dois precisam estar visíveis onde eu
  * cliquei.
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { atrasoBackoff } from "@/lib/backoff";
 import { EXTENSOES_ACEITAS, formatoDeArquivo, motivoRecusa } from "@/lib/audio";
@@ -125,6 +125,21 @@ async function subirBloco(id: string, i: number, bloco: Blob): Promise<void> {
 
 export function Importacao() {
   const router = useRouter();
+
+  /**
+   * Ainda estou na tela? A subida continua depois de a gaveta sumir — e ela
+   * some quando a gravação começa. Navegar no fim, aí, mataria a gravação no
+   * meio da fala. Desmontada, a sessão subida fica onde está: a lista de
+   * sessões a leva ao corredor, que finaliza. Ligado e desligado no efeito, e
+   * não só no desmontar, para o StrictMode do dev não deixá-lo falso.
+   */
+  const vivo = useRef(true);
+  useEffect(() => {
+    vivo.current = true;
+    return () => {
+      vivo.current = false;
+    };
+  }, []);
   const entrada = useRef<HTMLInputElement | null>(null);
   const [fase, setFase] = useState<Fase>("parado");
   const [progresso, setProgresso] = useState<{ feitos: number; total: number } | null>(null);
@@ -202,7 +217,7 @@ export function Importacao() {
         if (Number.isFinite(duracao_s)) {
           sessionStorage.setItem(`duracao:${id}`, String(Math.round(duracao_s)));
         }
-        router.push(`/sessao/${id}`);
+        if (vivo.current) router.push(`/sessao/${id}`);
       } catch (e) {
         console.error("[importacao]", e);
         setProblema("Não consegui subir esse arquivo. Tente de novo.");

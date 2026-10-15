@@ -6,7 +6,7 @@
 | `/sessao/:id` | `Processando` | o corredor, uma **ponte curta**: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e sai para a revisão no primeiro átomo que existir |
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar — e **crescer** enquanto o fim é extraído, com o confirmar travado e uma linha no rodapé até fechar. Fechada, um **+** no fim da lista pede ao extrator o que faltou, e o átomo volta aprovado com a linha "a pedido: «…»" (§4.7) |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
-| `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado |
+| `/sessoes` | `Sessoes` | lista de sessões: abrir, ler a transcrição, forçar re-extração, **apagar** — e a cor que diz o que já foi revisado. São as 50 mais recentes (`LIMITE_LISTA_SESSOES`), e o cabeçalho diz isso quando bate no teto; o status vem por extenso (`rotuloStatus`). Depois de um reextrair pedido dali, a lista relê a cada 4 s até a sessão voltar a parar, com o teto do corredor |
 | `/entidades` | `Entidades` | o que está no grafo, buscável por nome e por grafia, filtrável por tipo e por "sem resumo", em ordem de mais falada. Cada linha é um nome e uma linha de meta; tocá-la abre a **ficha** num painel de tela cheia — tipo, renomear, canônica, resumo, grafias, os três campos de perfil, o enriquecer/desfazer e **fundir com…**, que funde duas entidades quaisquer à mão. **A ficha do "eu" é o retrato** (slice 10, `RetratoDoEu`): no lugar dos três campos e do enriquecer, o Agora com o "até", uma seção por dimensão com o (i) das fontes, reescrever/desfazer, e a lista de dimensões para editar, com a proposta do agente ao lado. O lote é modo: "enriquecer" acende os checkboxes e uma barra grudada no topo. Enquanto houver fila, relê a cada 4 s e retoma a corrente quando a vê parada (§4.9) |
 | `/calibracao` | `Calibracao` | os agentes com material parado; em cada um, o que eu já corrigi — com o `antes → depois` e o áudio à mão —, a pauta de padrões e a emenda, seção por seção |
 | `/agentes` | `Agentes` | **o que entra**: a espinha do áudio ao grafo — STT, extração (com resolução e desempate rodando dentro dela), a revisão e o leque dos sete que partem do grafo gravado. Clicar num agente abre o prompt, o modelo e (na resolução e no confronto) o limiar |
@@ -65,7 +65,7 @@ recusada: a integração é com a tela de gravar. O que existe é uma barra:
 | estado da tela | o que aparece |
 |---|---|
 | **parado** | círculo ao centro + engrenagem + a barra do chat, discreta, centralizada no rodapé, com `...` de convite |
-| **chat aberto** | o painel toma o centro; o círculo encolhe, sobe para o topo e fica semitransparente — periférico, como a barra era |
+| **chat aberto** | o painel toma o centro; o círculo encolhe, sobe para o topo e fica semitransparente — periférico, como a barra era. A engrenagem fica apagada e **por baixo** da caixa: num celular ela cai na borda esquerda do painel, e por cima cobria o começo das falas |
 | **gravando** | só círculo, timer, ponto de salvo e "parar". A barra **some inteira**, como a engrenagem |
 
 **Uma bolha de balão no canto de baixo à direita foi recusada**: um ícone de
@@ -523,11 +523,14 @@ de perfil e o "enriquecer esta" dão lugar a `RetratoDoEu`, que lê
 | **as dimensões** | nome e `o_que_entra` editáveis, ↑ ↓ ×, "+ dimensão", "salvar dimensões"; "pedir nova proposta" traz a sugestão **ao lado**, com aceitar e descartar | o agente propõe, eu aprovo — e nada muda sem eu aceitar. Sem "juntar": é editar uma e tirar a outra |
 
 **A ficha é a terceira gaveta desta forma** — `.gaveta` (gestão, pela esquerda),
-`.editor-agente` (agentes, pela direita) e `.ficha`. As três repetem a mesma
-geometria, a mesma curva de 220 ms, o mesmo `env(safe-area-inset-*)` e o mesmo
-`.veu` (esse já é compartilhado). **Consolidá-las numa `.gaveta-lateral` é dívida
-conhecida**: as três gavetas mudariam junto, em `Gestao.tsx`, `Agentes.tsx` e
-`Entidades.tsx`.
+`.editor-agente` (agentes, pela direita) e `.ficha`. O editor de agente segue a
+mecânica da ficha descrita a seguir — montado sempre, `.aberta` ligando e
+desligando, o conteúdo segurado pela duração da transição, o foco voltando ao
+cartão tocado —, e o Esc e o foco moram em `Agentes`, que passa ao editor um
+`fechar` estável. As três repetem a mesma geometria, a mesma curva de 220 ms, o
+mesmo `env(safe-area-inset-*)` e o mesmo `.veu` (esse já é compartilhado).
+**Consolidá-las numa `.gaveta-lateral` é dívida conhecida**: as três gavetas
+mudariam junto, em `Gestao.tsx`, `Agentes.tsx` e `Entidades.tsx`.
 
 O painel fica **montado sempre**, com a classe `.aberta` ligando e desligando, e
 o React segura o conteúdo por `DURACAO_FICHA_MS` (220 ms, o mesmo número da

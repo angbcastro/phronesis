@@ -93,6 +93,21 @@ html, body {
 
 button { font: inherit; color: inherit; cursor: pointer; }
 
+/* Texto que só o leitor de tela lê: o "editado" de um ponto que é só cor, o
+   "(editar)" de um parágrafo que vira campo. Fora da tela, e não `display:
+   none`, que o tiraria do leitor também. */
+.so-leitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .tela {
   min-height: 100dvh;
   display: flex;
@@ -398,6 +413,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .revisao header h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem; }
 .revisao header p { margin: 0; }
+/* A instrução do topo, o parágrafo das entidades e as linhas do rodapé. Sem
+   esta regra a classe não pintava nada aqui, e a instrução saía com o peso dos
+   átomos que ela explica. O editor do átomo afina para 0,8 rem mais abaixo. */
+.revisao .aguardando { color: var(--texto-fraco); font-size: 0.9rem; }
 
 .atomos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
 
@@ -686,6 +705,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .sessoes h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem; }
 .sessoes header p { margin: 0; }
+/* A legenda, a falha e o vazio. Antes de `.tela-entidades .aguardando`, que é
+   mais adiante e vence em `/entidades` — ela também usa `main.sessoes`. */
+.sessoes .aguardando { color: var(--texto-fraco); font-size: 0.9rem; }
 
 .lista-sessoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .lista-sessoes li {
@@ -1621,7 +1643,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* O que ela passa a dizer é o que vale: a borda é a única marca de direção. */
 .edicao .par-longo .lado:last-child p { border-left-color: var(--acento); }
 
-/* Espaço para ela nas telas que ela cobre. `.leitura` já abre com 3.5rem. */
+/* Espaço para ela nas telas que ela cobre. `.leitura` já abre com 3.5rem, e
+   `.agentes` declara o mesmo 3.75rem no próprio `padding` — ela vem depois
+   daqui, e o shorthand dela apagaria o desta lista. */
 .sessoes,
 .calibracao,
 .revisao { padding-top: 3.75rem; }
@@ -1645,7 +1669,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   width: 100%;
   max-width: 44rem;
   margin: 0 auto;
-  padding: 2rem 1.25rem 4rem;
+  padding: 3.75rem 1.25rem 4rem;
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
@@ -1765,7 +1789,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .passo .caixa.agente:hover { border-color: var(--texto-fraco); }
 .passo .caixa.agente:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
 .passo .caixa.agente.editado { border-color: var(--acento); }
-.passo .marca { width: 5px; height: 5px; border-radius: 50%; background: var(--acento); flex: none; }
+/* `.ponto-editado`, e não `.marca`: essa é a volta ao início, `position: fixed`
+   no canto da tela, e o ponto herdava a posição dela — todo agente editado
+   empilhava um ponto em cima da marca, e nenhum aparecia no cartão. */
+.passo .ponto-editado { width: 5px; height: 5px; border-radius: 50%; background: var(--acento); flex: none; }
 
 /* ── o que entra, e o que volta ──
    As duas linhas que substituíram setas: `←` o que chega de fora, `↩` o que é
@@ -1845,6 +1872,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   height: 100dvh;
   width: min(94vw, 34rem);
   overflow-y: auto;
+  /* Rolar até o fim do prompt não pode continuar rolando o desenho atrás. */
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -1854,9 +1883,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: var(--fundo-alto);
   border-left: 1px solid var(--linha);
   transform: translateX(100%);
-  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  /* Fechada ela continua montada (`Agentes.tsx`), e `visibility` é o que a
+     tira do Tab e do leitor de tela — a mesma forma da `.ficha`. */
+  visibility: hidden;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), visibility 220ms;
 }
-.editor-agente.aberta { transform: translateX(0); }
+.editor-agente.aberta { transform: translateX(0); visibility: visible; }
 
 .editor-agente header { display: flex; align-items: flex-start; gap: 0.5rem; }
 .editor-agente h2 { font-size: 1.05rem; font-weight: 600; margin: 0; }
@@ -1957,7 +1989,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .editor-agente footer .fraco:hover { color: var(--acento); }
 
 @media (prefers-reduced-motion: reduce) {
-  .editor-agente { transition: transform 1ms; }
+  .editor-agente { transition: visibility 1ms; transform: translateX(0); }
+  .editor-agente:not(.aberta) { transform: translateX(100%); }
 }
 
 /* ─────────────────────────── o chat (slice 6) ───────────────────────────
@@ -2371,7 +2404,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
    não é pintado. `color: transparent` e não `font-size: 0`: a cor interpola, o
    tamanho de fonte aqui seria mais um corte. */
 .tela.com-chat .botao-gravar { color: transparent; }
-.tela.com-chat .engrenagem { opacity: 0.25; }
+/* Por baixo da caixa (5), e não por cima: num celular de 390 px a engrenagem
+   fica no meio da borda esquerda do painel aberto, e com o `z-index: 20` dela
+   cobria o começo das falas e roubava o toque. Num monitor o painel não chega
+   até ela, e ela continua lá, apagada. */
+.tela.com-chat .engrenagem { opacity: 0.25; z-index: 4; }
 
 /* O `.brilho` continua respirando. Desligar a animação era um corte no meio da
    escala dela — e a 32% de tamanho a respiração não se vê. */
@@ -2505,6 +2542,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .rel-CONTRADIZ { --cor: var(--rel-contradiz); }
 .rel-CONFIRMA { --cor: var(--rel-confirma); }
 .rel-COMPLEMENTA { --cor: var(--rel-complementa); }
+
+/* Não há `.meta` solta neste arquivo — toda regra dela é escopada —, e quatro
+   das do confronto (a fila, o centro do radial, o vizinho e a linha da relação)
+   moram fora da lista, onde nenhuma alcançava: saíam em 16 px, brancas. */
+.confronto .meta { font-size: 0.8rem; color: var(--texto-fraco); }
 
 .busca-confronto { display: flex; gap: 0.4rem; align-items: center; }
 .busca-confronto .campo-nome { flex: 1; width: auto; padding: 0.35rem 0.6rem; }

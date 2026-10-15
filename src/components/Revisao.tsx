@@ -1097,8 +1097,12 @@ export function Revisao({ id }: { id: string }) {
     }).catch(() => null);
 
     if (!r || !r.ok) {
-      const motivo = r ? ((await r.json()) as { erro?: string }).erro : "sem resposta do servidor";
-      setFalha(motivo ?? "falhou");
+      // O corpo pode nem ser JSON — um 502 da plataforma é página HTML —, e um
+      // `json()` que estoura aqui deixava o botão preso em "gravando…".
+      const motivo = r
+        ? ((await r.json().catch(() => ({}))) as { erro?: string }).erro
+        : "sem resposta do servidor";
+      setFalha(motivo ?? `o servidor respondeu ${r?.status}`);
       setGravando(false);
       return;
     }
