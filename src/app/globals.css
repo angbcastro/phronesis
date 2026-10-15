@@ -664,8 +664,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .atomo .corpo > p { margin: 0.2rem 0 0; line-height: 1.45; }
 .atomo .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 
-/* O texto do átomo edita no próprio lugar — clicar nele vira campo, sem abrir
-   painel embaixo. */
+/* O texto do átomo edita no próprio lugar — tocar nele vira campo, sem abrir
+   painel embaixo, e o cursor nasce no caractere que eu toquei. É por isso que o
+   campo, mais abaixo, copia a caixa do parágrafo: o mesmo ponto tem de cair no
+   mesmo caractere nos dois. */
 .texto-atomo {
   cursor: text;
   border-radius: var(--raio-controle);

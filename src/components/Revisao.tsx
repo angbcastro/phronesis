@@ -485,6 +485,42 @@ export function montarCorpoDoConfirmar(entrada: {
 }
 
 /**
+ * Em que caractere do texto o toque caiu — para o cursor nascer ali quando o
+ * parágrafo vira campo (`Specs/interface.md`, a decisão 5). `null` quando o
+ * navegador não sabe dizer, ou o ponto caiu fora do parágrafo.
+ *
+ * O parágrafo e o campo têm a mesma caixa — margem, fonte, entrelinha —, e é
+ * isso que faz o caractere sob o dedo no parágrafo ser o mesmo no campo. O
+ * texto oculto do leitor de tela vem **depois** do texto do átomo, então a
+ * contagem do início até o ponto nunca o inclui.
+ */
+function posicaoDoToque(el: HTMLElement, x: number, y: number): number | null {
+  const doc = el.ownerDocument as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  let no: Node | null = null;
+  let deslocamento = 0;
+  // O padrão (Firefox, Chrome recente) e o do WebKit (Safari, Chrome antigo).
+  const ponto = doc.caretPositionFromPoint?.(x, y);
+  if (ponto) {
+    no = ponto.offsetNode;
+    deslocamento = ponto.offset;
+  } else {
+    const faixa = doc.caretRangeFromPoint?.(x, y);
+    if (faixa) {
+      no = faixa.startContainer;
+      deslocamento = faixa.startOffset;
+    }
+  }
+  if (!no || !el.contains(no)) return null;
+  const antes = doc.createRange();
+  antes.setStart(el, 0);
+  antes.setEnd(no, deslocamento);
+  return antes.toString().length;
+}
+
+/**
  * Um nome de entidade na linha de resumo do átomo, com o ícone de fontes ao
  * lado quando `fonte` existir — só entidades com evidência de retrieval
  * (`herdadasDoAtomo`) ganham o ícone; as demais ficam só o nome.
@@ -582,6 +618,13 @@ export function Revisao({ id }: { id: string }) {
 
   const audio = useRef<HTMLAudioElement | null>(null);
   const modalFontes = useRef<HTMLDivElement | null>(null);
+  /**
+   * Onde o cursor nasce quando um parágrafo vira campo: o caractere sob o dedo,
+   * ou o fim do texto quando foi pelo teclado. Consumido uma vez, pelo `ref`
+   * do campo — que roda a cada render, e não pode reposicionar o cursor no
+   * meio da digitação.
+   */
+  const cursorPedido = useRef<{ indice: number; pos: number } | null>(null);
   const mediu = useRef(false);
 
   /**
@@ -1219,17 +1262,28 @@ export function Revisao({ id }: { id: string }) {
                     <textarea
                       className="texto-atomo editando"
                       value={texto}
-                      autoFocus
                       aria-label="texto do átomo"
                       // Sem `rows` fixo: a altura segue o conteúdo, do mesmo
                       // jeito que o parágrafo cresce sozinho. `ref` acerta a
                       // altura assim que o campo aparece; `onChange` reajusta
                       // a cada tecla, senão o campo ficaria menor que o texto
                       // que ele mesmo mostra.
+                      //
+                      // E o foco é daqui, e não de um `autoFocus`: focar só
+                      // poria o cursor no início do texto, e ele tem de nascer
+                      // onde eu toquei. Isto roda dentro do toque — o React
+                      // aplica o clique de uma vez —, que é o que deixa o
+                      // teclado do celular subir.
                       ref={(el) => {
                         if (!el) return;
                         el.style.height = "auto";
                         el.style.height = `${el.scrollHeight}px`;
+                        const pedido = cursorPedido.current;
+                        if (pedido?.indice === a.indice) {
+                          cursorPedido.current = null;
+                          el.focus();
+                          el.setSelectionRange(pedido.pos, pedido.pos);
+                        }
                       }}
                       onChange={(e) => {
                         editarAtomo(a.indice, { texto: e.target.value });
@@ -1249,10 +1303,19 @@ export function Revisao({ id }: { id: string }) {
                       className="texto-atomo"
                       tabIndex={0}
                       role="button"
-                      onClick={() => setEditandoTexto((s) => new Set(s).add(a.indice))}
+                      onClick={(e) => {
+                        const pos = posicaoDoToque(e.currentTarget, e.clientX, e.clientY);
+                        cursorPedido.current = {
+                          indice: a.indice,
+                          pos: Math.min(pos ?? texto.length, texto.length),
+                        };
+                        setEditandoTexto((s) => new Set(s).add(a.indice));
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
+                          // Pelo teclado não há ponto: o cursor vai para o fim.
+                          cursorPedido.current = { indice: a.indice, pos: texto.length };
                           setEditandoTexto((s) => new Set(s).add(a.indice));
                         }
                       }}
