@@ -429,7 +429,7 @@ function Editor({
           <h2>{a.rotulo}</h2>
           <p className="versao">{a.versao ?? "sem prompt — só modelo"}</p>
         </div>
-        <button type="button" className="fechar" onClick={aoFechar} aria-label="fechar">
+        <button type="button" className="botao icone fechar" onClick={aoFechar} aria-label="fechar">
           ×
         </button>
       </header>
@@ -501,7 +501,7 @@ function Editor({
             <label htmlFor={`prompt-${a.id}`}>prompt</label>
             <button
               type="button"
-              className="fraco"
+              className="botao discreto"
               onClick={() => setEditandoPrompt((v) => !v)}
               disabled={gravando}
             >
@@ -529,7 +529,7 @@ function Editor({
       <footer>
         <button
           type="button"
-          className="principal"
+          className="botao primario"
           disabled={!podeSalvar}
           onClick={() =>
             salvar({
@@ -544,7 +544,7 @@ function Editor({
         {(a.promptEditado || a.modeloEditado || a.limiarEditado) && (
           <button
             type="button"
-            className="fraco"
+            className="botao discreto"
             disabled={gravando}
             onClick={() =>
             salvar({

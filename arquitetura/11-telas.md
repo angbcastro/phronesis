@@ -415,6 +415,30 @@ quinze entre 9,6 e 15,2 px, a menos de 1 px um do outro. Os três números de
 desenho de todas as telas sem ninguém ver nenhuma, então a grade vale para o que
 nasce e para a regra que for tocada.
 
+#### O botão
+
+**Um `.botao`, e não nove.** Eram nove estilos de pílula quase iguais — e um
+deles, `.reextrair`, vestia 55 botões que não reextraíam nada. Agora é um botão
+com variações, e a variação diz o que ele é, não onde mora:
+
+| Classe | Como é | Para quê |
+|---|---|---|
+| `.botao` | contorno em `--linha-controle`, pílula, `--fs-2` | a ação comum, que não pesa |
+| `.primario` | cheio, `--acento-cheio` | a ação que escreve — um por lugar, no máximo |
+| `.ligado` | contorno e letra no acento | um modo aceso, o valor atual de uma escolha, a ficha canônica |
+| `.perigo` | contorno e letra em `--erro` | destrutivo **armado**: o segundo toque apaga |
+| `.discreto` | texto sublinhado, sem contorno | o que é saída, e não ação — voltar, descartar, ver a anterior |
+| `.icone` | um glifo num círculo de 40 px | fechar, voltar |
+| `.tracejado` | contorno tracejado | acrescentar o que ainda não existe |
+
+**O desenho tem 32 px de altura, e o alvo tem 44**: um `::after` passa da pílula
+para cima e para baixo. Os glifos que moram no meio do texto ou ao lado de um
+campo — o ⓘ das fontes, o ✕ da menção, o × da grafia, os (i) — ganham o mesmo
+alvo por fora. Nome de classe que sobrou junto do `.botao` (`.editar`,
+`.voltar`, `.apagar-regra`, `.fechar`) é só gancho de posição: não pinta nada.
+Ficam fora o círculo de gravar e o "parar", que são do ritual, o confirmar da
+revisão, o entrar, e os controles internos do chat.
+
 **No toque, todo campo tem 16 px** (`@media (pointer: coarse)`, com o único
 `!important` do arquivo): abaixo disso o Safari do iPhone dá zoom na página ao
 focar. No mouse os campos de gestão continuam compactos. **E o hover só existe

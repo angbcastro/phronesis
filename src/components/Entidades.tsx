@@ -828,7 +828,7 @@ export function Entidades() {
           {e.resumo === "" ? "sem resumo" : e.resumo}
         </p>
         <button
-          className="reextrair"
+          className="botao"
           disabled={ocupado === `${e.nome_normalizado}|${contra.nome_normalizado}`}
           onClick={() => void fundir(e.nome_normalizado, contra.nome_normalizado)}
         >
@@ -888,20 +888,20 @@ export function Entidades() {
       {/* Manutenção: semear um nome, procurar duplicatas, entrar no lote. */}
       <div className="barra-manutencao">
         <button
-          className={criando ? "reextrair armado" : "reextrair"}
+          className={criando ? "botao ligado" : "botao"}
           aria-expanded={criando}
           onClick={() => setCriando((c) => !c)}
         >
           + nova
         </button>
-        <button className="reextrair" onClick={() => void procurar()} disabled={procurando}>
+        <button className="botao" onClick={() => void procurar()} disabled={procurando}>
           {procurando ? "olhando…" : "procurar duplicatas"}
         </button>
         {/* O lote é modo: sem apertar aqui, nenhuma caixa de seleção existe na
             tela. Elas eram permanentes, e uma coluna de checkbox em toda linha
             cobra uma decisão que eu quase nunca vou tomar. */}
         <button
-          className={selecionando ? "reextrair armado" : "reextrair"}
+          className={selecionando ? "botao ligado" : "botao"}
           aria-pressed={selecionando}
           onClick={() => (selecionando ? sairDaSelecao() : setSelecionando(true))}
         >
@@ -933,7 +933,7 @@ export function Entidades() {
             ))}
           </select>
           <button
-            className="reextrair"
+            className="botao"
             disabled={ocupado === "criar" || nomeNovo.trim() === ""}
             onClick={() => void criar()}
           >
@@ -968,7 +968,7 @@ export function Entidades() {
             <span>selecionar todas</span>
           </label>
           <button
-            className="reextrair"
+            className="botao"
             disabled={ocupado === "lote" || marcadas.size === 0}
             title="o agente lê TODOS os átomos de cada uma e escreve a ficha inteira — e grava, sem eu aprovar campo a campo"
             onClick={() => void enriquecerMarcadas()}
@@ -977,7 +977,7 @@ export function Entidades() {
               ? "enfileirando…"
               : `enriquecer ${marcadas.size === 0 ? "" : `${marcadas.size} `}marcada(s)`}
           </button>
-          <button className="reextrair" onClick={sairDaSelecao}>
+          <button className="botao" onClick={sairDaSelecao}>
             cancelar
           </button>
         </div>
@@ -999,21 +999,21 @@ export function Entidades() {
               {/* Qual sobrevive é escolha minha: o nome do vencedor vira o nome
                   de exibição e vai para o vocabulário do STT. */}
               <button
-                className="reextrair"
+                className="botao"
                 disabled={ocupado === chave}
                 onClick={() => void fundir(p.a, p.b)}
               >
                 manter {p.nome_a}
               </button>
               <button
-                className="reextrair"
+                className="botao"
                 disabled={ocupado === chave}
                 onClick={() => void fundir(p.b, p.a)}
               >
                 manter {p.nome_b}
               </button>
               <button
-                className="reextrair"
+                className="botao"
                 disabled={ocupado === chave}
                 onClick={() => void saoDistintas(p)}
               >
@@ -1104,13 +1104,13 @@ export function Entidades() {
             return (
               <>
                 <header>
-                  <button className="voltar" aria-label="fechar a ficha" onClick={fechar}>
+                  <button className="botao icone voltar" aria-label="fechar a ficha" onClick={fechar}>
                     ←
                   </button>
                   <h2>{emFoco.nome}</h2>
                   <button
                     ref={estrela}
-                    className={emFoco.canonico ? "reextrair canonico" : "reextrair"}
+                    className={emFoco.canonico ? "botao ligado" : "botao"}
                     disabled={ocupado === `${chave}|canonico`}
                     aria-pressed={emFoco.canonico}
                     title="marcar esta como a ficha oficial desta entidade"
@@ -1160,7 +1160,7 @@ export function Entidades() {
                         }}
                       />
                       <button
-                        className="reextrair"
+                        className="botao"
                         disabled={ocupado === chave}
                         onClick={() => void salvarNome(chave)}
                       >
@@ -1169,7 +1169,7 @@ export function Entidades() {
                     </>
                   ) : (
                     <button
-                      className="reextrair"
+                      className="botao"
                       onClick={() => {
                         setEditando(chave);
                         setRascunho(emFoco.nome);
@@ -1208,7 +1208,7 @@ export function Entidades() {
                         {valorResumo.length}/{TETO_RESUMO}
                       </span>
                       <button
-                        className="reextrair"
+                        className="botao"
                         disabled={ocupado === idResumo || valorResumo === emFoco.resumo}
                         onClick={() => void salvarResumo(chave, valorResumo)}
                       >
@@ -1261,7 +1261,7 @@ export function Entidades() {
                         }}
                       />
                       <button
-                        className="reextrair"
+                        className="botao"
                         disabled={(grafiaNova[chave] ?? "").trim() === ""}
                         onClick={() =>
                           void mexerNaGrafia(chave, (grafiaNova[chave] ?? "").trim(), "acrescentar")
@@ -1311,14 +1311,14 @@ export function Entidades() {
                             />
                             <div className="acoes-sessao">
                               <button
-                                className="reextrair"
+                                className="botao"
                                 disabled={ocupado === id || !mexido}
                                 onClick={() => void salvarPerfil(chave, campo, valor)}
                               >
                                 salvar
                               </button>
                               <button
-                                className="reextrair"
+                                className="botao"
                                 disabled={ocupado === id}
                                 title="o agente propõe a partir dos átomos que marcaram este campo; nada é gravado"
                                 onClick={() => void pedirRascunho(chave, campo)}
@@ -1337,13 +1337,13 @@ export function Entidades() {
                                 <p>{proposta.texto}</p>
                                 <div className="acoes-sessao">
                                   <button
-                                    className="reextrair"
+                                    className="botao"
                                     onClick={() => setTextos((t) => ({ ...t, [id]: proposta.texto }))}
                                   >
                                     usar este texto
                                   </button>
                                   <button
-                                    className="reextrair"
+                                    className="botao"
                                     onClick={() =>
                                       setPropostas((p) => {
                                         const { [id]: _fora, ...resto } = p;
@@ -1370,7 +1370,7 @@ export function Entidades() {
                       </p>
                       <div className="acoes-sessao">
                         <button
-                          className="reextrair"
+                          className="botao"
                           disabled={ocupado === `${chave}|enriquecer`}
                           onClick={() => void enriquecerUma(chave)}
                         >
@@ -1378,7 +1378,7 @@ export function Entidades() {
                         </button>
                         {emFoco.enriquecimento.tem_anterior && (
                           <button
-                            className="reextrair"
+                            className="botao"
                             disabled={ocupado === `${chave}|desfazer`}
                             title="volta os quatro campos para a geração anterior — outro toque traz de volta"
                             onClick={() => void desfazer(chave)}
@@ -1402,7 +1402,7 @@ export function Entidades() {
                       </p>
                       <div className="acoes-sessao">
                         <button
-                          className="reextrair"
+                          className="botao"
                           onClick={() => setFusao({ termo: "", alvo: null })}
                         >
                           fundir com…
@@ -1452,7 +1452,7 @@ export function Entidades() {
                         </ul>
                       )}
                       <div className="acoes-sessao">
-                        <button className="reextrair" onClick={() => setFusao(null)}>
+                        <button className="botao" onClick={() => setFusao(null)}>
                           cancelar
                         </button>
                       </div>
@@ -1474,7 +1474,7 @@ export function Entidades() {
                       </div>
                       <div className="acoes-sessao">
                         <button
-                          className="reextrair"
+                          className="botao"
                           onClick={() => setFusao({ termo: fusao.termo, alvo: null })}
                         >
                           voltar
@@ -1497,7 +1497,7 @@ export function Entidades() {
                   )}
                   <div className="acoes-sessao">
                     <button
-                      className={armadoExcluir === chave ? "reextrair armado" : "reextrair"}
+                      className={armadoExcluir === chave ? "botao perigo" : "botao"}
                       disabled={chave === "eu" || ocupado === `${chave}|excluir`}
                       title={chave === "eu" ? "o dono do diário não se exclui" : undefined}
                       onClick={() => void excluir(chave)}

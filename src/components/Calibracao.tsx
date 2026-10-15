@@ -454,7 +454,7 @@ export function Calibracao() {
         <h1>calibração</h1>
         <p className="aguardando">{falha ?? "…"}</p>
         {falha && (
-          <button className="ver-anterior" onClick={() => setEscolhido(null)}>
+          <button className="botao discreto" onClick={() => setEscolhido(null)}>
             ← voltar à lista
           </button>
         )}
@@ -467,7 +467,7 @@ export function Calibracao() {
   return (
     <main className="calibracao">
       <header>
-        <button className="voltar" aria-label="voltar à lista" onClick={() => setEscolhido(null)}>
+        <button className="botao icone voltar" aria-label="voltar à lista" onClick={() => setEscolhido(null)}>
           ←
         </button>
         <h1>{dados.agente.rotulo}</h1>
@@ -504,7 +504,7 @@ export function Calibracao() {
                   motivou o padrão, não coisa minha para editar. */}
               <span>a partir de {p.cita.length} correção(ões)</span>
               <button
-                className="apagar-regra"
+                className="botao discreto apagar-regra"
                 onClick={() => setPauta((atual) => atual.filter((x) => x.id !== p.id))}
               >
                 descartar
@@ -515,14 +515,14 @@ export function Calibracao() {
 
         <div className="acoes-regras">
           <button
-            className="rascunhar"
+            className="botao"
             disabled={rascunhando || pauta.length >= MAX_PADROES_POR_RODADA}
             onClick={() => void pedirPadroes()}
           >
             {rascunhando ? "lendo o que eu corrigi…" : "pedir os padrões"}
           </button>
           <button
-            className="aprovar"
+            className="botao primario"
             disabled={redigindo || pauta.length === 0}
             onClick={() => void pedirEmenda()}
           >
@@ -572,10 +572,10 @@ export function Calibracao() {
           })}
 
           <div className="acoes-regras">
-            <button className="aprovar" disabled={aprovando} onClick={() => void aprovar()}>
+            <button className="botao primario" disabled={aprovando} onClick={() => void aprovar()}>
               {aprovando ? "gravando…" : "aprovar a emenda"}
             </button>
-            <button className="apagar-regra" onClick={() => setEmenda(null)}>
+            <button className="botao discreto apagar-regra" onClick={() => setEmenda(null)}>
               descartar
             </button>
           </div>
@@ -629,7 +629,7 @@ export function Calibracao() {
                 {c.inicios_s.map((s, k) => (
                   <button
                     key={k}
-                    className="ouvir"
+                    className="botao"
                     aria-label={`ouvir a partir de ${mmss(s)}`}
                     onClick={() => void escutar(c.sessao_id, s)}
                   >
@@ -670,7 +670,7 @@ export function Calibracao() {
               )}
             </>
           ) : (
-            <button className="abrir-refugo" onClick={() => void abrirRefugo()}>
+            <button className="botao" onClick={() => void abrirRefugo()}>
               o que o parser recusou
             </button>
           )}

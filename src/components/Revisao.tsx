@@ -1325,7 +1325,7 @@ export function Revisao({ id }: { id: string }) {
                     {ancorados.map((t, k) => (
                       <button
                         key={k}
-                        className="ouvir"
+                        className="botao"
                         aria-label={`ouvir a partir de ${mmss(t.inicio_s!)}${t.ancora === "aproximada" ? ", trecho aproximado" : ""}`}
                         onClick={() => void escutar(t.inicio_s!)}
                       >
@@ -1339,7 +1339,7 @@ export function Revisao({ id }: { id: string }) {
                       </span>
                     )}
                     <button
-                      className="editar"
+                      className="botao editar"
                       onClick={() =>
                         setAbertos((s) => {
                           const n = new Set(s);
@@ -1449,7 +1449,7 @@ export function Revisao({ id }: { id: string }) {
                           />
                         ))}
                         <button
-                          className="acrescentar"
+                          className="botao tracejado"
                           onClick={() =>
                             editarAtomo(a.indice, { menciona: [...v.menciona, ""] })
                           }
@@ -1487,13 +1487,13 @@ export function Revisao({ id }: { id: string }) {
                 disabled={procurando}
                 onChange={(e) => setTextoPedido(e.target.value)}
               />
-              <button type="submit" disabled={procurando || textoPedido.trim() === ""}>
+              <button type="submit" className="botao" disabled={procurando || textoPedido.trim() === ""}>
                 pedir
               </button>
               {!procurando && (
                 <button
                   type="button"
-                  className="ver-anterior"
+                  className="botao discreto"
                   onClick={() => {
                     setPedindo(false);
                     setAvisoPedido(null);
@@ -1505,7 +1505,7 @@ export function Revisao({ id }: { id: string }) {
             </form>
           ) : (
             <button
-              className="acrescentar"
+              className="botao tracejado"
               aria-label="pedir o que faltou"
               onClick={() => setPedindo(true)}
             >
@@ -1527,11 +1527,11 @@ export function Revisao({ id }: { id: string }) {
             esta sessão foi re-extraída · antes eram {proposta.anterior?.atomos} item(ns), por{" "}
             {proposta.anterior?.prompt_version}
             {anterior === null ? (
-              <button className="ver-anterior" onClick={() => void verAnterior()}>
+              <button className="botao discreto" onClick={() => void verAnterior()}>
                 ver a anterior
               </button>
             ) : (
-              <button className="ver-anterior" onClick={() => setAnterior(null)}>
+              <button className="botao discreto" onClick={() => setAnterior(null)}>
                 fechar
               </button>
             )}
@@ -1671,7 +1671,7 @@ export function Revisao({ id }: { id: string }) {
         >
           {gravando ? "gravando…" : `confirmar ${aprovados.length} item(ns)`}
         </button>
-        <Link className="voltar" href="/">
+        <Link className="botao discreto" href="/">
           depois
         </Link>
       </footer>
@@ -1696,7 +1696,7 @@ export function Revisao({ id }: { id: string }) {
               <h2>{nomeFinal(fontesAbertas.ref.entidade)}</h2>
               <button
                 type="button"
-                className="fechar"
+                className="botao icone"
                 onClick={() => setFontesAbertas(null)}
                 aria-label="fechar"
               >

@@ -188,6 +188,107 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 0;
 }
 
+/* ---- o botão ----
+
+   Um só, com cinco jeitos. Eram nove estilos de pílula quase iguais — e um
+   deles, `.reextrair`, vestia 55 botões que não reextraíam nada.
+
+   - `.botao` — o de contorno: a ação comum, que não pesa.
+   - `.primario` — cheio, a ação que escreve. Um por lugar, no máximo.
+   - `.ligado` — um modo aceso, o valor atual, a ficha canônica.
+   - `.perigo` — destrutivo **armado**: o segundo toque apaga. Em repouso, o
+     mesmo botão é neutro, e o vermelho só aparece quando já é a hora.
+   - `.discreto` — texto sublinhado, para o que é saída e não ação.
+   - `.icone` — um glifo num alvo de 40 px: fechar, voltar.
+   - `.tracejado` — acrescentar o que ainda não existe.
+
+   O desenho tem 32 px de altura e o alvo tem 44: o `::after` passa da pílula
+   para cima e para baixo. Num app de celular, botão que precisa de pontaria é
+   botão que erra. */
+.botao {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--esp-1);
+  min-height: 2rem;
+  padding: 0 var(--esp-3);
+  border: 1px solid var(--linha-controle);
+  border-radius: 999px;
+  background: none;
+  color: var(--texto-fraco);
+  font-size: var(--fs-2);
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.botao::after { content: ""; position: absolute; inset: -6px -2px; }
+.botao:disabled { opacity: 0.5; cursor: default; }
+@media (hover: hover) {
+  .botao:hover:not(:disabled) { color: var(--texto); border-color: var(--texto-fraco); }
+}
+
+.botao.primario {
+  background: var(--acento-cheio);
+  border-color: var(--acento-cheio);
+  color: var(--sobre-acento);
+}
+@media (hover: hover) {
+  .botao.primario:hover:not(:disabled) {
+    color: var(--sobre-acento);
+    border-color: var(--acento-cheio);
+    background: color-mix(in srgb, var(--acento-cheio) 88%, white);
+  }
+}
+
+.botao.ligado { color: var(--acento-texto); border-color: var(--acento); }
+/* O valor atual de uma escolha é `disabled` — escolher de novo não muda nada —,
+   mas lê como escolha, e não como botão morto. */
+.botao.ligado:disabled { opacity: 1; }
+
+.botao.perigo { color: var(--erro); border-color: var(--erro); }
+@media (hover: hover) {
+  .botao.perigo:hover:not(:disabled) { color: var(--erro); border-color: var(--erro); }
+}
+
+.botao.tracejado { border-style: dashed; }
+
+.botao.discreto {
+  min-height: 1.75rem;
+  padding: 0 var(--esp-1);
+  border-color: transparent;
+  border-radius: var(--raio-controle);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (hover: hover) {
+  .botao.discreto:hover:not(:disabled) { border-color: transparent; }
+}
+
+.botao.icone {
+  width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  font-size: var(--fs-5);
+  line-height: 1;
+}
+
+/* Os glifos que moram no meio do texto ou ao lado de um campo — o ⓘ das fontes,
+   o ✕ da menção, o × da grafia, os dois (i) — continuam pequenos no desenho, e
+   ganham alvo de dedo por fora, como o `.botao`. */
+.entidade-ref .fonte,
+.seletor .remover,
+.lista-grafias button,
+.chat .porque,
+.info-fontes { position: relative; }
+.entidade-ref .fonte::after,
+.seletor .remover::after,
+.lista-grafias button::after,
+.chat .porque::after,
+.info-fontes::after { content: ""; position: absolute; inset: -12px; }
+
 .tela {
   min-height: 100dvh;
   display: flex;
@@ -442,19 +543,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .leitura .aguardando { color: var(--texto-fraco); font-size: var(--fs-4); }
 
-/* O "voltar" da transcrição (que vai para `/sessoes`) e o "depois" do rodapé da
-   revisão — os dois únicos que não duplicam a marca. Escopado pela mesma razão
-   que `.quando`: `margin-top: 2rem` numa classe de nome tão comum vaza para o
-   primeiro botão de voltar que alguém escrever em outra tela. */
-.leitura .voltar,
-.revisao .voltar {
-  display: inline-block;
-  margin-top: 2rem;
-  color: var(--texto-fraco);
-  font-size: var(--fs-3);
-  text-decoration: none;
-  border-bottom: 1px solid var(--linha);
-}
+/* O "voltar" da transcrição, que vai para `/sessoes` — um `.botao.discreto`, e
+   isto é só o respiro dele no fim do texto. Escopado pela mesma razão que
+   `.quando`: `margin-top: 2rem` numa classe de nome tão comum vazaria para o
+   primeiro botão de voltar que alguém escrevesse em outra tela. O "depois" do
+   rodapé da revisão é o mesmo botão, sem o respiro: num rodapé grudado, 2 rem a
+   mais são 32 px de tela ocupados o tempo todo. */
+.leitura .voltar { margin-top: 2rem; }
 
 .aviso { color: var(--texto-fraco); font-size: var(--fs-3); text-align: center; }
 
@@ -563,15 +658,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (hover: hover) { .entidade-ref .fonte:hover { color: var(--acento-texto); } }
 
 .trechos { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
-.ouvir {
-  background: none;
-  border: 1px solid var(--linha);
-  border-radius: 999px;
-  padding: 0.15rem 0.6rem;
-  font-size: var(--fs-2);
-  color: var(--texto-fraco);
-}
-@media (hover: hover) { .ouvir:hover { color: var(--texto); border-color: var(--texto-fraco); } }
 .sem-ancora { font-size: var(--fs-2); color: var(--acento-texto); }
 
 .editor { margin-top: 0.7rem; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -588,7 +674,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .editor .campos { display: flex; gap: 0.5rem; align-items: center; }
 .editor .campos select { width: auto; }
-.editor .campos .fraco { background: none; border: none; color: var(--texto-fraco); margin-left: auto; }
 
 /* As entidades do átomo: sujeito e menções, dentro do editor. Um grupo
    rotulado e não uma aba — o átomo em dúvida abre o editor justamente para
@@ -617,16 +702,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   flex-direction: column;
   gap: 0.4rem;
 }
-.acrescentar {
-  align-self: flex-start;
-  background: none;
-  border: 1px dashed var(--linha);
-  border-radius: 999px;
-  padding: 0.2rem 0.7rem;
-  font-size: var(--fs-2);
-  color: var(--texto-fraco);
-}
-@media (hover: hover) { .acrescentar:hover { color: var(--texto); border-color: var(--texto-fraco); } }
+/* Numa coluna flexível o botão esticaria até a largura da lista. */
+.entidades-do-atomo .mencoes .lista > .botao { align-self: flex-start; }
 
 /* A barra pesquisável de entidade (`SeletorEntidade`), usada nos dois lugares:
    dentro do átomo e no painel do rodapé. */
@@ -760,16 +837,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-weight: 600;
 }
 
-.editar {
-  background: none;
-  border: 1px solid var(--linha);
-  border-radius: 999px;
-  padding: 0.15rem 0.7rem;
-  font-size: var(--fs-2);
-  color: var(--texto-fraco);
-  margin-left: auto;
-}
-@media (hover: hover) { .editar:hover { color: var(--texto); border-color: var(--texto-fraco); } }
+/* O editar do átomo vai para a ponta direita da linha dos trechos. */
+.trechos .editar { margin-left: auto; }
 .editor .aguardando { font-size: var(--fs-2); margin: 0; }
 
 /* ---- sessões ---- */
@@ -852,21 +921,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
   width: 9rem;
 }
 
-.reextrair {
-  display: inline-block;
-  text-decoration: none;
-  background: none;
-  border: 1px solid var(--linha);
-  border-radius: 999px;
-  padding: 0.2rem 0.7rem;
-  font-size: var(--fs-2);
-  color: var(--texto-fraco);
-  white-space: nowrap;
-}
-@media (hover: hover) { .reextrair:hover { color: var(--texto); border-color: var(--texto-fraco); } }
-.reextrair.armado { color: var(--acento-texto); border-color: var(--acento); }
-.reextrair:disabled { opacity: 0.5; cursor: default; }
-
 /* ---- slice 4: dúvida de identidade, e os três campos de perfil ---- */
 
 /* Atribuição que o agente não teve certeza. Destaca, não trava: o pior caso é
@@ -909,15 +963,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .modal-fontes header { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
 .modal-fontes h2 { font-size: var(--fs-4); font-weight: 600; margin: 0; }
-.modal-fontes .fechar {
-  background: none;
-  border: none;
-  font-size: var(--fs-5);
-  line-height: 1;
-  color: var(--texto-fraco);
-  padding: 0.1rem 0.3rem;
-}
-@media (hover: hover) { .modal-fontes .fechar:hover { color: var(--texto); } }
+/* O × encosta no canto, e o alvo de 40 px não empurra o título. */
+.modal-fontes .botao.icone { flex: none; margin: -0.5rem -0.6rem 0 0; }
 .modal-fontes .motivo { margin: 0; font-size: var(--fs-3); color: var(--texto-fraco); }
 .modal-fontes .citacoes {
   list-style: none;
@@ -941,7 +988,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
    comum — aprovar tudo — não muda de tamanho nem de cor. */
 .pedido-novo { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.25rem 0 1rem; }
 .pedido-novo form { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.pedido-novo input { flex: 1; min-width: 12rem; }
+.pedido-novo > .botao { align-self: flex-start; }
+/* O campo do pedido nascia sem estilo nenhum — o controle cru do navegador, no
+   meio de uma tela onde todo campo tem cara de campo. */
+.pedido-novo input {
+  flex: 1;
+  min-width: 12rem;
+  font: inherit;
+  color: inherit;
+  background: var(--fundo-alto);
+  border: 1px solid var(--linha-controle);
+  border-radius: var(--raio-controle);
+  padding: 0.5rem 0.6rem;
+}
 
 /* ── /entidades: o topo, a lista e a barra do lote ──
 
@@ -1084,7 +1143,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* A ficha oficial se vê na linha, sem abrir nada. */
 .canonica { margin-left: 0.35rem; color: var(--acento-texto); }
-.reextrair.canonico { border-color: var(--acento); color: var(--acento-texto); }
 
 /* As grafias, uma por etiqueta, com o × que tira. Editável à mão é o ponto:
    é o único jeito de ensinar uma grafia ANTES de o STT errar pela primeira
@@ -1178,24 +1236,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-weight: 600;
   overflow-wrap: anywhere;
 }
-/* 40 px como o alvo da marca, e pela mesma razão: este é um app de celular. */
-.ficha .voltar {
-  flex: none;
-  width: 40px;
-  height: 40px;
-  margin-left: -0.55rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  border-radius: 50%;
-  color: var(--texto-fraco);
-  font-size: var(--fs-5);
-  line-height: 1;
-}
-@media (hover: hover) { .ficha .voltar:hover { color: var(--texto); } }
-.ficha .voltar:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; }
+/* Um `.botao.icone`, recuado para o glifo alinhar com o texto abaixo dele. */
+.ficha .voltar { flex: none; margin-left: -0.55rem; }
 
 .ficha .identidade { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .ficha .secao {
@@ -1275,7 +1317,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .comparacao .lado .meta { font-size: var(--fs-1); color: var(--texto-fraco); }
 .comparacao .lado .resumo { margin: 0; font-size: var(--fs-2); line-height: 1.4; }
 .comparacao .lado .resumo.vazio { color: var(--texto-fraco); font-style: italic; }
-.comparacao .lado .reextrair { margin-top: auto; text-align: center; }
+.comparacao .lado .botao { margin-top: auto; }
 
 /* Terracota e não vermelho: este sistema não tem cor de perigo, e o acento já
    quer dizer "isto muda o grafo". Mesma barra da proposta do agente 3. */
@@ -1446,16 +1488,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
    placar — a comparação é minha, não da tela. */
 .anterior { display: flex; flex-direction: column; gap: 0.5rem; }
 .anterior p { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
-.ver-anterior {
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--texto-fraco);
-  font-size: var(--fs-3);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-@media (hover: hover) { .ver-anterior:hover { color: var(--texto); } }
 .atomos.antiga { opacity: 0.6; }
 .atomos.antiga .atomo { border-style: dashed; }
 
@@ -1548,15 +1580,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .correcao .par-longo .lado:last-child p { border-left-color: var(--acento); }
 
 .correcao .rodape { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.correcao .ouvir {
-  border: 1px solid var(--linha);
-  background: none;
-  border-radius: 999px;
-  padding: 0.2rem 0.6rem;
-  font-size: var(--fs-2);
-  color: var(--texto-fraco);
-}
-@media (hover: hover) { .correcao .ouvir:hover { color: var(--texto); border-color: var(--texto-fraco); } }
 .correcao .inferida,
 .correcao .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 .correcao .inferida { border-bottom: 1px dotted var(--texto-fraco); cursor: help; }
@@ -1601,47 +1624,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--texto-fraco);
 }
 .meta-regra .proposta { color: var(--acento-texto); }
-.apagar-regra {
-  margin-left: auto;
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--texto-fraco);
-  font-size: var(--fs-2);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-@media (hover: hover) { .apagar-regra:hover { color: var(--rec); } }
+/* "descartar", na ponta da linha; o vermelho chega no hover, onde há hover. */
+.apagar-regra { margin-left: auto; }
+@media (hover: hover) { .botao.apagar-regra:hover:not(:disabled) { color: var(--erro); } }
 
 .acoes-regras { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.25rem; }
-.rascunhar,
-.aprovar {
-  border: 1px solid var(--linha);
-  background: none;
-  border-radius: var(--raio-controle);
-  padding: 0.45rem 0.8rem;
-  font-size: var(--fs-3);
-}
-.rascunhar:disabled,
-.aprovar:disabled { opacity: 0.5; cursor: default; }
-/* O único botão que escreve regra é o único com o peso do acento. */
-.aprovar { border-color: var(--acento); color: var(--acento-texto); }
-.ok-regras { font-size: var(--fs-3); color: var(--ok); }
 
 .refugo { margin-top: 0.5rem; }
 .refugo h2 { font-size: var(--fs-4); font-weight: 600; margin: 0 0 0.4rem; }
 .refugo ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
 .refugo li { font-size: var(--fs-3); color: var(--texto-fraco); }
 .refugo .n { color: var(--texto); }
-.abrir-refugo {
-  border: 1px solid var(--linha);
-  background: none;
-  border-radius: var(--raio-controle);
-  padding: 0.45rem 0.7rem;
-  font-size: var(--fs-3);
-  color: var(--texto-fraco);
-}
-@media (hover: hover) { .abrir-refugo:hover { color: var(--texto); border-color: var(--texto-fraco); } }
 
 /* ───────────────── a porta da calibração, e a emenda (slice 7) ─────────────────
    A tela deixou de ser uma só quando o laço deixou de ser da extração: a porta
@@ -1663,17 +1656,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .linha-agente .meta { font-size: var(--fs-2); color: var(--texto-fraco); line-height: 1.45; }
 @media (hover: hover) { .linha-agente:hover .nome { color: var(--acento-texto); } }
 
-.calibracao .voltar {
-  border: none;
-  background: none;
-  padding: 0;
-  font-size: var(--fs-5);
-  color: var(--texto-fraco);
-  align-self: flex-start;
-  margin-bottom: 0.4rem;
-}
-@media (hover: hover) { .calibracao .voltar:hover { color: var(--texto); } }
-.calibracao .voltar:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; }
+/* Um `.botao.icone` acima do título, recuado para o glifo alinhar com ele. */
+.calibracao .voltar { margin: 0 0 var(--esp-1) -0.6rem; }
 
 /* O que muda no prompt. Empilhado sempre, e sem cor apontando o quê: corpo de
    seção nunca cabe numa linha, e cor que decide o que mudou é a tela afirmando
@@ -1972,17 +1956,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .editor-agente header { display: flex; align-items: flex-start; gap: 0.5rem; }
 .editor-agente h2 { font-size: var(--fs-5); font-weight: 600; margin: 0; }
 .editor-agente .versao { margin: 0.15rem 0 0; font-size: var(--fs-2); color: var(--texto-fraco); }
-.editor-agente .fechar {
-  margin-left: auto;
-  border: none;
-  background: none;
-  color: var(--texto-fraco);
-  font-size: var(--fs-6);
-  line-height: 1;
-  padding: 0 0.25rem;
-  cursor: pointer;
-}
-@media (hover: hover) { .editor-agente .fechar:hover { color: var(--texto); } }
+.editor-agente .fechar { flex: none; margin: -0.4rem -0.6rem 0 auto; }
 
 .editor-agente .papel { margin: 0; line-height: 1.5; }
 .editor-agente .gatilho {
@@ -2002,15 +1976,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--texto-fraco);
 }
 .editor-agente .campo .cabecalho { display: flex; align-items: baseline; gap: 0.5rem; }
-.editor-agente .campo .cabecalho .fraco {
-  margin-left: auto;
-  background: none;
-  border: none;
-  color: var(--acento-texto);
-  font: inherit;
-  font-size: var(--fs-2);
-  cursor: pointer;
-}
+.editor-agente .campo .cabecalho .botao { margin-left: auto; }
 .editor-agente input,
 .editor-agente textarea {
   width: 100%;
@@ -2048,24 +2014,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 
 .editor-agente footer { display: flex; gap: 0.6rem; align-items: center; }
-.editor-agente footer .principal {
-  border: 1px solid var(--acento-cheio);
-  background: var(--acento-cheio);
-  color: var(--sobre-acento);
-  font: inherit;
-  border-radius: var(--raio-controle);
-  padding: 0.5rem 1.1rem;
-  cursor: pointer;
-}
-.editor-agente footer .principal:disabled { opacity: 0.4; cursor: default; }
-.editor-agente footer .fraco {
-  background: none;
-  border: none;
-  color: var(--texto-fraco);
-  font: inherit;
-  cursor: pointer;
-}
-@media (hover: hover) { .editor-agente footer .fraco:hover { color: var(--acento-texto); } }
 
 @media (prefers-reduced-motion: reduce) {
   .editor-agente { transition: visibility 1ms; transform: translateX(0); }
@@ -2703,10 +2651,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
   gap: 0.2rem;
 }
 .gestos-relacao { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-/* O valor atual: desabilitado porque escolher de novo não muda nada, mas lido
-   como escolha, não como botão morto. */
-.reextrair.escolhido,
-.reextrair.escolhido:disabled { color: var(--texto); border-color: var(--texto-fraco); opacity: 1; }
 .motivo-relacao {
   background: none;
   border: 1px solid var(--linha-controle);

@@ -295,7 +295,7 @@ export function RetratoDoEu({
         </p>
         <div className="acoes-sessao">
           <button
-            className="reextrair"
+            className="botao"
             disabled={ocupado !== null || rodando}
             onClick={() => void reescrever()}
           >
@@ -303,7 +303,7 @@ export function RetratoDoEu({
           </button>
           {(enriquecimento.tem_anterior || temAnterior) && (
             <button
-              className="reextrair"
+              className="botao"
               disabled={ocupado !== null || rodando}
               title="volta o retrato e a ficha curta para a geração anterior — outro toque traz de volta"
               onClick={() => void desfazer()}
@@ -337,7 +337,7 @@ export function RetratoDoEu({
                 onChange={(ev) => mudar(i, "nome", ev.target.value)}
               />
               <button
-                className="reextrair"
+                className="botao"
                 aria-label={`subir ${d.nome}`}
                 disabled={i === 0}
                 onClick={() => setEdicao(moverDimensao(lista, i, -1))}
@@ -345,7 +345,7 @@ export function RetratoDoEu({
                 ↑
               </button>
               <button
-                className="reextrair"
+                className="botao"
                 aria-label={`descer ${d.nome}`}
                 disabled={i === lista.length - 1}
                 onClick={() => setEdicao(moverDimensao(lista, i, 1))}
@@ -353,7 +353,7 @@ export function RetratoDoEu({
                 ↓
               </button>
               <button
-                className="reextrair"
+                className="botao"
                 aria-label={`tirar ${d.nome}`}
                 onClick={() => setEdicao(lista.filter((_, j) => j !== i))}
               >
@@ -373,25 +373,25 @@ export function RetratoDoEu({
 
         <div className="acoes-sessao">
           <button
-            className="reextrair"
+            className="botao"
             onClick={() => setEdicao([...lista, { nome: "", o_que_entra: "" }])}
           >
             + dimensão
           </button>
           <button
-            className="reextrair"
+            className="botao"
             disabled={!mexida || ocupado !== null || lista.some((d) => d.nome.trim() === "")}
             onClick={() => void salvarDimensoes()}
           >
             {ocupado === "dimensoes" ? "salvando…" : "salvar dimensões"}
           </button>
           {edicao !== null && (
-            <button className="reextrair" onClick={() => setEdicao(null)}>
+            <button className="botao" onClick={() => setEdicao(null)}>
               desfazer edição
             </button>
           )}
           <button
-            className="reextrair"
+            className="botao"
             disabled={ocupado !== null}
             title="o agente lê todos os átomos do eu e propõe a lista inteira — ela chega ao lado da atual, e nada muda sem eu aceitar"
             onClick={() => void pedirProposta()}
@@ -414,14 +414,14 @@ export function RetratoDoEu({
             </ol>
             <div className="acoes-sessao">
               <button
-                className="reextrair"
+                className="botao"
                 disabled={ocupado !== null}
                 onClick={() => void responderSugestao("aceitar")}
               >
                 aceitar
               </button>
               <button
-                className="reextrair"
+                className="botao"
                 disabled={ocupado !== null}
                 onClick={() => void responderSugestao("descartar")}
               >

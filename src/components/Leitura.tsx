@@ -87,7 +87,7 @@ export function Leitura({ id }: { id: string }) {
         </Link>
       )}
 
-      <Link className="voltar" href="/sessoes">
+      <Link className="botao discreto voltar" href="/sessoes">
         voltar
       </Link>
     </main>

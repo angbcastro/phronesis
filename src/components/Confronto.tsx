@@ -308,11 +308,11 @@ export function Confronto() {
     return (
       <main className="sessoes confronto">
         <header className="radial-topo">
-          <button className="reextrair" onClick={voltar}>
+          <button className="botao" onClick={voltar}>
             ← {caminho.length > 1 ? "voltar" : "lista"}
           </button>
           {caminho.length > 1 && (
-            <button className="reextrair" onClick={() => setCaminho([])}>
+            <button className="botao" onClick={() => setCaminho([])}>
               fechar
             </button>
           )}
@@ -351,11 +351,11 @@ export function Confronto() {
       {falha && <p className="aviso">{falha}</p>}
 
       <div className="acoes-sessao">
-        <button className="reextrair" onClick={() => void rodar()} disabled={rodando}>
+        <button className="botao" onClick={() => void rodar()} disabled={rodando}>
           {rodando ? "rodando…" : "rodar agora"}
         </button>
         <button
-          className={armado ? "reextrair armado" : "reextrair"}
+          className={armado ? "botao perigo" : "botao"}
           onClick={() => void reprocessar()}
           onBlur={() => armado && setArmado(false)}
           disabled={rodando}
@@ -379,7 +379,7 @@ export function Confronto() {
             if (e.target.value.trim() === "") setAchados(null);
           }}
         />
-        <button className="reextrair" type="submit" disabled={buscando}>
+        <button className="botao" type="submit" disabled={buscando}>
           {buscando ? "buscando…" : "buscar"}
         </button>
       </form>
@@ -428,7 +428,7 @@ export function Confronto() {
               <div className="acoes-sessao">
                 {a.estado === "processado" && (
                   <button
-                    className="reextrair"
+                    className="botao"
                     disabled={ocupado === a.id}
                     onClick={() => void desfazer(a.id)}
                     title="apaga o que a rodada deste átomo escreveu e o devolve à fila — o que eu editei fica"
@@ -641,7 +641,7 @@ function PainelDaRelacao({
       <div className="cabecalho-relacao">
         <span className={`chave rel-${rel.tipo}`}>{SIGLA[rel.tipo]}</span>
         <span>{frase}</span>
-        <button className="reextrair" onClick={fechar} aria-label="fechar">
+        <button className="botao icone" onClick={fechar} aria-label="fechar">
           ×
         </button>
       </div>
@@ -664,7 +664,7 @@ function PainelDaRelacao({
         {TIPOS.map((t) => (
           <button
             key={t}
-            className={`reextrair${t === rel.tipo ? " escolhido" : ""}`}
+            className={`botao${t === rel.tipo ? " ligado" : ""}`}
             disabled={ocupado || t === rel.tipo}
             onClick={() => void editar(rel, "tipo", t)}
           >
@@ -677,7 +677,7 @@ function PainelDaRelacao({
         {(["forte", "sutil"] as const).map((c) => (
           <button
             key={c}
-            className={`reextrair${c === rel.camada ? " escolhido" : ""}`}
+            className={`botao${c === rel.camada ? " ligado" : ""}`}
             disabled={ocupado || c === rel.camada}
             onClick={() => void editar(rel, "camada", c)}
           >
@@ -696,14 +696,14 @@ function PainelDaRelacao({
 
       <div className="gestos-relacao">
         <button
-          className="reextrair"
+          className="botao"
           disabled={ocupado || motivo.trim() === "" || motivo.trim() === rel.motivo}
           onClick={() => void editar(rel, "motivo", motivo)}
         >
           salvar motivo
         </button>
         <button
-          className={armado ? "reextrair armado" : "reextrair"}
+          className={armado ? "botao perigo" : "botao"}
           disabled={ocupado}
           onBlur={() => armado && setArmado(false)}
           onClick={() => {

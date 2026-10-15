@@ -262,14 +262,14 @@ export function Sessoes() {
 
             <div className="acoes-sessao">
               {podeLerTranscricao(s) && (
-                <Link className="reextrair" href={`/sessao/${s.id}/transcricao`}>
+                <Link className="botao" href={`/sessao/${s.id}/transcricao`}>
                   transcrição
                 </Link>
               )}
 
               {podeReextrair(s) ? (
                 <button
-                  className={armado === s.id ? "reextrair armado" : "reextrair"}
+                  className={armado === s.id ? "botao perigo" : "botao"}
                   disabled={rodando === s.id}
                   onClick={() => void reextrair(s.id)}
                   onBlur={() => armado === s.id && setArmado(null)}
@@ -291,7 +291,7 @@ export function Sessoes() {
 
               {podeApagar(s) && (
                 <button
-                  className={armadoApagar === s.id ? "reextrair armado" : "reextrair"}
+                  className={armadoApagar === s.id ? "botao perigo" : "botao"}
                   disabled={rodando === s.id}
                   onClick={() => void apagar(s.id)}
                   onBlur={() => armadoApagar === s.id && setArmadoApagar(null)}
