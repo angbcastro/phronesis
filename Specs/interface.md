@@ -82,7 +82,8 @@ Feita. Ver "Como ficou".
 
 ### Onda 2 — o sistema de design
 
-Com as decisões 1 e 2. No topo do `globals.css`:
+Feita, com as decisões 1 e 2 — ver "Como ficou". Era assim o plano, no topo do
+`globals.css`:
 
 | Eixo | Proposta |
 |---|---|
@@ -104,8 +105,8 @@ número ("0.87" com ponto).
 
 ### Onda 3 — o ritual
 
-As decisões 4 e 5 estão tomadas; o resto pede entrevista antes, por ser tela
-sagrada.
+As decisões 4 e 5 estão feitas (ver "Como ficou"); o resto pede entrevista
+antes, por ser tela sagrada.
 
 - **Revisão:** o tipo do átomo com rótulo ("opinião", e não `OPINIAO` a
   0,68 rem); o desmarcado com estado próprio, e não só opacidade; a faixa
@@ -126,9 +127,9 @@ sagrada.
 
 ### Onda 4 — a gestão
 
-A decisão 3 está tomada. Parte do resto muda contrato de rota.
+A decisão 3 está feita (ver "Como ficou"), e o `<title>` por rota foi junto.
+Parte do resto muda contrato de rota.
 
-- Navegação entre as telas de gestão, e um `<title>` por rota.
 - **Sessões com conteúdo:** quantos átomos e as entidades mais citadas, que
   pede mudar `GET /api/sessoes`; "hoje/ontem" e ano; "carregar mais" depois das
   50.
@@ -180,3 +181,40 @@ no erro de gravar, e o foco entrando e voltando no modal de fontes, no editor
 de agente e — só pelo teclado — no chat.
 
 O que não foi feito: olhar as telas rodando. Está no `PROXIMOS-TESTES.md`.
+
+**Onda 2 e as decisões 1 a 5, em 14/10/2026** — depois da tag
+`ui-antes-da-onda-2`, sem push. Em commits separados por tema:
+
+- **A escala e as cores.** Seis tamanhos de letra no lugar de vinte e oito,
+  com piso de 12 px; três cantos; duas larguras de página; uma curva. `--erro`
+  é o `--rec` (decisão 1); `--acento-cheio` dá ~4,9:1 aos botões cheios, e o
+  círculo de gravar fica no acento puro (decisão 2); `--acento-texto` e
+  `--linha-controle` levam o acento-como-letra e a borda dos controles ao
+  mínimo de contraste. No toque, campo tem 16 px; o hover só existe onde há
+  ponteiro. **O espaço não foi migrado de uma vez** — ver a nota no §11.2 do
+  `ARCHITECTURE.md`: a grade vale para o que nasce e para o que for tocado.
+- **Um botão, e não nove.** `.botao` com `.primario`, `.ligado`, `.perigo`,
+  `.discreto`, `.icone` e `.tracejado`; o `.reextrair` saiu dos 55 lugares que
+  vestia. Desenho de 32 px, alvo de 44.
+- **O recado com tom.** `.aviso.erro` e `.aviso.ok`, com `role="alert"` no
+  erro; a falha de ação da ficha aparece dentro dela. No caminho, dois bugs: o
+  "em vigor" da calibração sumia no mesmo instante em que aparecia (o
+  `abrirAgente` limpava o recado), e `/entrar` sem rede não dizia nada.
+- **`.gaveta-lateral`.** As três gavetas viraram uma base com lado.
+- **O texto.** Uma data só, dia/mês, no dia de Brasília. **A primeira versão
+  usou mês por extenso**, e voltou para o número porque
+  `tests/entidades-tela.test.ts` registrava "dia/mês/ano, que é como eu leio" —
+  e o chat já mostrava `dd/mm`. As telas que cortavam a string mostravam o dia
+  de Greenwich (o limite do §14 encolheu para os prompts). Plural por extenso,
+  "guardando…" no confirmar e "salvando…" na gestão, sem "Neo4j" e "R2" no
+  ritual.
+- **Decisão 3:** a engrenagem em toda tela de gestão, no canto direito, com a
+  gaveta entrando por ali e a tela atual marcada; e o `<title>` por rota.
+- **Decisão 4:** "guardado · 8 itens" na home por 3 s depois do confirmar.
+- **Decisão 5:** o toque no texto do átomo põe o cursor no caractere tocado.
+
+Um tropeço de processo: o commit do texto (`b63349a`) entrou com
+`tests/arquitetura.test.ts` falhando — os exemplos literais de data no §11
+liam como crônica —, e o conserto veio no commit seguinte (`fc8c896`).
+
+O que não foi feito: olhar nada disto rodando. Está no `PROXIMOS-TESTES.md`.

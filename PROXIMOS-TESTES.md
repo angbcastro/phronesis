@@ -38,6 +38,35 @@ celular, ou nos 390 px do DevTools, contra o banco de desenvolvimento:
       a gravação não é interrompida quando o upload termina, e a sessão
       importada aparece em `/sessoes`.
 
+## Interface — onda 2 e as cinco decisões (`Specs/interface.md`)
+
+Construída e coberta por `pnpm typecheck`, `pnpm test` e `pnpm build`; nada
+olhado rodando, pela mesma razão da onda 1. A volta é a tag
+`ui-antes-da-onda-2`.
+
+- [ ] **O conjunto.** Passar por todas as telas a 390 px: o desenho mudou pouco
+      em cada uma e muito no todo — letras de 12 px no mínimo, bordas de
+      controle mais claras (`--linha-controle`), pílulas de 32 px. Se a borda
+      ficou clara demais, é um token só.
+- [ ] O botão de confirmar, o "salvar" do editor de agente e o "entrar" no
+      terracota escurecido; o círculo de gravar igual a antes.
+- [ ] Uma falha qualquer (rede cortada no DevTools) sai em vermelho; um
+      "apagar?" armado também, e em repouso não.
+- [ ] `/entidades`: abrir uma ficha, cortar a rede e salvar o resumo — a falha
+      aparece dentro da ficha.
+- [ ] Em `/sessoes`, `/entidades`, `/agentes`, `/confronto`, `/calibracao` e na
+      transcrição: a engrenagem no canto direito, a gaveta entrando por ali com
+      a tela atual marcada, e ir de uma tela a outra sem passar por `/`. No
+      corredor e na revisão, nenhuma engrenagem.
+- [ ] Confirmar uma revisão: "guardado · N itens" no alto da home por ~3 s, o
+      círculo parado; recarregar não o repete.
+- [ ] Na revisão, tocar no meio de uma palavra do texto de um átomo: o cursor
+      nasce ali, e o teclado do celular sobe. Testar no Chrome do Android e no
+      Safari do iPhone — os dois têm caminhos diferentes (`caretPositionFromPoint`
+      e `caretRangeFromPoint`).
+- [ ] As datas em `dd/mm` nas listas, na revisão e no radial; a lista de
+      sessões com "hoje" e "ontem".
+
 ## Slice 11 — o que faltou, a pedido (`Specs/slice-11.md`)
 
 Construída e coberta pelo `pnpm test`; nada disto rodou contra modelo ainda. Em
