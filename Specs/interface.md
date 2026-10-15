@@ -105,8 +105,10 @@ número ("0.87" com ponto).
 
 ### Onda 3 — o ritual
 
-As decisões 4 e 5 estão feitas (ver "Como ficou"); o resto pede entrevista
-antes, por ser tela sagrada.
+As decisões 4 e 5 estão feitas (ver "Como ficou"). O resto foi entrevistado em
+quatro rodadas, e a spec dele é `Specs/interface-onda-3.md` — que mudou parte
+do que está abaixo: as entidades sobem para o topo da revisão, o desmarcado e a
+barra do chat ficam como estão, e o ▶ toca 2 s antes do trecho.
 
 - **Revisão:** o tipo do átomo com rótulo ("opinião", e não `OPINIAO` a
   0,68 rem); o desmarcado com estado próprio, e não só opacidade; a faixa
