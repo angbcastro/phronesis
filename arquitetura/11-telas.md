@@ -452,12 +452,12 @@ o que os separa.
 
 #### A data e o plural
 
-**Uma data só, dia/mês**, que é como eu leio: `14/09`, e `14/09/2025` fora do
-ano corrente; com hora, `hoje, 21:03`, `ontem, 21:03`, `12/08, 21:03`. Moram em
-`dia.ts` (`dataCurta`, `dataEHora`) e passam pelo dia de Brasília. Eram quatro
-formatos — `12 de ago`, `12 ago 26`, `13/09`, `14/09/2026` —, e os que cortavam
-a string davam o dia de Greenwich: a sessão gravada depois das 21h aparecia com
-o dia seguinte.
+**Uma data só, dia/mês**, que é como eu leio: `dd/mm`, e `dd/mm/aaaa` fora do
+ano corrente; com hora, "hoje, hh:mm", "ontem, hh:mm" ou `dd/mm, hh:mm`. Moram
+em `dia.ts` (`dataCurta`, `dataEHora`) e passam pelo dia de Brasília. Eram
+quatro formatos — dia e mês por extenso, com e sem o "de", dia e mês em
+número, e a data inteira —, e os que cortavam a string davam o dia de
+Greenwich: a sessão gravada depois das 21h aparecia com o dia seguinte.
 
 **O plural é por extenso** (`plural`, em `texto.ts`): `1 item`, `3 itens`. Os
 parênteses — "item(ns)", "sessão(ões)", "sutil(is)" — eram o jeito de
