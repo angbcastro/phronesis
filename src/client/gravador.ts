@@ -17,6 +17,15 @@ const BITRATE = 24_000; // ~4 MB numa sessão de 20 min
 export interface OpcoesGravador {
   aoBloco: (bloco: { i: number; blob: Blob }) => void;
   aoErro?: (e: unknown) => void;
+  /**
+   * O microfone parou de ouvir (`false`) ou voltou (`true`). Parar é a faixa
+   * terminar — aparelho desconectado, permissão revogada —, o sistema silenciá-la
+   * (`mute`: uma ligação tomando o microfone) ou o `MediaRecorder` errar. É o
+   * único caso em que o que eu digo não está sendo gravado, e a tela de gravar
+   * diz isso na linha do "salvo". A gravação não para sozinha: o que já foi
+   * está nos blocos, e quem guarda é o "parar".
+   */
+  aoMicrofone?: (ouvindo: boolean) => void;
 }
 
 export function suportado(): boolean {
@@ -65,6 +74,12 @@ export class Gravador {
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
     });
+    for (const faixa of this.stream.getAudioTracks()) {
+      // Parar de propósito também termina a faixa: aí não é aviso, é o fim.
+      faixa.addEventListener("ended", () => !this.parando && this.opcoes.aoMicrofone?.(false));
+      faixa.addEventListener("mute", () => !this.parando && this.opcoes.aoMicrofone?.(false));
+      faixa.addEventListener("unmute", () => !this.parando && this.opcoes.aoMicrofone?.(true));
+    }
     this.inicioMs = Date.now();
     await this.segurarTela();
     this.novoRecorder();
@@ -125,7 +140,10 @@ export class Gravador {
       if (e.data.size > 0) this.pedacos.push(e.data);
     };
 
-    rec.onerror = (e) => this.opcoes.aoErro?.(e);
+    rec.onerror = (e) => {
+      this.opcoes.aoErro?.(e);
+      if (!this.parando) this.opcoes.aoMicrofone?.(false);
+    };
 
     rec.onstop = () => {
       const blob = new Blob(this.pedacos, { type: MIME });

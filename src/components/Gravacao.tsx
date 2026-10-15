@@ -73,6 +73,9 @@ export function Gravacao() {
   // O stream vira estado, não só ref: a onda do botão precisa re-renderizar
   // quando o microfone abre, e um ref não avisa ninguém.
   const [faixa, setFaixa] = useState<MediaStream | null>(null);
+  /** O microfone está ouvindo? `false` é fala que não está sendo gravada. */
+  const [ouvindo, setOuvindo] = useState(true);
+  const botaoParar = useRef<HTMLButtonElement | null>(null);
   const [chatAberto, setChatAberto] = useState(false);
   /** Os itens que o último confirmar guardou, enquanto o recado está na tela. */
   const [guardado, setGuardado] = useState<number | null>(null);
@@ -110,6 +113,7 @@ export function Gravacao() {
         return;
       }
       setProblema(null);
+      setOuvindo(true);
       setFase("abrindo");
 
       try {
@@ -123,6 +127,7 @@ export function Gravacao() {
         const g = new Gravador({
           aoBloco: ({ i, blob }) => void enfileirar(id, i, blob),
           aoErro: (e) => console.error("[gravador]", e),
+          aoMicrofone: setOuvindo,
         });
 
         await g.iniciar();
@@ -177,6 +182,27 @@ export function Gravacao() {
   const salvo = fila.pendentes === 0 && fila.ultimo_salvo_em !== null;
 
   /**
+   * A linha abaixo do timer, em ordem de gravidade (onda 3, decisão 9). Ela já
+   * existia para o "salvo"; agora diz também o que antes ficava calado — rede
+   * caída (os blocos ficam no aparelho: `fila.offline`, medido e nunca mostrado)
+   * e microfone parado, o único caso de fala perdida. Nenhum elemento novo: a
+   * fala nunca é interrompida (visão §5).
+   */
+  const linha = !ouvindo
+    ? { classe: "parou", texto: "o microfone parou — toque em parar para guardar o que já foi" }
+    : fila.offline
+      ? { classe: "sem-rede", texto: "sem rede — guardando no aparelho" }
+      : salvo
+        ? { classe: "", texto: "salvo" }
+        : { classe: "pendente", texto: "salvando" };
+
+  // O círculo fica `disabled` gravando, e o foco caía no `<body>`: vai para o
+  // único controle que existe enquanto eu falo.
+  useEffect(() => {
+    if (fase === "gravando") botaoParar.current?.focus();
+  }, [fase]);
+
+  /**
    * A troca de modo passa toda por aqui. Dentro de uma View Transition a bola e
    * a caixa do chat viajam juntas do ponto inicial ao de destino — ver
    * `src/client/transicao.ts`. Um ponto só, e não três, porque as três trocas
@@ -214,10 +240,19 @@ export function Gravacao() {
               centro. Ele continua aqui porque é informação real — quanto tempo
               eu já falei —, só que no tamanho de informação, não de manchete. */}
           <div className="timer">{mmss(segundos)}</div>
-          <div className={`ponto-salvo ${salvo ? "" : "pendente"}`}>
-            <i /> {salvo ? "salvo" : "salvando"}
+          <div
+            className={`ponto-salvo ${linha.classe}`}
+            role="status"
+            aria-live={ouvindo ? "polite" : "assertive"}
+          >
+            <i /> {linha.texto}
           </div>
-          <button className="botao-parar" onClick={parar} disabled={fase === "encerrando"}>
+          <button
+            ref={botaoParar}
+            className="botao-parar"
+            onClick={parar}
+            disabled={fase === "encerrando"}
+          >
             {fase === "encerrando" ? "encerrando…" : "parar"}
           </button>
         </>

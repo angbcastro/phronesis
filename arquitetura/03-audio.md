@@ -123,6 +123,15 @@ stream. Cada bloco sai completo e decodificável; a lacuna é de milissegundos.
 Formato: `audio/webm;codecs=opus`, mono, 24 kbps — ~120 kB por bloco de 30 s,
 ~4 MB numa sessão de 20 min (aceite 8).
 
+**O gravador avisa quando o microfone para de ouvir** (`aoMicrofone`): a faixa
+termina (aparelho desconectado, permissão revogada), o sistema a silencia
+(`mute` — uma ligação tomando o microfone; `unmute` avisa a volta), ou o
+`MediaRecorder` erra. Antes o erro ia só para o console e a faixa terminando não
+era ouvida: fala perdida sem aviso. A gravação **não para sozinha** — o que já
+foi gravado está nos blocos, e quem guarda é o "parar"; a tela de gravar diz
+isso na linha do "salvo" (§11). Parar de propósito também termina a faixa, e
+por isso nada é avisado depois do `parar()`.
+
 ### 3.2 Durabilidade da fila
 
 `fila.ts` sobe até três blocos por vez (`FRENTES`), na ordem em que foram falados:
@@ -134,7 +143,8 @@ Formato: `audio/webm;codecs=opus`, mono, 24 kbps — ~120 kB por bloco de 30 s,
 Falha em qualquer ponto → backoff exponencial com jitter (`backoff.ts`, base 1 s,
 teto 30 s) e o bloco continua no depósito. `window.addEventListener("online")`
 acorda a fila. Rede caindo por um minuto atrasa a subida e não perde bloco
-(aceite 4).
+(aceite 4). A fila marca `offline` quando um envio falha sem rede, e a tela de
+gravar o mostra: "sem rede — guardando no aparelho" (§11).
 
 Antes de finalizar, `Processando` chama `aguardarFilaVazia()` — nenhuma sessão é
 fechada com bloco ainda por subir.

@@ -509,6 +509,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   transition: opacity 400ms ease;
 }
 .ponto-salvo.pendente i { background: var(--texto-fraco); opacity: 0.55; }
+/* Sem rede: o ponto vazado — guardando, mas no aparelho, e não no servidor. */
+.ponto-salvo.sem-rede i { background: none; border: 1px solid var(--texto-fraco); }
+/* O microfone parou: a única linha em vermelho da tela de gravar, porque é a
+   única em que o que eu digo não está sendo gravado. */
+.ponto-salvo.parou { color: var(--erro); }
+.ponto-salvo.parou i { background: var(--erro); }
+.ponto-salvo { max-width: 20rem; text-align: center; }
 
 /* O recado de fechamento do confirmar: o ponto verde de "salvo", no alto e
    fora do fluxo — entrar e sair não move o círculo. Entra, fica, e sai sozinho
