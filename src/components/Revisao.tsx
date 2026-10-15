@@ -582,6 +582,34 @@ export function faltamTrechos(p: Proposta | null): { faltam: number; total: numb
   return total > 0 && faltam > 0 ? { faltam, total } : null;
 }
 
+/**
+ * Por que o confirmar está travado — o texto que o próprio botão mostra no lugar
+ * de "confirmar N itens" (onda 3, decisão 8). `null` quando nada trava.
+ *
+ * No botão, e não numa linha acima dele: o motivo fica onde o dedo ia tocar, e
+ * o rodapé não muda de altura a cada motivo que aparece e some. A ordem é a do
+ * que destrava primeiro: guardar, o pedido em curso, a lista crescendo, e por
+ * último o que só eu resolvo.
+ */
+export function motivoDaTrava(e: {
+  gravando: boolean;
+  procurando: boolean;
+  crescendo: boolean;
+  faltando: { faltam: number; total: number } | null;
+  pronomes: readonly string[];
+}): string | null {
+  if (e.gravando) return "guardando…";
+  if (e.procurando) return "procurando o que faltou…";
+  if (e.crescendo) {
+    return e.faltando
+      ? `esperando o fim · faltam ${e.faltando.faltam} de ${plural(e.faltando.total, "trecho", "trechos")}`
+      : "esperando o fim…";
+  }
+  if (e.pronomes.length === 1) return `diga quem é "${e.pronomes[0]}" antes`;
+  if (e.pronomes.length > 1) return `diga quem são ${e.pronomes.map((n) => `"${n}"`).join(", ")} antes`;
+  return null;
+}
+
 export function Revisao({ id }: { id: string }) {
   const router = useRouter();
   const [proposta, setProposta] = useState<Proposta | null>(null);
@@ -601,6 +629,13 @@ export function Revisao({ id }: { id: string }) {
   const [abertos, setAbertos] = useState<Set<number>>(new Set());
   const [editandoTexto, setEditandoTexto] = useState<Set<number>>(new Set());
   const [fontesAbertas, setFontesAbertas] = useState<ReferenciaNoAtomo | null>(null);
+  /**
+   * O campo de pronome que está em foco, dentro de um item: `índice|chave`. O
+   * seletor avisa a cada tecla, e na primeira letra o pronome já deixa de ser
+   * pendente — sem isto a linha sumiria no meio da digitação. Ela fica enquanto
+   * o foco estiver nela, e some quando eu saio.
+   */
+  const [pronomeEmFoco, setPronomeEmFoco] = useState<string | null>(null);
   const [filtros, setFiltros] = useState<Record<number, TipoEntidade | "todas">>({});
   const [gravando, setGravando] = useState(false);
   /** O fluxo caiu e não voltou a tempo. Não destrava nada — só explica. */
@@ -1140,6 +1175,15 @@ export function Revisao({ id }: { id: string }) {
     router.push("/");
   }
 
+  // "guardando", e não "gravando": na tela anterior, gravar é gravar áudio.
+  const motivo = motivoDaTrava({
+    gravando,
+    procurando,
+    crescendo,
+    faltando,
+    pronomes: pendentes.map((e) => e.nome),
+  });
+
   if (falha && !proposta) {
     return (
       <main className="leitura">
@@ -1451,6 +1495,53 @@ export function Revisao({ id }: { id: string }) {
                     </p>
                   )}
 
+                  {/* O pronome se resolve aqui mesmo (onda 3, decisão 5): o
+                      mesmo seletor da lista do topo, ligado à mesma entidade —
+                      escolher num lugar resolve em todos os itens que a citam. */}
+                  {entidades
+                    .filter(
+                      (e) =>
+                        e.precisa_nome &&
+                        ehPronome(e.nome) &&
+                        usada(e) &&
+                        [v.sobre, ...v.menciona].some(
+                          (n) => normalizarNome(n) === e.nome_normalizado,
+                        ) &&
+                        (ehPronome(finalDe(e).nome) ||
+                          pronomeEmFoco === `${a.indice}|${e.nome_normalizado}`),
+                    )
+                    .map((e) => {
+                      const chave = `${a.indice}|${e.nome_normalizado}`;
+                      const f = finalDe(e);
+                      return (
+                        <div
+                          key={e.nome_normalizado}
+                          className="pronome-no-item"
+                          onFocus={() => setPronomeEmFoco(chave)}
+                          onBlur={(ev) => {
+                            if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) {
+                              setPronomeEmFoco((atual) => (atual === chave ? null : atual));
+                            }
+                          }}
+                        >
+                          <span>quem é "{e.nome}"?</span>
+                          <SeletorEntidade
+                            valor={ehPronome(f.nome) ? "" : f.nome}
+                            aoMudar={(nome) =>
+                              editarEntidade(e, {
+                                nome: nome.trim() === "" ? e.nome : nome,
+                                tipo: resolver(catalogo, nome)?.tipo ?? f.tipo,
+                              })
+                            }
+                            catalogo={catalogo}
+                            rotulo={`quem é ${e.nome}`}
+                            placeholder="quem é?"
+                            pedindo={ehPronome(f.nome)}
+                          />
+                        </div>
+                      );
+                    })}
+
                   {marcas.length > 0 && (
                     <p className="meta perfila">
                       vai para o perfil:{" "}
@@ -1710,30 +1801,15 @@ export function Revisao({ id }: { id: string }) {
       )}
 
       <footer>
-        {pendentes.length > 0 && (
-          <p className="aguardando">
-            diga quem {pendentes.length === 1 ? "é" : "são"}{" "}
-            {pendentes.map((e) => `"${e.nome}"`).join(", ")} antes de confirmar
-          </p>
-        )}
-        {/*
-          A linha discreta da decisão 7: o confirmar travado precisa dizer por
-          quê. Uma frase, e ela some quando a proposta fecha — sem barra de
-          progresso e sem marca de "novo" em átomo nenhum. Esta é a tela mais
-          apertada do sistema e ela foi enxugada de propósito.
-        */}
-        {travouEspera ? (
+        {/* O que trava o confirmar mora no texto do próprio botão (`motivoDaTrava`).
+            Aqui ficam só os dois recados que não são trava: a espera que passou
+            do teto, e a falha. */}
+        {travouEspera && (
           <p className="aguardando">
             os últimos trechos não chegaram no tempo que o servidor tem para trabalhar. O que está
             aqui está inteiro no servidor — recarregue a página, ou mande extrair de novo pela lista de{" "}
             <Link href="/sessoes">sessões</Link>.
           </p>
-        ) : (
-          faltando && (
-            <p className="aguardando">
-              faltam {faltando.faltam} de {plural(faltando.total, "trecho", "trechos")}
-            </p>
-          )
         )}
         {falha && (
           <p className="aviso erro" role="alert">
@@ -1743,16 +1819,14 @@ export function Revisao({ id }: { id: string }) {
         <button
           className="confirmar"
           onClick={() => void confirmar()}
-          disabled={gravando || pendentes.length > 0 || crescendo || procurando}
+          disabled={motivo !== null}
         >
-          {/* "guardando", e não "gravando": na tela anterior, gravar é gravar áudio. */}
-          {gravando ? "guardando…" : `confirmar ${plural(aprovados.length, "item", "itens")}`}
+          {motivo ?? `confirmar ${plural(aprovados.length, "item", "itens")}`}
         </button>
         <Link className="botao discreto" href="/">
           depois
         </Link>
       </footer>
-
 
       {fontesAbertas && (
         // As citações do GraphRAG saíram da vista padrão do átomo (item 2 do

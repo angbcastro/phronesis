@@ -866,6 +866,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .revisao footer {
   position: sticky;
   bottom: 0;
+  /* No PWA do iPhone o botão encostava no indicador de início. */
+  padding-bottom: max(var(--esp-2), env(safe-area-inset-bottom));
   background: linear-gradient(to top, var(--fundo) 65%, transparent);
   padding-top: 1rem;
   display: flex;
@@ -1034,6 +1036,27 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: var(--fs-3);
   font-style: italic;
   line-height: 1.4;
+}
+
+/* O pronome que trava, resolvido no próprio item (onda 3): a pergunta no
+   acento, e o seletor com cara de campo. */
+.pronome-no-item {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-2);
+  margin-top: var(--esp-2);
+}
+.pronome-no-item > span { flex: none; font-size: var(--fs-2); color: var(--acento-texto); }
+.pronome-no-item .seletor { flex: 1; min-width: 0; }
+.pronome-no-item .seletor > input {
+  width: 100%;
+  font: inherit;
+  font-size: var(--fs-3);
+  color: inherit;
+  background: var(--fundo);
+  border: 1px solid var(--linha-controle);
+  border-radius: var(--raio-controle);
+  padding: 0.35rem 0.5rem;
 }
 
 /* O que este átomo vai acrescentar ao perfil de alguém, se eu confirmar. */

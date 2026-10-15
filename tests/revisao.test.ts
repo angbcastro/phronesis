@@ -19,6 +19,7 @@ import {
   mesclarProposta,
   montarCorpoDoConfirmar,
   montarGestos,
+  motivoDaTrava,
   nomeOriginalEm,
   ondeEstaA,
   referenciasDoAtomo,
@@ -539,5 +540,39 @@ describe("a entidade criada na revisão", () => {
     // A tela passa só as candidatas da proposta: a criada não é do extrator.
     const g = montarGestos({ edicoes: {}, entidades: [], finalDe, recusadas: new Set() });
     expect(g.renomes).toEqual([]);
+  });
+});
+
+describe("o motivo no botão de confirmar (onda 3)", () => {
+  const livre = { gravando: false, procurando: false, crescendo: false, faltando: null, pronomes: [] };
+
+  it("destravado, não há motivo — o botão diz confirmar", () => {
+    expect(motivoDaTrava(livre)).toBeNull();
+  });
+
+  it("guardando vence tudo, e não é 'gravando'", () => {
+    expect(motivoDaTrava({ ...livre, gravando: true, crescendo: true, pronomes: ["ela"] })).toBe(
+      "guardando…",
+    );
+  });
+
+  it("o pedido em curso vem antes da lista crescendo", () => {
+    expect(motivoDaTrava({ ...livre, procurando: true, crescendo: true })).toBe(
+      "procurando o que faltou…",
+    );
+  });
+
+  it("crescendo, com a conta quando há conta", () => {
+    expect(motivoDaTrava({ ...livre, crescendo: true, faltando: { faltam: 2, total: 6 } })).toBe(
+      "esperando o fim · faltam 2 de 6 trechos",
+    );
+    expect(motivoDaTrava({ ...livre, crescendo: true })).toBe("esperando o fim…");
+  });
+
+  it("o pronome por último, no singular e no plural", () => {
+    expect(motivoDaTrava({ ...livre, pronomes: ["ela"] })).toBe('diga quem é "ela" antes');
+    expect(motivoDaTrava({ ...livre, pronomes: ["ela", "ele"] })).toBe(
+      'diga quem são "ela", "ele" antes',
+    );
   });
 });
