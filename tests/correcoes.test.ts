@@ -529,6 +529,35 @@ describe("correção de entidade (critério 2)", () => {
     expect(porNome.get("Rodrigão")).toBe("grafo");
   });
 
+  it("trocar uma conhecida é erro da resolução, com o carimbo dela", () => {
+    // A resolução apontou "Marina" para a Marina errada, e eu re-apontei a
+    // sessão inteira de uma vez, na lista do topo da revisão.
+    const cs = apurar({
+      proposta: proposta(
+        [atomo(0)],
+        [candidata("Marina", { conhecida: true })],
+        SESSAO,
+        { prompt_version: "resolucao-5", modelo: "deepseek/x" },
+      ),
+      confirmados: [confirmado(0)],
+      gestos: gestos({ renomes: [{ de: "Marina", para: "Marina Souza" }] }),
+    });
+
+    const [c] = doTipo(cs, "entidade_renomeada");
+    expect(c).toMatchObject({ agente: "resolucao", prompt_version: "resolucao-5", modelo: "deepseek/x" });
+  });
+
+  it("conhecida trocada numa sessão em que a resolução não rodou é do grafo", () => {
+    // Sem o agente 2 na sessão, ele não responde por ela (slice 8.1).
+    const cs = apurar({
+      proposta: proposta([atomo(0)], [candidata("Marina", { conhecida: true })]),
+      confirmados: [confirmado(0)],
+      gestos: gestos({ renomes: [{ de: "Marina", para: "Marina Souza" }] }),
+    });
+
+    expect(doTipo(cs, "entidade_renomeada")[0].agente).toBe("grafo");
+  });
+
   it("renomear não vira também correção de sujeito no átomo que a cita", () => {
     const p = proposta([atomo(0, { sobre: "ela" })], [candidata("ela")]);
     const cs = apurar({

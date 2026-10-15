@@ -992,12 +992,13 @@ export function Revisao({ id }: { id: string }) {
     setAnterior(d.anterior?.lista ?? []);
   }
 
-  /** Pendente primeiro: é o que precisa da minha atenção. */
+  /**
+   * Na ordem de chegada, e não com o pronome primeiro: no topo da revisão, que
+   * cresce enquanto o fim é extraído, reordenar mexia as linhas debaixo do dedo.
+   * O pronome se destaca pela borda, e se resolve no próprio item (onda 3).
+   */
   const ordenadas = useMemo(
-    () =>
-      entidades
-        .filter((e) => daProposta.includes(e) || emUso.has(e.nome_normalizado))
-        .sort((a, b) => Number(b.precisa_nome) - Number(a.precisa_nome)),
+    () => entidades.filter((e) => daProposta.includes(e) || emUso.has(e.nome_normalizado)),
     [entidades, daProposta, emUso],
   );
 
@@ -1185,6 +1186,103 @@ export function Revisao({ id }: { id: string }) {
           </p>
         )}
       </header>
+
+      {/* As entidades vêm primeiro (onda 3): é o lugar de consertar de uma vez o
+          que eu já sei que está errado, antes de ler item por item. Crescem
+          enquanto o fim é extraído — o Chrome segura a tela parada, o Safari
+          não (§14). */}
+      <section className="entidades">
+        <h2>entidades</h2>
+        <p className="aguardando">
+          o nome daqui vale para todos os itens que a citam — trocar uma conhecida re-aponta a
+          sessão inteira · desmarcada, fica só no texto do item e não vira nó no grafo
+        </p>
+
+        {ordenadas.map((e) => {
+          const f = finalDe(e);
+          const travada = travadas.has(e.nome_normalizado);
+          const marcada = usada(e);
+          const pedindoNome = e.precisa_nome && marcada && ehPronome(f.nome);
+
+          return (
+            <div
+              key={e.nome_normalizado}
+              className={`entidade${travada ? " travada" : ""}${pedindoNome ? " pedindo" : ""}`}
+            >
+              <input
+                type="checkbox"
+                checked={marcada}
+                disabled={travada}
+                aria-label={`incluir ${e.nome}`}
+                title={travada ? "é o sujeito de um átomo aprovado" : undefined}
+                onChange={() =>
+                  setSemEntidade((s) => {
+                    const n = new Set(s);
+                    if (n.has(e.nome_normalizado)) n.delete(e.nome_normalizado);
+                    else n.add(e.nome_normalizado);
+                    return n;
+                  })
+                }
+              />
+
+              {e.conhecida ? (
+                // A conhecida também se troca (onda 3): escolher outra entidade
+                // — ou escrever um nome novo — re-aponta todas as menções desta
+                // sessão, por `nomeFinal`. O nó do grafo não muda de nome: só
+                // esta sessão para de citá-lo. Sem seletor de tipo, porque o
+                // tipo é o do nó escolhido.
+                <SeletorEntidade
+                  valor={f.nome}
+                  aoMudar={(nome) =>
+                    editarEntidade(e, { nome, tipo: resolver(catalogo, nome)?.tipo ?? f.tipo })
+                  }
+                  catalogo={catalogo}
+                  rotulo={`quem é ${e.nome}`}
+                />
+              ) : (
+                <>
+                  <SeletorEntidade
+                    valor={f.nome}
+                    // Escolher uma entidade que já existe re-aponta a candidata
+                    // inteira para ela, e o tipo passa a ser o do nó: o grafo
+                    // vence, aqui como na resolução.
+                    aoMudar={(nome) =>
+                      editarEntidade(e, { nome, tipo: resolver(catalogo, nome)?.tipo ?? f.tipo })
+                    }
+                    catalogo={catalogo}
+                    rotulo={`nome de ${e.nome}`}
+                    placeholder={pedindoNome ? "quem é?" : undefined}
+                    pedindo={pedindoNome}
+                  />
+                  <select
+                    value={f.tipo}
+                    aria-label={`tipo de ${e.nome}`}
+                    onChange={(ev) => editarEntidade(e, { tipo: ev.target.value as TipoEntidade })}
+                  >
+                    {TIPOS_ENTIDADE.map((t) => (
+                      <option key={t} value={t}>
+                        {ROTULO_TIPO_ENTIDADE[t]}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+
+              <span className="meta">
+                {pedindoNome
+                  ? `quem é "${e.nome}"? · ${plural(e.ocorrencias, "menção", "menções")}`
+                  : e.conhecida
+                    ? normalizarNome(f.nome) !== e.nome_normalizado
+                      ? `trocada — era "${e.nome}"`
+                      : `${ROTULO_TIPO_ENTIDADE[e.tipo]} · conhecida (${plural(e.sessoes, "sessão", "sessões")})`
+                    : daProposta.includes(e)
+                      ? `nova, citada ${e.ocorrencias}x`
+                      : "nova, criada aqui"}
+              </span>
+            </div>
+          );
+        })}
+      </section>
 
       <ol className="atomos">
         {atomos.map((a) => {
@@ -1610,86 +1708,6 @@ export function Revisao({ id }: { id: string }) {
           )}
         </div>
       )}
-
-      <section className="entidades">
-        <h2>entidades</h2>
-        <p className="aguardando">
-          o nome daqui vale para todos os átomos que a citam · desmarcada, fica só no texto do
-          átomo e não vira nó no grafo
-        </p>
-
-        {ordenadas.map((e) => {
-          const f = finalDe(e);
-          const travada = travadas.has(e.nome_normalizado);
-          const marcada = usada(e);
-          const pedindoNome = e.precisa_nome && marcada && ehPronome(f.nome);
-
-          return (
-            <div
-              key={e.nome_normalizado}
-              className={`entidade${travada ? " travada" : ""}${pedindoNome ? " pedindo" : ""}`}
-            >
-              <input
-                type="checkbox"
-                checked={marcada}
-                disabled={travada}
-                aria-label={`incluir ${e.nome}`}
-                title={travada ? "é o sujeito de um átomo aprovado" : undefined}
-                onChange={() =>
-                  setSemEntidade((s) => {
-                    const n = new Set(s);
-                    if (n.has(e.nome_normalizado)) n.delete(e.nome_normalizado);
-                    else n.add(e.nome_normalizado);
-                    return n;
-                  })
-                }
-              />
-
-              {e.conhecida ? (
-                // O grafo vence: entidade que já existe mantém nome e tipo.
-                <span className="nome">{e.nome}</span>
-              ) : (
-                <>
-                  <SeletorEntidade
-                    valor={f.nome}
-                    // Escolher uma entidade que já existe re-aponta a candidata
-                    // inteira para ela, e o tipo passa a ser o do nó: o grafo
-                    // vence, aqui como na resolução.
-                    aoMudar={(nome) =>
-                      editarEntidade(e, { nome, tipo: resolver(catalogo, nome)?.tipo ?? f.tipo })
-                    }
-                    catalogo={catalogo}
-                    rotulo={`nome de ${e.nome}`}
-                    placeholder={pedindoNome ? "quem é?" : undefined}
-                    pedindo={pedindoNome}
-                  />
-                  <select
-                    value={f.tipo}
-                    aria-label={`tipo de ${e.nome}`}
-                    onChange={(ev) => editarEntidade(e, { tipo: ev.target.value as TipoEntidade })}
-                  >
-                    {TIPOS_ENTIDADE.map((t) => (
-                      <option key={t} value={t}>
-                        {ROTULO_TIPO_ENTIDADE[t]}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              )}
-
-              <span className="meta">
-                {pedindoNome
-                  ? `quem é "${e.nome}"? · ${plural(e.ocorrencias, "menção", "menções")}`
-                  : e.conhecida
-                    ? `${ROTULO_TIPO_ENTIDADE[e.tipo]} · conhecida (${plural(e.sessoes, "sessão", "sessões")})`
-                    : daProposta.includes(e)
-                      ? `nova, citada ${e.ocorrencias}x`
-                      : "nova, criada aqui"}
-              </span>
-            </div>
-          );
-        })}
-      </section>
 
       <footer>
         {pendentes.length > 0 && (

@@ -609,6 +609,9 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   continua oferecendo-a sem as instruções de quando usá-la — e um salvo antes do
   `ler_retrato` não manda começar por ele nas perguntas sobre mim. Salvá-lo de
   novo pede que ele cite as ferramentas (envelope).
+- **As entidades crescem acima dos itens enquanto a revisão cresce** (§11), e
+  no Safari a tela não fica parada quando isso acontece: o Chrome segura a
+  posição (*scroll anchoring*), o Safari não tem isso.
 - **Um trecho que atravessa a borda de um bloco tem um vão** (§11.2): o
   tocador pede a URL do bloco seguinte quando o primeiro acaba, e a requisição
   é o silêncio entre os dois.

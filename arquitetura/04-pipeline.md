@@ -695,8 +695,9 @@ menções e trechos.
 
 **A entidade se corrige em dois lugares, e a diferença entre eles é o alcance.**
 Dentro do átomo, no bloco "entidades" do editor, eu troco o sujeito e as menções
-**daquele** átomo. No painel do rodapé eu troco o nome de uma candidata e
-**todos** os átomos que a citam seguem junto — a tradução acontece em
+**daquele** átomo. Na lista de entidades, **no topo da revisão**, eu troco o
+nome de uma candidata — nova ou conhecida — e **todos** os átomos que a citam
+seguem junto — a tradução acontece em
 `nomeFinal()`, na hora de montar o payload, e nenhuma edição de átomo é
 gravada — o nome dentro do texto segue junto, derivado (ver abaixo). Os dois
 usam a mesma barra: `SeletorEntidade`.
@@ -722,7 +723,7 @@ nova com o que eu escrevi.
 **A linha `+ criar "X"` cria — na tela, não no grafo.** Escolhê-la (clique ou
 Enter) chama `aoCriar` do `SeletorEntidade`, e a `Revisao` guarda a entidade em
 `criadas`, com o tipo do filtro daquele átomo (`Pessoa` em "todas"). Ela conta
-como candidata para `finalDe`, `nomeFinal`, `usada` e o rodapé — onde aparece
+como candidata para `finalDe`, `nomeFinal`, `usada` e a lista de entidades — onde aparece
 como "nova, criada aqui" enquanto algum átomo a usa —, e o nó só nasce no
 confirmar, como qualquer candidata nova: a regra 5 não tem exceção para isto.
 Digitar e sair sem escolher a linha é texto livre.
@@ -731,8 +732,8 @@ As barras dos átomos leem `catalogoDaTela`: o grafo, e depois as entradas locai
 (`entradasLocais`) — as candidatas novas da proposta e as criadas, **com o nome
 final**, sem a que já casa com um nó e sem pronome. O confirmar continua
 canonizando contra o catálogo do grafo puro. A barra mostra `nomeFinal` e guarda
-o nome **original** (`nomeOriginalEm`): é isso que faz o renome seguinte no
-rodapé continuar seguindo o átomo, já que `nomeFinal` traduz pela chave
+o nome **original** (`nomeOriginalEm`): é isso que faz o renome seguinte na
+lista de entidades continuar seguindo o átomo, já que `nomeFinal` traduz pela chave
 original. `montarGestos` recebe só as candidatas da proposta: renomear ou
 recusar uma entidade que eu criei não é correção de agente nenhum.
 
@@ -741,7 +742,7 @@ gravado do nó dentro do texto (§4.14); se a resolução pendurou "a Nic" na
 Nicolle Borsato, o texto diz "Nicolle Borsato", e corrigir a aresta deixava o
 texto dizendo a pessoa errada. `reescreverNomes` (`texto.ts`) troca o nome
 **antigo da entidade** pelo novo — sem caixa nem acento, palavra inteira —, nos
-dois alcances: a troca dentro do átomo e o renome no rodapé. Só par
+dois alcances: a troca dentro do átomo e o renome na lista de entidades. Só par
 inequívoco: o sujeito, e nas menções apenas quando saiu exatamente uma e entrou
 exatamente uma. A grafia falada ("Nic") não é tocada, nem `eu` ou pronome, e
 nome que não aparece inteiro no texto (só "Nicolle") deixa o texto como está.
@@ -764,7 +765,7 @@ contrato do catálogo sem alguém decidir.
 
 **As menções são editáveis** — acrescentar e tirar, uma barra por menção:
 menção errada se conserta sem rejeitar o átomo inteiro nem renomear a entidade
-no rodapé. A lista viaja inteira nas edições do átomo, e não como delta: sem
+na lista. A lista viaja inteira nas edições do átomo, e não como delta: sem
 isso não dá para distinguir "não mexi" de "apaguei todas".
 
 **Átomo com atribuição incerta aparece marcado**, com a sugestão já preenchida no
@@ -878,7 +879,7 @@ foram editados — texto, tipo, sujeito, menções. O corpo é montado por
 que quebra em silêncio: entidade citada que não entrar em `entidades` é
 descartada pelo servidor **sem uma palavra**, e o erro só aparece no grafo dias
 depois. Toda menção que eu acrescentei entra na lista junto; toda entidade que eu
-desmarquei no rodapé sai dela, e sai também das menções — o alcance do checkbox é
+desmarquei na lista de entidades sai dela, e sai também das menções — o alcance do checkbox é
 o nó, não só o sujeito. **Procedência não vem no corpo.**
 `id`, offsets, âncoras, `prompt_version` e `modelo` são relidos de
 `extracao.json` pelo índice do átomo — e de `pedidos.json` o átomo que eu pedi:

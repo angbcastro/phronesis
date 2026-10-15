@@ -402,18 +402,27 @@ export function apurarCorrecoes(entrada: EntradaApuracao): Correcao[] {
     });
   }
 
-  // Renome é higiene de grafia, não erro de agente — **exceto** quando o que eu
-  // apaguei era pronome: aí o extrator furou a seção "NOME DE ENTIDADE É NOME",
-  // que é justamente o que aquela correção calibra.
+  // Renome é higiene de grafia, não erro de agente — **exceto** em dois casos.
+  // O que eu apaguei era pronome: aí o extrator furou a seção "NOME DE ENTIDADE
+  // É NOME", que é justamente o que aquela correção calibra. E o que eu troquei
+  // era uma **conhecida** (onda 3 da interface): aí não é grafia, é a resolução
+  // que apontou para o nó errado, e a sessão inteira re-apontada de uma vez é a
+  // mesma culpa da troca de sujeito item a item — com o mesmo carimbo.
   for (const r of g.renomes) {
     const de = normalizarNome(r.de);
     const para = normalizarNome(r.para);
     if (de === "" || para === "" || de === para) continue;
+    const agente: AgenteCorrecao = ehPronome(r.de)
+      ? "extracao"
+      : conhecidas.has(de) && resolucaoRodou
+        ? "resolucao"
+        : "grafo";
     registrar({
       ...daSessao,
+      ...carimboDe(agente),
       id: chaveDeEntidade(sessao_id, "entidade_renomeada", de),
       entidade_chave: de,
-      agente: ehPronome(r.de) ? "extracao" : "grafo",
+      agente,
       tipo: "entidade_renomeada",
       antes: r.de,
       depois: r.para,
