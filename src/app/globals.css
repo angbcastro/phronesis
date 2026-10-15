@@ -510,6 +510,45 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .ponto-salvo.pendente i { background: var(--texto-fraco); opacity: 0.55; }
 
+/* O recado de fechamento do confirmar: o ponto verde de "salvo", no alto e
+   fora do fluxo — entrar e sair não move o círculo. Entra, fica, e sai sozinho
+   em 3 s (`DURACAO_GUARDADO_MS`, o mesmo número). */
+.guardado {
+  position: fixed;
+  top: calc(1.25rem + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--esp-2);
+  margin: 0;
+  color: var(--status);
+  font-size: var(--fs-2);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: guardado 3s var(--curva) both;
+}
+.guardado i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+@keyframes guardado {
+  0%   { opacity: 0; transform: translate(-50%, -6px); }
+  12%  { opacity: 1; transform: translate(-50%, 0); }
+  80%  { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guardado { animation-name: guardado-sem-movimento; }
+  @keyframes guardado-sem-movimento {
+    0%, 80% { opacity: 1; }
+    100%    { opacity: 0; }
+  }
+}
+
 .botao-parar {
   border: 1px solid var(--linha-controle);
   background: transparent;

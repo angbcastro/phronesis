@@ -31,6 +31,11 @@
  * barra discreta e centralizada no rodapé, que é o que se lê como "pergunte"
  * em vez de "fale com o suporte".
  *
+ * **O recado de fechamento não é crônico.** Depois do confirmar, uma linha no
+ * alto — "guardado · 8 itens" — por 3 s, e some; recarregar não a repete. Ela
+ * diz o que acabou de acontecer, não o que falta, e fica fora do fluxo da tela:
+ * o círculo não se move por causa dela.
+ *
  * **Com o chat aberto, o primeiro toque no círculo não grava.** Ele restaura o
  * círculo ao centro e fecha o chat; só o segundo toque começa a gravar. Um
  * toque só — fechar e já gravar — foi considerado, por ser o gesto mais
@@ -42,6 +47,7 @@ import { useRouter } from "next/navigation";
 import { Gravador, suportado } from "@/client/gravador";
 import { acordar, enfileirar, observarFila, type EstadoFila } from "@/client/fila";
 import { guardarSessaoAtual, limparSessaoAtual } from "@/client/deposito";
+import { DURACAO_GUARDADO_MS, fraseGuardado, lerGuardado } from "@/client/guardado";
 import { marcarParada } from "@/client/medidas";
 import { comTransicao } from "@/client/transicao";
 import { BotaoGravar } from "./BotaoGravar";
@@ -68,8 +74,27 @@ export function Gravacao() {
   // quando o microfone abre, e um ref não avisa ninguém.
   const [faixa, setFaixa] = useState<MediaStream | null>(null);
   const [chatAberto, setChatAberto] = useState(false);
+  /** Os itens que o último confirmar guardou, enquanto o recado está na tela. */
+  const [guardado, setGuardado] = useState<number | null>(null);
+  const leuGuardado = useRef(false);
 
   useEffect(() => observarFila(setFila), []);
+
+  // Uma leitura por montagem: o recado se apaga ao ser lido, e o StrictMode do
+  // dev roda este efeito duas vezes — sem a guarda, a segunda leitura voltaria
+  // vazia e a primeira já teria sido consumida.
+  useEffect(() => {
+    if (leuGuardado.current) return;
+    leuGuardado.current = true;
+    const n = lerGuardado();
+    if (n !== null) setGuardado(n);
+  }, []);
+
+  useEffect(() => {
+    if (guardado === null) return;
+    const t = setTimeout(() => setGuardado(null), DURACAO_GUARDADO_MS);
+    return () => clearTimeout(t);
+  }, [guardado]);
   useEffect(() => acordar(), []);
 
   useEffect(() => {
@@ -209,6 +234,14 @@ export function Gravacao() {
             aoFechar={() => trocarChat(false)}
           />
         </>
+      )}
+
+      {/* Fixo no alto, fora do fluxo: entrar e sair não move o círculo. Some
+          ao gravar e com o chat aberto, onde a bola minimizada mora. */}
+      {guardado !== null && !gravando && !chatAberto && (
+        <p className="guardado" role="status">
+          <i /> {fraseGuardado(guardado)}
+        </p>
       )}
 
       {/* `alert`: quem não vê a tela tem de saber que a gravação não começou. */}

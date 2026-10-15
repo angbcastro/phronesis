@@ -2,7 +2,7 @@
 
 | Rota | Componente | O que mostra |
 |---|---|---|
-| `/` | `Gravacao` + `BotaoGravar` + `Gestao` + `Chat` | o círculo "Como foi seu dia?", uma engrenagem discreta na borda esquerda e a barra do chat no rodapé, centralizada — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo", e nem a engrenagem nem a barra |
+| `/` | `Gravacao` + `BotaoGravar` + `Gestao` + `Chat` | o círculo "Como foi seu dia?", uma engrenagem discreta na borda esquerda e a barra do chat no rodapé, centralizada — **nada mais**; gravando: ondas laterais, selo de REC, timer e um ponto de "salvo", e nem a engrenagem nem a barra. Logo depois de um confirmar, por 3 s, uma linha no alto: "guardado · 8 itens" |
 | `/sessao/:id` | `Processando` | o corredor, uma **ponte curta**: um verbo do passo atual, sem transcrição; empurra a sessão que está parada e sai para a revisão no primeiro átomo que existir |
 | `/sessao/:id/revisar` | `Revisao` | a proposta: aprovar, corrigir o texto no próprio lugar, escutar cada trecho, resolver a dúvida de quem é, abrir as fontes de uma sugestão no `ⓘ`, confirmar — e **crescer** enquanto o fim é extraído, com o confirmar travado e uma linha no rodapé até fechar. Fechada, um **+** no fim da lista pede ao extrator o que faltou, e o átomo volta aprovado com a linha "a pedido: «…»" (§4.7) |
 | `/sessao/:id/transcricao` | `Leitura` | o texto literal, em pedaços enquanto transcreve — porta de serviço |
@@ -692,6 +692,15 @@ nome que o STT grafou errado, um trecho que ele comeu.
 **A home não avisa nada, e a lista avisa pela cor.** Cobrança na tela onde eu
 passo o tempo é a forma de morte da visão §6, e a tela de gravar não tem elemento
 crônico nenhum.
+
+**O recado de fechamento não é crônico, e é a única coisa que a home diz.**
+Confirmada a revisão, a tela de gravar mostra por 3 s, no alto e fora do fluxo,
+o ponto verde de "salvo" e "guardado · 8 itens" — "sessão fechada · nada
+entrou" quando nada foi aprovado. Diz o que acabou de acontecer, e não o que
+falta; some sozinho, não volta ao recarregar (`client/guardado.ts`, por
+`sessionStorage` e não pela URL), e não aparece gravando nem com o chat aberto,
+onde a bola minimizada mora. Sem ele, o confirmar terminava num corte seco para
+`/`, sem dizer se tinha dado certo.
 
 O aviso é `jaRevisada(s)` em `Sessoes`: a linha de uma sessão
 `confirmada` sai em `--ok`, o mesmo verde do ponto de "salvo" da gravação, e o

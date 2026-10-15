@@ -60,6 +60,7 @@ import { SeletorEntidade } from "@/components/SeletorEntidade";
 import { CATALOGO_VAZIO, montarCatalogo, resolver } from "@/lib/catalogo";
 import { mencoesDe, sobreDe } from "@/lib/referencias";
 import { localizarNoAudio } from "@/lib/transcricao";
+import { anunciarGuardado } from "@/client/guardado";
 import { dataCurta } from "@/lib/dia";
 import { ehPronome, normalizarNome, plural, reescreverNomes } from "@/lib/texto";
 import {
@@ -1111,6 +1112,8 @@ export function Revisao({ id }: { id: string }) {
       setGravando(false);
       return;
     }
+    // A home diz "guardado · N itens" por 3 s, uma vez só (`client/guardado.ts`).
+    anunciarGuardado(aprovados.length);
     router.push("/");
   }
 

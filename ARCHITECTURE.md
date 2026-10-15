@@ -276,6 +276,8 @@ src/client/       navegador
   fila.ts         upload serial com retry, observável pela UI
   medidas.ts      as três marcas que só o navegador sabe dar — parar, fila
                   vazia, revisão aberta. `sessionStorage` amarra as três
+  guardado.ts     o recado de fechamento do confirmar: a revisão escreve, a
+                  tela de gravar lê uma vez só (`sessionStorage`)
   transicao.ts    a troca de modo da tela de gravar dentro de uma View
                   Transition; `flushSync` e `prefers-reduced-motion` num lugar
                   só — ver §11
