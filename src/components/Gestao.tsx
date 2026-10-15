@@ -104,7 +104,7 @@ export function Gestao() {
       <nav
         ref={gaveta}
         id={idGaveta}
-        className={`gaveta${aberto ? " aberta" : ""}`}
+        className={`gaveta gaveta-lateral esquerda${aberto ? " aberta" : ""}`}
         aria-label="gestão"
         aria-hidden={!aberto}
       >

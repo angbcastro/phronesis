@@ -620,15 +620,17 @@ de perfil e o "enriquecer esta" dão lugar a `RetratoDoEu`, que lê
 | **reescrever / desfazer** | a rodada inteira, e um desfazer que troca os dois lados | uma rodada é uma coisa só |
 | **as dimensões** | nome e `o_que_entra` editáveis, ↑ ↓ ×, "+ dimensão", "salvar dimensões"; "pedir nova proposta" traz a sugestão **ao lado**, com aceitar e descartar | o agente propõe, eu aprovo — e nada muda sem eu aceitar. Sem "juntar": é editar uma e tirar a outra |
 
-**A ficha é a terceira gaveta desta forma** — `.gaveta` (gestão, pela esquerda),
-`.editor-agente` (agentes, pela direita) e `.ficha`. O editor de agente segue a
+**A ficha é a terceira gaveta desta forma** — `.gaveta` (gestão), `.editor-agente`
+(agentes) e `.ficha` —, e as três são uma **`.gaveta-lateral`**: a geometria, a
+curva de 220 ms, o `overscroll-behavior: contain`, o truque de `visibility` e o
+reduced-motion moram na base, o lado é `.esquerda` ou `.direita`, e cada uma só
+declara a largura, o respiro e o intervalo. O lado é o de onde veio o toque: o
+menu entra pelo lado da engrenagem que o abriu, o detalhe do que eu toquei entra
+pela direita. O `.veu` é o mesmo para as três. O editor de agente segue a
 mecânica da ficha descrita a seguir — montado sempre, `.aberta` ligando e
 desligando, o conteúdo segurado pela duração da transição, o foco voltando ao
 cartão tocado —, e o Esc e o foco moram em `Agentes`, que passa ao editor um
-`fechar` estável. As três repetem a mesma geometria, a mesma curva de 220 ms, o
-mesmo `env(safe-area-inset-*)` e o mesmo `.veu` (esse já é compartilhado).
-**Consolidá-las numa `.gaveta-lateral` é dívida conhecida**: as três gavetas
-mudariam junto, em `Gestao.tsx`, `Agentes.tsx` e `Entidades.tsx`.
+`fechar` estável.
 
 O painel fica **montado sempre**, com a classe `.aberta` ligando e desligando, e
 o React segura o conteúdo por `DURACAO_FICHA_MS` (220 ms, o mesmo número da

@@ -1094,7 +1094,7 @@ export function Entidades() {
       <aside
         ref={painel}
         id={idFicha}
-        className={`ficha${aberta ? " aberta" : ""}`}
+        className={`ficha gaveta-lateral direita${aberta ? " aberta" : ""}`}
         aria-label={emFoco ? `ficha de ${emFoco.nome}` : "ficha"}
         aria-hidden={!aberta}
       >

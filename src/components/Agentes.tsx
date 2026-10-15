@@ -195,7 +195,7 @@ export function Agentes({ fluxo }: { fluxo: Fluxo }) {
       <div className={`veu${gavetaAberta ? " aberto" : ""}`} onClick={fechar} />
       <aside
         ref={gaveta}
-        className={`editor-agente${gavetaAberta ? " aberta" : ""}`}
+        className={`editor-agente gaveta-lateral direita${gavetaAberta ? " aberta" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={editando ? `agente ${editando.rotulo}` : "agente"}
