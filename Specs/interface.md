@@ -7,8 +7,8 @@ precise de pontaria.
 
 Isto não é uma fatia vertical: é uma avaliação da interface inteira, feita a
 pedido, e o plano de quatro ondas que saiu dela. A primeira não pede decisão
-nenhuma e está feita (ver "Como ficou"); as outras três dependem das cinco
-decisões listadas abaixo, e cada uma vira spec própria quando for a vez dela.
+nenhuma e está feita (ver "Como ficou"); as outras três dependiam de cinco
+decisões, tomadas e registradas abaixo.
 
 **Ponto de retorno:** a tag `ui-antes-da-avaliacao`.
 
@@ -51,27 +51,28 @@ de cada decisão — que é o que torna esta avaliação possível.
    "~", "sem áudio", canônica, o lote do enriquecer — tooltip não existe no
    toque.
 
-## As decisões que são minhas
+## As decisões — tomadas
 
-Antes das ondas 2 a 4. Cada uma com a recomendação da avaliação e o custo.
+Perguntadas depois da onda 1, com a recomendação e o custo de cada uma. As
+respostas:
 
-1. **Cor de erro.** O sistema decidiu não ter cor de perigo, mas o `--rec` já
-   faz esse papel no hover de apagar e no "contradiz" do radial. Recomendação:
-   adotá-lo para erro e para ação destrutiva armada, e o acento volta a querer
-   dizer "ação". Alternativa: manter o acento e diferenciar o erro por ícone e
+1. **Cor de erro: o `--rec`.** Ele já fazia o papel no hover de apagar e no
+   "contradiz" do radial. Vale para erro e para ação destrutiva **armada** — em
+   repouso, apagar continua neutro. O acento volta a querer dizer "ação". A
+   alternativa recusada era manter o acento e diferenciar o erro por ícone e
    posição.
-2. **Contraste do terracota.** Recomendação: o círculo fica como está, e os
-   botões cheios (`confirmar`, `salvar`, `entrar`) escurecem para acento 88 % +
-   preto, ~4,9:1 com branco. Alternativas: escurecer o acento inteiro, ou
-   aceitar 3,9:1.
-3. **Navegação da gestão.** Recomendação: a mesma engrenagem e a mesma gaveta
-   nas telas de gestão, no canto superior **direito** — o esquerdo segue só da
-   marca. Alternativas: uma fileira de abas, ou só ligações cruzadas onde um
-   fluxo leva ao outro.
-4. **Fechamento do confirmar.** Uma linha de 3 s na home ("guardado · 8 itens")
-   é fechamento, não cobrança — mas a home é sagrada.
-5. **Editar tocando no parágrafo.** Hoje um toque perdido rolando a revisão
-   abre o teclado. Manter, ou um lápis discreto.
+2. **Contraste: só os botões cheios escurecem.** O círculo de gravar fica como
+   está — é a identidade —, e todo botão cheio com texto branco passa a acento
+   88 % + preto, ~4,9:1. Recusados: escurecer o acento inteiro, e aceitar
+   3,9:1.
+3. **Navegação da gestão: a mesma engrenagem**, nas telas de gestão, no canto
+   superior **direito** — o esquerdo segue só da marca. Recusadas: uma fileira
+   de abas, e só ligações cruzadas.
+4. **Fechamento do confirmar: sim.** Uma linha efêmera na home, "guardado · 8
+   itens", por 3 s — fechamento, não cobrança.
+5. **Editar tocando no próprio texto: fica.** E com uma exigência que eu
+   acrescentei: o toque já põe o cursor **exatamente onde eu toquei**, e não no
+   início do texto. O lápis discreto foi recusado.
 
 ## As ondas
 
@@ -81,7 +82,7 @@ Feita. Ver "Como ficou".
 
 ### Onda 2 — o sistema de design
 
-Depende das decisões 1 e 2. No topo do `globals.css`:
+Com as decisões 1 e 2. No topo do `globals.css`:
 
 | Eixo | Proposta |
 |---|---|
@@ -103,7 +104,8 @@ número ("0.87" com ponto).
 
 ### Onda 3 — o ritual
 
-Depende das decisões 4 e 5, e de entrevista antes, por ser tela sagrada.
+As decisões 4 e 5 estão tomadas; o resto pede entrevista antes, por ser tela
+sagrada.
 
 - **Revisão:** o tipo do átomo com rótulo ("opinião", e não `OPINIAO` a
   0,68 rem); o desmarcado com estado próprio, e não só opacidade; a faixa
@@ -124,7 +126,7 @@ Depende das decisões 4 e 5, e de entrevista antes, por ser tela sagrada.
 
 ### Onda 4 — a gestão
 
-Depende da decisão 3. Parte dela muda contrato de rota.
+A decisão 3 está tomada. Parte do resto muda contrato de rota.
 
 - Navegação entre as telas de gestão, e um `<title>` por rota.
 - **Sessões com conteúdo:** quantos átomos e as entidades mais citadas, que
