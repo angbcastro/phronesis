@@ -473,6 +473,12 @@ quatro formatos — dia e mês por extenso, com e sem o "de", dia e mês em
 número, e a data inteira —, e os que cortavam a string davam o dia de
 Greenwich: a sessão gravada depois das 21h aparecia com o dia seguinte.
 
+**O tipo do átomo é o rótulo, e não o enum**: "opinião", "decisão",
+"história" (`ROTULO_TIPO_ATOMO` e `rotuloDoTipo`, em `tipos.ts`), em toda tela
+— revisão, calibração, confronto, retrato e o (i) do chat. O enum continua
+sendo o que o grafo guarda e o que os prompts leem; na tela ele aparecia como
+código, sem acento.
+
 **O plural é por extenso** (`plural`, em `texto.ts`): `1 item`, `3 itens`. Os
 parênteses — "item(ns)", "sessão(ões)", "sutil(is)" — eram o jeito de
 formulário falar. O texto das telas começa em minúscula, sem ponto final no

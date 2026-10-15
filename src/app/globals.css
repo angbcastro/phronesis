@@ -656,9 +656,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .atomo input[type="checkbox"] { margin-top: 0.3rem; width: 1.1rem; height: 1.1rem; accent-color: var(--acento); flex: none; }
 .atomo .corpo { flex: 1; min-width: 0; }
 
+/* O rótulo do tipo, em minúsculas ("opinião"): o espaçamento largo era do
+   enum em maiúsculas, e em minúscula ele só separa as letras. */
 .atomo .tipo {
   font-size: var(--fs-1);
-  letter-spacing: 0.06em;
   color: var(--texto-fraco);
 }
 .atomo .corpo > p { margin: 0.2rem 0 0; line-height: 1.45; }

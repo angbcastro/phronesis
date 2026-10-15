@@ -41,7 +41,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { lerEventos, partirLinhas } from "@/client/ndjson";
 import { usaTransicao } from "@/client/transicao";
 import { dataCurta, diaLocal } from "@/lib/dia";
-import { mesAno, type Conversa, type Mensagem, type PassoDeFerramenta } from "@/lib/tipos";
+import {
+  mesAno,
+  rotuloDoTipo,
+  type Conversa,
+  type Mensagem,
+  type PassoDeFerramenta,
+} from "@/lib/tipos";
 
 export { partirLinhas };
 
@@ -834,7 +840,7 @@ function Rastro({ passos }: { passos: readonly PassoDeFerramenta[] }) {
             {p.achados.map((a) => (
               <li key={a.id}>
                 <span className="meta">
-                  {a.tipo.toLowerCase()}
+                  {rotuloDoTipo(a.tipo)}
                   {dataCurta(a.valido_em) === "" ? "" : ` · ${dataCurta(a.valido_em)}`}
                   {a.sobre.length > 0 ? ` · ${a.sobre.join(", ")}` : ""}
                   {typeof a.similaridade === "number"

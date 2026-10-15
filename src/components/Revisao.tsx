@@ -65,6 +65,7 @@ import { dataCurta } from "@/lib/dia";
 import { ehPronome, normalizarNome, plural, reescreverNomes } from "@/lib/texto";
 import {
   CAMPOS_GESTO,
+  ROTULO_TIPO_ATOMO,
   ROTULO_TIPO_ENTIDADE,
   TETO_PEDIDO,
   TIPOS_ATOMO,
@@ -1257,7 +1258,7 @@ export function Revisao({ id }: { id: string }) {
                   }
                 />
                 <div className="corpo">
-                  <span className="tipo">{v.tipo}</span>
+                  <span className="tipo">{ROTULO_TIPO_ATOMO[v.tipo] ?? v.tipo}</span>
                   {editandoTexto.has(a.indice) ? (
                     <textarea
                       className="texto-atomo editando"
@@ -1427,7 +1428,7 @@ export function Revisao({ id }: { id: string }) {
                     >
                       {TIPOS_ATOMO.map((t) => (
                         <option key={t} value={t}>
-                          {t}
+                          {ROTULO_TIPO_ATOMO[t]}
                         </option>
                       ))}
                     </select>
@@ -1608,7 +1609,7 @@ export function Revisao({ id }: { id: string }) {
                 <li key={a.indice} className="atomo">
                   <div className="linha">
                     <div className="corpo">
-                      <span className="tipo">{a.tipo}</span>
+                      <span className="tipo">{ROTULO_TIPO_ATOMO[a.tipo] ?? a.tipo}</span>
                       <p>{a.texto}</p>
                       <p className="meta">sobre {sobreDe(a).entidade}</p>
                     </div>

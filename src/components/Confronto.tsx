@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AtomoRecente } from "@/lib/confronto";
 import { dataCurta } from "@/lib/dia";
 import { plural } from "@/lib/texto";
+import { rotuloDoTipo } from "@/lib/tipos";
 import type {
   AcaoNaRelacao,
   AtomoNoRadial,
@@ -396,7 +397,7 @@ export function Confronto() {
               <li key={a.id}>
                 <button className="quando abre-radial" onClick={() => abrir(a.id)}>
                   <span className="meta">
-                    [{a.tipo}] {data(a.valido_em)}
+                    [{rotuloDoTipo(a.tipo)}] {data(a.valido_em)}
                   </span>
                   <span>{curto(a.texto, 180)}</span>
                 </button>
@@ -414,7 +415,7 @@ export function Confronto() {
             <li key={a.id}>
               <button className="quando abre-radial" onClick={() => abrir(a.id)}>
                 <span className="meta">
-                  [{a.tipo}] {dataCurta(a.em)} —{" "}
+                  [{rotuloDoTipo(a.tipo)}] {dataCurta(a.em)} —{" "}
                   {a.estado === "falhou"
                     ? `falhou: ${a.motivo}`
                     : a.fortes + a.sutis === 0
@@ -473,7 +474,7 @@ function VistaRadial({
     <>
       <section className="radial-centro">
         <span className="meta">
-          [{centro.tipo}] {data(centro.valido_em)}
+          [{rotuloDoTipo(centro.tipo)}] {data(centro.valido_em)}
           {centro.estado === "falhou" && ` — a última rodada falhou: ${centro.motivo_falha}`}
           {centro.estado === null && " — o confronto ainda não passou por aqui"}
         </span>
@@ -651,7 +652,7 @@ function PainelDaRelacao({
 
       <button className="vizinho-relacao" onClick={() => recentrar(vizinho.id)}>
         <span className="meta">
-          [{vizinho.tipo}] {data(vizinho.valido_em)} — tocar abre as relações dele
+          [{rotuloDoTipo(vizinho.tipo)}] {data(vizinho.valido_em)} — tocar abre as relações dele
         </span>
         <span>{vizinho.texto}</span>
       </button>

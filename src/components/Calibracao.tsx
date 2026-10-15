@@ -36,7 +36,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { dataCurta } from "@/lib/dia";
 import { plural } from "@/lib/texto";
 import { localizarNoAudio } from "@/lib/transcricao";
-import { MAX_PADROES_POR_RODADA } from "@/lib/tipos";
+import { MAX_PADROES_POR_RODADA, rotuloDoTipo } from "@/lib/tipos";
 import type { BlocoAbsoluto, Correcao, Edicao, Padrao, TipoCorrecao } from "@/lib/tipos";
 
 /** O que eu fiz, dito como eu diria. O tipo interno é do código, não da tela. */
@@ -624,7 +624,7 @@ export function Calibracao() {
             <li key={c.id} className="correcao">
               <div className="cabecalho">
                 <span className="acao">{ROTULO[c.tipo] ?? c.tipo}</span>
-                {c.tipo_atomo && <span className="tipo-atomo">{c.tipo_atomo}</span>}
+                {c.tipo_atomo && <span className="tipo-atomo">{rotuloDoTipo(c.tipo_atomo)}</span>}
                 <span className="quando">{dataCurta(c.em)}</span>
               </div>
 

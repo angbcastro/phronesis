@@ -134,6 +134,31 @@ export const TIPOS_ATOMO = [
 export type TipoAtomo = (typeof TIPOS_ATOMO)[number];
 
 /**
+ * Como o tipo do átomo é escrito para gente ler, em toda tela. O enum é o que o
+ * grafo guarda e o que os prompts leem — `OPINIAO`, sem acento, em maiúsculas —,
+ * e na tela ele aparecia cru, como código. A mesma razão do
+ * `ROTULO_TIPO_ENTIDADE`: um mapa, e não `toLowerCase()`, porque o português
+ * tem acento que o enum não tem.
+ */
+export const ROTULO_TIPO_ATOMO: Record<TipoAtomo, string> = {
+  FATO: "fato",
+  OPINIAO: "opinião",
+  SENTIMENTO: "sentimento",
+  APRENDIZADO: "aprendizado",
+  CONQUISTA: "conquista",
+  DECISAO: "decisão",
+  HISTORIA: "história",
+  ROTINA: "rotina",
+};
+
+/**
+ * O rótulo de um tipo que pode vir de fora do enum — dado antigo, campo em
+ * texto livre. Tipo desconhecido aparece em minúsculas, e não some.
+ */
+export const rotuloDoTipo = (tipo: string): string =>
+  ROTULO_TIPO_ATOMO[tipo as TipoAtomo] ?? tipo.toLowerCase();
+
+/**
  * Label da entidade no grafo. Os quatro carregam sempre também `:Entidade` — a
  * constraint de `nome_normalizado` é por lá, e vale para os quatro de uma vez.
  *

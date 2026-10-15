@@ -28,6 +28,7 @@ import { plural } from "@/lib/texto";
 import {
   ID_AGORA,
   mesAno,
+  rotuloDoTipo,
   type ConfigRetrato,
   type DimensaoDoRetrato,
   type Enriquecimento,
@@ -282,7 +283,7 @@ export function RetratoDoEu({
                   {aberto.map((f) => (
                     <li key={f.id} className={f.status === "ativo" ? "" : "saiu"}>
                       <span className="meta">
-                        {f.tipo} · {dataCurta(f.valido_em) || "sem data"}
+                        {rotuloDoTipo(f.tipo)} · {dataCurta(f.valido_em) || "sem data"}
                         {f.status === "ativo" ? "" : ` · ${f.status} depois`}
                       </span>
                       <span className="texto-fonte">{f.texto}</span>
