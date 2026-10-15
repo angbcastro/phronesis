@@ -61,6 +61,7 @@ import { CATALOGO_VAZIO, montarCatalogo, resolver } from "@/lib/catalogo";
 import { mencoesDe, sobreDe } from "@/lib/referencias";
 import { localizarNoAudio } from "@/lib/transcricao";
 import { anunciarGuardado } from "@/client/guardado";
+import { nomeDoOuvir, textoDoOuvir, useTocador } from "@/client/tocador";
 import { dataCurta } from "@/lib/dia";
 import { ehPronome, normalizarNome, plural, reescreverNomes } from "@/lib/texto";
 import {
@@ -153,9 +154,6 @@ const ROTULO_CAMPO: Record<CampoPerfil, string> = {
   pode_ajudar_com: "pode ajudar com",
   fizemos_juntos: "fizemos juntos",
 };
-
-const mmss = (s: number) =>
-  `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 /**
  * Mora em `transcricao.ts`, que é onde offset vira bloco. Reexportado aqui
@@ -617,7 +615,6 @@ export function Revisao({ id }: { id: string }) {
   /** A resposta do último pedido que não trouxe átomo: vazio ou falha. */
   const [avisoPedido, setAvisoPedido] = useState<string | null>(null);
 
-  const audio = useRef<HTMLAudioElement | null>(null);
   const modalFontes = useRef<HTMLDivElement | null>(null);
   /**
    * Onde o cursor nasce quando um parágrafo vira campo: o caractere sob o dedo,
@@ -758,31 +755,12 @@ export function Revisao({ id }: { id: string }) {
     [doGrafo],
   );
 
-  /** Toca o bloco certo no segundo certo. Uma URL presigned por clique. */
-  const escutar = useCallback(
-    async (segundo: number) => {
-      if (!proposta) return;
-      const alvo = localizarNoAudio(proposta.blocos, segundo);
-      if (!alvo) return;
-
-      const r = await fetch(`/api/sessoes/${id}/chunks/${alvo.i}/audio`);
-      if (!r.ok) return;
-      const { url } = (await r.json()) as { url: string };
-
-      const el = audio.current;
-      if (!el) return;
-      el.pause();
-      el.src = url;
-      // Safari só aceita currentTime depois dos metadados; refazemos no evento.
-      el.onloadedmetadata = () => {
-        el.currentTime = alvo.dentro;
-        void el.play();
-      };
-      el.currentTime = alvo.dentro;
-      void el.play().catch(() => {});
-    },
-    [id, proposta],
-  );
+  /**
+   * O ▶ de cada trecho (`client/tocador.ts`): de 2 s antes até o fim do que eu
+   * disse, ■ para parar, e a falha à vista. Os blocos já estão na proposta.
+   */
+  const blocosDaSessao = useCallback(async () => proposta?.blocos ?? null, [proposta]);
+  const tocador = useTocador(blocosDaSessao);
 
   const atomos = proposta?.extracao.atomos ?? [];
   const daProposta = useMemo(() => proposta?.extracao.entidades ?? [], [proposta]);
@@ -1385,17 +1363,29 @@ export function Revisao({ id }: { id: string }) {
                   )}
 
                   <div className="trechos">
-                    {ancorados.map((t, k) => (
-                      <button
-                        key={k}
-                        className="botao"
-                        aria-label={`ouvir a partir de ${mmss(t.inicio_s!)}${t.ancora === "aproximada" ? ", trecho aproximado" : ""}`}
-                        onClick={() => void escutar(t.inicio_s!)}
-                      >
-                        ▶ {mmss(t.inicio_s!)}
-                        {t.ancora === "aproximada" && <span title="casamento aproximado">~</span>}
-                      </button>
-                    ))}
+                    {ancorados.map((t, k) => {
+                      const chave = `${a.indice}:${k}`;
+                      const estado = tocador.estadoDe(chave);
+                      return (
+                        <button
+                          key={k}
+                          className={`botao ouvir${estado ? ` ${estado}` : ""}`}
+                          aria-label={`${nomeDoOuvir(estado, t.inicio_s!)}${t.ancora === "aproximada" ? ", trecho aproximado" : ""}`}
+                          onClick={() =>
+                            void tocador.tocar(chave, {
+                              sessao_id: id,
+                              inicio_s: t.inicio_s!,
+                              fim_s: t.fim_s,
+                            })
+                          }
+                        >
+                          {textoDoOuvir(estado, t.inicio_s!, t.fim_s)}
+                          {estado === null && t.ancora === "aproximada" && (
+                            <span title="casamento aproximado">~</span>
+                          )}
+                        </button>
+                      );
+                    })}
                     {ancorados.length === 0 && (
                       <span className="sem-ancora" title="o trecho não foi achado na transcrição">
                         sem áudio
@@ -1745,8 +1735,6 @@ export function Revisao({ id }: { id: string }) {
         </Link>
       </footer>
 
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio ref={audio} preload="none" />
 
       {fontesAbertas && (
         // As citações do GraphRAG saíram da vista padrão do átomo (item 2 do

@@ -278,6 +278,8 @@ src/client/       navegador
                   vazia, revisão aberta. `sessionStorage` amarra as três
   guardado.ts     o recado de fechamento do confirmar: a revisão escreve, a
                   tela de gravar lê uma vez só (`sessionStorage`)
+  tocador.ts      o ▶ dos trechos — revisão, calibração e o (i) do chat: de
+                  2 s antes até o fim do trecho, em blocos, com ■ e a falha
   transicao.ts    a troca de modo da tela de gravar dentro de uma View
                   Transition; `flushSync` e `prefers-reduced-motion` num lugar
                   só — ver §11

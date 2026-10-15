@@ -32,10 +32,10 @@
  * **O áudio é o que torna a correção legível meses depois.** Um `antes → depois`
  * solto não diz se eu tinha razão; o trecho tocando diz.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { nomeDoOuvir, textoDoOuvir, useTocador } from "@/client/tocador";
 import { dataCurta } from "@/lib/dia";
 import { plural } from "@/lib/texto";
-import { localizarNoAudio } from "@/lib/transcricao";
 import { MAX_PADROES_POR_RODADA, rotuloDoTipo } from "@/lib/tipos";
 import type { BlocoAbsoluto, Correcao, Edicao, Padrao, TipoCorrecao } from "@/lib/tipos";
 
@@ -74,9 +74,6 @@ export const LIMITE_LINHA = 90;
 
 export const cabeEmLinha = (antes: string, depois: string): boolean =>
   antes.length + depois.length <= LIMITE_LINHA;
-
-const mmss = (s: number) =>
-  `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 /** O que a tela precisa de uma sessão para tocar o áudio e mostrar o refugo. */
 interface DaSessao {
@@ -200,7 +197,6 @@ export function Calibracao() {
     null,
   );
 
-  const audio = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     let vivo = true;
@@ -258,33 +254,15 @@ export function Calibracao() {
     [sessoes],
   );
 
-  /** Mesma mecânica da revisão: bloco certo, segundo certo, URL por clique. */
-  const escutar = useCallback(
-    async (sessao_id: string, segundo: number) => {
-      const dados = await carregarSessao(sessao_id);
-      if (!dados) return;
-
-      const alvo = localizarNoAudio(dados.blocos, segundo);
-      if (!alvo) return;
-
-      const r = await fetch(`/api/sessoes/${sessao_id}/chunks/${alvo.i}/audio`);
-      if (!r.ok) return;
-      const { url } = (await r.json()) as { url: string };
-
-      const el = audio.current;
-      if (!el) return;
-      el.pause();
-      el.src = url;
-      // Safari só aceita currentTime depois dos metadados, como na revisão.
-      el.onloadedmetadata = () => {
-        el.currentTime = alvo.dentro;
-        void el.play();
-      };
-      el.currentTime = alvo.dentro;
-      void el.play().catch(() => {});
-    },
+  /**
+   * O mesmo tocador da revisão (`client/tocador.ts`). A correção guarda só o
+   * início do trecho, e sem fim ele toca de 2 s antes até o fim do bloco.
+   */
+  const blocosDe = useCallback(
+    async (sessao_id: string) => (await carregarSessao(sessao_id))?.blocos ?? null,
     [carregarSessao],
   );
+  const tocador = useTocador(blocosDe);
 
   /** Passo 1: o agente enxerga o padrão. Uma chamada por toque, nunca ao abrir. */
   async function pedirPadroes() {
@@ -656,16 +634,22 @@ export function Calibracao() {
               )}
 
               <div className="rodape">
-                {c.inicios_s.map((s, k) => (
-                  <button
-                    key={k}
-                    className="botao"
-                    aria-label={`ouvir a partir de ${mmss(s)}`}
-                    onClick={() => void escutar(c.sessao_id, s)}
-                  >
-                    ▶ {mmss(s)}
-                  </button>
-                ))}
+                {c.inicios_s.map((s, k) => {
+                  const chave = `${c.id}:${k}`;
+                  const estado = tocador.estadoDe(chave);
+                  return (
+                    <button
+                      key={k}
+                      className={`botao ouvir${estado ? ` ${estado}` : ""}`}
+                      aria-label={nomeDoOuvir(estado, s)}
+                      onClick={() =>
+                        void tocador.tocar(chave, { sessao_id: c.sessao_id, inicio_s: s, fim_s: null })
+                      }
+                    >
+                      {textoDoOuvir(estado, s, null)}
+                    </button>
+                  );
+                })}
                 {!c.tocado && (
                   // Trava 2 (§4.11): chave diferente sem gesto que a testemunhe.
                   // Provável travessia de alias, não edição minha — e a tela
@@ -707,8 +691,6 @@ export function Calibracao() {
         </section>
       )}
 
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio ref={audio} preload="none" />
     </main>
   );
 }

@@ -609,6 +609,9 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   continua oferecendo-a sem as instruções de quando usá-la — e um salvo antes do
   `ler_retrato` não manda começar por ele nas perguntas sobre mim. Salvá-lo de
   novo pede que ele cite as ferramentas (envelope).
+- **Um trecho que atravessa a borda de um bloco tem um vão** (§11.2): o
+  tocador pede a URL do bloco seguinte quando o primeiro acaba, e a requisição
+  é o silêncio entre os dois.
 - **O dia nos prompts fora do chat é o de Greenwich.** Retrato, confronto,
   enriquecimento e correções leem `valido_em` cortando os dez primeiros
   caracteres: a sessão gravada depois das 21h chega com o dia seguinte aos

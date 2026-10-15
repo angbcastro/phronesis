@@ -464,6 +464,24 @@ de `/entrar`. Na calibração o mesmo lugar diz falha, vazio legítimo ("o agent
 não achou padrão") e sucesso ("em vigor a partir da próxima chamada"), e o tom é
 o que os separa.
 
+#### O ▶ dos trechos
+
+**Um tocador só** (`client/tocador.ts`, `useTocador`) para a revisão, a
+calibração e o (i) do chat, no lugar de três cópias de "pedir a URL do bloco e
+tocar" que não diziam nada. Ele toca de **2 s antes** do início do trecho até o
+**fim** dele, e para sozinho — o trecho guarda `fim_s` desde a slice 4.6. O
+botão diz o estado: `▶ 03:12` parado, `… 03:12` carregando, `■ 03:10–03:19`
+tocando (tocar de novo para), `sem áudio` quando falhou (tocar tenta de novo).
+Um por tela: tocar outro ▶ para o anterior, e sair da tela para o som.
+
+A margem de 2 s **não entra no bloco anterior** — emendar dois blocos para dois
+segundos de respiração custaria uma requisição a mais por toque —, e o fim
+**atravessa** para o bloco seguinte, porque o que eu disse não pode ser cortado
+no meio. Sem fim — a correção da calibração guarda só o início —, toca até o fim
+do bloco. Cada bloco é uma URL presigned de 5 min pedida no toque: o áudio não
+passa por function (regra 1). `intervaloDeEscuta`, o recorte, é puro e tem
+teste.
+
 #### A data e o plural
 
 **Uma data só, dia/mês**, que é como eu leio: `dd/mm`, e `dd/mm/aaaa` fora do

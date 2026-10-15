@@ -753,6 +753,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   flex-direction: column;
   gap: 0.4rem;
 }
+/* O ▶ de um trecho (`client/tocador.ts`): o tempo em algarismos de largura
+   fixa, para o botão não dançar quando "▶ 03:12" vira "■ 03:10–03:19";
+   tocando, a borda no acento; falhou, no vermelho. */
+.botao.ouvir { font-variant-numeric: tabular-nums; }
+.botao.ouvir.tocando { color: var(--texto); border-color: var(--acento); }
+.botao.ouvir.falhou { color: var(--erro); border-color: var(--erro); }
+
 /* Numa coluna flexível o botão esticaria até a largura da lista. */
 .entidades-do-atomo .mencoes .lista > .botao { align-self: flex-start; }
 
