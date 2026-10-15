@@ -49,7 +49,66 @@
   --linha: #2a2a2e;
   --ok: #6aa84f;
   --rec: #ff4d3d;
+
+  /* ---- o que cada cor quer dizer ----------------------------------------
+
+     Derivados, como o `--glow`: trocar o acento leva os três juntos.
+
+     `--erro` é o vermelho do selo de REC, e vale para falha e para ação
+     destrutiva **armada** — o segundo toque de apagar. Em repouso, apagar
+     continua neutro. Antes não havia cor de erro, e o acento acumulava nove
+     sentidos, de "ação" a "dúvida".
+
+     `--acento-cheio` é o fundo de todo botão cheio com texto branco: branco
+     sobre o acento puro dá 3,9:1, e este dá ~4,9:1. O círculo de gravar não
+     usa — ele é a identidade, e fica no acento.
+
+     `--acento-texto` é o acento quando ele é a cor do texto sobre o escuro:
+     puro, sobre `--fundo-alto`, dá 4,44:1; clareado, ~5,5:1.
+
+     `--linha-controle` é a borda do que se toca — campo, pílula, botão de
+     contorno —, ~3:1 sobre os dois fundos, que é o mínimo para o desenho de um
+     controle se ver. `--linha`, mais escura, segue nas divisórias e nos
+     cartões, onde não há nada para acertar com o dedo. */
+  --erro: var(--rec);
+  --acento-cheio: color-mix(in srgb, var(--acento) 88%, black);
+  --acento-texto: color-mix(in srgb, var(--acento) 85%, white);
+  --linha-controle: color-mix(in srgb, var(--texto) 40%, var(--fundo));
+
+  /* ---- a escala ----------------------------------------------------------
+
+     Seis tamanhos de letra, no lugar de vinte e oito. O piso é 12 px: abaixo
+     disso não se lê num celular. 16 px é o do corpo e o de todo campo — campo
+     menor que isso faz o iOS dar zoom ao focar. */
+  --fs-1: 0.75rem;   /* 12 — selo, legenda miúda */
+  --fs-2: 0.8125rem; /* 13 — meta, rótulo, botão pequeno */
+  --fs-3: 0.875rem;  /* 14 — texto secundário */
+  --fs-4: 1rem;      /* 16 — corpo, campo, subtítulo */
+  --fs-5: 1.125rem;  /* 18 — título, texto de leitura */
+  --fs-6: 1.5rem;    /* 24 — o timer */
+
+  /* Espaço numa grade de 4 px. As regras novas nascem nela; as antigas migram
+     quando forem tocadas — reescrever todo `padding` de uma vez seria mexer
+     no desenho de todas as telas sem ver nenhuma. */
+  --esp-1: 0.25rem;
+  --esp-2: 0.5rem;
+  --esp-3: 0.75rem;
+  --esp-4: 1rem;
+  --esp-5: 1.5rem;
+  --esp-6: 2rem;
+
+  /* Três cantos: o do cartão e do painel, o do controle, e a pílula. */
   --raio: 14px;
+  --raio-controle: 8px;
+
+  /* Duas larguras de página: a de ler (revisão, transcrição, calibração,
+     agentes) e a de lista (sessões, entidades, confronto, e as gavetas). */
+  --largura-leitura: 40rem;
+  --largura-lista: 34rem;
+
+  /* A curva de todo movimento do sistema — as ondas, o selo, as gavetas, a
+     troca de modo. Uma só, para tudo ler como o mesmo corpo se mexendo. */
+  --curva: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Phronesis é um app escuro, e só. Sem isto o navegador desenharia os
      controles nativos — input, select, checkbox, barra de rolagem — no tema
@@ -101,6 +160,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
 :where(a, button, input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
   outline: 2px solid var(--acento);
   outline-offset: 2px;
+}
+
+/* No toque, todo campo tem 16 px. Abaixo disso o Safari do iPhone dá zoom na
+   página ao focar, e a tela fica torta até eu pinçar de volta. Os campos de
+   gestão continuam compactos no mouse, onde não há zoom nenhum. É o único
+   `!important` do arquivo: ele precisa vencer cada regra de campo, e escrever
+   16 px em todas apagaria a diferença do mouse. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select { font-size: var(--fs-4) !important; }
 }
 
 /* Texto que só o leitor de tela lê: o "editado" de um ponto que é só cor, o
@@ -165,7 +235,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
      ↔ com-chat) fica mais lenta; ondas, selo, respiração e feedback de toque
      não mudam. */
   transition:
-    transform 384ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 384ms var(--curva),
     opacity 300ms ease;
 }
 .palco > * { grid-area: 1 / 1; }
@@ -184,7 +254,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--acento); /* o desenho lê esta cor já resolvida */
   pointer-events: none;
   opacity: 0;
-  transition: opacity 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 400ms var(--curva);
 }
 .palco.gravando .ondas { opacity: 1; }
 
@@ -233,14 +303,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: none;
   background: var(--acento);
   color: var(--sobre-acento);
-  font-size: 18px;
+  font-size: var(--fs-5);
   font-weight: 500;
   line-height: 1.35;
   padding: 1.5rem;
   transition:
     transform 120ms ease,
     color 200ms ease,
-    opacity 400ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 400ms var(--curva);
 }
 .botao-gravar:active { transform: scale(0.97); }
 
@@ -269,10 +339,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
      que ela seja. */
   background: rgba(0, 0, 0, 0.18);
   color: color-mix(in srgb, var(--sobre-acento) 70%, transparent);
-  font-size: 0.7rem;
+  font-size: var(--fs-1);
   font-weight: 500;
   letter-spacing: 0.14em;
-  animation: descer 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: descer 400ms var(--curva) both;
 }
 .selo-rec svg {
   width: 13px;
@@ -316,7 +386,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* O timer perdeu o posto de herói para o círculo. Continua legível e tabular,
    no tamanho de informação — não no de manchete. */
 .timer {
-  font-size: 1.5rem;
+  font-size: var(--fs-6);
   font-variant-numeric: tabular-nums;
   font-weight: 300;
   letter-spacing: 0.06em;
@@ -328,7 +398,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   align-items: center;
   gap: 0.5rem;
   color: var(--status);
-  font-size: 0.8rem;
+  font-size: var(--fs-2);
 }
 .ponto-salvo i {
   width: 7px;
@@ -340,24 +410,24 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .ponto-salvo.pendente i { background: var(--texto-fraco); opacity: 0.55; }
 
 .botao-parar {
-  border: 1px solid var(--linha);
+  border: 1px solid var(--linha-controle);
   background: transparent;
   color: var(--texto);
   border-radius: 999px;
   padding: 0.85rem 2.5rem;
-  font-size: 1rem;
+  font-size: var(--fs-4);
 }
 
 /* ---- transcrição ---- */
 
 .leitura {
   min-height: 100dvh;
-  max-width: 40rem;
+  max-width: var(--largura-leitura);
   margin: 0 auto;
   padding: 3.5rem 1.25rem 6rem;
 }
 .leitura h1 {
-  font-size: 0.8rem;
+  font-size: var(--fs-2);
   font-weight: 500;
   text-transform: lowercase;
   letter-spacing: 0.06em;
@@ -365,12 +435,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin: 0 0 1.75rem;
 }
 .leitura p {
-  font-size: 1.075rem;
+  font-size: var(--fs-5);
   line-height: 1.75;
   margin: 0 0 1.25rem;
   white-space: pre-wrap;
 }
-.leitura .aguardando { color: var(--texto-fraco); font-size: 0.95rem; }
+.leitura .aguardando { color: var(--texto-fraco); font-size: var(--fs-4); }
 
 /* O "voltar" da transcrição (que vai para `/sessoes`) e o "depois" do rodapé da
    revisão — os dois únicos que não duplicam a marca. Escopado pela mesma razão
@@ -381,12 +451,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: inline-block;
   margin-top: 2rem;
   color: var(--texto-fraco);
-  font-size: 0.9rem;
+  font-size: var(--fs-3);
   text-decoration: none;
   border-bottom: 1px solid var(--linha);
 }
 
-.aviso { color: var(--texto-fraco); font-size: 0.9rem; text-align: center; }
+.aviso { color: var(--texto-fraco); font-size: var(--fs-3); text-align: center; }
 
 /* ---- entrar ---- */
 
@@ -395,25 +465,25 @@ button { font: inherit; color: inherit; cursor: pointer; }
   width: 100%;
   padding: 0.85rem 1rem;
   border-radius: var(--raio);
-  border: 1px solid var(--linha);
+  border: 1px solid var(--linha-controle);
   background: var(--fundo-alto);
   color: var(--texto);
-  font-size: 1rem;
+  font-size: var(--fs-4);
 }
 .entrar button {
   padding: 0.85rem 1rem;
   border-radius: var(--raio);
   border: none;
-  background: var(--acento);
+  background: var(--acento-cheio);
   color: var(--sobre-acento);
-  font-size: 1rem;
+  font-size: var(--fs-4);
 }
 
 /* ---- revisar ---- */
 
 .revisao {
   width: 100%;
-  max-width: 44rem;
+  max-width: var(--largura-leitura);
   margin: 0 auto;
   padding: 2rem 1.25rem 6rem;
   display: flex;
@@ -421,12 +491,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   gap: 1.25rem;
 }
 
-.revisao header h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem; }
+.revisao header h1 { font-size: var(--fs-5); font-weight: 600; margin: 0 0 0.25rem; }
 .revisao header p { margin: 0; }
 /* A instrução do topo, o parágrafo das entidades e as linhas do rodapé. Sem
    esta regra a classe não pintava nada aqui, e a instrução saía com o peso dos
    átomos que ela explica. O editor do átomo afina para 0,8 rem mais abaixo. */
-.revisao .aguardando { color: var(--texto-fraco); font-size: 0.9rem; }
+.revisao .aguardando { color: var(--texto-fraco); font-size: var(--fs-3); }
 
 .atomos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
 
@@ -444,22 +514,22 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .atomo .corpo { flex: 1; min-width: 0; }
 
 .atomo .tipo {
-  font-size: 0.68rem;
+  font-size: var(--fs-1);
   letter-spacing: 0.06em;
   color: var(--texto-fraco);
 }
 .atomo .corpo > p { margin: 0.2rem 0 0; line-height: 1.45; }
-.atomo .meta { font-size: 0.82rem; color: var(--texto-fraco); }
+.atomo .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 
 /* O texto do átomo edita no próprio lugar — clicar nele vira campo, sem abrir
    painel embaixo. */
 .texto-atomo {
   cursor: text;
-  border-radius: 6px;
+  border-radius: var(--raio-controle);
   transition: background 0.1s;
 }
-.texto-atomo:hover,
 .texto-atomo:focus-visible { background: color-mix(in srgb, var(--acento) 8%, transparent); }
+@media (hover: hover) { .texto-atomo:hover { background: color-mix(in srgb, var(--acento) 8%, transparent); } }
 /* Mesma caixa do parágrafo — margem, fonte e entrelinha idênticas — para o
    campo não encolher quando o texto vira editável. `resize: none` porque a
    altura já segue o conteúdo sozinha (via `ref`/`onChange` no componente);
@@ -485,12 +555,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: none;
   border: none;
   padding: 0 0.2rem;
-  font-size: 0.72rem;
+  font-size: var(--fs-1);
   color: var(--texto-fraco);
   vertical-align: 1px;
   line-height: 1;
 }
-.entidade-ref .fonte:hover { color: var(--acento); }
+@media (hover: hover) { .entidade-ref .fonte:hover { color: var(--acento-texto); } }
 
 .trechos { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
 .ouvir {
@@ -498,11 +568,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px solid var(--linha);
   border-radius: 999px;
   padding: 0.15rem 0.6rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
 }
-.ouvir:hover { color: var(--texto); border-color: var(--texto-fraco); }
-.sem-ancora { font-size: 0.78rem; color: var(--acento); opacity: 0.8; }
+@media (hover: hover) { .ouvir:hover { color: var(--texto); border-color: var(--texto-fraco); } }
+.sem-ancora { font-size: var(--fs-2); color: var(--acento-texto); }
 
 .editor { margin-top: 0.7rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .editor textarea,
@@ -511,8 +581,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font: inherit;
   color: inherit;
   background: var(--fundo);
-  border: 1px solid var(--linha);
-  border-radius: 10px;
+  border: 1px solid var(--linha-controle);
+  border-radius: var(--raio-controle);
   padding: 0.5rem 0.6rem;
   width: 100%;
 }
@@ -530,13 +600,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding-top: 0.55rem;
   border-top: 1px solid var(--linha);
 }
-.entidades-do-atomo .rotulo { font-size: 0.78rem; color: var(--texto-fraco); }
+.entidades-do-atomo .rotulo { font-size: var(--fs-2); color: var(--texto-fraco); }
 .entidades-do-atomo .campo { display: flex; gap: 0.6rem; align-items: flex-start; }
 .entidades-do-atomo .campo > span {
   flex: none;
   width: 4.8rem;
   padding-top: 0.55rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
 }
 .entidades-do-atomo .campo .seletor { flex: 1; min-width: 0; }
@@ -553,10 +623,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px dashed var(--linha);
   border-radius: 999px;
   padding: 0.2rem 0.7rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
 }
-.acrescentar:hover { color: var(--texto); border-color: var(--texto-fraco); }
+@media (hover: hover) { .acrescentar:hover { color: var(--texto); border-color: var(--texto-fraco); } }
 
 /* A barra pesquisável de entidade (`SeletorEntidade`), usada nos dois lugares:
    dentro do átomo e no painel do rodapé. */
@@ -570,7 +640,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   line-height: 1;
   color: var(--texto-fraco);
 }
-.seletor .remover:hover { color: var(--acento); }
+@media (hover: hover) { .seletor .remover:hover { color: var(--acento-texto); } }
 .seletor.pedindo > input { border-color: var(--acento); }
 
 .seletor .opcoes {
@@ -596,8 +666,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   justify-content: space-between;
   gap: 0.6rem;
   padding: 0.45rem 0.55rem;
-  border-radius: 10px;
-  font-size: 0.9rem;
+  border-radius: var(--raio-controle);
+  font-size: var(--fs-3);
   cursor: pointer;
 }
 .seletor .opcao[aria-selected="true"] {
@@ -605,36 +675,36 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .seletor .opcao .nome { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .seletor .opcao .nome em { font-style: normal; color: var(--texto-fraco); }
-.seletor .opcao .meta { flex: none; font-size: 0.75rem; color: var(--texto-fraco); }
+.seletor .opcao .meta { flex: none; font-size: var(--fs-1); color: var(--texto-fraco); }
 .seletor .opcao.criar {
   margin-top: 0.15rem;
   border-top: 1px solid var(--linha);
-  border-radius: 0 0 10px 10px;
-  color: var(--acento);
+  border-radius: 0 0 var(--raio-controle) var(--raio-controle);
+  color: var(--acento-texto);
 }
 
 .entidades { display: flex; flex-direction: column; gap: 0.35rem; }
-.entidades h2 { font-size: 0.95rem; font-weight: 600; margin: 0.5rem 0 0; }
+.entidades h2 { font-size: var(--fs-4); font-weight: 600; margin: 0.5rem 0 0; }
 .entidades p { margin: 0 0 0.35rem; }
 .entidade {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  font-size: 0.92rem;
+  font-size: var(--fs-4);
   flex-wrap: wrap;
   padding: 0.3rem 0.4rem;
-  border-radius: 10px;
+  border-radius: var(--raio-controle);
 }
 .entidade input[type="checkbox"] { accent-color: var(--acento); }
 .entidade.travada input[type="checkbox"] { opacity: 0.5; }
-.entidade .meta { font-size: 0.8rem; color: var(--texto-fraco); }
+.entidade .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 
 .entidade select {
   font: inherit;
   color: inherit;
   background: var(--fundo-alto);
-  border: 1px solid var(--linha);
-  border-radius: 8px;
+  border: 1px solid var(--linha-controle);
+  border-radius: var(--raio-controle);
   padding: 0.25rem 0.45rem;
 }
 .entidade span.nome { padding: 0.25rem 0; }
@@ -644,8 +714,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font: inherit;
   color: inherit;
   background: var(--fundo-alto);
-  border: 1px solid var(--linha);
-  border-radius: 8px;
+  border: 1px solid var(--linha-controle);
+  border-radius: var(--raio-controle);
   padding: 0.25rem 0.45rem;
   width: 100%;
 }
@@ -656,7 +726,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   outline: 1px solid var(--acento);
 }
 .entidade.pedindo .seletor > input { border-color: var(--acento); }
-.entidade.pedindo .meta { color: var(--acento); }
+.entidade.pedindo .meta { color: var(--acento-texto); }
 
 .revisao footer {
   position: sticky;
@@ -670,7 +740,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .confirmar {
   width: 100%;
-  background: var(--acento);
+  background: var(--acento-cheio);
   color: var(--sobre-acento);
   border: none;
   border-radius: var(--raio);
@@ -682,7 +752,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .revisar {
   display: inline-block;
   margin-top: 1.25rem;
-  background: var(--acento);
+  background: var(--acento-cheio);
   color: var(--sobre-acento);
   text-decoration: none;
   border-radius: var(--raio);
@@ -695,29 +765,29 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px solid var(--linha);
   border-radius: 999px;
   padding: 0.15rem 0.7rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
   margin-left: auto;
 }
-.editar:hover { color: var(--texto); border-color: var(--texto-fraco); }
-.editor .aguardando { font-size: 0.8rem; margin: 0; }
+@media (hover: hover) { .editar:hover { color: var(--texto); border-color: var(--texto-fraco); } }
+.editor .aguardando { font-size: var(--fs-2); margin: 0; }
 
 /* ---- sessões ---- */
 
 .sessoes {
   width: 100%;
-  max-width: 34rem;
+  max-width: var(--largura-lista);
   margin: 0 auto;
   padding: 2rem 1.25rem 4rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
-.sessoes h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem; }
+.sessoes h1 { font-size: var(--fs-5); font-weight: 600; margin: 0 0 0.25rem; }
 .sessoes header p { margin: 0; }
 /* A legenda, a falha e o vazio. Antes de `.tela-entidades .aguardando`, que é
    mais adiante e vence em `/entidades` — ela também usa `main.sessoes`. */
-.sessoes .aguardando { color: var(--texto-fraco); font-size: 0.9rem; }
+.sessoes .aguardando { color: var(--texto-fraco); font-size: var(--fs-3); }
 
 .lista-sessoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .lista-sessoes li {
@@ -736,8 +806,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: inherit;
   text-decoration: none;
 }
-.lista-sessoes .quando:hover span:first-child { text-decoration: underline; }
-.lista-sessoes .meta { font-size: 0.8rem; color: var(--texto-fraco); }
+@media (hover: hover) { .lista-sessoes .quando:hover span:first-child { text-decoration: underline; } }
+.lista-sessoes .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 
 /* Verde é trabalho terminado — o mesmo `--ok` do ponto de "salvo" da gravação.
    Um token, dois lugares, o mesmo significado. Não há classe para o que falta
@@ -753,7 +823,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* Um par candidato a fusão, na tela de entidades. */
 .par {
   border: 1px solid var(--linha);
-  border-radius: 0.6rem;
+  border-radius: var(--raio);
   padding: 0.8rem;
   margin: 0.6rem 0;
   display: flex;
@@ -772,11 +842,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .campo-nome {
   background: none;
-  border: 1px solid var(--linha);
-  border-radius: 0.3rem;
+  border: 1px solid var(--linha-controle);
+  border-radius: var(--raio-controle);
   padding: 0.2rem 0.5rem;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--fs-3);
   color: var(--texto);
   min-width: 0;
   width: 9rem;
@@ -789,12 +859,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px solid var(--linha);
   border-radius: 999px;
   padding: 0.2rem 0.7rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
   white-space: nowrap;
 }
-.reextrair:hover { color: var(--texto); border-color: var(--texto-fraco); }
-.reextrair.armado { color: var(--acento); border-color: var(--acento); }
+@media (hover: hover) { .reextrair:hover { color: var(--texto); border-color: var(--texto-fraco); } }
+.reextrair.armado { color: var(--acento-texto); border-color: var(--acento); }
 .reextrair:disabled { opacity: 0.5; cursor: default; }
 
 /* ---- slice 4: dúvida de identidade, e os três campos de perfil ---- */
@@ -807,9 +877,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .duvida {
   margin: 0.35rem 0 0;
-  font-size: 0.82rem;
+  font-size: var(--fs-2);
   line-height: 1.4;
-  color: var(--acento);
+  color: var(--acento-texto);
 }
 .duvida strong { font-weight: 600; }
 /* Uma linha por referência incerta, num parágrafo só (4.8.1): a dúvida deixou
@@ -838,17 +908,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
   gap: 0.6rem;
 }
 .modal-fontes header { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
-.modal-fontes h2 { font-size: 1rem; font-weight: 600; margin: 0; }
+.modal-fontes h2 { font-size: var(--fs-4); font-weight: 600; margin: 0; }
 .modal-fontes .fechar {
   background: none;
   border: none;
-  font-size: 1.2rem;
+  font-size: var(--fs-5);
   line-height: 1;
   color: var(--texto-fraco);
   padding: 0.1rem 0.3rem;
 }
-.modal-fontes .fechar:hover { color: var(--texto); }
-.modal-fontes .motivo { margin: 0; font-size: 0.85rem; color: var(--texto-fraco); }
+@media (hover: hover) { .modal-fontes .fechar:hover { color: var(--texto); } }
+.modal-fontes .motivo { margin: 0; font-size: var(--fs-3); color: var(--texto-fraco); }
 .modal-fontes .citacoes {
   list-style: none;
   margin: 0;
@@ -856,7 +926,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-3);
   font-style: italic;
   line-height: 1.4;
 }
@@ -894,13 +964,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   flex: 1 1 9rem;
   width: auto;
   padding: 0.4rem 0.6rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-3);
 }
 .alternador {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.8rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
   cursor: pointer;
   white-space: nowrap;
@@ -936,7 +1006,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
    `.quando`, mais acima. */
 .barra-selecao .conta,
 .barra-manutencao .conta,
-.ficha .conta { font-size: 0.8rem; color: var(--texto-fraco); }
+.ficha .conta { font-size: var(--fs-2); color: var(--texto-fraco); }
 
 .lista-entidades {
   list-style: none;
@@ -965,16 +1035,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-align: left;
   background: none;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--raio-controle);
   padding: 0.65rem 0.25rem;
 }
-.abre-ficha .nome { font-size: 0.95rem; overflow-wrap: anywhere; }
-.abre-ficha .meta { font-size: 0.8rem; color: var(--texto-fraco); }
-.abre-ficha:hover .nome { text-decoration: underline; }
+.abre-ficha .nome { font-size: var(--fs-4); overflow-wrap: anywhere; }
+.abre-ficha .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
+@media (hover: hover) { .abre-ficha:hover .nome { text-decoration: underline; } }
 .abre-ficha:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
 
 .tela-entidades header p,
-.tela-entidades .aguardando { margin: 0; font-size: 0.85rem; color: var(--texto-fraco); }
+.tela-entidades .aguardando { margin: 0; font-size: var(--fs-3); color: var(--texto-fraco); }
 
 /* A caixa do lote fica à esquerda da linha, e o alvo de toque é maior que ela:
    este é um app de celular, e caixa de 13 px não se acerta com o dedo. */
@@ -990,31 +1060,31 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-3);
   color: var(--texto-fraco);
   cursor: pointer;
 }
 .marca-todas input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--acento); }
 
 .campo-perfil { display: flex; flex-direction: column; gap: 0.3rem; }
-.campo-perfil label { font-size: 0.85rem; }
-.campo-perfil label .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+.campo-perfil label { font-size: var(--fs-3); }
+.campo-perfil label .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 .campo-perfil textarea {
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--fs-3);
   color: inherit;
   background: var(--fundo);
-  border: 1px solid var(--linha);
-  border-radius: 10px;
+  border: 1px solid var(--linha-controle);
+  border-radius: var(--raio-controle);
   padding: 0.5rem 0.6rem;
   width: 100%;
   resize: vertical;
 }
-.campo-perfil .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+.campo-perfil .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 
 /* A ficha oficial se vê na linha, sem abrir nada. */
-.canonica { margin-left: 0.35rem; color: var(--acento); }
-.reextrair.canonico { border-color: var(--acento); color: var(--acento); }
+.canonica { margin-left: 0.35rem; color: var(--acento-texto); }
+.reextrair.canonico { border-color: var(--acento); color: var(--acento-texto); }
 
 /* As grafias, uma por etiqueta, com o × que tira. Editável à mão é o ponto:
    é o único jeito de ensinar uma grafia ANTES de o STT errar pela primeira
@@ -1031,7 +1101,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-2);
   background: var(--fundo-alto);
   border: 1px solid var(--linha);
   border-radius: 999px;
@@ -1047,7 +1117,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 0.1rem 0.3rem;
   cursor: pointer;
 }
-.lista-grafias button:hover:not(:disabled) { color: var(--acento); }
+@media (hover: hover) { .lista-grafias button:hover:not(:disabled) { color: var(--acento-texto); } }
 .lista-grafias button:disabled { opacity: 0.5; cursor: default; }
 
 /* O que o agente 3 propôs: ao lado do atual, nunca por cima. */
@@ -1058,8 +1128,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   flex-direction: column;
   gap: 0.35rem;
 }
-.proposta-perfil p { margin: 0; font-size: 0.9rem; line-height: 1.4; }
-.proposta-perfil .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+.proposta-perfil p { margin: 0; font-size: var(--fs-3); line-height: 1.4; }
+.proposta-perfil .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 
 /* ── a ficha, em painel de tela cheia ──
 
@@ -1082,7 +1152,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   height: 100dvh;
   /* Tela cheia no celular; num monitor ela para em 34 rem, que é a largura da
      própria lista — texto de ficha não melhora esticado. */
-  width: min(100vw, 34rem);
+  width: min(100vw, var(--largura-lista));
   overflow-y: auto;
   /* Rolar até o fim da ficha não pode continuar rolando a lista atrás dela. */
   overscroll-behavior: contain;
@@ -1096,7 +1166,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-left: 1px solid var(--linha);
   transform: translateX(100%);
   visibility: hidden;
-  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), visibility 220ms;
+  transition: transform 220ms var(--curva), visibility 220ms;
 }
 .ficha.aberta { transform: translateX(0); visibility: visible; }
 
@@ -1104,7 +1174,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .ficha h2 {
   margin: 0;
   min-width: 0;
-  font-size: 1.05rem;
+  font-size: var(--fs-5);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -1121,10 +1191,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: none;
   border-radius: 50%;
   color: var(--texto-fraco);
-  font-size: 1.25rem;
+  font-size: var(--fs-5);
   line-height: 1;
 }
-.ficha .voltar:hover { color: var(--texto); }
+@media (hover: hover) { .ficha .voltar:hover { color: var(--texto); } }
 .ficha .voltar:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; }
 
 .ficha .identidade { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
@@ -1150,8 +1220,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
    sobrevive. */
 .fusao { display: flex; flex-direction: column; gap: 0.5rem; }
 /* O mesmo rótulo do `.campo-perfil`: o nome do campo, e a dica em cinza. */
-.fusao label { font-size: 0.85rem; }
-.fusao label .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+.fusao label { font-size: var(--fs-3); }
+.fusao label .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 .fusao .candidatas {
   list-style: none;
   margin: 0;
@@ -1170,13 +1240,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-align: left;
   background: none;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--raio-controle);
   padding: 0.5rem 0.6rem;
   color: inherit;
 }
-.fusao .candidatas button:hover { background: color-mix(in srgb, var(--texto) 8%, transparent); }
+@media (hover: hover) { .fusao .candidatas button:hover { background: color-mix(in srgb, var(--texto) 8%, transparent); } }
 .fusao .candidatas button:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
-.fusao .candidatas .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+.fusao .candidatas .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 .fusao .candidatas em { font-style: normal; color: var(--texto-fraco); }
 /* A busca da fusão ocupa a largura da ficha: `.campo-nome` nasce com 9 rem, que
    é medida de campo ao lado de um botão, não de campo sozinho numa seção. */
@@ -1198,12 +1268,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .comparacao .lado h4 {
   margin: 0;
-  font-size: 0.92rem;
+  font-size: var(--fs-4);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
-.comparacao .lado .meta { font-size: 0.76rem; color: var(--texto-fraco); }
-.comparacao .lado .resumo { margin: 0; font-size: 0.8rem; line-height: 1.4; }
+.comparacao .lado .meta { font-size: var(--fs-1); color: var(--texto-fraco); }
+.comparacao .lado .resumo { margin: 0; font-size: var(--fs-2); line-height: 1.4; }
 .comparacao .lado .resumo.vazio { color: var(--texto-fraco); font-style: italic; }
 .comparacao .lado .reextrair { margin-top: auto; text-align: center; }
 
@@ -1211,7 +1281,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
    quer dizer "isto muda o grafo". Mesma barra da proposta do agente 3. */
 .aviso-fusao {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--fs-2);
   line-height: 1.45;
   color: var(--texto-fraco);
   border-left: 2px solid var(--acento);
@@ -1249,7 +1319,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   transition: opacity 140ms ease, transform 140ms ease;
 }
 .marca svg { width: 16px; height: 16px; flex: none; fill: var(--acento); }
-.marca:hover { opacity: 1; }
+@media (hover: hover) { .marca:hover { opacity: 1; } }
 .marca:active { transform: scale(0.92); }
 .marca:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; }
 
@@ -1284,8 +1354,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   transition: opacity 140ms ease, transform 140ms ease;
 }
 .engrenagem svg { width: 18px; height: 18px; flex: none; fill: var(--texto-fraco); }
-.engrenagem:hover { opacity: 1; }
-.engrenagem:hover svg { fill: var(--texto); }
+@media (hover: hover) { .engrenagem:hover { opacity: 1; } }
+@media (hover: hover) { .engrenagem:hover svg { fill: var(--texto); } }
 /* O `translateY` do centramento entra em toda regra que mexe no transform —
    sozinho, o `scale` jogaria a engrenagem para baixo ao ser tocada. */
 .engrenagem:active { transform: translateY(-50%) scale(0.92); }
@@ -1302,7 +1372,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: color-mix(in srgb, var(--fundo) 72%, transparent);
   opacity: 0;
   visibility: hidden;
-  transition: opacity 220ms cubic-bezier(0.16, 1, 0.3, 1), visibility 220ms;
+  transition: opacity 220ms var(--curva), visibility 220ms;
 }
 .veu.aberto { opacity: 1; visibility: visible; }
 
@@ -1324,12 +1394,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-right: 1px solid var(--linha);
   transform: translateX(-100%);
   visibility: hidden;
-  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), visibility 220ms;
+  transition: transform 220ms var(--curva), visibility 220ms;
 }
 .gaveta.aberta { transform: translateX(0); visibility: visible; }
 
 .gaveta .titulo {
-  font-size: 0.78rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
   padding: 0.35rem 0.6rem 0.75rem;
 }
@@ -1345,22 +1415,22 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: none;
   color: var(--texto);
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--fs-4);
   text-decoration: none;
   padding: 0.6rem;
-  border-radius: 10px;
+  border-radius: var(--raio-controle);
 }
-.gaveta .item:hover { background: color-mix(in srgb, var(--texto) 8%, transparent); }
+@media (hover: hover) { .gaveta .item:hover { background: color-mix(in srgb, var(--texto) 8%, transparent); } }
 .gaveta .item:disabled { opacity: 0.6; cursor: default; }
 .gaveta .item:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
-.gaveta .aviso { margin: 0.35rem 0.6rem 0; font-size: 0.85rem; }
+.gaveta .aviso { margin: 0.35rem 0.6rem 0; font-size: var(--fs-3); }
 
 /* A sugestão de calibrar. Discreta e sem número de propósito: ela diz que tem
    coisa para olhar, e o quanto é a própria tela que responde. */
 .gaveta .item .sugestao {
   margin-left: 0.5rem;
-  font-size: 0.75rem;
-  color: var(--acento);
+  font-size: var(--fs-1);
+  color: var(--acento-texto);
 }
 
 /* Quem pediu menos movimento recebe a gaveta sem deslize — ela aparece. */
@@ -1381,11 +1451,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: none;
   padding: 0;
   color: var(--texto-fraco);
-  font-size: 0.9rem;
+  font-size: var(--fs-3);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.ver-anterior:hover { color: var(--texto); }
+@media (hover: hover) { .ver-anterior:hover { color: var(--texto); } }
 .atomos.antiga { opacity: 0.6; }
 .atomos.antiga .atomo { border-style: dashed; }
 
@@ -1397,16 +1467,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
    afirmando uma leitura que eu não pedi. */
 .calibracao {
   width: 100%;
-  max-width: 38rem;
+  max-width: var(--largura-leitura);
   margin: 0 auto;
   padding: 2rem 1.25rem 4rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
-.calibracao h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem; }
+.calibracao h1 { font-size: var(--fs-5); font-weight: 600; margin: 0 0 0.25rem; }
 .calibracao header p { margin: 0; }
-.calibracao .aguardando { color: var(--texto-fraco); font-size: 0.95rem; }
+.calibracao .aguardando { color: var(--texto-fraco); font-size: var(--fs-4); }
 
 .correcoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 
@@ -1427,7 +1497,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
-  font-size: 0.78rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
 }
 .correcao .acao { color: var(--texto); }
@@ -1439,15 +1509,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 0.1rem 0.45rem;
   border-radius: 999px;
   border: 1px solid var(--linha);
-  font-size: 0.72rem;
+  font-size: var(--fs-1);
   letter-spacing: 0.02em;
 }
-.correcao .selo.extracao { border-color: var(--acento); color: var(--acento); }
-.correcao .tipo-atomo { font-size: 0.72rem; letter-spacing: 0.03em; }
+.correcao .selo.extracao { border-color: var(--acento); color: var(--acento-texto); }
+.correcao .tipo-atomo { font-size: var(--fs-1); letter-spacing: 0.03em; }
 
 .correcao .contexto {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--fs-3);
   color: var(--texto-fraco);
   border-left: 2px solid var(--linha);
   padding-left: 0.6rem;
@@ -1466,11 +1536,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .correcao .par-longo { display: flex; flex-direction: column; gap: 0.6rem; }
 .correcao .par-longo .lado { display: flex; flex-direction: column; gap: 0.2rem; }
-.correcao .par-longo .rotulo { font-size: 0.72rem; color: var(--texto-fraco); }
+.correcao .par-longo .rotulo { font-size: var(--fs-1); color: var(--texto-fraco); }
 .correcao .par-longo p {
   margin: 0;
   line-height: 1.55;
-  font-size: 0.95rem;
+  font-size: var(--fs-4);
   border-left: 2px solid var(--linha);
   padding-left: 0.6rem;
 }
@@ -1483,19 +1553,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: none;
   border-radius: 999px;
   padding: 0.2rem 0.6rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
 }
-.correcao .ouvir:hover { color: var(--texto); border-color: var(--texto-fraco); }
+@media (hover: hover) { .correcao .ouvir:hover { color: var(--texto); border-color: var(--texto-fraco); } }
 .correcao .inferida,
-.correcao .meta { font-size: 0.78rem; color: var(--texto-fraco); }
+.correcao .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 .correcao .inferida { border-bottom: 1px dotted var(--texto-fraco); cursor: help; }
 
 /* O arquivo de regras: pouca coisa, editável, e o único botão da tela que
    escreve. Fica ACIMA das correções de propósito — é o que está em vigor, e o
    que está em vigor se lê antes do material que pode mudá-lo. */
 .regras { display: flex; flex-direction: column; gap: 0.5rem; }
-.regras h2 { font-size: 0.95rem; font-weight: 600; margin: 0; }
+.regras h2 { font-size: var(--fs-4); font-weight: 600; margin: 0; }
 .regras > p { margin: 0; }
 
 .regra {
@@ -1513,7 +1583,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .regra textarea {
   width: 100%;
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--fs-4);
   line-height: 1.5;
   color: inherit;
   background: none;
@@ -1527,51 +1597,51 @@ button { font: inherit; color: inherit; cursor: pointer; }
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
-  font-size: 0.78rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
 }
-.meta-regra .proposta { color: var(--acento); }
+.meta-regra .proposta { color: var(--acento-texto); }
 .apagar-regra {
   margin-left: auto;
   border: none;
   background: none;
   padding: 0;
   color: var(--texto-fraco);
-  font-size: 0.78rem;
+  font-size: var(--fs-2);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.apagar-regra:hover { color: var(--rec); }
+@media (hover: hover) { .apagar-regra:hover { color: var(--rec); } }
 
 .acoes-regras { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.25rem; }
 .rascunhar,
 .aprovar {
   border: 1px solid var(--linha);
   background: none;
-  border-radius: 10px;
+  border-radius: var(--raio-controle);
   padding: 0.45rem 0.8rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-3);
 }
 .rascunhar:disabled,
 .aprovar:disabled { opacity: 0.5; cursor: default; }
 /* O único botão que escreve regra é o único com o peso do acento. */
-.aprovar { border-color: var(--acento); color: var(--acento); }
-.ok-regras { font-size: 0.85rem; color: var(--ok); }
+.aprovar { border-color: var(--acento); color: var(--acento-texto); }
+.ok-regras { font-size: var(--fs-3); color: var(--ok); }
 
 .refugo { margin-top: 0.5rem; }
-.refugo h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.4rem; }
+.refugo h2 { font-size: var(--fs-4); font-weight: 600; margin: 0 0 0.4rem; }
 .refugo ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
-.refugo li { font-size: 0.88rem; color: var(--texto-fraco); }
+.refugo li { font-size: var(--fs-3); color: var(--texto-fraco); }
 .refugo .n { color: var(--texto); }
 .abrir-refugo {
   border: 1px solid var(--linha);
   background: none;
-  border-radius: 10px;
+  border-radius: var(--raio-controle);
   padding: 0.45rem 0.7rem;
-  font-size: 0.88rem;
+  font-size: var(--fs-3);
   color: var(--texto-fraco);
 }
-.abrir-refugo:hover { color: var(--texto); border-color: var(--texto-fraco); }
+@media (hover: hover) { .abrir-refugo:hover { color: var(--texto); border-color: var(--texto-fraco); } }
 
 /* ───────────────── a porta da calibração, e a emenda (slice 7) ─────────────────
    A tela deixou de ser uma só quando o laço deixou de ser da extração: a porta
@@ -1589,27 +1659,27 @@ button { font: inherit; color: inherit; cursor: pointer; }
   gap: 0.15rem;
   color: inherit;
 }
-.linha-agente .nome { font-size: 1rem; }
-.linha-agente .meta { font-size: 0.82rem; color: var(--texto-fraco); line-height: 1.45; }
-.linha-agente:hover .nome { color: var(--acento); }
+.linha-agente .nome { font-size: var(--fs-4); }
+.linha-agente .meta { font-size: var(--fs-2); color: var(--texto-fraco); line-height: 1.45; }
+@media (hover: hover) { .linha-agente:hover .nome { color: var(--acento-texto); } }
 
 .calibracao .voltar {
   border: none;
   background: none;
   padding: 0;
-  font-size: 1.1rem;
+  font-size: var(--fs-5);
   color: var(--texto-fraco);
   align-self: flex-start;
   margin-bottom: 0.4rem;
 }
-.calibracao .voltar:hover { color: var(--texto); }
+@media (hover: hover) { .calibracao .voltar:hover { color: var(--texto); } }
 .calibracao .voltar:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; }
 
 /* O que muda no prompt. Empilhado sempre, e sem cor apontando o quê: corpo de
    seção nunca cabe numa linha, e cor que decide o que mudou é a tela afirmando
    uma leitura que eu não pedi — a mesma regra que a 4.6 fixou para a correção. */
 .emenda { display: flex; flex-direction: column; gap: 0.75rem; }
-.emenda h2 { font-size: 0.95rem; font-weight: 600; margin: 0; }
+.emenda h2 { font-size: var(--fs-4); font-weight: 600; margin: 0; }
 .emenda > p { margin: 0; }
 
 .edicao {
@@ -1626,7 +1696,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
-  font-size: 0.78rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
 }
 /* O selo aqui é o nome da seção: é o endereço da emenda, e o que eu confiro. */
@@ -1634,17 +1704,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 0.1rem 0.45rem;
   border-radius: 999px;
   border: 1px solid var(--acento);
-  color: var(--acento);
-  font-size: 0.72rem;
+  color: var(--acento-texto);
+  font-size: var(--fs-1);
   letter-spacing: 0.03em;
 }
 .edicao .par-longo { display: flex; flex-direction: column; gap: 0.6rem; }
 .edicao .par-longo .lado { display: flex; flex-direction: column; gap: 0.2rem; }
-.edicao .par-longo .rotulo { font-size: 0.72rem; color: var(--texto-fraco); }
+.edicao .par-longo .rotulo { font-size: var(--fs-1); color: var(--texto-fraco); }
 .edicao .par-longo p {
   margin: 0;
   line-height: 1.55;
-  font-size: 0.92rem;
+  font-size: var(--fs-4);
   white-space: pre-wrap;
   border-left: 2px solid var(--linha);
   padding-left: 0.6rem;
@@ -1676,26 +1746,26 @@ button { font: inherit; color: inherit; cursor: pointer; }
    errado — e cabe em 320 px sem rolagem horizontal nenhuma. */
 .agentes {
   width: 100%;
-  max-width: 44rem;
+  max-width: var(--largura-leitura);
   margin: 0 auto;
   padding: 3.75rem 1.25rem 4rem;
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
 }
-.agentes h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.6rem; }
+.agentes h1 { font-size: var(--fs-5); font-weight: 600; margin: 0 0 0.6rem; }
 .agentes header { display: flex; flex-direction: column; gap: 0.35rem; }
 .agentes header p { margin: 0; }
-.agentes .titulo-tela { font-size: 1rem; }
-.agentes .aguardando { color: var(--texto-fraco); font-size: 0.9rem; line-height: 1.5; }
-.agentes .rodape-fluxo { margin: 0; font-size: 0.85rem; color: var(--texto-fraco); line-height: 1.5; }
+.agentes .titulo-tela { font-size: var(--fs-4); }
+.agentes .aguardando { color: var(--texto-fraco); font-size: var(--fs-3); line-height: 1.5; }
+.agentes .rodape-fluxo { margin: 0; font-size: var(--fs-3); color: var(--texto-fraco); line-height: 1.5; }
 
 /* ── as abas ──
    Dois fluxos que não se tocam: o que entra no grafo e o que sai dele. Links de
    verdade, cada um com a sua URL. */
 .abas { display: flex; gap: 0.35rem; margin: 0.15rem 0 0.4rem; flex-wrap: wrap; }
 .abas .aba {
-  font-size: 0.85rem;
+  font-size: var(--fs-3);
   color: var(--texto-fraco);
   text-decoration: none;
   padding: 0.3rem 0.75rem;
@@ -1703,15 +1773,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: 999px;
   background: var(--fundo);
 }
-.abas .aba:hover { border-color: var(--texto-fraco); }
+@media (hover: hover) { .abas .aba:hover { border-color: var(--texto-fraco); } }
 .abas .aba.atual {
-  color: var(--acento);
+  color: var(--acento-texto);
   border-color: var(--acento);
   background: color-mix(in srgb, var(--acento) 8%, transparent);
 }
 
 .agentes .secao { display: flex; flex-direction: column; gap: 0.3rem; }
-.agentes .secao h2 { font-size: 0.95rem; font-weight: 600; margin: 0; }
+.agentes .secao h2 { font-size: var(--fs-4); font-weight: 600; margin: 0; }
 
 /* ── a espinha ──
    O elo entre dois passos é uma borda esquerda no `li`, e o cartão se descola
@@ -1765,7 +1835,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   width: 100%;
   text-align: left;
   padding: 0.55rem 0.7rem;
-  border-radius: 10px;
+  border-radius: var(--raio-controle);
   border: 1px solid var(--linha);
   background: var(--fundo);
   color: var(--texto);
@@ -1776,10 +1846,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   align-items: center;
   gap: 0.4rem;
   flex-wrap: wrap;
-  font-size: 0.92rem;
+  font-size: var(--fs-4);
 }
-.passo .modelo { font-size: 0.68rem; color: var(--texto-fraco); overflow-wrap: anywhere; }
-.passo .nota { font-size: 0.78rem; color: var(--texto-fraco); line-height: 1.45; }
+.passo .modelo { font-size: var(--fs-1); color: var(--texto-fraco); overflow-wrap: anywhere; }
+.passo .nota { font-size: var(--fs-2); color: var(--texto-fraco); line-height: 1.45; }
 
 /* Dado não se clica: borda tracejada diz isso antes de qualquer tentativa. */
 .passo.dado .caixa { border-style: dashed; background: none; color: var(--texto-fraco); }
@@ -1788,14 +1858,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
    grafo antes de passar por aqui. */
 .passo.eu .caixa {
   border-color: var(--acento);
-  color: var(--acento);
+  color: var(--acento-texto);
   background: color-mix(in srgb, var(--acento) 8%, transparent);
   letter-spacing: 0.02em;
 }
-.passo.eu .nota { color: var(--acento); opacity: 0.85; }
+.passo.eu .nota { color: var(--acento-texto); opacity: 0.85; }
 
 .passo .caixa.agente { background: var(--fundo-alto); cursor: pointer; }
-.passo .caixa.agente:hover { border-color: var(--texto-fraco); }
+@media (hover: hover) { .passo .caixa.agente:hover { border-color: var(--texto-fraco); } }
 .passo .caixa.agente:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
 .passo .caixa.agente.editado { border-color: var(--acento); }
 /* `.ponto-editado`, e não `.marca`: essa é a volta ao início, `position: fixed`
@@ -1811,7 +1881,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .passo .entra,
 .passo .volta {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: var(--fs-1);
   line-height: 1.45;
   color: var(--texto-fraco);
   display: flex;
@@ -1819,8 +1889,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .passo .entra b,
 .passo .volta b { font-weight: 600; color: var(--texto); }
-.passo .volta { color: var(--acento); }
-.passo .volta b { color: var(--acento); }
+.passo .volta { color: var(--acento-texto); }
+.passo .volta b { color: var(--acento-texto); }
 .passo .seta { flex: none; opacity: 0.8; }
 
 /* ── o que roda dentro ──
@@ -1836,14 +1906,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .passo .legenda-dentro {
   margin: 0;
-  font-size: 0.7rem;
+  font-size: var(--fs-1);
   color: var(--texto-fraco);
   letter-spacing: 0.02em;
 }
 .passo .dentro ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
 .passo.miudo .caixa { padding: 0.4rem 0.6rem; }
-.passo.miudo .rotulo { font-size: 0.85rem; }
-.passo.miudo .nota { font-size: 0.74rem; }
+.passo.miudo .rotulo { font-size: var(--fs-3); }
+.passo.miudo .nota { font-size: var(--fs-1); }
 
 
 /* O selo de quando. A diferença entre os três é o que o agente custa: um roda
@@ -1857,7 +1927,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
    folha global, é colisão esperando a hora. */
 .agentes .quando,
 .editor-agente .quando {
-  font-size: 0.6rem;
+  font-size: var(--fs-1);
   letter-spacing: 0.04em;
   text-transform: lowercase;
   color: var(--texto-fraco);
@@ -1868,7 +1938,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .agentes .quando.automatico,
 .editor-agente .quando.automatico { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
 .agentes .quando.condicional,
-.editor-agente .quando.condicional { color: var(--acento); border-color: color-mix(in srgb, var(--acento) 40%, transparent); }
+.editor-agente .quando.condicional { color: var(--acento-texto); border-color: color-mix(in srgb, var(--acento) 40%, transparent); }
 
 /* ── a gaveta de edição ──
    Mesma forma do menu de gestão, pelo lado oposto: ela não é navegação, é o
@@ -1879,7 +1949,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   right: 0;
   z-index: 30;
   height: 100dvh;
-  width: min(94vw, 34rem);
+  width: min(94vw, var(--largura-lista));
   overflow-y: auto;
   /* Rolar até o fim do prompt não pode continuar rolando o desenho atrás. */
   overscroll-behavior: contain;
@@ -1895,29 +1965,29 @@ button { font: inherit; color: inherit; cursor: pointer; }
   /* Fechada ela continua montada (`Agentes.tsx`), e `visibility` é o que a
      tira do Tab e do leitor de tela — a mesma forma da `.ficha`. */
   visibility: hidden;
-  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), visibility 220ms;
+  transition: transform 220ms var(--curva), visibility 220ms;
 }
 .editor-agente.aberta { transform: translateX(0); visibility: visible; }
 
 .editor-agente header { display: flex; align-items: flex-start; gap: 0.5rem; }
-.editor-agente h2 { font-size: 1.05rem; font-weight: 600; margin: 0; }
-.editor-agente .versao { margin: 0.15rem 0 0; font-size: 0.78rem; color: var(--texto-fraco); }
+.editor-agente h2 { font-size: var(--fs-5); font-weight: 600; margin: 0; }
+.editor-agente .versao { margin: 0.15rem 0 0; font-size: var(--fs-2); color: var(--texto-fraco); }
 .editor-agente .fechar {
   margin-left: auto;
   border: none;
   background: none;
   color: var(--texto-fraco);
-  font-size: 1.4rem;
+  font-size: var(--fs-6);
   line-height: 1;
   padding: 0 0.25rem;
   cursor: pointer;
 }
-.editor-agente .fechar:hover { color: var(--texto); }
+@media (hover: hover) { .editor-agente .fechar:hover { color: var(--texto); } }
 
 .editor-agente .papel { margin: 0; line-height: 1.5; }
 .editor-agente .gatilho {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
   display: flex;
   align-items: center;
@@ -1928,7 +1998,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .editor-agente .campo { display: flex; flex-direction: column; gap: 0.35rem; }
 .editor-agente .campo > label,
 .editor-agente .campo .cabecalho label {
-  font-size: 0.78rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
 }
 .editor-agente .campo .cabecalho { display: flex; align-items: baseline; gap: 0.5rem; }
@@ -1936,24 +2006,24 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin-left: auto;
   background: none;
   border: none;
-  color: var(--acento);
+  color: var(--acento-texto);
   font: inherit;
-  font-size: 0.82rem;
+  font-size: var(--fs-2);
   cursor: pointer;
 }
 .editor-agente input,
 .editor-agente textarea {
   width: 100%;
   background: var(--fundo);
-  border: 1px solid var(--linha);
-  border-radius: 8px;
+  border: 1px solid var(--linha-controle);
+  border-radius: var(--raio-controle);
   color: var(--texto);
   font: inherit;
   padding: 0.5rem 0.6rem;
 }
 .editor-agente textarea {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.78rem;
+  font-size: var(--fs-2);
   line-height: 1.5;
   resize: vertical;
   white-space: pre-wrap;
@@ -1964,26 +2034,26 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .editor-agente input:focus-visible,
 .editor-agente textarea:focus-visible { outline: 2px solid var(--acento); outline-offset: -1px; }
 
-.editor-agente .dica { margin: 0; font-size: 0.78rem; color: var(--texto-fraco); line-height: 1.5; }
-.editor-agente .dica code { font-size: 0.76rem; color: var(--texto); }
+.editor-agente .dica { margin: 0; font-size: var(--fs-2); color: var(--texto-fraco); line-height: 1.5; }
+.editor-agente .dica code { font-size: var(--fs-1); color: var(--texto); }
 .editor-agente .dica.travado { line-height: 1.55; }
 .editor-agente .dica.final { margin-top: auto; padding-top: 0.75rem; border-top: 1px solid var(--linha); }
 .editor-agente .alerta {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--fs-2);
   line-height: 1.5;
-  color: var(--acento);
+  color: var(--acento-texto);
   border-left: 2px solid var(--acento);
   padding-left: 0.6rem;
 }
 
 .editor-agente footer { display: flex; gap: 0.6rem; align-items: center; }
 .editor-agente footer .principal {
-  border: 1px solid var(--acento);
-  background: var(--acento);
+  border: 1px solid var(--acento-cheio);
+  background: var(--acento-cheio);
   color: var(--sobre-acento);
   font: inherit;
-  border-radius: 8px;
+  border-radius: var(--raio-controle);
   padding: 0.5rem 1.1rem;
   cursor: pointer;
 }
@@ -1995,7 +2065,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font: inherit;
   cursor: pointer;
 }
-.editor-agente footer .fraco:hover { color: var(--acento); }
+@media (hover: hover) { .editor-agente footer .fraco:hover { color: var(--acento-texto); } }
 
 @media (prefers-reduced-motion: reduce) {
   .editor-agente { transition: visibility 1ms; transform: translateX(0); }
@@ -2056,15 +2126,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
      mesmo fator nos dois para a caixa continuar parecendo um corpo só
      enquanto muda de forma. */
   transition:
-    top 384ms cubic-bezier(0.16, 1, 0.3, 1),
-    bottom 384ms cubic-bezier(0.16, 1, 0.3, 1),
-    left 384ms cubic-bezier(0.16, 1, 0.3, 1),
-    right 384ms cubic-bezier(0.16, 1, 0.3, 1),
-    max-width 384ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-radius 384ms cubic-bezier(0.16, 1, 0.3, 1),
+    top 384ms var(--curva),
+    bottom 384ms var(--curva),
+    left 384ms var(--curva),
+    right 384ms var(--curva),
+    max-width 384ms var(--curva),
+    border-radius 384ms var(--curva),
     opacity 300ms ease;
 }
-.chat:hover { opacity: 1; }
+@media (hover: hover) { .chat:hover { opacity: 1; } }
 .chat:focus-within { opacity: 1; }
 
 /* Os dois conteúdos ocupam a caixa inteira, e nenhum deles decide o tamanho
@@ -2090,14 +2160,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   animation: surgir-conteudo 200ms ease both;
 }
 .barra .dica {
-  font-size: 1rem;
+  font-size: var(--fs-4);
   letter-spacing: 0.15em;
   line-height: 1;
   /* Os três pontos assentam no meio da linha em vez de na base: sem isto a
      barra parece ter mais folga em cima do que embaixo. */
   transform: translateY(-0.15em);
 }
-.barra:hover { color: var(--texto); }
+@media (hover: hover) { .barra:hover { color: var(--texto); } }
 .barra:focus-visible { outline: 2px solid var(--acento); outline-offset: -3px; }
 
 /* O painel: a coluna que era a própria `.chat.aberto` antes de a caixa passar a
@@ -2139,7 +2209,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
      `inset`, e encolher por baixo é o que mantém a caixa de escrever acima do
      teclado sem mexer no topo, onde a bola minimizada convive. */
   bottom: calc(var(--teclado) + max(0.75rem, env(safe-area-inset-bottom)));
-  max-width: 34rem;
+  max-width: var(--largura-lista);
   border-radius: var(--raio);
   opacity: 1;
 }
@@ -2155,7 +2225,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 0.92rem;
+  font-size: var(--fs-4);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2169,7 +2239,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   place-items: center;
   border: none;
   background: none;
-  border-radius: 8px;
+  border-radius: var(--raio-controle);
   opacity: 0.7;
 }
 .chat .icone svg {
@@ -2181,7 +2251,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.chat .icone:hover { opacity: 1; background: color-mix(in srgb, var(--texto) 8%, transparent); }
+@media (hover: hover) { .chat .icone:hover { opacity: 1; background: color-mix(in srgb, var(--texto) 8%, transparent); } }
 .chat .icone:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
 
 .chat .corpo {
@@ -2193,7 +2263,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   flex-direction: column;
   gap: 0.7rem;
 }
-.chat .aguardando { color: var(--texto-fraco); font-size: 0.9rem; margin: 0; }
+.chat .aguardando { color: var(--texto-fraco); font-size: var(--fs-3); margin: 0; }
 .chat .aviso { margin: 0 0.75rem 0.5rem; }
 
 /* ---- a lista de conversas ---- */
@@ -2206,7 +2276,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 0.15rem 0;
   border-bottom: 1px solid var(--linha);
 }
-.lista-conversas li.atual .titulo span:first-child { color: var(--acento); }
+.lista-conversas li.atual .titulo span:first-child { color: var(--acento-texto); }
 .lista-conversas li.arquivada { opacity: 0.55; }
 .lista-conversas .titulo {
   flex: 1;
@@ -2226,17 +2296,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lista-conversas .meta { flex: none; font-size: 0.76rem; color: var(--texto-fraco); }
+.lista-conversas .meta { flex: none; font-size: var(--fs-1); color: var(--texto-fraco); }
 .lista-conversas .acao {
   flex: none;
   border: none;
   background: none;
   color: var(--texto-fraco);
-  font-size: 0.76rem;
+  font-size: var(--fs-1);
   padding: 0.35rem 0.3rem;
 }
-.lista-conversas .acao:hover { color: var(--texto); }
-.lista-conversas .acao.apagar:hover { color: var(--rec); }
+@media (hover: hover) { .lista-conversas .acao:hover { color: var(--texto); } }
+@media (hover: hover) { .lista-conversas .acao.apagar:hover { color: var(--rec); } }
 
 .lista-conversas .separador {
   align-self: flex-start;
@@ -2244,10 +2314,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: none;
   background: none;
   color: var(--texto-fraco);
-  font-size: 0.82rem;
+  font-size: var(--fs-2);
   padding: 0.35rem 0.2rem;
 }
-.lista-conversas .separador:hover { color: var(--texto); }
+@media (hover: hover) { .lista-conversas .separador:hover { color: var(--texto); } }
 
 /* ---- as mensagens ---- */
 
@@ -2256,7 +2326,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .chat .fala.eu {
   align-self: flex-end;
   background: color-mix(in srgb, var(--acento) 16%, transparent);
-  border-radius: 12px 12px 2px 12px;
+  border-radius: var(--raio) var(--raio) 2px var(--raio);
   padding: 0.5rem 0.7rem;
 }
 .chat .fala.agente { align-self: flex-start; padding: 0.1rem 0 0.2rem; }
@@ -2271,11 +2341,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px solid var(--linha);
   background: none;
   color: var(--texto-fraco);
-  font-size: 0.72rem;
+  font-size: var(--fs-1);
   font-style: italic;
   line-height: 1;
 }
-.chat .porque:hover { color: var(--acento); border-color: var(--acento); }
+@media (hover: hover) { .chat .porque:hover { color: var(--acento-texto); border-color: var(--acento); } }
 .chat .porque:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
 
 .chat .rastro {
@@ -2286,8 +2356,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-left: 2px solid var(--linha);
   padding-left: 0.7rem;
 }
-.chat .rastro .cabecalho { font-size: 0.8rem; color: var(--texto-fraco); }
-.chat .rastro code { font-size: 0.74rem; color: var(--acento); }
+.chat .rastro .cabecalho { font-size: var(--fs-2); color: var(--texto-fraco); }
+.chat .rastro code { font-size: var(--fs-1); color: var(--acento-texto); }
 .chat .rastro ul {
   list-style: none;
   margin: 0.3rem 0 0;
@@ -2296,8 +2366,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   flex-direction: column;
   gap: 0.4rem;
 }
-.chat .rastro li { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.82rem; line-height: 1.4; }
-.chat .rastro .meta { font-size: 0.72rem; color: var(--texto-fraco); }
+.chat .rastro li { display: flex; flex-direction: column; gap: 0.1rem; font-size: var(--fs-2); line-height: 1.4; }
+.chat .rastro .meta { font-size: var(--fs-1); color: var(--texto-fraco); }
 .chat .rastro .elos { border-top: 1px dashed var(--linha); padding-top: 0.4rem; }
 
 /* O progresso por passo. Sem barra e sem porcentagem: o que a espera precisa
@@ -2307,7 +2377,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-2);
   color: var(--texto-fraco);
 }
 .chat .progresso .pensando { opacity: 0.75; animation: piscar 1.6s ease-in-out infinite alternate; }
@@ -2331,8 +2401,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   min-width: 0;
   max-height: 30dvh;
   resize: none;
-  border: 1px solid var(--linha);
-  border-radius: 12px;
+  border: 1px solid var(--linha-controle);
+  border-radius: var(--raio-controle);
   background: var(--fundo);
   color: var(--texto);
   padding: 0.6rem 0.7rem;
@@ -2347,24 +2417,24 @@ button { font: inherit; color: inherit; cursor: pointer; }
   height: 38px;
   border-radius: 50%;
   border: none;
-  background: var(--acento);
+  background: var(--acento-cheio);
   color: var(--sobre-acento);
-  font-size: 1.1rem;
+  font-size: var(--fs-5);
 }
 .chat .escrever .mandar:disabled { opacity: 0.35; cursor: default; }
 .chat .escrever .parar {
   flex: none;
-  border: 1px solid var(--linha);
+  border: 1px solid var(--linha-controle);
   background: none;
   color: var(--texto);
   border-radius: 999px;
   padding: 0.55rem 1rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-3);
 }
 .chat .ligacao {
   border: none;
   background: none;
-  color: var(--acento);
+  color: var(--acento-texto);
   padding: 0;
   text-decoration: underline;
 }
@@ -2407,7 +2477,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   transform: translateY(calc(3.75rem - 50dvh)) scale(0.32);
   opacity: 0.45;
 }
-.tela.com-chat .palco:hover { opacity: 0.8; }
+@media (hover: hover) { .tela.com-chat .palco:hover { opacity: 0.8; } }
 /* O rótulo não cabe na bola minimizada, e encolhê-lo daria um texto ilegível
    fingindo que cabe. Ele continua no DOM — é o nome acessível do botão —, só
    não é pintado. `color: transparent` e não `font-size: 0`: a cor interpola, o
@@ -2447,7 +2517,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 ::view-transition-group(circulo),
 ::view-transition-group(caixa-chat) {
   animation-duration: 384ms;
-  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-timing-function: var(--curva);
 }
 
 /* O `z-index: 6` do `.palco` **não** vem junto na foto: no overlay a ordem é a
@@ -2495,17 +2565,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
   align-items: baseline;
   gap: 0.4rem;
   margin: 0 0 0.3rem;
-  font-size: 0.95rem;
+  font-size: var(--fs-4);
 }
-.retrato-secao h3 .meta { font-size: 0.78rem; font-weight: normal; color: var(--texto-fraco); }
-.retrato-texto { margin: 0 0 0.45rem; font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
+.retrato-secao h3 .meta { font-size: var(--fs-2); font-weight: normal; color: var(--texto-fraco); }
+.retrato-texto { margin: 0 0 0.45rem; font-size: var(--fs-3); line-height: 1.5; overflow-wrap: anywhere; }
 .info-fontes {
   margin-left: auto;
   width: 1.6rem;
   height: 1.6rem;
   flex: none;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--fs-2);
   font-style: italic;
   color: var(--texto-fraco);
   background: none;
@@ -2513,8 +2583,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: 999px;
   cursor: pointer;
 }
-.info-fontes[aria-expanded="true"],
-.info-fontes:hover { color: var(--acento); border-color: var(--acento); }
+.info-fontes[aria-expanded="true"] { color: var(--acento-texto); border-color: var(--acento); }
+@media (hover: hover) { .info-fontes:hover { color: var(--acento-texto); border-color: var(--acento); } }
 .retrato-fontes {
   list-style: none;
   margin: 0.2rem 0 0;
@@ -2524,15 +2594,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
   flex-direction: column;
   gap: 0.45rem;
 }
-.retrato-fontes li { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.85rem; }
-.retrato-fontes .meta { font-size: 0.75rem; color: var(--texto-fraco); }
+.retrato-fontes li { display: flex; flex-direction: column; gap: 0.1rem; font-size: var(--fs-3); }
+.retrato-fontes .meta { font-size: var(--fs-1); color: var(--texto-fraco); }
 /* O átomo que saiu depois fica riscado, e não some: o (i) diz o que sustentou
    a seção quando ela foi escrita. */
 .retrato-fontes li.saiu .texto-fonte { text-decoration: line-through; color: var(--texto-fraco); }
-.aviso-retrato { margin: 0; font-size: 0.85rem; color: var(--acento); }
+.aviso-retrato { margin: 0; font-size: var(--fs-3); color: var(--acento-texto); }
 .campo-perfil.dimensao { padding-bottom: 0.5rem; border-bottom: 1px solid var(--linha); }
 .campo-perfil.dimensao .campo-nome { flex: 1; min-width: 0; }
-.sugestao-dimensoes { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.88rem; }
+.sugestao-dimensoes { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.3rem; font-size: var(--fs-3); }
 
 /* ---- slice 5.2: o radial do confronto ----
 
@@ -2555,7 +2625,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* Não há `.meta` solta neste arquivo — toda regra dela é escopada —, e quatro
    das do confronto (a fila, o centro do radial, o vizinho e a linha da relação)
    moram fora da lista, onde nenhuma alcançava: saíam em 16 px, brancas. */
-.confronto .meta { font-size: 0.8rem; color: var(--texto-fraco); }
+.confronto .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
 
 .busca-confronto { display: flex; gap: 0.4rem; align-items: center; }
 .busca-confronto .campo-nome { flex: 1; width: auto; padding: 0.35rem 0.6rem; }
@@ -2604,14 +2674,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: flex;
   flex-wrap: wrap;
   gap: 0.3rem 0.8rem;
-  font-size: 0.75rem;
+  font-size: var(--fs-1);
   color: var(--texto-fraco);
 }
 .chave { color: var(--cor); font-weight: 600; }
 
 .painel-relacao {
   border: 1px solid var(--linha);
-  border-radius: 0.6rem;
+  border-radius: var(--raio);
   padding: 0.8rem;
   display: flex;
   flex-direction: column;
@@ -2639,11 +2709,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .reextrair.escolhido:disabled { color: var(--texto); border-color: var(--texto-fraco); opacity: 1; }
 .motivo-relacao {
   background: none;
-  border: 1px solid var(--linha);
-  border-radius: 0.3rem;
+  border: 1px solid var(--linha-controle);
+  border-radius: var(--raio-controle);
   padding: 0.4rem 0.5rem;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--fs-3);
   color: var(--texto);
   resize: vertical;
 }

@@ -356,32 +356,70 @@ controles.
 centro da tela é do círculo. Está na tela porque é informação real — quanto tempo
 eu já falei.
 
-### 11.2 Tokens de cor
+### 11.2 Tokens de cor e de escala
 
-Um lugar só, no topo de `src/app/globals.css`, e ele tem três camadas: o bloco
+Um lugar só, no topo de `src/app/globals.css`, e ele tem quatro camadas: o bloco
 de **controles** (o que se mexe), os tokens de superfície (o que quase nunca se
-mexe) e os **derivados** (o que não se mexe). Nada de cor literal em regra de
-componente — quem precisa de uma variação usa `color-mix()` sobre o token.
+mexe), os **derivados** (o que não se mexe) e a **escala** — letra, espaço,
+canto, largura e curva. Nada de cor literal em regra de componente — quem
+precisa de uma variação usa `color-mix()` sobre o token —, e nada de tamanho de
+letra fora da escala.
 
 Os controles estão tabelados em §11.1, junto com a respiração que a maior parte
-deles governa. Aqui ficam os tokens de superfície e os dois derivados:
+deles governa. Aqui ficam os tokens de superfície e os derivados:
 
 | Token | Valor | Onde |
 |---|---|---|
 | `--fundo` | `#0d0d0d` | fundo da tela |
 | `--fundo-alto` | `#1a1a1c` | cartão, campo, chip |
 | `--texto` / `--texto-fraco` | `#ececec` / `#8a8a8f` | texto e texto secundário |
-| `--linha` | `#2a2a2e` | borda |
+| `--linha` | `#2a2a2e` | divisória e borda de cartão — onde não há nada para acertar com o dedo |
 | `--sobre-acento` | `#ffffff` | texto **sobre** o acento — a única superfície que não usa `--texto` |
 | `--status` | `#ffffff` a 0,7 | texto de status e ícone |
 | `--rec` | `#ff4d3d` | o ponto vermelho do selo de REC |
-| `--raio` | `14px` | o canto de cartão, campo e chip |
 | `--ok` | `#6aa84f` | o ponto de "salvo" |
+| `--erro` | *é* o `--rec` | falha, e ação destrutiva **armada** — o segundo toque de apagar. Em repouso, apagar continua neutro |
+| `--acento-cheio` | *derivado*: acento 88 % + preto | fundo de todo botão cheio com texto branco, ~4,9:1 (o acento puro dá 3,9:1) |
+| `--acento-texto` | *derivado*: acento 85 % + branco | o acento quando é a cor do **texto** sobre o escuro, ~5,5:1 (o puro dá 4,44:1) |
+| `--linha-controle` | *derivado*: `--texto` 40 % sobre `--fundo` | a borda do que se toca — campo, pílula, botão de contorno —, ~3:1 sobre os dois fundos |
 | `--glow` | *derivado* de `--acento` + `--halo-intensidade` | o halo do botão de gravar |
 | `--circulo` | *derivado* de `--circulo-tamanho` + `--circulo-guarda` | diâmetro do botão de gravar |
 
-`--acento` governa ~45 regras, todas por `var()` ou `color-mix()`, e o `--glow`
-deriva dele: a cor está escrita uma vez só.
+`--acento` governa todas as regras de cor por `var()` ou `color-mix()`, e os
+quatro derivados saem dele: a cor está escrita uma vez só. **O círculo de gravar
+fica no acento puro**, e não no `--acento-cheio`: ele é a identidade do sistema,
+e o texto dele é rótulo, não instrução — foi decidido assim, e é a única
+superfície com texto branco abaixo de 4,5:1. O acento puro também continua como
+cor de borda, de marca e de checkbox, onde não há texto para ler.
+
+**Erro tem cor, e é o vermelho.** O sistema nasceu sem cor de perigo, e o
+acento acumulou nove sentidos — ação, foco, aba atual, editado, aviso, dúvida,
+trava de pronome. O `--rec` já fazia o papel no hover de apagar e no "contradiz"
+do radial; agora ele é o `--erro`, e o acento volta a querer dizer "ação" e
+"isto é seu".
+
+#### A escala
+
+| Token | Valor | Onde |
+|---|---|---|
+| `--fs-1` … `--fs-6` | 12 · 13 · 14 · 16 · 18 · 24 px | selo e legenda · meta e botão pequeno · texto secundário · corpo, campo e subtítulo · título e texto de leitura · o timer |
+| `--esp-1` … `--esp-6` | 4 · 8 · 12 · 16 · 24 · 32 px | o espaço das regras novas |
+| `--raio` / `--raio-controle` | `14px` / `8px` | cartão e painel / campo, botão de canto e linha de lista; a pílula é `999px` |
+| `--largura-leitura` / `--largura-lista` | `40rem` / `34rem` | revisão, transcrição, calibração, agentes / sessões, entidades, confronto e as gavetas |
+| `--curva` | `cubic-bezier(0.16, 1, 0.3, 1)` | todo movimento: ondas, selo, gavetas, troca de modo |
+
+**Seis tamanhos de letra, no lugar de vinte e oito**, com piso de 12 px: havia
+quinze entre 9,6 e 15,2 px, a menos de 1 px um do outro. Os três números de
+`font-size` que sobram em `px` são do SVG do radial, em unidade do `viewBox`.
+**O espaço não foi migrado de uma vez**: reescrever todo `padding` mexeria no
+desenho de todas as telas sem ninguém ver nenhuma, então a grade vale para o que
+nasce e para a regra que for tocada.
+
+**No toque, todo campo tem 16 px** (`@media (pointer: coarse)`, com o único
+`!important` do arquivo): abaixo disso o Safari do iPhone dá zoom na página ao
+focar. No mouse os campos de gestão continuam compactos. **E o hover só existe
+onde há ponteiro** (`@media (hover: hover)`): no toque, o hover gruda no último
+botão tocado até o próximo toque em outro lugar.
 
 #### O tema fora do CSS
 
