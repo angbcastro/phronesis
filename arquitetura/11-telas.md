@@ -54,6 +54,20 @@ ficar visíveis onde eu cliquei. Ela some sozinha quando o upload termina e a ro
 troca. A engrenagem só existe com a gravação parada, como os três links que ela
 substituiu: navegar para fora no meio de uma gravação a mataria.
 
+**Nas telas de gestão a mesma engrenagem mora no canto superior direito**
+(`GestaoNoCanto`, no layout raiz, como a `Marca`; a regra é
+`mostraGestaoNoCanto`, fixada por `tests/gestao.test.ts`). Antes a gaveta só
+existia em `/`, e ir de `/agentes` para `/confronto` era marca, engrenagem,
+item — três toques, passando por uma tela que não tinha nada a ver com a ida. O
+canto é o direito porque o esquerdo é da marca, e a gaveta entra por esse lado,
+com a tela atual marcada (`aria-current`). Ela sobrevive à troca de tela — o
+layout não remonta —, e trocar de rota a fecha. **Não entra no ritual**: o
+corredor e a revisão não ganham porta de serviço, e a saída de lá é a marca.
+
+Cada tela de gestão dá o próprio nome à aba do navegador (`metadata.title` na
+página, sobre o modelo `%s · Phronesis` do layout): eram todas "Phronesis", e o
+histórico era uma lista de iguais.
+
 `Gestao.tsx` **não** ganhou um item de chat, e é deliberado: ao contrário da
 slice 5, o chat não é uma rota. Ele mora na própria tela inicial.
 

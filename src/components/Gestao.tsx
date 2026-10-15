@@ -16,16 +16,51 @@
  * ali diluiria o primeiro — o canto passaria a querer dizer duas coisas
  * conforme a tela, que é o tipo de ambiguidade que se paga toda vez.
  *
- * **Só em `/`, e só com a gravação parada.** Quem monta este componente é o ramo
+ * **Em `/`, só com a gravação parada.** Quem monta este componente ali é o ramo
  * de "parado" da `Gravacao`, o mesmo que abrigava os três links. Navegar para
  * fora no meio de uma gravação a mataria.
+ *
+ * **E nas telas de gestão, no canto superior direito** (`GestaoNoCanto`, no
+ * layout). Antes a gaveta só existia em `/`, e ir de `/agentes` para
+ * `/confronto` era marca, engrenagem, item — três toques e uma tela que não
+ * tinha nada a ver com a ida. O canto é o direito porque o esquerdo é da marca;
+ * a gaveta entra pelo lado de onde veio o toque, e marca a tela em que estou.
+ * Não entra no corredor nem na revisão: o ritual não ganha porta de serviço, e
+ * a saída de lá é a marca.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { ehRitual } from "@/lib/tipografia";
 import { Importacao } from "./Importacao";
 
-export function Gestao() {
+/**
+ * Onde a engrenagem mora no canto: toda tela de gestão — o que não é ritual
+ * (`tipografia.ts`) nem `/entrar`, que é anterior à sessão. A de `/` não passa
+ * por aqui: ela é da `Gravacao`.
+ */
+export const mostraGestaoNoCanto = (rota: string | null): boolean =>
+  rota !== null && rota !== "/entrar" && !ehRitual(rota);
+
+/** A engrenagem das telas de gestão. Mora no layout, como a `Marca`. */
+export function GestaoNoCanto() {
+  const rota = usePathname();
+  if (!mostraGestaoNoCanto(rota)) return null;
+  return <Gestao lado="canto" />;
+}
+
+/** As portas da gaveta, na ordem dela. `prefixo` marca a tela atual. */
+const PORTAS = [
+  { href: "/sessoes", rotulo: "sessões", prefixo: "/sessoes" },
+  { href: "/entidades", rotulo: "entidades", prefixo: "/entidades" },
+  { href: "/agentes", rotulo: "agentes", prefixo: "/agentes" },
+  { href: "/confronto", rotulo: "confronto", prefixo: "/confronto" },
+  { href: "/calibracao", rotulo: "calibração", prefixo: "/calibracao" },
+] as const;
+
+export function Gestao({ lado = "borda" }: { lado?: "borda" | "canto" }) {
   const [aberto, setAberto] = useState(false);
+  const rota = usePathname();
   /**
    * A sugestão de calibrar: **binária, nunca um número**.
    *
@@ -39,6 +74,12 @@ export function Gestao() {
   const idGaveta = useId();
   const engrenagem = useRef<HTMLButtonElement | null>(null);
   const gaveta = useRef<HTMLElement | null>(null);
+
+  // No canto, a gaveta sobrevive à troca de tela (o layout não remonta): mudar
+  // de rota — inclusive pelo voltar do navegador — fecha.
+  useEffect(() => {
+    setAberto(false);
+  }, [rota]);
 
   useEffect(() => {
     if (!aberto) return;
@@ -84,7 +125,7 @@ export function Gestao() {
     <>
       <button
         ref={engrenagem}
-        className="engrenagem"
+        className={`engrenagem${lado === "canto" ? " no-canto" : ""}`}
         aria-label="gestão"
         aria-expanded={aberto}
         aria-controls={idGaveta}
@@ -104,40 +145,37 @@ export function Gestao() {
       <nav
         ref={gaveta}
         id={idGaveta}
-        className={`gaveta gaveta-lateral esquerda${aberto ? " aberta" : ""}`}
+        className={`gaveta gaveta-lateral ${lado === "canto" ? "direita" : "esquerda"}${aberto ? " aberta" : ""}`}
         aria-label="gestão"
         aria-hidden={!aberto}
       >
         <span className="titulo">gestão</span>
 
         {/* Navegar fecha sozinho: a tela some junto. O `onClick` existe para o
-            caso de eu clicar na rota em que já estou. */}
-        <Link className="item" href="/sessoes" onClick={() => setAberto(false)}>
-          sessões
-        </Link>
-        <Link className="item" href="/entidades" onClick={() => setAberto(false)}>
-          entidades
-        </Link>
-        {/* O painel de quem faz o trabalho: o fluxo desenhado, e o prompt e o
-            modelo de cada agente editáveis ali mesmo (slice 4.7). */}
-        <Link className="item" href="/agentes" onClick={() => setAberto(false)}>
-          agentes
-        </Link>
-        {/* O agente que compara átomo com átomo ao longo do tempo — roda
-            sozinho por cron, e este é o botão de "rodar agora" (slice 5). */}
-        <Link className="item" href="/confronto" onClick={() => setAberto(false)}>
-          confronto
-        </Link>
-        {/* Fica aqui sempre, e não só quando há o que calibrar: a gaveta é o
-            mapa da gestão, e porta que aparece e some é porta que eu procuro
-            no lugar errado. Quem aparece por tempo é a sugestão (slice 4.6). */}
-        <Link className="item" href="/calibracao" onClick={() => setAberto(false)}>
-          calibração
-          {/* Uma linha, sem número: "tem coisa acumulada para olhar", e nada
-              mais. Quantas, de quando e de que tipo é a própria tela que
-              responde — aqui seria placar. */}
-          {sugere && <span className="sugestao">tem o que olhar</span>}
-        </Link>
+            caso de eu clicar na rota em que já estou. A ordem é a de antes —
+            sessões, entidades, agentes (o fluxo desenhado e o prompt de cada
+            um, slice 4.7), confronto (o "rodar agora" do agente que compara
+            átomos, slice 5) e calibração. */}
+        {PORTAS.map((p) => {
+          const aqui = rota !== null && rota.startsWith(p.prefixo);
+          return (
+            <Link
+              key={p.href}
+              className="item"
+              href={p.href}
+              aria-current={aqui ? "page" : undefined}
+              onClick={() => setAberto(false)}
+            >
+              {p.rotulo}
+              {/* Calibração fica sempre, e não só quando há o que calibrar: a
+                  gaveta é o mapa da gestão, e porta que aparece e some é porta
+                  que eu procuro no lugar errado. Quem aparece por tempo é a
+                  sugestão — uma linha, sem número: quantas, de quando e de que
+                  tipo é a própria tela que responde (slice 4.6). */}
+              {p.href === "/calibracao" && sugere && <span className="sugestao">tem o que olhar</span>}
+            </Link>
+          );
+        })}
 
         <hr />
 

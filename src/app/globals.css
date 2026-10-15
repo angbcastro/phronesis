@@ -1385,6 +1385,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
    sozinho, o `scale` jogaria a engrenagem para baixo ao ser tocada. */
 .engrenagem:active { transform: translateY(-50%) scale(0.92); }
 .engrenagem:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; }
+/* Nas telas de gestão ela mora no canto superior direito — o esquerdo é da
+   marca —, na mesma altura e no mesmo recuo dela. Sem o `translateY` do meio
+   da borda, e por isso o `:active` também é outro. */
+.engrenagem.no-canto {
+  top: calc(0.6rem + env(safe-area-inset-top));
+  left: auto;
+  right: calc(1rem + env(safe-area-inset-right));
+  transform: none;
+}
+.engrenagem.no-canto:active { transform: scale(0.92); }
 .engrenagem[aria-expanded="true"] { opacity: 1; }
 .engrenagem[aria-expanded="true"] svg { fill: var(--texto); }
 
@@ -1454,6 +1464,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .gaveta hr { width: 100%; border: none; border-top: 1px solid var(--linha); margin: 0.5rem 0; }
 
+/* Pela direita, o recuo de segurança troca de lado junto. */
+.gaveta.direita {
+  padding-left: 0.75rem;
+  padding-right: calc(0.75rem + env(safe-area-inset-right));
+}
+
 /* Um item é um item: link e botão têm a mesma cara, porque fazem a mesma
    promessa — abrir alguma coisa. */
 .gaveta .item {
@@ -1471,6 +1487,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 @media (hover: hover) { .gaveta .item:hover { background: color-mix(in srgb, var(--texto) 8%, transparent); } }
 .gaveta .item:disabled { opacity: 0.6; cursor: default; }
+/* A tela em que estou, quando a gaveta abre de dentro da gestão. */
+.gaveta .item[aria-current="page"] {
+  color: var(--acento-texto);
+  background: color-mix(in srgb, var(--acento) 8%, transparent);
+}
 .gaveta .item:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
 .gaveta .aviso { margin: 0.35rem 0.6rem 0; font-size: var(--fs-3); }
 

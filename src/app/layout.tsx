@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Nunito } from "next/font/google";
+import { GestaoNoCanto } from "@/components/Gestao";
 import { Marca } from "@/components/Marca";
 import { ServiceWorker } from "@/components/ServiceWorker";
 import { Tipografia } from "@/components/Tipografia";
@@ -16,7 +17,9 @@ const gestao = Inter({ subsets: ["latin"], variable: "--fonte-gestao", display: 
 const ritual = Nunito({ subsets: ["latin"], variable: "--fonte-ritual", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Phronesis",
+  // Cada tela de gestão dá o próprio nome à aba — antes, toda aba se chamava
+  // "Phronesis", e o histórico do navegador era uma lista de iguais.
+  title: { default: "Phronesis", template: "%s · Phronesis" },
   description: "Diário falado.",
   manifest: "/manifest.webmanifest",
 };
@@ -42,6 +45,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Fica no layout, não em cada tela: assim nenhuma tela nova nasce sem
             caminho de volta. Ela mesma decide onde não aparecer. */}
         <Marca />
+        {/* A engrenagem das telas de gestão, no canto oposto ao da marca. A de
+            `/` é da `Gravacao`; esta decide sozinha onde aparece. */}
+        <GestaoNoCanto />
         <ServiceWorker />
         <Tipografia>{children}</Tipografia>
       </body>

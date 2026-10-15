@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import { Agentes } from "@/components/Agentes";
+
+export const metadata: Metadata = { title: "agentes · o que sai" };
 
 /**
  * O caminho de sair: da minha pergunta até a resposta.

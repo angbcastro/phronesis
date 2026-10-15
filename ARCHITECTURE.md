@@ -288,7 +288,8 @@ src/components/   as telas, todas client
   Marca.tsx       o canto superior esquerdo — volta ao início
   Gravacao.tsx    a tela de gravar
   BotaoGravar.tsx o círculo, o halo, as ondas laterais e o selo de REC
-  Gestao.tsx      a engrenagem e a gaveta
+  Gestao.tsx      a engrenagem e a gaveta — na borda de `/`, e no canto
+                  direito de toda tela de gestão (`GestaoNoCanto`, no layout)
   Importacao.tsx  subir arquivo — item da gaveta
   Tipografia.tsx  a classe da fonte, conforme a rota
   Processando.tsx fechar a sessão e esperar; ponte curta, sai no primeiro átomo
