@@ -306,8 +306,8 @@ src/components/   as telas, todas client
   Sessoes.tsx     lista de sessões pela frase do primeiro item, que carrega
                   sozinha ao rolar; o apagar de dois toques — e a cor que diz o
                   que falta revisar
-  Entidades.tsx   higiene do grafo: a lista buscável, a ficha em painel e a
-                  fusão à mão
+  Entidades.tsx   higiene do grafo: a lista buscável, a ficha em painel — que
+                  salva ao sair do campo e segura o fechar — e a fusão à mão
   RetratoDoEu.tsx o painel do "eu" no lugar da ficha: o Agora, as seções com o
                   (i), e as dimensões — editar e aceitar a proposta
   Calibracao.tsx  o que eu já corrigi, com o áudio à mão, e a pauta e a emenda

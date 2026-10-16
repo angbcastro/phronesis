@@ -15,7 +15,17 @@
  * a marcação.
  */
 import { describe, expect, it } from "vitest";
-import { candidatasParaFundir, filaParada, peneirar, selo } from "@/components/Entidades";
+import {
+  candidatasParaFundir,
+  filaParada,
+  moverRascunhos,
+  peneirar,
+  rascunhosDe,
+  selo,
+  semRascunhosDe,
+  textoDoEstado,
+  valorNoGrafo,
+} from "@/components/Entidades";
 import type { Entidade } from "@/components/Entidades";
 import { normalizarNome } from "@/lib/texto";
 import { LEASE_ENRIQUECIMENTO_MS, NUNCA_ENRIQUECIDA, PERFIL_VAZIO } from "@/lib/tipos";
@@ -196,5 +206,50 @@ describe("a fila parada (4.12.1)", () => {
   it("sem nada esperando não há o que retomar", () => {
     expect(filaParada([est("pronta", ha(1000)), est("falhou", ha(1000)), { ...NUNCA_ENRIQUECIDA }], AGORA)).toBe(false);
     expect(filaParada([], AGORA)).toBe(false);
+  });
+});
+
+/**
+ * A ficha salva sozinha ao sair do campo (onda 4 da interface), e o rascunho
+ * que não gravou é da entidade dele: `desfazer` numa ficha levava o texto que
+ * eu tinha deixado em outra.
+ */
+describe("os rascunhos da ficha", () => {
+  const textos = {
+    "marina|resumo": "colega",
+    "marina|contexto": "do time",
+    "rafa|resumo": "amigo",
+    "marinaldo|resumo": "outro",
+  };
+
+  it("os de uma entidade, e só os dela — a chave que começa igual não conta", () => {
+    expect(rascunhosDe(textos, "marina").sort()).toEqual(["marina|contexto", "marina|resumo"]);
+  });
+
+  it("limpar uma entidade não toca as outras", () => {
+    expect(semRascunhosDe(textos, "marina")).toEqual({
+      "rafa|resumo": "amigo",
+      "marinaldo|resumo": "outro",
+    });
+  });
+
+  it("renomear leva os rascunhos para a chave nova", () => {
+    expect(moverRascunhos(textos, "rafa", "rafael")).toMatchObject({ "rafael|resumo": "amigo" });
+    expect(moverRascunhos(textos, "rafa", "rafael")).not.toHaveProperty("rafa|resumo");
+    expect(moverRascunhos(textos, "rafa", "rafa")).toBe(textos);
+  });
+
+  it("o valor do grafo de cada campo é o que o rascunho enfrenta", () => {
+    const e = ent("Marina", { resumo: "colega" });
+    expect(valorNoGrafo(e, "nome")).toBe("Marina");
+    expect(valorNoGrafo(e, "resumo")).toBe("colega");
+    expect(valorNoGrafo(e, "contexto")).toBe("");
+  });
+
+  it("o estado ao lado do rótulo diz o que houve, e o motivo da falha", () => {
+    expect(textoDoEstado(undefined)).toBe("");
+    expect(textoDoEstado({ estado: "salvando" })).toBe("salvando…");
+    expect(textoDoEstado({ estado: "salvo" })).toBe("salvo");
+    expect(textoDoEstado({ estado: "falhou", motivo: "sem resposta" })).toBe("não salvou — sem resposta");
   });
 });

@@ -52,6 +52,11 @@
  *   enquanto eu rolo, que é o que faz marcar vinte entidades não terminar numa
  *   subida de volta até o começo da lista.
  *
+ * **A ficha salva sozinha** (onda 4 da interface): nome, resumo e os três
+ * campos gravam quando o campo perde o foco, e o estado de cada um mora ao lado
+ * do rótulo — "salvando…", "salvo", "não salvou". O que não chegou a gravar
+ * segura o fechar: o ← vira "descartar N?", e só o segundo toque perde o texto.
+ *
  * **Não é painel da revisão**, de propósito: a revisão só enxerga as entidades
  * da sessão atual, e o orçamento dela é 60 s — "revisão longa" é uma das formas
  * de morte da visão §8. Manutenção é trabalho de outro momento, e que eu faço
@@ -255,6 +260,65 @@ export function candidatasParaFundir(
     .slice(0, TETO_CANDIDATAS);
 }
 
+/** Os campos de texto da ficha — os que salvam sozinhos ao perder o foco. */
+export type CampoDaFicha = "nome" | "resumo" | CampoPerfil;
+
+/** O valor que o grafo tem para um campo — é contra ele que o rascunho se mede. */
+export function valorNoGrafo(e: Entidade, campo: CampoDaFicha): string {
+  if (campo === "nome") return e.nome;
+  if (campo === "resumo") return e.resumo;
+  return (e.perfil ?? PERFIL_VAZIO)[campo];
+}
+
+/** As chaves de rascunho (`chave|campo`) de uma entidade. */
+export const rascunhosDe = (textos: Record<string, string>, chave: string): string[] =>
+  Object.keys(textos).filter((id) => id.startsWith(`${chave}|`));
+
+/**
+ * Os rascunhos sem os de uma entidade. `desfazer`, `enriquecer` e o retrato
+ * limpavam a tela inteira — e levavam o texto que eu tinha deixado em outra
+ * ficha.
+ */
+export function semRascunhosDe(
+  textos: Record<string, string>,
+  chave: string,
+): Record<string, string> {
+  return Object.fromEntries(Object.entries(textos).filter(([id]) => !id.startsWith(`${chave}|`)));
+}
+
+/** Os rascunhos de uma entidade passam para a chave nova, depois de renomear. */
+export function moverRascunhos<T>(
+  textos: Record<string, T>,
+  de: string,
+  para: string,
+): Record<string, T> {
+  if (de === para) return textos;
+  return Object.fromEntries(
+    Object.entries(textos).map(([id, v]) =>
+      id.startsWith(`${de}|`) ? [`${para}|${id.slice(de.length + 1)}`, v] : [id, v],
+    ),
+  );
+}
+
+/** O que o campo diz ao lado do rótulo, enquanto e depois de salvar. */
+export interface EstadoDoCampo {
+  estado: "salvando" | "salvo" | "falhou";
+  motivo?: string;
+}
+
+export function textoDoEstado(e: EstadoDoCampo | undefined): string {
+  if (!e) return "";
+  if (e.estado === "salvando") return "salvando…";
+  if (e.estado === "salvo") return "salvo";
+  return `não salvou — ${e.motivo ?? "falhou"}`;
+}
+
+/** Quanto o "salvo" fica à vista. */
+const SALVO_MS = 2000;
+
+/** Quanto o "descartar N?" armado espera o segundo toque. */
+const DESARME_MS = 4000;
+
 /** Os três passos da fusão à mão. `alvo` nulo é o passo de escolher com quem. */
 interface Fusao {
   termo: string;
@@ -267,8 +331,6 @@ export function Entidades() {
   const [falha, setFalha] = useState<string | null>(null);
   const [procurando, setProcurando] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
-  const [editando, setEditando] = useState<string | null>(null);
-  const [rascunho, setRascunho] = useState("");
 
   /** O topo da lista: o que eu vejo, e em que ordem. */
   const [termo, setTermo] = useState("");
@@ -295,8 +357,26 @@ export function Entidades() {
   const [selecionando, setSelecionando] = useState(false);
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
 
-  /** O que está no textarea, por `chave|campo`. Ausente = o que veio do grafo. */
+  /**
+   * O que está no campo e ainda não gravou, por `chave|campo`. Ausente = o que
+   * veio do grafo. Mexido sempre por `mudarTextos`, que mantém a cópia em ref:
+   * o fechar precisa dela depois de esperar os salvamentos, sem esperar render.
+   */
   const [textos, setTextos] = useState<Record<string, string>>({});
+  const textosAgora = useRef<Record<string, string>>({});
+  const mudarTextos = useCallback(
+    (fn: (t: Record<string, string>) => Record<string, string>) => {
+      textosAgora.current = fn(textosAgora.current);
+      setTextos(textosAgora.current);
+    },
+    [],
+  );
+  /** O estado de cada campo ao lado do rótulo, por `chave|campo`. */
+  const [estados, setEstados] = useState<Record<string, EstadoDoCampo>>({});
+  /** Os salvamentos em curso, por `chave|campo` — o fechar espera por eles. */
+  const emCurso = useRef(new Map<string, Promise<boolean>>());
+  /** O ← armado: sobrou rascunho, e o próximo toque descarta e fecha. */
+  const [fecharArmado, setFecharArmado] = useState(false);
   /** O que o agente 3 propôs, por `chave|campo`. Nunca entra por cima do atual. */
   const [propostas, setPropostas] = useState<Record<string, Rascunho>>({});
   /** A grafia que estou digitando para acrescentar, por chave de entidade. */
@@ -415,23 +495,62 @@ export function Entidades() {
     linhaTocada.current = botao;
     setFoco(chave);
     setAberta(true);
-    // A fusão, o renomear e o excluir armado de uma ficha anterior não
-    // atravessam para a próxima.
+    // A fusão e o excluir armado de uma ficha anterior não atravessam para a
+    // próxima.
     setFusao(null);
-    setEditando(null);
     setArmadoExcluir(null);
     setRecusaExcluir(null);
+    setFecharArmado(false);
   }
 
   /** O painel sobrevive ao fechar pela duração da transição — ver `foco`. */
   const fechar = useCallback(() => {
     setAberta(false);
     setFusao(null);
-    setEditando(null);
     setArmadoExcluir(null);
     setRecusaExcluir(null);
+    setFecharArmado(false);
     setTimeout(() => setFoco(null), DURACAO_FICHA_MS);
   }, []);
+
+  /**
+   * O pedido de fechar — do ←, do `Esc` e do véu (decisão 4 da onda 4).
+   *
+   * Tira o foco do campo, o que grava o que estava nele; espera o que está
+   * gravando; e só então fecha. Se sobrou rascunho — o salvamento falhou, o
+   * nome foi recusado —, arma o ←: o segundo pedido descarta os rascunhos
+   * desta entidade e fecha.
+   */
+  const focoAgora = useRef<string | null>(null);
+  focoAgora.current = foco;
+  const pedirFechar = useCallback(async () => {
+    const chave = focoAgora.current;
+    if (chave === null) return fechar();
+    if (fecharArmado) {
+      mudarTextos((t) => semRascunhosDe(t, chave));
+      return fechar();
+    }
+    const ativo = document.activeElement;
+    if (ativo instanceof HTMLElement && painel.current?.contains(ativo)) ativo.blur();
+    const daqui = [...emCurso.current.entries()]
+      .filter(([id]) => id.startsWith(`${chave}|`))
+      .map(([, p]) => p);
+    await Promise.all(daqui);
+    // Renomear troca a chave: os rascunhos que sobraram estão na nova.
+    const atual = focoAgora.current ?? chave;
+    if (rascunhosDe(textosAgora.current, atual).length > 0) {
+      setFecharArmado(true);
+      return;
+    }
+    fechar();
+  }, [fecharArmado, fechar, mudarTextos]);
+
+  // O ← armado desarma sozinho.
+  useEffect(() => {
+    if (!fecharArmado) return;
+    const t = setTimeout(() => setFecharArmado(false), DESARME_MS);
+    return () => clearTimeout(t);
+  }, [fecharArmado]);
 
   /**
    * `Esc` desfaz uma coisa por vez: primeiro a fusão em curso, depois a ficha.
@@ -443,11 +562,11 @@ export function Entidades() {
     const aoTeclar = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (fusao !== null) setFusao(null);
-      else fechar();
+      else void pedirFechar();
     };
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [aberta, fusao, fechar]);
+  }, [aberta, fusao, pedirFechar]);
 
   /**
    * O foco entra no painel ao abrir e volta para a linha ao fechar — mesma
@@ -588,75 +707,122 @@ export function Entidades() {
     void carregar();
   }
 
-  async function salvarNome(chave: string) {
-    const nome = rascunho.trim();
-    if (nome === "" || ehPronome(normalizarNome(nome))) return;
-    setOcupado(chave);
-    setFalha(null);
-    const r = await fetch("/api/entidades/renomear", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chave, nome }),
-    }).catch(() => null);
-    setOcupado(null);
-    if (!r?.ok) {
-      setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
-      return;
-    }
-    setEditando(null);
-    void carregar();
-  }
-
-  /** Grava um dos três campos. É o único caminho de escrita do perfil. */
-  async function salvarPerfil(chave: string, campo: CampoPerfil, texto: string) {
-    const id = `${chave}|${campo}`;
-    setOcupado(id);
-    setFalha(null);
-    const r = await fetch("/api/entidades/perfil", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chave, campo, texto }),
-    }).catch(() => null);
-    setOcupado(null);
-    if (!r?.ok) {
-      setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
-      return;
-    }
-    setPropostas((p) => {
-      const { [id]: _fora, ...resto } = p;
-      return resto;
+  const marcarEstado = useCallback((id: string, e: EstadoDoCampo | null) => {
+    setEstados((atual) => {
+      if (e === null) {
+        const { [id]: _fora, ...resto } = atual;
+        return resto;
+      }
+      return { ...atual, [id]: e };
     });
-    setTextos((t) => {
-      const { [id]: _fora, ...resto } = t;
-      return resto;
-    });
-    void carregar();
-  }
+  }, []);
 
   /**
-   * O retrato de identidade. É o campo que os dois agentes leem por padrão
-   * desde a 4.11 — escrito errado, ele contamina toda atribuição futura.
+   * Grava um campo de texto da ficha — o que o `blur` chama, e o "usar este
+   * texto" da proposta. É o único caminho de escrita do nome, do resumo e do
+   * perfil nesta tela; cada um vai à sua rota de sempre.
+   *
+   * - igual ao grafo, não vai a lugar nenhum: o rascunho sai;
+   * - o nome vazio ou pronome é recusado aqui mesmo, como a rota recusaria, e
+   *   fica como rascunho com o motivo;
+   * - no sucesso o rascunho sai **só se ainda for o que gravou** — eu posso ter
+   *   voltado ao campo e continuado escrevendo enquanto ele salvava;
+   * - renomear troca a chave (`nome_normalizado`): a ficha e os rascunhos que
+   *   sobraram passam para a nova, na mesma volta em que a lista muda, senão a
+   *   ficha se esvaziaria até a releitura.
+   *
+   * O resumo é o campo que os dois agentes leem por padrão desde a 4.11 —
+   * escrito errado, ele contamina toda atribuição futura. É por isso que ele
+   * salva ao sair do campo, e não a cada tecla.
    */
-  async function salvarResumo(chave: string, texto: string) {
-    const id = `${chave}|resumo`;
-    setOcupado(id);
-    setFalha(null);
-    const r = await fetch("/api/entidades/resumo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chave, texto }),
-    }).catch(() => null);
-    setOcupado(null);
-    if (!r?.ok) {
-      setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
-      return;
-    }
-    setTextos((t) => {
-      const { [id]: _fora, ...resto } = t;
-      return resto;
-    });
-    void carregar();
-  }
+  const salvarCampo = useCallback(
+    (e: Entidade, campo: CampoDaFicha, valor: string): Promise<boolean> => {
+      const chave = e.nome_normalizado;
+      const id = `${chave}|${campo}`;
+      if (valor === valorNoGrafo(e, campo)) {
+        mudarTextos((t) => {
+          const { [id]: _fora, ...resto } = t;
+          return resto;
+        });
+        marcarEstado(id, null);
+        return Promise.resolve(true);
+      }
+      const nome = valor.trim();
+      if (campo === "nome" && (nome === "" || ehPronome(normalizarNome(nome)))) {
+        marcarEstado(id, { estado: "falhou", motivo: "o nome não pode ser vazio nem pronome" });
+        return Promise.resolve(false);
+      }
+
+      const pedido = (async () => {
+        marcarEstado(id, { estado: "salvando" });
+        const [rota, corpo] =
+          campo === "nome"
+            ? ["/api/entidades/renomear", { chave, nome }]
+            : campo === "resumo"
+              ? ["/api/entidades/resumo", { chave, texto: valor }]
+              : ["/api/entidades/perfil", { chave, campo, texto: valor }];
+        const r = await fetch(rota, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(corpo),
+        }).catch(() => null);
+        if (!r?.ok) {
+          const motivo = r
+            ? ((await r.json().catch(() => ({}))) as { erro?: string }).erro ?? "falhou"
+            : "sem resposta";
+          marcarEstado(id, { estado: "falhou", motivo });
+          return false;
+        }
+
+        let idFinal = id;
+        if (campo === "nome") {
+          const nova = normalizarNome(nome);
+          if (nova !== chave) {
+            idFinal = `${nova}|nome`;
+            mudarTextos((t) => moverRascunhos(t, chave, nova));
+            setEstados((atual) => moverRascunhos(atual, chave, nova));
+            setEntidades(
+              (lista) =>
+                lista?.map((x) =>
+                  x.nome_normalizado === chave ? { ...x, nome, nome_normalizado: nova } : x,
+                ) ?? lista,
+            );
+            setFoco((f) => (f === chave ? nova : f));
+          }
+        }
+        mudarTextos((t) => {
+          if (t[idFinal] !== valor) return t;
+          const { [idFinal]: _fora, ...resto } = t;
+          return resto;
+        });
+        if (campo !== "nome" && campo !== "resumo") {
+          setPropostas((p) => {
+            const { [id]: _fora, ...resto } = p;
+            return resto;
+          });
+        }
+        marcarEstado(idFinal, { estado: "salvo" });
+        setTimeout(
+          () =>
+            setEstados((atual) => {
+              if (atual[idFinal]?.estado !== "salvo") return atual;
+              const { [idFinal]: _fora, ...resto } = atual;
+              return resto;
+            }),
+          SALVO_MS,
+        );
+        void carregar();
+        return true;
+      })();
+
+      emCurso.current.set(id, pedido);
+      void pedido.finally(() => {
+        if (emCurso.current.get(id) === pedido) emCurso.current.delete(id);
+      });
+      return pedido;
+    },
+    [carregar, marcarEstado, mudarTextos],
+  );
 
   /**
    * Acrescentar ou tirar uma grafia. Um item por chamada: a lista na tela é a
@@ -735,6 +901,10 @@ export function Entidades() {
     setOcupado(null);
     if (!r?.ok) {
       setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
+    } else {
+      // A ficha nova vem do grafo: o rascunho desta entidade venceria o que o
+      // agente acabou de escrever. Os das outras ficam.
+      mudarTextos((t) => semRascunhosDe(t, chave));
     }
     // Recarrega nos dois casos: quando falha, é a linha da entidade que passa a
     // mostrar o motivo, e é isso que a fatia prometeu.
@@ -756,9 +926,10 @@ export function Entidades() {
       setFalha(r ? ((await r.json()) as { erro?: string }).erro ?? "falhou" : "sem resposta");
       return;
     }
-    // O textarea local tem de sair da frente: o que ele mostra é o texto de
-    // antes do desfazer, e ele venceria o que veio do grafo.
-    setTextos({});
+    // O rascunho desta entidade tem de sair da frente: o que ele mostra é o
+    // texto de antes do desfazer, e ele venceria o que veio do grafo. Só o
+    // desta — o das outras fichas é texto meu que nada desfez.
+    mudarTextos((t) => semRascunhosDe(t, chave));
     void carregar();
   }
 
@@ -1068,7 +1239,8 @@ export function Entidades() {
                 )}
               </span>
               <span className="meta">
-                {plural(e.atomos, "átomo", "átomos")} · {plural(e.sessoes, "sessão", "sessões")}
+                {ROTULO_TIPO_ENTIDADE[e.tipo]} · {plural(e.atomos, "átomo", "átomos")} ·{" "}
+                {plural(e.sessoes, "sessão", "sessões")}
                 {e.resumo === "" && " · sem resumo"}
                 {selo(e.enriquecimento)}
               </span>
@@ -1089,7 +1261,7 @@ export function Entidades() {
 
       {/* O véu fecha ao toque e escurece a lista atrás — a ficha é modal de
           fato, como a gaveta da gestão. */}
-      <div className={`veu${aberta ? " aberto" : ""}`} onClick={fechar} />
+      <div className={`veu${aberta ? " aberto" : ""}`} onClick={() => void pedirFechar()} />
 
       {/* Fica montada sempre: desmontar junto com a classe esvaziaria a caixa no
           meio do caminho de volta, e a transição viraria um corte. */}
@@ -1106,12 +1278,35 @@ export function Entidades() {
             const perfil = emFoco.perfil ?? PERFIL_VAZIO;
             const idResumo = `${chave}|resumo`;
             const valorResumo = textos[idResumo] ?? emFoco.resumo;
+            const idNome = `${chave}|nome`;
+            const pendentes = rascunhosDe(textos, chave).length;
+            /** O estado ao lado do rótulo de um campo. */
+            const estadoDe = (id: string) => {
+              const e = estados[id];
+              return e ? (
+                <span
+                  className={`estado-campo ${e.estado}`}
+                  role={e.estado === "falhou" ? "alert" : "status"}
+                >
+                  {textoDoEstado(e)}
+                </span>
+              ) : null;
+            };
 
             return (
               <>
                 <header>
-                  <button className="botao icone voltar" aria-label="fechar a ficha" onClick={fechar}>
-                    ←
+                  <button
+                    className={`botao voltar${fecharArmado ? " perigo" : " icone"}`}
+                    aria-label={
+                      fecharArmado
+                        ? `descartar ${plural(pendentes, "campo não salvo", "campos não salvos")} e fechar`
+                        : "fechar a ficha"
+                    }
+                    onClick={() => void pedirFechar()}
+                    onBlur={() => fecharArmado && setFecharArmado(false)}
+                  >
+                    {fecharArmado ? `← descartar ${pendentes}?` : "←"}
                   </button>
                   <h2>{emFoco.nome}</h2>
                   <button
@@ -1156,43 +1351,20 @@ export function Entidades() {
                       </option>
                     ))}
                   </select>
-                  {editando === chave ? (
-                    <>
-                      <input
-                        className="campo-nome"
-                        aria-label={`novo nome de ${emFoco.nome}`}
-                        value={rascunho}
-                        autoFocus
-                        onChange={(ev) => setRascunho(ev.target.value)}
-                        onKeyDown={(ev) => {
-                          if (ev.key === "Enter") void salvarNome(chave);
-                          if (ev.key === "Escape") {
-                            // Sem isto o Esc subia até o listener da janela e
-                            // fechava a ficha junto com o renomear.
-                            ev.stopPropagation();
-                            setEditando(null);
-                          }
-                        }}
-                      />
-                      <button
-                        className="botao"
-                        disabled={ocupado === chave}
-                        onClick={() => void salvarNome(chave)}
-                      >
-                        salvar
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      className="botao"
-                      onClick={() => {
-                        setEditando(chave);
-                        setRascunho(emFoco.nome);
-                      }}
-                    >
-                      renomear
-                    </button>
-                  )}
+                  {/* O nome é campo como os outros, e salva ao sair dele: o modo
+                      "renomear" saiu com os botões de salvar. Enter também
+                      grava — é o gesto de quem termina um nome. */}
+                  <input
+                    className="campo-nome nome"
+                    aria-label={`nome de ${emFoco.nome}`}
+                    value={textos[idNome] ?? emFoco.nome}
+                    onChange={(ev) => mudarTextos((t) => ({ ...t, [idNome]: ev.target.value }))}
+                    onBlur={(ev) => void salvarCampo(emFoco, "nome", ev.currentTarget.value)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter") ev.currentTarget.blur();
+                    }}
+                  />
+                  {estadoDe(idNome)}
                   <span className="conta">
                     {plural(emFoco.atomos, "átomo", "átomos")} · {plural(emFoco.sessoes, "sessão", "sessões")}
                   </span>
@@ -1216,19 +1388,14 @@ export function Entidades() {
                       maxLength={TETO_RESUMO}
                       value={valorResumo}
                       placeholder="—"
-                      onChange={(ev) => setTextos((t) => ({ ...t, [idResumo]: ev.target.value }))}
+                      onChange={(ev) => mudarTextos((t) => ({ ...t, [idResumo]: ev.target.value }))}
+                      onBlur={(ev) => void salvarCampo(emFoco, "resumo", ev.currentTarget.value)}
                     />
                     <div className="acoes-sessao">
                       <span className="meta">
                         {valorResumo.length}/{TETO_RESUMO}
                       </span>
-                      <button
-                        className="botao"
-                        disabled={ocupado === idResumo || valorResumo === emFoco.resumo}
-                        onClick={() => void salvarResumo(chave, valorResumo)}
-                      >
-                        salvar
-                      </button>
+                      {estadoDe(idResumo)}
                     </div>
                   </div>
                 </div>
@@ -1296,7 +1463,7 @@ export function Entidades() {
                     enriquecimento={emFoco.enriquecimento}
                     contexto={perfil.contexto}
                     aoMudar={() => {
-                      setTextos({});
+                      mudarTextos((t) => semRascunhosDe(t, chave));
                       void carregar();
                     }}
                   />
@@ -1307,7 +1474,6 @@ export function Entidades() {
                         const id = `${chave}|${campo}`;
                         const valor = textos[id] ?? perfil[campo];
                         const proposta = propostas[id];
-                        const mexido = valor !== perfil[campo];
 
                         return (
                           <div className="campo-perfil" key={campo}>
@@ -1322,16 +1488,11 @@ export function Entidades() {
                               rows={2}
                               value={valor}
                               placeholder="—"
-                              onChange={(ev) => setTextos((t) => ({ ...t, [id]: ev.target.value }))}
+                              onChange={(ev) => mudarTextos((t) => ({ ...t, [id]: ev.target.value }))}
+                              onBlur={(ev) => void salvarCampo(emFoco, campo, ev.currentTarget.value)}
                             />
                             <div className="acoes-sessao">
-                              <button
-                                className="botao"
-                                disabled={ocupado === id || !mexido}
-                                onClick={() => void salvarPerfil(chave, campo, valor)}
-                              >
-                                salvar
-                              </button>
+                              {estadoDe(id)}
                               <button
                                 className="botao"
                                 disabled={ocupado === id}
@@ -1351,9 +1512,14 @@ export function Entidades() {
                                 </p>
                                 <p>{proposta.texto}</p>
                                 <div className="acoes-sessao">
+                                  {/* Grava na hora: é escolha explícita, e o campo
+                                      nem chegou a ter foco para salvar ao sair. */}
                                   <button
                                     className="botao"
-                                    onClick={() => setTextos((t) => ({ ...t, [id]: proposta.texto }))}
+                                    onClick={() => {
+                                      mudarTextos((t) => ({ ...t, [id]: proposta.texto }));
+                                      void salvarCampo(emFoco, campo, proposta.texto);
+                                    }}
                                   >
                                     usar este texto
                                   </button>

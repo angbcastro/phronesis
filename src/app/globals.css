@@ -1343,6 +1343,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .ficha .voltar { flex: none; margin-left: -0.55rem; }
 
 .ficha .identidade { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+/* O nome é campo, e ocupa o que sobra da linha do tipo. */
+.ficha .identidade .nome { flex: 1 1 10rem; min-width: 0; }
+/* O estado de um campo que salva sozinho, ao lado dele: cinza enquanto salva,
+   verde quando salvou, no vermelho de erro quando não. */
+.estado-campo { font-size: var(--fs-2); color: var(--texto-fraco); }
+.estado-campo.salvo { color: var(--ok); }
+.estado-campo.falhou { color: var(--erro); }
 .ficha .secao {
   display: flex;
   flex-direction: column;
