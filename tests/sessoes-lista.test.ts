@@ -9,17 +9,20 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  contaDaSessao,
   contagem,
   destino,
   duracao,
+  fundirPrimeiraPagina,
   jaRevisada,
+  linhasDaSessao,
   podeApagar,
   podeLerTranscricao,
   podeReextrair,
   quando,
   rotuloStatus,
 } from "@/components/Sessoes";
-import { LIMITE_LISTA_SESSOES, STATUS_SESSAO } from "@/lib/tipos";
+import { STATUS_SESSAO } from "@/lib/tipos";
 
 const sessao = (status: string, extra: Record<string, unknown> = {}) => ({
   id: "mtgn3zf7",
@@ -75,13 +78,62 @@ describe("o status como se fala", () => {
 });
 
 describe("a contagem do cabeçalho", () => {
-  it("abaixo do teto, conta — no singular quando é uma", () => {
-    expect(contagem(12)).toBe("12 sessões");
+  it("é o total da lista — no singular quando é uma", () => {
+    // A primeira página traz o total (onda 4): "as 50 mais recentes" saiu
+    // junto com o teto.
+    expect(contagem(51)).toBe("51 sessões");
     expect(contagem(1)).toBe("1 sessão");
   });
+});
 
-  it("no teto, diz que são as mais recentes — não o total", () => {
-    expect(contagem(LIMITE_LISTA_SESSOES)).toBe(`as ${LIMITE_LISTA_SESSOES} mais recentes`);
+/**
+ * A linha começa pelo que eu disse (onda 4 da interface): a frase em cima, e a
+ * data como detalhe. Sem item ainda, a data sobe — é ela que identifica.
+ */
+describe("a linha da sessão", () => {
+  it("a frase em cima, e embaixo a data, a duração, o status e os itens", () => {
+    const l = linhasDaSessao(sessao("confirmada", { frase: "acordei cedo", itens: 8 }));
+    expect(l.cima).toBe("acordei cedo");
+    expect(l.baixo[0]).toBe(quando("2026-08-31T02:49:33.716Z"));
+    expect(l.baixo.slice(1)).toEqual(["3 min", "confirmada", "8 itens"]);
+  });
+
+  it("sem frase, a data sobe e não se repete embaixo", () => {
+    const l = linhasDaSessao(sessao("transcrito"));
+    expect(l.cima).toBe(quando("2026-08-31T02:49:33.716Z"));
+    expect(l.baixo).toEqual(["3 min", "transcrito"]);
+  });
+
+  it("em revisão conta o que espera revisão; sem contagem, nada", () => {
+    expect(contaDaSessao({ status: "em_revisao", itens: 5 })).toBe("5 para revisar");
+    expect(contaDaSessao({ status: "confirmada", itens: 1 })).toBe("1 item");
+    expect(contaDaSessao({ status: "confirmada", itens: 0 })).toBe("0 itens");
+    expect(contaDaSessao({ status: "transcrito", itens: null })).toBe("");
+    expect(contaDaSessao({ status: "transcrito" })).toBe("");
+  });
+});
+
+describe("a releitura da primeira página", () => {
+  const s = (id: string, iniciada_em: string, status = "confirmada") =>
+    sessao(status, { id, iniciada_em });
+
+  it("na primeira vez, é a página", () => {
+    const p = [s("b", "2026-10-02"), s("a", "2026-10-01")];
+    expect(fundirPrimeiraPagina(null, p, "2026-10-01")).toEqual(p);
+  });
+
+  it("as páginas que eu já rolei ficam, e a primeira se atualiza", () => {
+    const tela = [s("c", "2026-10-03", "extraindo"), s("b", "2026-10-02"), s("a", "2026-09-01")];
+    const primeira = [s("d", "2026-10-04"), s("c", "2026-10-03", "em_revisao")];
+    const r = fundirPrimeiraPagina(tela, primeira, "2026-10-03");
+    expect(r.map((x) => x.id)).toEqual(["d", "c", "b", "a"]);
+    expect(r[1].status).toBe("em_revisao");
+  });
+
+  it("o que sumiu da faixa da primeira página sai da tela", () => {
+    const tela = [s("c", "2026-10-03"), s("b", "2026-10-02"), s("a", "2026-09-01")];
+    const primeira = [s("c", "2026-10-03"), s("a", "2026-09-01")];
+    expect(fundirPrimeiraPagina(tela, primeira, "2026-09-01").map((x) => x.id)).toEqual(["c", "a"]);
   });
 });
 

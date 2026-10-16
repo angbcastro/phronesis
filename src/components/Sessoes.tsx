@@ -8,6 +8,13 @@
  * idempotência impede reprocessar uma sessão que já tem proposta — e ler a
  * transcrição literal, que saiu da jornada de gravar e mora aqui.
  *
+ * **A linha começa pelo que eu disse** (onda 4 da interface): a frase do
+ * primeiro item, e embaixo a data, a duração, o status e quantos itens — em
+ * revisão, quantos esperam. A data virou detalhe: eu acho a sessão pelo que
+ * falei, não pelo dia. Sem item ainda, a data volta para cima.
+ *
+ * **A lista carrega sozinha** quando a rolagem chega ao fim, de 50 em 50.
+ *
  * **É aqui que se vê o que falta revisar**, e é pela cor: verde é sessão que já
  * passou pela revisão, branco é sessão que ainda tem trabalho. Antes isso era um
  * chip na tela de gravar, que aparecia sozinho e cobrava. Um estado que eu leio
@@ -18,13 +25,13 @@
  * uma lista de sessões passadas ali vira cobrança: quantos dias, quanto tempo,
  * o que ficou pendente. Aqui não há contagem de nada.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { esperouDemais } from "@/client/espera";
 import { dataEHora } from "@/lib/dia";
 import { temTranscricao, terminouDeProcessar } from "@/lib/estados";
 import { plural } from "@/lib/texto";
-import { LIMITE_LISTA_SESSOES, type StatusSessao } from "@/lib/tipos";
+import type { StatusSessao } from "@/lib/tipos";
 
 interface Sessao {
   id: string;
@@ -32,6 +39,18 @@ interface Sessao {
   duracao_s: number;
   status: string;
   chunks_total: number;
+  /** O texto do primeiro item. "" sem item. */
+  frase?: string;
+  /** Quantos itens: no grafo (confirmada) ou na proposta (em revisão). */
+  itens?: number | null;
+}
+
+/** Uma página de `GET /api/sessoes`. */
+interface Pagina {
+  sessoes: Sessao[];
+  mais: boolean;
+  cursor: string | null;
+  total?: number;
 }
 
 /** "hoje, 21:03", "ontem, 21:03", "12 ago, 21:03" — no dia de Brasília (`dia.ts`). */
@@ -59,12 +78,46 @@ const ROTULO_STATUS: Record<StatusSessao, string> = {
 export const rotuloStatus = (status: string): string =>
   ROTULO_STATUS[status as StatusSessao] ?? status;
 
+/** A contagem do cabeçalho: o total da lista, que a primeira página traz. */
+export const contagem = (n: number): string => plural(n, "sessão", "sessões");
+
 /**
- * A contagem do cabeçalho. A rota corta em `LIMITE_LISTA_SESSOES`, e "50
- * sessão(ões)" ali parecia o total.
+ * Quantos itens, como a linha diz: confirmada, os que estão no grafo; em
+ * revisão, os que esperam revisão. "" quando não há o que contar.
  */
-export const contagem = (n: number): string =>
-  n >= LIMITE_LISTA_SESSOES ? `as ${n} mais recentes` : plural(n, "sessão", "sessões");
+export function contaDaSessao(s: Pick<Sessao, "status" | "itens">): string {
+  if (typeof s.itens !== "number") return "";
+  if (s.status === "em_revisao") return `${s.itens} para revisar`;
+  return plural(s.itens, "item", "itens");
+}
+
+/**
+ * As duas linhas da sessão: em cima a frase, embaixo o resto. Sem frase — a
+ * sessão ainda não tem item —, a data sobe: é ela que a identifica.
+ */
+export function linhasDaSessao(s: Sessao): { cima: string; baixo: string[] } {
+  const frase = (s.frase ?? "").trim();
+  const resto = [duracao(s.duracao_s), rotuloStatus(s.status), contaDaSessao(s)].filter(
+    (p) => p !== "",
+  );
+  return frase === ""
+    ? { cima: quando(s.iniciada_em), baixo: resto }
+    : { cima: frase, baixo: [quando(s.iniciada_em), ...resto] };
+}
+
+/**
+ * A releitura da primeira página, fundida com o que já está na tela: as
+ * páginas antigas que eu já rolei não somem. O que é mais novo que o fim da
+ * primeira página vem dela — inclusive as que sumiram —, o resto fica.
+ */
+export function fundirPrimeiraPagina(
+  atual: readonly Sessao[] | null,
+  primeira: readonly Sessao[],
+  fimDaPrimeira: string | null,
+): Sessao[] {
+  if (atual === null || fimDaPrimeira === null) return [...primeira];
+  return [...primeira, ...atual.filter((s) => s.iniciada_em < fimDaPrimeira)];
+}
 
 /** A cadência da releitura durante uma re-extração — a mesma da fila de `/entidades`. */
 const INTERVALO_RELEITURA_MS = 4000;
@@ -125,6 +178,22 @@ export const podeApagar = (s: Sessao): boolean => terminouDeProcessar(s.status a
 
 export function Sessoes() {
   const [sessoes, setSessoes] = useState<Sessao[] | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
+  /** Onde a próxima página começa, e se ela existe. */
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [mais, setMais] = useState(false);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const [falhaMais, setFalhaMais] = useState(false);
+  const sentinela = useRef<HTMLDivElement | null>(null);
+  /**
+   * A lista como está na tela, para a releitura fundir sem esperar o render:
+   * o `setSessoes` com função roda depois, e a conta do "reextraindo…" precisa
+   * da lista fundida agora.
+   */
+  const sessoesAgora = useRef<Sessao[] | null>(null);
+  useEffect(() => {
+    sessoesAgora.current = sessoes;
+  }, [sessoes]);
   const [falha, setFalha] = useState<string | null>(null);
   const [armado, setArmado] = useState<string | null>(null);
   const [armadoApagar, setArmadoApagar] = useState<string | null>(null);
@@ -132,14 +201,26 @@ export function Sessoes() {
   /** Re-extrações que eu pedi daqui, e quando: id → instante do pedido. */
   const [feito, setFeito] = useState<Map<string, number>>(new Map());
 
+  /**
+   * A primeira página — ao abrir, e na releitura de durante um reextrair. Na
+   * releitura ela se funde com o que já está na tela, e o cursor só muda se eu
+   * ainda não tinha rolado além dela.
+   */
   const carregar = useCallback(async () => {
     const r = await fetch("/api/sessoes", { cache: "no-store" }).catch(() => null);
     if (!r || !r.ok) {
       setFalha("não deu para carregar a lista");
       return;
     }
-    const lidas = ((await r.json()) as { sessoes: Sessao[] }).sessoes;
+    const pagina = (await r.json()) as Pagina;
+    const lidas = fundirPrimeiraPagina(sessoesAgora.current, pagina.sessoes, pagina.cursor);
+    sessoesAgora.current = lidas;
     setSessoes(lidas);
+    if (lidas.length === pagina.sessoes.length) {
+      setCursor(pagina.cursor);
+      setMais(pagina.mais);
+    }
+    if (typeof pagina.total === "number") setTotal(pagina.total);
 
     // O "reextraindo…" sai quando a sessão volta a parar. Não na primeira
     // leitura: a rota responde antes de o `waitUntil` trocar o status, e logo
@@ -164,6 +245,48 @@ export function Sessoes() {
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  /** A página seguinte, pedida pelo sentinela no fim da lista. */
+  const carregarMais = useCallback(async () => {
+    if (!cursor) return;
+    setCarregandoMais(true);
+    setFalhaMais(false);
+    const r = await fetch(`/api/sessoes?antes=${encodeURIComponent(cursor)}`, {
+      cache: "no-store",
+    }).catch(() => null);
+    setCarregandoMais(false);
+    if (!r || !r.ok) {
+      setFalhaMais(true);
+      return;
+    }
+    const pagina = (await r.json()) as Pagina;
+    setSessoes((atual) => {
+      const vistas = new Set((atual ?? []).map((s) => s.id));
+      return [...(atual ?? []), ...pagina.sessoes.filter((s) => !vistas.has(s.id))];
+    });
+    setCursor(pagina.cursor);
+    setMais(pagina.mais);
+  }, [cursor]);
+
+  /**
+   * O sentinela: quando o fim da lista chega a 400 px da tela, a próxima página
+   * vem. O observador renasce a cada página — é o que faz uma lista curta, com
+   * o sentinela já à vista, continuar pedindo até encher a tela. Depois de uma
+   * falha ele espera o "tentar de novo": o sentinela parado na tela não
+   * dispararia de novo sozinho.
+   */
+  useEffect(() => {
+    const alvo = sentinela.current;
+    if (!alvo || !mais || carregandoMais || falhaMais) return;
+    const observador = new IntersectionObserver(
+      (entradas) => {
+        if (entradas.some((e) => e.isIntersecting)) void carregarMais();
+      },
+      { rootMargin: "400px 0px" },
+    );
+    observador.observe(alvo);
+    return () => observador.disconnect();
+  }, [mais, carregandoMais, falhaMais, carregarMais]);
 
   // Enquanto houver re-extração em curso, a lista relê sozinha: sem isto o
   // status ficava parado no que era no instante do pedido.
@@ -206,7 +329,7 @@ export function Sessoes() {
    * acidental numa lista custaria trabalho. Aqui custaria a sessão — o áudio, a
    * transcrição e a proposta somem do R2 e não voltam.
    *
-   * A linha sai da lista no sucesso em vez de recarregar: `todasSessoes` já
+   * A linha sai da lista no sucesso em vez de recarregar: `paginaDeSessoes` já
    * filtra a descartada, mas recarregar seria uma ida ao grafo para descobrir o
    * que esta tela acabou de mandar acontecer.
    */
@@ -227,6 +350,7 @@ export function Sessoes() {
       return;
     }
     setSessoes((atual) => (atual ?? []).filter((s) => s.id !== id));
+    setTotal((t) => (t === null ? t : Math.max(0, t - 1)));
   }
 
   return (
@@ -234,7 +358,7 @@ export function Sessoes() {
       <header>
         <h1>sessões</h1>
         <p className="aguardando">
-          {sessoes ? contagem(sessoes.length) : "…"} · verde é o que eu já revisei —
+          {total !== null ? contagem(total) : "…"} · verde é o que eu já revisei —
           reextrair chama o modelo de novo e sobrescreve a proposta atual; transcrição abre o
           texto literal; apagar tira o áudio e a proposta do R2 e some com a linha
         </p>
@@ -247,12 +371,14 @@ export function Sessoes() {
       )}
 
       <ul className="lista-sessoes">
-        {(sessoes ?? []).map((s) => (
+        {(sessoes ?? []).map((s) => {
+          const { cima, baixo } = linhasDaSessao(s);
+          return (
           <li key={s.id} className={jaRevisada(s) ? "revisada" : undefined}>
             <Link href={destino(s)} className="quando">
-              <span>{quando(s.iniciada_em)}</span>
+              <span className={s.frase ? "frase" : undefined}>{cima}</span>
               <span className="meta">
-                {duracao(s.duracao_s)} · {rotuloStatus(s.status)}
+                {baixo.join(" · ")}
                 {feito.has(s.id) && " · reextraindo…"}
               </span>
             </Link>
@@ -299,8 +425,22 @@ export function Sessoes() {
               )}
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
+
+      {/* O fim da lista: o sentinela que pede a próxima página, e o que ele diz. */}
+      <div ref={sentinela} className="fim-da-lista">
+        {carregandoMais && <p className="aguardando">carregando…</p>}
+        {falhaMais && (
+          <p className="aviso erro" role="alert">
+            não deu para carregar as seguintes —{" "}
+            <button className="botao discreto" onClick={() => void carregarMais()}>
+              tentar de novo
+            </button>
+          </p>
+        )}
+      </div>
 
       {sessoes?.length === 0 && <p className="aguardando">nenhuma sessão ainda</p>}
 

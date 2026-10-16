@@ -69,7 +69,7 @@ descreve o que a sessão está *fazendo*; descartar é gesto meu, por fora, sobr
 uma sessão que já parou. Como valor de `status` obrigaria toda transição e todo
 guard a conhecer um estado que não transiciona para lugar nenhum. Como
 propriedade à parte, ele é lido num lugar só: o `WHERE s.descartada_em IS NULL`
-de `todasSessoes`.
+de `paginaDeSessoes`.
 
 **Não há máquina de recuperação.** Uma gravação que a aba interrompeu fica em
 `gravando` até `/finalizar` levá-la adiante (§14). O que existe é uma marca só,

@@ -152,7 +152,7 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   fusao.ts        fundir, renomear, recusar, excluir — a escrita de higiene no grafo
   duplicatas.ts   quem parece ser a mesma coisa: string + o modelo, só propõem
   sessoes.ts      repositório de :Sessao (criar, buscar, atualizar com guarda,
-                  descartar)
+                  descartar) — e a página da lista, com a frase e a contagem
   r2.ts           S3 SigV4 via aws4fetch: get/put/head/delete, presign, PUT
                   condicional — e nenhum LIST, nunca
   chaves.ts       layout do R2 num lugar só + validação de id (barra path
@@ -303,7 +303,8 @@ src/components/   as telas, todas client
   SeletorEntidade.tsx a barra pesquisável de entidade, nos dois lugares da
                   revisão
   Leitura.tsx     a transcrição literal — porta de serviço
-  Sessoes.tsx     lista de sessões, o apagar de dois toques — e a cor que diz o
+  Sessoes.tsx     lista de sessões pela frase do primeiro item, que carrega
+                  sozinha ao rolar; o apagar de dois toques — e a cor que diz o
                   que falta revisar
   Entidades.tsx   higiene do grafo: a lista buscável, a ficha em painel e a
                   fusão à mão

@@ -968,6 +968,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 @media (hover: hover) { .lista-sessoes .quando:hover span:first-child { text-decoration: underline; } }
 .lista-sessoes .meta { font-size: var(--fs-2); color: var(--texto-fraco); }
+/* A frase da sessão: o que eu disse primeiro, em duas linhas no máximo. A
+   data mora na linha de baixo, como detalhe. */
+.lista-sessoes .frase {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+/* O sentinela da rolagem: tem altura para o observador sempre o ver. */
+.fim-da-lista { min-height: 1px; padding: var(--esp-3) 0; }
 
 /* Verde é trabalho terminado — o mesmo `--ok` do ponto de "salvo" da gravação.
    Um token, dois lugares, o mesmo significado. Não há classe para o que falta

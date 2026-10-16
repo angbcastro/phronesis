@@ -38,7 +38,7 @@ import { efetivo } from "./overrides";
 import { novoId } from "./sessoes";
 import type { Conversa, Mensagem, MensagensDaConversa } from "./tipos";
 
-/** Quantas conversas a lista traz. Mesma ordem de grandeza de `todasSessoes`. */
+/** Quantas conversas a lista traz. Mesma ordem de grandeza de uma página de `paginaDeSessoes`. */
 export const TETO_CONVERSAS = 100;
 
 /** O teto de um título. Uma linha na lista, e ela é estreita no telefone. */

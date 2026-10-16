@@ -3,7 +3,7 @@
 | Rota | Faz | Notas |
 |---|---|---|
 | `POST /api/sessoes` | cria `:Sessao {status:'gravando'}` | devolve `id` |
-| `GET /api/sessoes` | a lista de sessões, da mais recente para a mais antiga | teto de 50; **esconde sessão sem bloco** que não esteja `gravando` — ver abaixo |
+| `GET /api/sessoes` | uma página da lista, da mais recente para a mais antiga: `?antes=<iniciada_em>` traz as 50 anteriores; vem `mais`, `cursor` e, na primeira, `total`. Cada sessão traz `frase` (o primeiro item que eu disse) e `itens` | `mais` e `cursor` são da leitura crua, antes do filtro; a frase e a contagem da confirmada vêm do grafo, na mesma consulta, e as da em revisão do `extracao.json` — uma leitura do R2 por sessão em revisão, cuja falha só tira a frase. **Esconde sessão sem bloco** que não esteja `gravando` — ver abaixo |
 | `POST /api/sessoes/:id/chunks/:i/url` | presigned PUT de 5 min | corpo `{ext?}`; 415 fora da lista; o áudio não passa por aqui |
 | `POST /api/sessoes/:id/chunks/:i/pronto` | HEAD + manifest + `waitUntil(STT → janelas)` | corpo `{ext?, duracao_s?}`; a importação fatiada **não** manda `duracao_s` (§3.0) |
 | `POST /api/sessoes/:id/finalizar` | `finalizando`, responde na hora, fecha **e extrai** em `waitUntil` | `ja_finalizada` a partir de `em_revisao`; antes disso, é o retry da extração |
@@ -124,7 +124,7 @@ botão nenhum (§14).
 
 **Sem `DELETE` no grafo**, e não por conservadorismo: a regra 6 proíbe `DELETE`
 em átomo, e um `DETACH DELETE` no `:Sessao` levaria junto o `GEROU` e orfanaria
-os átomos de uma sessão já confirmada. O nó fica, marcado; `todasSessoes` filtra
+os átomos de uma sessão já confirmada. O nó fica, marcado; `paginaDeSessoes` filtra
 por `descartada_em IS NULL`; e `audio_key` passa a apontar para objetos que não
 existem mais — consequência aceita e escrita na migration 008 (§14).
 

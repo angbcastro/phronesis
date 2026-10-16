@@ -615,6 +615,9 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
 - **Um trecho que atravessa a borda de um bloco tem um vão** (§11.2): o
   tocador pede a URL do bloco seguinte quando o primeiro acaba, e a requisição
   é o silêncio entre os dois.
+- **Re-extrair uma sessão além das primeiras 50 não atualiza a linha sozinho**
+  (§11): a releitura de durante o reextrair é da primeira página, e o
+  "reextraindo…" fica até o teto do corredor. Recarregar a página atualiza.
 - **Mensagem do chat cujo rastro não guardou o segundo não tem ▶ no (i)**
   (§11): o trecho aparece com tipo, data e texto, e sem botão. O rastro é
   gravado uma vez, com a resposta, e mensagem não ganha retrofill.

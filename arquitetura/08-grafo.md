@@ -108,7 +108,7 @@ confirmação não conflita com a regra 5 (nada entra no grafo sem aprovação) 
 essa regra vale para átomo e entidade.
 
 `descartada_em` (migration 008) é ISO, e **ausente é o caso normal**: sessão que
-nunca foi descartada passa no `IS NULL` de `todasSessoes`. Ele é o único efeito
+nunca foi descartada passa no `IS NULL` de `paginaDeSessoes`. Ele é o único efeito
 do `DELETE` de sessão sobre o grafo — os átomos e o `:GEROU` ficam onde estavam
 (regra 6, §10).
 
@@ -581,7 +581,7 @@ ambiguidade de linguagem, não de um pedido real.
 
 **Sem índice, e nem constraint de unicidade em `id`.** `listarConversas` varre
 `(:Conversa)` com `ORDER BY` e `LIMIT` sobre o grafo de uma pessoa só — a mesma
-conta de `todasSessoes` (008). E, ao contrário de `:Sessao` (001), nada aqui faz
+conta de `paginaDeSessoes` (008). E, ao contrário de `:Sessao` (001), nada aqui faz
 `MERGE` por id: a conversa nasce de um `CREATE` com id sorteado, e a unicidade
 vem da origem. Um índice para proteger o que a origem já garante seria cota
 gasta por simetria.

@@ -5,7 +5,12 @@
  */
 import { query, queryUm } from "./neo4j";
 import { chaveTranscricao, prefixoSessao } from "./chaves";
-import { LIMITE_LISTA_SESSOES, type Sessao, type StatusSessao } from "./tipos";
+import {
+  LIMITE_LISTA_SESSOES,
+  type AtomoProposto,
+  type Sessao,
+  type StatusSessao,
+} from "./tipos";
 
 /** id em base36: ordenável por tempo e casa com `idValido`. */
 export function novoId(agora: number = Date.now()): string {
@@ -75,25 +80,103 @@ export async function atualizarSessao(
 }
 
 /**
- * Todas as sessões, da mais recente para a mais antiga.
- *
- * Alimenta a lista de sessões, que é de onde se força uma re-extração. Limite
- * baixo de propósito: é uma lista para achar uma sessão, não um histórico
- * navegável — histórico é trabalho da busca, slice 3.
- *
+ * Uma sessão na lista de `/sessoes`, com o que ela tem dentro (onda 4 da
+ * interface): a linha começa pelo que eu disse, e a data é detalhe.
+ */
+export interface SessaoNaLista extends Sessao {
+  /** O texto do primeiro item — o primeiro que eu disse. "" sem item. */
+  frase: string;
+  /**
+   * Quantos itens: os átomos ativos no grafo (confirmada) ou os da proposta (em
+   * revisão). `null` em sessão que não tem o que contar.
+   */
+  itens: number | null;
+}
+
+export interface PaginaDeSessoes {
+  sessoes: SessaoNaLista[];
+  /** Há sessões mais antigas que a última desta página. */
+  mais: boolean;
+  /** O `iniciada_em` da última lida — o `antes` da próxima página. */
+  cursor: string | null;
+}
+
+/**
+ * Sessão sem bloco nenhum não entra na lista: foi criada e largada antes de
+ * gravar, e não é áudio nenhum. A que está gravando entra — o bloco dela só
+ * conta quando sobe.
+ */
+export const apareceNaLista = (s: Pick<Sessao, "chunks_total" | "status">): boolean =>
+  s.chunks_total > 0 || s.status === "gravando";
+
+/**
+ * Uma página da lista, da mais recente para a mais antiga, a partir de
+ * `antes` (exclusivo). A lista é de onde se acha uma sessão e se força uma
+ * re-extração, e a tela pede a página seguinte quando a rolagem chega ao fim.
  * Sessão descartada some daqui, e é só daqui: o nó continua no grafo, com os
  * átomos que ele gerou pendurados (regra 6).
+ *
+ * **O `mais` e o `cursor` são da leitura crua**, antes de `apareceNaLista`: com
+ * o filtro antes, uma página que perdeu metade para sessões sem bloco
+ * pareceria o fim da lista. Lê uma a mais que o limite para saber se há mais.
+ *
+ * A frase e a contagem das **confirmadas** vêm na mesma consulta: os átomos
+ * dela estão no grafo, e o primeiro é o de menor `inicios_s[0]` — o primeiro
+ * que eu disse —, com os sem âncora por último, na ordem do id. As em revisão
+ * têm os átomos na proposta, no R2, e quem os lê é a rota.
  */
-export async function todasSessoes(limite = LIMITE_LISTA_SESSOES): Promise<Sessao[]> {
-  const r = await query<{ sessao: Sessao }>(
+export async function paginaDeSessoes(
+  antes: string | null = null,
+  limite = LIMITE_LISTA_SESSOES,
+): Promise<PaginaDeSessoes> {
+  const linhas = await query<{ sessao: Sessao; itens: number; frase: string | null }>(
+    `MATCH (s:Sessao)
+     WHERE s.descartada_em IS NULL AND ($antes IS NULL OR s.iniciada_em < $antes)
+     WITH s ORDER BY s.iniciada_em DESC LIMIT $lidas
+     OPTIONAL MATCH (s)-[:GEROU]->(a:Atomo)
+     WHERE coalesce(a.status, 'ativo') = 'ativo'
+     WITH s, a ORDER BY coalesce(a.inicios_s[0], 1.0e12), toInteger(split(a.id, '-')[1])
+     WITH s, collect(a.texto) AS textos
+     RETURN s { .* } AS sessao, size(textos) AS itens, textos[0] AS frase
+     ORDER BY s.iniciada_em DESC`,
+    { antes, lidas: limite + 1 },
+  );
+  const lidas = linhas.slice(0, limite);
+  return {
+    mais: linhas.length > limite,
+    cursor: lidas.length > 0 ? lidas[lidas.length - 1].sessao.iniciada_em : null,
+    sessoes: lidas.map(({ sessao, itens, frase }) =>
+      sessao.status === "confirmada"
+        ? { ...sessao, frase: frase ?? "", itens: typeof itens === "number" ? itens : 0 }
+        : { ...sessao, frase: "", itens: null },
+    ),
+  };
+}
+
+/** Quantas sessões a lista tem ao todo — o cabeçalho. O filtro é o de `apareceNaLista`. */
+export async function contarSessoes(): Promise<number> {
+  const r = await queryUm<{ total: number }>(
     `MATCH (s:Sessao)
      WHERE s.descartada_em IS NULL
-     RETURN s { .* } AS sessao
-     ORDER BY s.iniciada_em DESC
-     LIMIT $limite`,
-    { limite },
+       AND (coalesce(s.chunks_total, 0) > 0 OR s.status = 'gravando')
+     RETURN count(s) AS total`,
+    {},
   );
-  return r.map((l) => l.sessao);
+  return r?.total ?? 0;
+}
+
+/**
+ * A frase da sessão em revisão: o primeiro item da proposta, pela mesma regra
+ * do grafo — o de menor início ancorado, e os sem âncora por último, na ordem
+ * do índice. "" quando a proposta está vazia.
+ */
+export function primeiroItem(
+  atomos: readonly Pick<AtomoProposto, "texto" | "indice" | "trechos">[],
+): string {
+  const inicio = (a: Pick<AtomoProposto, "trechos">) =>
+    (a.trechos ?? []).find((t) => t.inicio_s !== null)?.inicio_s ?? Number.POSITIVE_INFINITY;
+  const ordem = [...atomos].sort((a, b) => inicio(a) - inicio(b) || a.indice - b.indice);
+  return ordem[0]?.texto ?? "";
 }
 
 /**
