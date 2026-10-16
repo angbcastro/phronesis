@@ -67,6 +67,44 @@ olhado rodando, pela mesma razão da onda 1. A volta é a tag
 - [ ] As datas em `dd/mm` nas listas, na revisão e no radial; a lista de
       sessões com "hoje" e "ontem".
 
+## Interface — onda 3, o ritual (`Specs/interface-onda-3.md`)
+
+Construída e coberta por `pnpm typecheck`, `pnpm test` e `pnpm build`; nada
+olhado rodando, pela mesma razão das ondas 1 e 2. A volta é a tag
+`ui-antes-da-onda-3`. No celular, contra o banco de desenvolvimento:
+
+- [ ] **As entidades no topo, numa revisão que ainda cresce.** Abrir a revisão
+      logo depois de parar, rolar até o meio dos itens e esperar o fim chegar: no
+      Chrome a tela fica parada; no Safari ela pode pular (limite do §14).
+      Trocar uma conhecida por outra entidade: todos os itens que a citavam
+      passam a citar a nova, sem abrir item nenhum.
+- [ ] **O pronome resolvido no item.** Um item com "ela" mostra "quem é 'ela'?"
+      no cartão; escolher ali some o campo de todos os itens e resolve a linha de
+      cima. O confirmar travado diz o motivo no próprio texto, e o rodapé não
+      muda de altura.
+- [ ] **O checkbox.** Tocar um pouco fora dele, à esquerda ou acima, desmarca;
+      tocar no começo do texto edita, e não desmarca.
+- [ ] **O ▶ atravessando um bloco.** Um trecho perto dos 30 s de um bloco: "…",
+      depois ■ com o intervalo, toca de 2 s antes até o fim do que foi dito,
+      continua no bloco seguinte (com um vão curto) e para sozinho. Sem rede, o
+      botão diz "sem áudio".
+- [ ] **O microfone tirado no meio da fala.** Gravando com um fone com fio,
+      tirá-lo: a linha abaixo do timer diz "o microfone parou" em vermelho, e o
+      "parar" guarda o que já foi. Cortar a rede: "sem rede — guardando no
+      aparelho".
+- [ ] **O "tentar de novo" do corredor.** Forçar uma falha (rede cortada ao
+      parar): o verbo fica no centro, onde o círculo estava, e "tentar de novo"
+      ali mesmo leva à revisão quando a rede volta.
+- [ ] **O (i) com ▶.** Uma pergunta nova no chat: o (i) abre pelos trechos, cada
+      um com tipo, data e ▶, e o ▶ toca o trecho; "como procurei ▸" abre o
+      técnico. Uma pergunta que só consulta o grafo abre o (i) direto no
+      técnico. Mensagem antiga mostra os trechos sem ▶.
+- [ ] **Apagar conversa.** "apagar" vira "apagar?" em vermelho; o segundo toque
+      apaga; esperar 4 s, ou tocar fora, desarma.
+- [ ] **A rolagem do chat.** Durante uma resposta, subir para reler: a lista não
+      é puxada ao fim, e aparece "↓ resposta nova"; tocar nele desce. Com o
+      teclado aberto, a última fala continua à vista.
+
 ## Slice 11 — o que faltou, a pedido (`Specs/slice-11.md`)
 
 Construída e coberta pelo `pnpm test`; nada disto rodou contra modelo ainda. Em

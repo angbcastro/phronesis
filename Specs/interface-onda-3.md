@@ -295,3 +295,51 @@ Ponto de retorno antes do primeiro: a tag `ui-antes-da-onda-3`.
   áudio não estava no rastro gravado.
 
 ## Como ficou
+
+**Em 15/10/2026**, oito commits depois da tag `ui-antes-da-onda-3`, sem push —
+a slice 12 continua na frente do remoto, e o push levaria as duas juntas. Um
+commit por peça, na ordem da spec, e um oitavo para o que a peça da revisão
+deixou para trás:
+
+1. `fc0110a` — o rótulo do tipo em todas as telas.
+2. `c907687` — o tocador, na revisão e na calibração.
+3. `f6dfe9b` — as entidades no topo, a ordem de chegada, a conhecida trocável e
+   a troca como correção da resolução — com o carimbo dela só quando a
+   resolução rodou na sessão; sem ela, a correção continua sendo do grafo.
+4. `0f1f499` — o pronome no item e o motivo no botão. A linha "quem é 'ela'?"
+   fica enquanto o campo tem foco: o seletor avisa a cada tecla, e sem isso ela
+   sumiria na primeira letra.
+5. `bf7e7c5` — gravar: a linha do "salvo" com os quatro estados e o foco no
+   "parar".
+6. `525ca79` — o corredor centrado e o "tentar de novo", que espera o
+   `/finalizar` responder antes de voltar a olhar (senão leria o erro velho).
+7. `c861933` — o chat: o (i) pelos trechos, apagar em dois toques, a rolagem.
+8. `e9887df` — **o `<label>` do checkbox**, da §1.4. A peça 3 entrou sem ele, e
+   a falta só apareceu na conferência da spec, ao fechar a onda.
+
+O que a peça do chat decidiu sem a spec dizer:
+
+- **Resposta sem trecho abre o (i) direto no técnico.** Quem só leu fichas ou
+  consultou o grafo não tem átomo para listar, e um (i) com só "como procurei
+  ▸" seria um toque a mais para nada.
+- **As fontes do retrato também ganham ▶.** A spec falava das consultas que
+  montam `LinhaDeAtomo`; as fontes de `ler_retrato` vêm de `lerFontes`, e sem a
+  âncora ali os trechos do retrato seriam os únicos do (i) sem botão. A rota
+  `POST /api/entidades/retrato/fontes` passou a devolvê-la junto, e a tela do
+  retrato a ignora.
+- **Trecho sem o segundo fica sem ▶, e não com "sem áudio".** Mensagem antiga
+  e átomo sem âncora não se distinguem no rastro, e "sem áudio" diria que o
+  áudio sumiu.
+- **Fechar o (i), trocar de conversa ou fechar o chat para o som.** O tocador
+  já parava ao sair da tela; o chat não sai da tela quando fecha.
+- **O §6 da `slice-12.md` ganhou uma nota:** o bloco da Cypher e a tabela do
+  passo 4 dela moram dentro de "como procurei".
+
+O limite novo que a spec não previa foi para o §14: o primeiro ▶ de uma sessão
+no chat lê a proposta inteira por `/extracao`, por falta de rota só de blocos.
+
+Os testes da §5 existem — `motivoDaTrava`, `intervaloDeEscuta`, a troca de
+conhecida em `apurarCorrecoes`, `trechosDoRastro` (com `sessaoDoAtomo`) e
+`ROTULO_TIPO_ATOMO` —, e `pnpm typecheck`, `pnpm test` e `pnpm build` passaram
+nos dois últimos commits. **O que não foi feito: olhar nada disto rodando.**
+Está no `PROXIMOS-TESTES.md`.

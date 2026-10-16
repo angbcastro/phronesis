@@ -6,9 +6,10 @@ celular de 390 px, com o dedo, sem que erro pareça dica nem que controle
 precise de pontaria.
 
 Isto não é uma fatia vertical: é uma avaliação da interface inteira, feita a
-pedido, e o plano de quatro ondas que saiu dela. A primeira não pede decisão
-nenhuma e está feita (ver "Como ficou"); as outras três dependiam de cinco
-decisões, tomadas e registradas abaixo.
+pedido, e o plano de quatro ondas que saiu dela. A primeira não pedia decisão
+nenhuma; as outras três dependiam de cinco decisões, tomadas e registradas
+abaixo. **As ondas 1, 2 e 3 estão feitas** (ver "Como ficou"); a 4 ainda não
+tem spec.
 
 **Ponto de retorno:** a tag `ui-antes-da-avaliacao`.
 
@@ -105,10 +106,11 @@ número ("0.87" com ponto).
 
 ### Onda 3 — o ritual
 
-As decisões 4 e 5 estão feitas (ver "Como ficou"). O resto foi entrevistado em
-quatro rodadas, e a spec dele é `Specs/interface-onda-3.md` — que mudou parte
-do que está abaixo: as entidades sobem para o topo da revisão, o desmarcado e a
-barra do chat ficam como estão, e o ▶ toca 2 s antes do trecho.
+Feita — ver "Como ficou", aqui e na spec dela, `Specs/interface-onda-3.md`. As
+decisões 4 e 5 entraram com a onda 2; o resto foi entrevistado em quatro
+rodadas, e a spec mudou parte do que está abaixo: as entidades sobem para o
+topo da revisão, o desmarcado e a barra do chat ficam como estão, e o ▶ toca
+2 s antes do trecho.
 
 - **Revisão:** o tipo do átomo com rótulo ("opinião", e não `OPINIAO` a
   0,68 rem); o desmarcado com estado próprio, e não só opacidade; a faixa
@@ -130,7 +132,8 @@ barra do chat ficam como estão, e o ▶ toca 2 s antes do trecho.
 ### Onda 4 — a gestão
 
 A decisão 3 está feita (ver "Como ficou"), e o `<title>` por rota foi junto.
-Parte do resto muda contrato de rota.
+Parte do resto muda contrato de rota. **Ainda não especificada**: como a 3, ela
+começa por uma entrevista.
 
 - **Sessões com conteúdo:** quantos átomos e as entidades mais citadas, que
   pede mudar `GET /api/sessoes`; "hoje/ontem" e ano; "carregar mais" depois das
@@ -218,5 +221,28 @@ O que não foi feito: olhar as telas rodando. Está no `PROXIMOS-TESTES.md`.
 Um tropeço de processo: o commit do texto (`b63349a`) entrou com
 `tests/arquitetura.test.ts` falhando — os exemplos literais de data no §11
 liam como crônica —, e o conserto veio no commit seguinte (`fc8c896`).
+
+O que não foi feito: olhar nada disto rodando. Está no `PROXIMOS-TESTES.md`.
+
+**Onda 3, em 15/10/2026** — depois da tag `ui-antes-da-onda-3`, sem push. O
+detalhe, peça a peça, está no "Como ficou" de `Specs/interface-onda-3.md`. Em
+resumo:
+
+- **A revisão começa pelas entidades**, no topo e em ordem de chegada; trocar
+  uma conhecida re-aponta a sessão inteira e vira correção da resolução. O
+  pronome se resolve no próprio item, e o confirmar travado diz o motivo no
+  texto. O tipo tem rótulo ("opinião"), e o checkbox, ~44 px de toque com o
+  desenho de sempre.
+- **Um tocador só**, na revisão, na calibração e no (i) do chat: de 2 s antes
+  até o fim do trecho, com carregando, ■ e a falha à vista.
+- **Gravar** diz rede caída e microfone parado na linha do "salvo", e o foco
+  vai para o "parar".
+- **O corredor** fica no centro, com "tentar de novo" ali mesmo.
+- **O chat**: o (i) abre pelos trechos com ▶, e o técnico fica dobrado em "como
+  procurei"; apagar conversa é de dois toques; a rolagem fica parada quando eu
+  subi para reler.
+
+Um tropeço de processo: a peça da revisão entrou sem o `<label>` do checkbox, e
+ele veio num commit próprio quando a spec foi conferida item a item, ao fechar.
 
 O que não foi feito: olhar nada disto rodando. Está no `PROXIMOS-TESTES.md`.
