@@ -615,6 +615,10 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
 - **Um trecho que atravessa a borda de um bloco tem um vão** (§11.2): o
   tocador pede a URL do bloco seguinte quando o primeiro acaba, e a requisição
   é o silêncio entre os dois.
+- **A data de outro ano num vizinho da ponta do radial passa da borda do
+  desenho** (§11): o SVG tem `overflow: visible` e ela cabe na margem da página
+  no caso comum; com mais de cinco vizinhos no quadrante da direita, a órbita
+  de fora a leva um pouco além.
 - **Fechar a aba com um campo da ficha em foco perde o que estava nele**
   (§11): a ficha salva no `blur`, e o navegador fechando não chega a dar um.
   O rascunho também não sobrevive a recarregar a página.

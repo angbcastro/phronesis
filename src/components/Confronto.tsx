@@ -61,7 +61,7 @@ const ROTULO_RELACAO: Record<TipoRelacaoConfronto, string> = {
   COMPLEMENTA: "complementa",
 };
 
-/** A letra no rótulo da aresta — o que cabe num alvo de toque de 22 px. */
+/** A letra no rótulo da aresta — o que cabe no círculo da sigla. */
 const SIGLA: Record<TipoRelacaoConfronto, string> = {
   ATUALIZA: "A",
   CONTRADIZ: "×",
@@ -78,13 +78,36 @@ const chaveDe = (r: Pick<RelacaoNoRadial, "novo_id" | "velho_id">) => `${r.novo_
 
 // ──────────────────────── a geometria do radial ────────────────────────
 
+/*
+ * Tudo em unidade de `viewBox`. A 390 px o lado de 410 vira ~0,87 da tela:
+ * letra de 14 dá ~12 px, e o alvo de raio 24 dá ~42 px — o mínimo de dedo
+ * (onda 4 da interface). Os desenhos ficam pequenos; quem cresce é o alvo
+ * invisível em volta deles.
+ */
 const LADO = 410;
 const CENTRO = LADO / 2;
 const RAIO_CENTRO = 20;
-const RAIO_VIZINHO = 12;
-const ORBITA = 128;
+const RAIO_VIZINHO = 14;
+const RAIO_SIGLA = 13;
+/** O alvo de toque, invisível, em volta do nó e da sigla. */
+const ALVO_VIZINHO = 24;
+const ALVO_SIGLA = 18;
+/**
+ * A órbita encolheu de 128 para 118 quando a letra cresceu: a data ao lado de
+ * um vizinho da direita, com o ano, precisa caber no lado do desenho.
+ */
+const ORBITA = 118;
 /** Quanto de cada quadrante os vizinhos de um tipo ocupam, em graus. */
-const ABERTURA_MAX = 70;
+const ABERTURA_MAX = 76;
+/**
+ * O passo entre dois vizinhos do mesmo leque, em graus. A 118, 19° são ~39
+ * unidades: a data de 14 cabe entre dois nós sem encostar na do lado.
+ */
+const PASSO_LEQUE = 20;
+
+/** O quadrante, que diz para que lado do nó a data vai. */
+type Lado = "cima" | "direita" | "baixo" | "esquerda";
+const LADOS: readonly Lado[] = ["cima", "direita", "baixo", "esquerda"];
 
 interface Posto {
   relacao: RelacaoNoRadial;
@@ -92,12 +115,16 @@ interface Posto {
   x: number;
   y: number;
   angulo: number;
+  lado: Lado;
+  /** Onde a sigla mora na aresta, do centro (0) ao vizinho (1). */
+  fracao: number;
 }
 
 /**
  * Onde cada vizinho fica: um quadrante por tipo, os do mesmo tipo abertos em
  * leque dentro dele. Acima de cinco no mesmo quadrante, as órbitas alternam
- * para os nós não se sobreporem.
+ * para os nós não se sobreporem. Com três ou mais, as siglas alternam a
+ * distância do centro: no mesmo raio, duas vizinhas se tocavam.
  */
 function posicionar(radial: RadialDeAtomo): Posto[] {
   const vizinhoDe = new Map(radial.vizinhos.map((v) => [v.id, v]));
@@ -107,7 +134,7 @@ function posicionar(radial: RadialDeAtomo): Posto[] {
   TIPOS.forEach((tipo, q) => {
     const doTipo = radial.relacoes.filter((r) => r.tipo === tipo);
     const n = doTipo.length;
-    const abertura = Math.min(ABERTURA_MAX, 16 * (n - 1));
+    const abertura = Math.min(ABERTURA_MAX, PASSO_LEQUE * (n - 1));
     const meio = -90 + q * 90;
 
     doTipo.forEach((relacao, i) => {
@@ -123,10 +150,29 @@ function posicionar(radial: RadialDeAtomo): Posto[] {
         angulo,
         x: CENTRO + orbita * Math.cos(rad),
         y: CENTRO + orbita * Math.sin(rad),
+        lado: LADOS[q],
+        fracao: n >= 3 ? (i % 2 === 0 ? 0.52 : 0.64) : 0.56,
       });
     });
   });
   return postos;
+}
+
+/**
+ * Onde a data do vizinho fica. Nos quadrantes de cima e de baixo ela vai para
+ * fora do nó, centrada: ao lado, com a letra de 14, encostaria no vizinho
+ * seguinte do leque. Nos dos lados ela segue para fora, no sentido do texto.
+ */
+export function rotuloDoVizinho(p: { x: number; y: number; lado: Lado }): {
+  x: number;
+  y: number;
+  ancora: "start" | "middle" | "end";
+} {
+  const folga = RAIO_VIZINHO + 6;
+  if (p.lado === "cima") return { x: p.x, y: p.y - folga, ancora: "middle" };
+  if (p.lado === "baixo") return { x: p.x, y: p.y + folga + 11, ancora: "middle" };
+  if (p.lado === "direita") return { x: p.x + folga - 2, y: p.y + 5, ancora: "start" };
+  return { x: p.x - folga + 2, y: p.y + 5, ancora: "end" };
 }
 
 /** O segmento entre as bordas dos dois círculos, na direção do mais novo para o mais antigo. */
@@ -528,11 +574,11 @@ function VistaRadial({
 
           {postos.map((p) => {
             const k = chaveDe(p.relacao);
-            // O rótulo da aresta fica a 55% do caminho, do centro para fora:
-            // perto o bastante do vizinho para dizer de quem é.
-            const mx = CENTRO + (p.x - CENTRO) * 0.55;
-            const my = CENTRO + (p.y - CENTRO) * 0.55;
-            const fora = Math.cos((p.angulo * Math.PI) / 180) >= 0;
+            // O rótulo da aresta fica a pouco mais da metade do caminho, do
+            // centro para fora: perto o bastante do vizinho para dizer de quem é.
+            const mx = CENTRO + (p.x - CENTRO) * p.fracao;
+            const my = CENTRO + (p.y - CENTRO) * p.fracao;
+            const rotulo = rotuloDoVizinho(p);
             return (
               <g key={`n-${k}`}>
                 <g
@@ -543,8 +589,9 @@ function VistaRadial({
                   onClick={() => selecionar(k === selecionada ? null : k)}
                   onKeyDown={(e) => e.key === "Enter" && selecionar(k === selecionada ? null : k)}
                 >
-                  <circle cx={mx} cy={my} r={11} />
-                  <text x={mx} y={my + 4}>
+                  <circle cx={mx} cy={my} r={ALVO_SIGLA} className="alvo" />
+                  <circle cx={mx} cy={my} r={RAIO_SIGLA} />
+                  <text x={mx} y={my + 4.5}>
                     {SIGLA[p.relacao.tipo]}
                   </text>
                 </g>
@@ -556,12 +603,9 @@ function VistaRadial({
                   onClick={() => recentrar(p.vizinho.id)}
                   onKeyDown={(e) => e.key === "Enter" && recentrar(p.vizinho.id)}
                 >
+                  <circle cx={p.x} cy={p.y} r={ALVO_VIZINHO} className="alvo" />
                   <circle cx={p.x} cy={p.y} r={RAIO_VIZINHO} />
-                  <text
-                    x={p.x + (fora ? RAIO_VIZINHO + 4 : -(RAIO_VIZINHO + 4))}
-                    y={p.y + 4}
-                    textAnchor={fora ? "start" : "end"}
-                  >
+                  <text x={rotulo.x} y={rotulo.y} textAnchor={rotulo.ancora}>
                     {data(p.vizinho.valido_em)}
                   </text>
                 </g>

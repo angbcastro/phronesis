@@ -2739,7 +2739,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .radial-centro { display: flex; flex-direction: column; gap: 0.25rem; }
 .radial-centro p { margin: 0; line-height: 1.45; }
 
-.radial { width: 100%; max-width: 26rem; height: auto; align-self: center; }
+/* `overflow: visible`: a data de outro ano ao lado de um vizinho da ponta
+   passa um pouco da borda do desenho, e cabe na margem da página. */
+.radial { width: 100%; max-width: 26rem; height: auto; align-self: center; overflow: visible; }
 .radial .aresta { stroke: var(--cor); stroke-width: 1.5; fill: none; }
 /* Sutil é pontilhado e um pouco apagado: ligação provável, e a tela diz isso
    do mesmo jeito que o chat diz "parece ligado a". */
@@ -2747,22 +2749,25 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .radial .aresta.ativa { stroke-width: 3; opacity: 1; }
 .radial marker path { fill: var(--cor); }
 .radial .no-centro { fill: var(--acento); }
-.radial .rotulo-centro { fill: var(--sobre-acento); font-size: 10px; text-anchor: middle; }
+.radial .rotulo-centro { fill: var(--sobre-acento); font-size: 12px; text-anchor: middle; }
+/* O alvo de toque: invisível, maior que o desenho, e é ele que acende no foco
+   de teclado — o traço engrossando era fraco demais para se ver. */
+.radial .alvo { fill: transparent; stroke: none; }
 .radial .no-vizinho { cursor: pointer; }
-.radial .no-vizinho circle { fill: var(--fundo-alto); stroke: var(--cor); stroke-width: 1.5; }
+.radial .no-vizinho circle:not(.alvo) { fill: var(--fundo-alto); stroke: var(--cor); stroke-width: 1.5; }
 /* Cheio é "editada por mim": congelada, o agente não a toca mais. */
-.radial .no-vizinho.minha circle { fill: var(--cor); }
-.radial .no-vizinho text { fill: var(--texto-fraco); font-size: 9.5px; }
+.radial .no-vizinho.minha circle:not(.alvo) { fill: var(--cor); }
+.radial .no-vizinho text { fill: var(--texto-fraco); font-size: 14px; }
 .radial .sigla { cursor: pointer; }
-.radial .sigla circle { fill: var(--fundo); stroke: var(--cor); stroke-width: 1; }
-.radial .sigla text { fill: var(--cor); font-size: 11px; font-weight: 600; text-anchor: middle; }
-.radial .sigla.ativa circle { fill: var(--cor); }
+.radial .sigla circle:not(.alvo) { fill: var(--fundo); stroke: var(--cor); stroke-width: 1; }
+.radial .sigla text { fill: var(--cor); font-size: 13px; font-weight: 600; text-anchor: middle; }
+.radial .sigla.ativa circle:not(.alvo) { fill: var(--cor); }
 .radial .sigla.ativa text { fill: var(--fundo); }
 /* A única troca do anel de foco do sistema: num `<g>` de SVG o contorno não é
-   desenhado de forma confiável, e o foco vira a espessura do traço. Fraco ainda
-   — engrossá-lo é da onda 4 (`Specs/interface.md`). */
+   desenhado de forma confiável, e o foco vira o contorno do alvo de toque, no
+   acento — o anel de sempre, desenhado à mão. */
 .radial g:focus-visible { outline: none; }
-.radial g:focus-visible circle { stroke-width: 3; }
+.radial g:focus-visible .alvo { stroke: var(--acento); stroke-width: 2.5; }
 
 .legenda {
   margin: 0;

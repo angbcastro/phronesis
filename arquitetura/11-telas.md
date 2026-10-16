@@ -11,7 +11,7 @@
 | `/calibracao` | `Calibracao` | os agentes com material parado; em cada um, o que eu já corrigi — com o `antes → depois` e o áudio à mão —, a pauta de padrões e a emenda, seção por seção |
 | `/agentes` | `Agentes` | **o que entra**: a espinha do áudio ao grafo — STT, extração (com resolução e desempate rodando dentro dela), a revisão e o leque dos sete que partem do grafo gravado. Clicar num agente abre o prompt, o modelo e (na resolução e no confronto) o limiar |
 | `/agentes/consulta` | `Agentes` | **o que sai**: pergunta, chat, resposta, título, conversa. Mesma gaveta de edição; nada nesta tela escreve no grafo |
-| `/confronto` | `Confronto` | quantos átomos esperam a varredura, o botão "rodar agora", a busca, os últimos átomos tocados com o desfazer por linha (slice 5) — e o radial de um átomo, onde eu corrijo relação por relação (slice 5.2, §4.15.3) |
+| `/confronto` | `Confronto` | quantos átomos esperam a varredura, o botão "rodar agora", a busca, os últimos átomos tocados com o desfazer por linha (slice 5) — e o radial de um átomo, onde eu corrijo relação por relação (slice 5.2, §4.15.3). **O radial se lê a 390 px**: o `viewBox` de 410 vira ~0,87 da tela, e os tamanhos são escolhidos para isso — a data do vizinho a 14 (≈ 12 px), a sigla a 13, e em volta de cada nó e de cada sigla um **alvo invisível** de raio 24 e 18 (≈ 42 e 31 px), que é o que acende no foco de teclado. A data dos quadrantes de cima e de baixo vai acima ou abaixo do nó, centrada (`rotuloDoVizinho`); a dos lados, para fora. O leque abre 20° por vizinho e as siglas alternam a distância do centro com três ou mais, para não se tocarem; a órbita é de 118, e o SVG tem `overflow: visible` para a data de outro ano na ponta caber na margem. O maior radial tem 8 relações e no máximo 6 num quadrante: o problema era o tamanho, e teto por quadrante foi recusado — esconderia relação para resolver um amontoado que não existe |
 | `/entrar` | página de login | pede o e-mail permitido; o botão vira "pedindo…" e não aceita o segundo toque, e sem rede diz que não alcançou o servidor — a resposta do servidor, quando há, continua idêntica nos três caminhos (§7) |
 
 **Clicar na sessão leva sempre para onde ainda há o que fazer** (`destino()`,
@@ -573,8 +573,9 @@ O seletor vai dentro de `:where()`, que zera a especificidade: as regras de foco
 de componente que já existiam (a marca, a engrenagem, o chat, a ficha) continuam
 vencendo esta, e componente novo nasce com anel sem ninguém lembrar. O acento
 sobre `--fundo` dá ~5:1. Nenhuma regra apaga o anel sem pôr outro no lugar; o
-radial do confronto, que troca o anel pela espessura do traço, é a exceção
-anotada no código.
+radial do confronto, que desenha o anel à mão — o contorno do alvo de toque,
+no acento, porque num `<g>` de SVG o `outline` não sai confiável —, é a
+exceção anotada no código.
 
 `.so-leitor` é texto fora da tela e dentro do leitor — o "editado" do ponto que
 é só cor no painel de agentes, o "(editar)" do parágrafo da revisão que vira
