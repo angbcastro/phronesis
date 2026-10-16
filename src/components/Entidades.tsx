@@ -625,6 +625,17 @@ export function Entidades() {
     void carregar();
   }
 
+  /**
+   * O par que o agente achou abre a **mesma comparação** da fusão à mão: a
+   * ficha da primeira, com a segunda já escolhida — as duas lado a lado, o
+   * aviso de que não tem desfazer e o "manter esta" de cada lado. Era um
+   * "manter X" que fundia num toque, sem mostrar qual ficha se perdia.
+   */
+  function compararPar(par: Par, botao: HTMLButtonElement) {
+    abrir(par.a, botao);
+    setFusao({ termo: "", alvo: par.b });
+  }
+
   async function saoDistintas(par: Par) {
     setOcupado(`${par.a}|${par.b}`);
     await fetch("/api/entidades/distintas", {
@@ -1173,21 +1184,15 @@ export function Entidades() {
               {p.explicacao || p.motivo} · {p.sessoes_a} e {p.sessoes_b} sessões
             </p>
             <div className="acoes-sessao">
-              {/* Qual sobrevive é escolha minha: o nome do vencedor vira o nome
-                  de exibição e vai para o vocabulário do STT. */}
+              {/* Qual sobrevive é escolha minha, e se faz na comparação: o nome
+                  do vencedor vira o nome de exibição e vai para o vocabulário
+                  do STT, e a ficha da perdedora não é copiada. */}
               <button
                 className="botao"
                 disabled={ocupado === chave}
-                onClick={() => void fundir(p.a, p.b)}
+                onClick={(ev) => compararPar(p, ev.currentTarget)}
               >
-                manter {p.nome_a}
-              </button>
-              <button
-                className="botao"
-                disabled={ocupado === chave}
-                onClick={() => void fundir(p.b, p.a)}
-              >
-                manter {p.nome_b}
+                comparar
               </button>
               <button
                 className="botao"

@@ -639,7 +639,7 @@ lista para baixo. Por isso:
 | **fechar** | o `←`, o `Esc` e o véu tiram o foco do campo, esperam o que está gravando e fecham. Se sobrou rascunho — falhou, nome vazio ou pronome —, o `←` vira "← descartar N?" no `--erro`, e o segundo pedido descarta e fecha; desarma em 4 s ou no desfoque | texto escrito à mão não volta. Guardar calado e salvar ao fechar foram recusados |
 | **o topo** | busca, filtro de tipo e "sem resumo" | a lista vem inteira do grafo, e sem busca achar uma entidade é rolar |
 | **o lote** | "enriquecer" é um **modo**: só nele existem checkboxes, e a barra de "selecionar todas" fica `sticky` | uma coluna de checkboxes em toda linha cobraria uma decisão que eu quase nunca tomo |
-| **fundir** | `fundir com…` dentro da ficha: escolher, comparar lado a lado, escolher quem sobrevive | a rota aceita qualquer par, e a tela não se limita ao que a distância de string aproximou |
+| **fundir** | `fundir com…` dentro da ficha: escolher, comparar lado a lado, escolher quem sobrevive. **O par de "procurar duplicatas" entra no mesmo passo**: "comparar" abre a ficha da primeira com a segunda já escolhida | a rota aceita qualquer par, e a tela não se limita ao que a distância de string aproximou. O par fundia num toque ("manter X"), sem mostrar qual ficha se perdia — o mesmo ato irreversível, agora com o mesmo aviso |
 
 **A busca é a de `src/lib/catalogo.ts`, e não uma segunda.** `peneirar()` chama
 `montarCatalogo` + `buscar` e depois reencontra o objeto inteiro por
