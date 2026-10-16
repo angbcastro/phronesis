@@ -1423,6 +1423,14 @@ export interface AtomoAchado {
   cita: string[];
   /** Só quando a busca foi vetorial. Cosseno, como em todo o resto. */
   similaridade?: number;
+  /**
+   * O segundo do áudio da **primeira** âncora (`inicios_s[0]`, `fins_s[0]`) —
+   * é o que dá ▶ ao trecho no (i). Só a tela os lê: `linhaDeAtomo`, o texto que
+   * vai ao modelo, não os imprime. Ausentes em átomo sem âncora e em mensagem
+   * gravada antes de o rastro guardá-los.
+   */
+  inicio_s?: number;
+  fim_s?: number;
 }
 
 /**

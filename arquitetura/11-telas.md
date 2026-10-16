@@ -203,6 +203,11 @@ separador que conta quantas são), o botão de nova conversa, a conversa aberta
 com as mensagens, o campo de texto, e o "parar" no lugar do enviar enquanto o
 agente trabalha.
 
+**Apagar conversa é de dois toques, na tela**, como o apagar de sessão:
+"apagar" vira "apagar?" no `--erro`, e o segundo toque apaga. Desarma ao perder
+o foco ou em 4 s (`DESARME_MS`). A janela nativa do navegador (`confirm()`) foi
+recusada: era a única do sistema, e não se parecia com ele.
+
 **Abrir a barra é sempre começar do zero** — conversa nova, campo vazio, foco no
 campo: eu abro o chat para perguntar uma coisa nova, e cair no meio da conversa
 de ontem seria uma saída a mais para dar antes de escrever. O que defende a
@@ -227,9 +232,28 @@ em sincronia.
 
 O progresso aparece como uma linha por passo concluído ("buscou 'término' ·
 sobre Isinha — 4 trechos"), e não como um carregando genérico: a espera de uma
-pergunta composta é real, e fica opaca demais sem sinal nenhum. Cada resposta do
-agente tem um **(i)** que abre o rastro completo — cada chamada, os parâmetros e
-os átomos que voltaram, com tipo, data, entidades e similaridade.
+pergunta composta é real, e fica opaca demais sem sinal nenhum.
+
+**A rolagem respeita quem está relendo.** A menos de 80 px do fim
+(`PERTO_DO_FIM_PX`), a lista segue a resposta chegando. Mais acima, ela fica
+parada, e um "↓ resposta nova" gruda no pé da área que rola; tocar desce e o
+aviso some, e rolar até o fim também. A pergunta que eu mando e a conversa que
+eu abro rolam ao fim sem perguntar, e o teclado subindo também: ali eu estou
+escrevendo, não relendo. Acompanhar sempre o fim foi recusado — puxava a linha
+de debaixo do olho a cada passo que chegava.
+
+**Cada resposta do agente tem um (i), e ele abre pelos trechos**: todo átomo que
+as chamadas trouxeram, uma vez só, na ordem em que vieram (`trechosDoRastro`),
+cada um com o tipo, a data e o ▶ do tocador (§11.2). O ▶ precisa da sessão e
+do segundo: a sessão sai do id do átomo (`<sessao_id>-<ordem>`), o segundo é a
+primeira âncora que o rastro guarda (§4.16.2), e os blocos vêm de
+`GET /api/sessoes/:id/extracao`, uma ida por sessão. Trecho sem o segundo fica
+sem ▶ — e não com "sem áudio", que diria que o áudio sumiu. O técnico — cada
+chamada, os parâmetros, o recorte, a similaridade, as fichas, o retrato, a
+Cypher — fica inteiro, dobrado sob "como procurei ▸"; resposta sem trecho
+nenhum, que só leu fichas ou linhas, abre o (i) direto nele. Os trechos citados
+sob a própria resposta foram recusados: pediriam contrato novo no prompt. Fechar
+o (i), trocar de conversa ou fechar o chat para o som.
 
 #### O PWA, que é instalabilidade e tela cheia — e mais nada
 

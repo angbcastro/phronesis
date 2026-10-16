@@ -2353,6 +2353,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 @media (hover: hover) { .lista-conversas .acao:hover { color: var(--texto); } }
 @media (hover: hover) { .lista-conversas .acao.apagar:hover { color: var(--erro); } }
+/* O primeiro toque do apagar: armado, no `--erro`, até o segundo toque, o
+   desfoque ou 4 s. */
+.lista-conversas .acao.armado { color: var(--erro); }
 
 .lista-conversas .separador {
   align-self: flex-start;
@@ -2402,6 +2405,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-left: 2px solid var(--linha);
   padding-left: 0.7rem;
 }
+/* Os trechos vêm primeiro: tipo e data numa linha, com o ▶ à direita, e o que
+   eu disse embaixo. O técnico mora dobrado em "como procurei". */
+.chat .rastro .trechos { margin: 0; }
+.chat .rastro .topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-2);
+  min-height: 2rem;
+}
+.chat .rastro .como { align-self: flex-start; }
+.chat .como-procurei { display: flex; flex-direction: column; gap: 0.6rem; }
 .chat .rastro .cabecalho { font-size: var(--fs-2); color: var(--texto-fraco); }
 .chat .rastro code { font-size: var(--fs-1); color: var(--acento-texto); }
 .chat .rastro ul {
@@ -2415,6 +2430,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .chat .rastro li { display: flex; flex-direction: column; gap: 0.1rem; font-size: var(--fs-2); line-height: 1.4; }
 .chat .rastro .meta { font-size: var(--fs-1); color: var(--texto-fraco); }
 .chat .rastro .elos { border-top: 1px dashed var(--linha); padding-top: 0.4rem; }
+
+/* "↓ resposta nova": chegou coisa enquanto eu relia mais acima. Gruda no pé da
+   área que rola, e não no da caixa — é dela que ele fala. */
+.chat .novidade {
+  position: sticky;
+  bottom: 0;
+  align-self: center;
+  flex: none;
+  background: var(--fundo-alto);
+  color: var(--texto);
+}
 
 /* O progresso por passo. Sem barra e sem porcentagem: o que a espera precisa
    dizer é *o que está sendo procurado*, e isso é uma frase. */

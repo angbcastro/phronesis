@@ -615,6 +615,13 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
 - **Um trecho que atravessa a borda de um bloco tem um vão** (§11.2): o
   tocador pede a URL do bloco seguinte quando o primeiro acaba, e a requisição
   é o silêncio entre os dois.
+- **Mensagem do chat cujo rastro não guardou o segundo não tem ▶ no (i)**
+  (§11): o trecho aparece com tipo, data e texto, e sem botão. O rastro é
+  gravado uma vez, com a resposta, e mensagem não ganha retrofill.
+- **O primeiro ▶ de uma sessão no chat lê a proposta inteira** (§11): os blocos
+  vêm de `GET /api/sessoes/:id/extracao`, que traz junto todos os átomos
+  propostos. Uma vez por sessão por abertura do chat; uma rota só de blocos
+  seria contrato novo para economizar uma leitura do R2.
 - **O dia nos prompts fora do chat é o de Greenwich.** Retrato, confronto,
   enriquecimento e correções leem `valido_em` cortando os dez primeiros
   caracteres: a sessão gravada depois das 21h chega com o dia seguinte aos

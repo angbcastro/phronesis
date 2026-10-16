@@ -561,6 +561,13 @@ explica o erro.
 "ver as 15 linhas", um toque abre. A tabela rola por dentro da própria caixa: a
 página não ganha rolagem horizontal no celular.
 
+**Tudo isso mora dentro de "como procurei ▸".** Desde a onda 3 da interface
+(`Specs/interface-onda-3.md` §4) o (i) abre pelos trechos — os átomos que as
+chamadas trouxeram, com ▶ —, e o técnico fica dobrado embaixo. O passo de
+`consultar_grafo` não traz átomo (`achados` vazio), então não acrescenta trecho;
+resposta que só consultou o grafo abre o (i) direto no técnico, com a Cypher à
+vista.
+
 **Quando o `chat-9` tirar uma ferramenta, o tipo do rastro não a perde.** A lista
 do que o modelo pode chamar e a lista do que um passo gravado pode ser são duas
 coisas: mensagem antiga com `buscar_atomos` continua desenhando o (i) dela.

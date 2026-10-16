@@ -100,6 +100,8 @@ import {
   partirLinhas,
   rotuloDaConversa,
   separarConversas,
+  sessaoDoAtomo,
+  trechosDoRastro,
 } from "@/components/Chat";
 import { chaveMensagens, chavePromptAgente } from "@/lib/chaves";
 import { AGENTE_IDS, FERRAMENTAS_CHAT, ehAgenteId } from "@/lib/tipos";
@@ -317,6 +319,29 @@ describe("buscar_atomos", () => {
       cita: [],
       similaridade: 0.62,
     });
+  });
+
+  /**
+   * O ▶ do (i) precisa do segundo do áudio (onda 3 da interface). Ele vem da
+   * primeira âncora, e só a tela o lê: o texto que vai ao modelo não muda.
+   */
+  it("a primeira âncora vem nos dois caminhos e no histórico, e o modelo não a lê", async () => {
+    await buscarAtomos({});
+    await buscarAtomos({ texto: "x" });
+    await historicoDoAtomo("a1");
+    for (const [cypher] of consulta.mock.calls.slice(0, 3)) {
+      expect(String(cypher)).toContain("a.inicios_s[0] AS inicio_s, a.fins_s[0] AS fim_s");
+    }
+
+    consulta.mockResolvedValue([
+      { id: "a1", texto: "t", tipo: "FATO", valido_em: "", sobre: [], cita: [], inicio_s: 192.4, fim_s: 199.1 },
+      { id: "a2", texto: "u", tipo: "FATO", valido_em: "", sobre: [], cita: [], inicio_s: null, fim_s: null },
+    ] as never);
+    const r = await buscarAtomos({});
+    expect(r.achados[0]).toMatchObject({ inicio_s: 192.4, fim_s: 199.1 });
+    expect(r.achados[1]).not.toHaveProperty("inicio_s");
+    expect(r.achados[1]).not.toHaveProperty("fim_s");
+    expect(linhaDeAtomo(r.achados[0])).not.toContain("192");
   });
 });
 
@@ -1470,6 +1495,43 @@ describe("o progresso e a lista", () => {
     const { ativas, arquivadas } = separarConversas(cs);
     expect(ativas.map((c) => c.id)).toEqual(["a", "c"]);
     expect(arquivadas.map((c) => c.id)).toEqual(["b"]);
+  });
+
+  /**
+   * O (i) abre pelos trechos (onda 3 da interface): todo átomo que as chamadas
+   * trouxeram, uma vez só, na ordem em que vieram. Um átomo que duas buscas
+   * alcançam é um trecho, não dois.
+   */
+  it("os trechos do (i) não se repetem e seguem a ordem das chamadas", () => {
+    const passos: PassoDeFerramenta[] = [
+      { ferramenta: "buscar_atomos", parametros: {}, achados: [atomo({ id: "a2" }), atomo({ id: "a1" })] },
+      { ferramenta: "consultar_grafo", parametros: {}, achados: [] },
+      {
+        ferramenta: "historico_do_atomo",
+        parametros: {},
+        achados: [atomo({ id: "a1", texto: "outra cópia" }), atomo({ id: "a3" })],
+      },
+    ];
+    const trechos = trechosDoRastro(passos);
+    expect(trechos.map((a) => a.id)).toEqual(["a2", "a1", "a3"]);
+    // A primeira aparição vence.
+    expect(trechos[1].texto).toBe("terminei com a Isinha ontem");
+  });
+
+  it("resposta que só leu fichas ou linhas não tem trecho", () => {
+    expect(
+      trechosDoRastro([
+        { ferramenta: "buscar_entidades", parametros: {}, achados: [], entidades: [] },
+        { ferramenta: "consultar_grafo", parametros: {}, achados: [] },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("a sessão sai do id do átomo, e id fora do formato não vira sessão", () => {
+    expect(sessaoDoAtomo("mfz1k2a3b4-12")).toBe("mfz1k2a3b4");
+    expect(sessaoDoAtomo("a1")).toBeNull();
+    expect(sessaoDoAtomo("../x-1")).toBeNull();
+    expect(sessaoDoAtomo("mfz1k2a3b4-")).toBeNull();
   });
 
   it("a lista mostra o dia, não a hora — o de Brasília", () => {

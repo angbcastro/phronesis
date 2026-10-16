@@ -314,7 +314,8 @@ src/components/   as telas, todas client
   Confronto.tsx   a varredura de relações (rodar, desfazer, reprocessar), a
                   busca de átomo e o radial onde eu corrijo relação por relação
   Chat.tsx        a barra, o painel, a lista de conversas, o progresso por passo
-                  e o (i) com o rastro — nasce dentro da `Gravacao`
+                  e o (i): os trechos com ▶, e o rastro dobrado em "como
+                  procurei" — nasce dentro da `Gravacao`
   ServiceWorker.tsx registra `sw.js`; não desenha nada
 src/app/api/      as rotas, por família — sessão, entidade, calibração, agentes,
                   átomos, confronto, chat e conversas, medidas, auth e cron

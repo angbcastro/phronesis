@@ -30,20 +30,24 @@
  * projeto historicamente corta, não adiciona.
  *
  * As funções puras deste arquivo (`frasePasso`, `rotuloDaConversa`,
- * `separarConversas`) são exportadas para `tests/chat.test.ts`: elas são a
- * lógica que erra calada — uma conversa sem título, um passo sem parâmetro.
+ * `separarConversas`, `trechosDoRastro`, `sessaoDoAtomo`) são exportadas para
+ * `tests/chat.test.ts`: elas são a lógica que erra calada — uma conversa sem
+ * título, um passo sem parâmetro, um trecho repetido no (i).
  * `partirLinhas` era a quarta, e mudou de casa na slice 8.2: o fluxo NDJSON
  * ganhou um segundo consumidor (a revisão que cresce) e o parser foi para
  * `@/client/ndjson`. Continua reexportado daqui porque é daqui que o teste o
  * importa, e é o mesmo parser.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type UIEvent } from "react";
 import { lerEventos, partirLinhas } from "@/client/ndjson";
+import { nomeDoOuvir, textoDoOuvir, useTocador } from "@/client/tocador";
 import { usaTransicao } from "@/client/transicao";
 import { dataCurta, diaLocal } from "@/lib/dia";
 import {
   mesAno,
   rotuloDoTipo,
+  type AtomoAchado,
+  type BlocoAbsoluto,
   type Conversa,
   type Mensagem,
   type PassoDeFerramenta,
@@ -217,6 +221,47 @@ export function rotuloDaConversa(c: Conversa, primeira?: string): string {
   return pergunta.length > TETO_ROTULO ? `${pergunta.slice(0, TETO_ROTULO)}…` : pergunta;
 }
 
+/**
+ * Os trechos do (i): todo átomo que as chamadas trouxeram, **uma vez só**, na
+ * ordem em que vieram — a primeira aparição vence. É a origem da resposta como
+ * eu a confiro, ouvindo; o porquê de cada um ter vindo fica em "como procurei".
+ *
+ * `consultar_grafo` e `buscar_entidades` não trazem átomo (`achados` vazio): a
+ * resposta que só leu linhas ou fichas não tem trecho, e o (i) abre direto no
+ * técnico.
+ */
+export function trechosDoRastro(passos: readonly PassoDeFerramenta[]): AtomoAchado[] {
+  const vistos = new Set<string>();
+  const trechos: AtomoAchado[] = [];
+  for (const p of passos) {
+    for (const a of p.achados ?? []) {
+      if (vistos.has(a.id)) continue;
+      vistos.add(a.id);
+      trechos.push(a);
+    }
+  }
+  return trechos;
+}
+
+/**
+ * A sessão de um átomo, pelo id: ele é `<sessao_id>-<ordem>` (`extracao.ts`).
+ * `null` fora do formato — e aí o trecho fica sem ▶, em vez de pedir áudio de
+ * uma sessão inventada.
+ */
+export function sessaoDoAtomo(id: string): string | null {
+  const m = /^([0-9a-z]{8,40})-\d{1,7}$/.exec(id);
+  return m ? m[1] : null;
+}
+
+/**
+ * A quantos px do fim a lista ainda conta como "no fim" e segue a resposta
+ * chegando. Acima disso eu estou relendo, e ela fica parada.
+ */
+export const PERTO_DO_FIM_PX = 80;
+
+/** Quanto o "apagar?" armado espera o segundo toque antes de desarmar. */
+export const DESARME_MS = 4000;
+
 /** As ativas e as arquivadas, na ordem em que vieram. */
 export function separarConversas(conversas: readonly Conversa[]): {
   ativas: Conversa[];
@@ -250,9 +295,26 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
   const [rastroAberto, setRastroAberto] = useState<string | null>(null);
   // O painel sobrevive ao fechar por `DURACAO_CAIXA` — ver a constante.
   const [saindo, setSaindo] = useState(false);
+  /** A conversa cujo "apagar" foi tocado uma vez, e espera o segundo. */
+  const [armadoApagar, setArmadoApagar] = useState<string | null>(null);
+  /** Chegou coisa nova enquanto eu relia mais acima — o "↓ resposta nova". */
+  const [novidade, setNovidade] = useState(false);
 
   const parada = useRef<AbortController | null>(null);
   const fim = useRef<HTMLDivElement | null>(null);
+  /**
+   * Eu estou no fim da lista — ou perto dele, `PERTO_DO_FIM_PX`. Ref e não
+   * estado: muda a cada evento de rolagem, e ninguém desenha a partir dele.
+   * Crescer o conteúdo não dispara rolagem, então o valor é o da última vez que
+   * **eu** rolei — que é exatamente a pergunta.
+   */
+  const noFim = useRef(true);
+  /**
+   * O próximo crescimento da lista rola ao fim sem perguntar: a pergunta que eu
+   * acabei de mandar, a conversa que eu acabei de abrir. Ali eu não estou
+   * relendo nada.
+   */
+  const rolarJa = useRef(true);
   const campo = useRef<HTMLTextAreaElement | null>(null);
   // A caixa inteira, para o teclado virtual poder encolhê-la — ver o efeito do
   // `visualViewport`.
@@ -268,6 +330,33 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
    */
   const fechouPorTeclado = useRef(false);
 
+  /**
+   * Os blocos de cada sessão citada, para o ▶ dos trechos — uma ida por sessão
+   * a `GET /api/sessoes/:id/extracao`, como na calibração. Guarda a promessa,
+   * e não o resultado: dois ▶ da mesma sessão tocados em seguida esperam a
+   * mesma ida. A falha não fica guardada, e o próximo toque tenta de novo.
+   */
+  const blocosPorSessao = useRef(new Map<string, Promise<readonly BlocoAbsoluto[] | null>>());
+  const blocosDe = useCallback((sessao_id: string) => {
+    const guardado = blocosPorSessao.current.get(sessao_id);
+    if (guardado) return guardado;
+    const pedido = (async () => {
+      const r = await fetch(`/api/sessoes/${sessao_id}/extracao`, { cache: "no-store" }).catch(
+        () => null,
+      );
+      if (!r || !r.ok) return null;
+      const d = (await r.json().catch(() => null)) as { blocos?: BlocoAbsoluto[] } | null;
+      return d?.blocos ?? null;
+    })();
+    blocosPorSessao.current.set(sessao_id, pedido);
+    void pedido.then((b) => {
+      if (b === null) blocosPorSessao.current.delete(sessao_id);
+    });
+    return pedido;
+  }, []);
+  const tocador = useTocador(blocosDe);
+  const { parar: pararDeTocar } = tocador;
+
   const carregarMensagens = useCallback(async (id: string) => {
     setProblema(null);
     try {
@@ -276,6 +365,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
       });
       if (!r.ok) throw new Error(`/api/chat respondeu ${r.status}`);
       const d = (await r.json()) as { conversa: Conversa; mensagens: Mensagem[] };
+      rolarJa.current = true;
       setAberta(d.conversa);
       setMensagens(d.mensagens);
     } catch (e) {
@@ -298,6 +388,9 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
     setMensagens([]);
     setPassos([]);
     setProblema(null);
+    setRastroAberto(null);
+    setNovidade(false);
+    rolarJa.current = true;
     setVista("conversa");
   }, []);
 
@@ -434,9 +527,45 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
     if (aberto && vista === "conversa") campo.current?.focus();
   }, [aberto, vista]);
 
+  /**
+   * A rolagem respeita quem está relendo (`Specs/interface-onda-3.md`, decisão
+   * 14). No fim, a lista segue a resposta chegando, como sempre. Mais acima, ela
+   * fica parada e aparece "↓ resposta nova" no pé — puxar a tela de volta ao
+   * fim a cada passo que chega, enquanto eu leio a resposta de antes, era tirar
+   * a linha de debaixo do olho.
+   */
   useEffect(() => {
-    fim.current?.scrollIntoView({ block: "end" });
+    if (rolarJa.current || noFim.current) {
+      rolarJa.current = false;
+      // Dito aqui, e não só no `onScroll`: lista que não transborda não rola, e
+      // o valor velho de outra conversa ficaria valendo.
+      noFim.current = true;
+      fim.current?.scrollIntoView({ block: "end" });
+      setNovidade(false);
+    } else if (mensagens.length > 0 || passos.length > 0) {
+      setNovidade(true);
+    }
   }, [mensagens, passos]);
+
+  const aoRolar = useCallback((e: UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    noFim.current = el.scrollHeight - el.scrollTop - el.clientHeight < PERTO_DO_FIM_PX;
+    if (noFim.current) setNovidade(false);
+  }, []);
+
+  // Um som tocando sem o botão que o para à vista é microfone de outro: fechar
+  // o (i), trocar de conversa ou fechar o chat para o tocador.
+  useEffect(() => {
+    pararDeTocar();
+  }, [rastroAberto, aberto, vista, aberta?.id, pararDeTocar]);
+
+  // O "apagar?" armado desarma sozinho: um segundo toque minutos depois não é
+  // o segundo toque de nada.
+  useEffect(() => {
+    if (armadoApagar === null) return;
+    const t = setTimeout(() => setArmadoApagar(null), DESARME_MS);
+    return () => clearTimeout(t);
+  }, [armadoApagar]);
 
   const enviar = useCallback(async () => {
     const texto = rascunho.trim();
@@ -448,6 +577,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
     setProblema(null);
     setPassos([]);
     setRascunho("");
+    rolarJa.current = true;
     setMensagens((m) => [...m, { papel: "eu", texto, criado_em: new Date().toISOString() }]);
 
     try {
@@ -515,6 +645,8 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
       parada.current?.abort();
       setVista("conversa");
       setPassos([]);
+      setRastroAberto(null);
+      setNovidade(false);
       await carregarMensagens(c.id);
     },
     [carregarMensagens],
@@ -543,9 +675,15 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
 
   const apagar = useCallback(
     async (c: Conversa) => {
-      // Dois toques, como o "reprocessar tudo" de `/confronto`: esta é a única
-      // deleção de verdade do sistema, e ela não se desfaz.
-      if (!confirm(`Apagar "${rotuloDaConversa(c)}" de vez? Isso não tem volta.`)) return;
+      // Dois toques na própria tela, como o apagar de sessão e o "reprocessar
+      // tudo" de `/confronto` (decisão 13): apagar conversa não se desfaz. Era
+      // o `confirm()` do navegador — a única janela nativa do sistema, e a que
+      // menos parecia com ele.
+      if (armadoApagar !== c.id) {
+        setArmadoApagar(c.id);
+        return;
+      }
+      setArmadoApagar(null);
       try {
         const r = await fetch(`/api/conversas/${c.id}`, { method: "DELETE" });
         if (!r.ok) throw new Error(`/api/conversas respondeu ${r.status}`);
@@ -559,7 +697,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
         setProblema("não consegui apagar a conversa");
       }
     },
-    [aberta],
+    [aberta, armadoApagar],
   );
 
   const { ativas, arquivadas } = separarConversas(conversas);
@@ -643,9 +781,11 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
                     key={c.id}
                     conversa={c}
                     atual={c.id === aberta?.id}
+                    armado={armadoApagar === c.id}
                     aoAbrir={() => void abrirConversa(c)}
                     aoArquivar={() => void arquivar(c)}
                     aoApagar={() => void apagar(c)}
+                    aoDesarmar={() => setArmadoApagar((a) => (a === c.id ? null : a))}
                   />
                 ))}
               </ul>
@@ -666,9 +806,11 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
                           key={c.id}
                           conversa={c}
                           atual={c.id === aberta?.id}
+                          armado={armadoApagar === c.id}
                           aoAbrir={() => void abrirConversa(c)}
                           aoArquivar={() => void arquivar(c)}
                           aoApagar={() => void apagar(c)}
+                          aoDesarmar={() => setArmadoApagar((a) => (a === c.id ? null : a))}
                         />
                       ))}
                     </ul>
@@ -678,7 +820,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
             </div>
           ) : (
             <>
-              <div className="corpo mensagens">
+              <div className="corpo mensagens" onScroll={aoRolar}>
                 {mensagens.length === 0 && !enviando && (
                   <p className="aguardando">
                     pergunte o que quiser sobre o que você já registrou.
@@ -698,7 +840,9 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
                         >
                           i
                         </button>
-                        {rastroAberto === `${i}` && <Rastro passos={m.rastro ?? []} />}
+                        {rastroAberto === `${i}` && (
+                          <Origem passos={m.rastro ?? []} tocador={tocador} />
+                        )}
                       </>
                     )}
                   </article>
@@ -713,6 +857,18 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
                       {passos.length === 0 ? "procurando…" : "escrevendo…"}
                     </span>
                   </div>
+                )}
+
+                {novidade && (
+                  <button
+                    className="botao novidade"
+                    onClick={() => {
+                      setNovidade(false);
+                      fim.current?.scrollIntoView({ block: "end" });
+                    }}
+                  >
+                    ↓ resposta nova
+                  </button>
                 )}
 
                 <div ref={fim} />
@@ -785,15 +941,20 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
 function LinhaDaConversa({
   conversa,
   atual,
+  armado,
   aoAbrir,
   aoArquivar,
   aoApagar,
+  aoDesarmar,
 }: {
   conversa: Conversa;
   atual: boolean;
+  /** O primeiro toque do apagar já veio; o próximo apaga. */
+  armado: boolean;
   aoAbrir: () => void;
   aoArquivar: () => void;
   aoApagar: () => void;
+  aoDesarmar: () => void;
 }) {
   const arquivada = conversa.arquivada_em !== null;
   return (
@@ -805,23 +966,105 @@ function LinhaDaConversa({
       <button className="acao" onClick={aoArquivar}>
         {arquivada ? "desarquivar" : "arquivar"}
       </button>
-      <button className="acao apagar" onClick={aoApagar}>
-        apagar
+      <button
+        className={`acao apagar${armado ? " armado" : ""}`}
+        onClick={aoApagar}
+        onBlur={() => armado && aoDesarmar()}
+        aria-label={
+          armado ? `apagar "${rotuloDaConversa(conversa)}" de vez? toque de novo — não tem volta` : undefined
+        }
+      >
+        {armado ? "apagar?" : "apagar"}
       </button>
     </li>
   );
 }
 
 /**
- * O rastro do botão (i): cada chamada, o que foi pedido, e o que voltou.
+ * O (i): a origem da resposta (`Specs/interface-onda-3.md`, decisão 11).
+ *
+ * **Abre pelos trechos** — cada átomo que as chamadas trouxeram, uma vez só,
+ * com o tipo, a data e o ▶ do mesmo tocador da revisão. É a pergunta que eu
+ * faço ao (i) quase sempre: *de onde saiu isso*, e ouvir é a resposta que
+ * confere. Os trechos citados sob a própria resposta foram recusados: pediriam
+ * contrato novo no prompt, para o modelo dizer quais usou.
+ *
+ * **O técnico fica inteiro, dobrado** sob "como procurei": cada chamada, os
+ * parâmetros, o recorte, a similaridade, as fichas, o retrato e a Cypher. Sem
+ * trecho nenhum — a resposta só leu fichas ou linhas —, ele já abre aberto, que
+ * um toque para ver um botão seria toque à toa.
+ */
+function Origem({
+  passos,
+  tocador,
+}: {
+  passos: readonly PassoDeFerramenta[];
+  tocador: ReturnType<typeof useTocador>;
+}) {
+  const trechos = trechosDoRastro(passos);
+  const [comoAberto, setComoAberto] = useState(false);
+  const tecnicoAberto = trechos.length === 0 || comoAberto;
+
+  return (
+    <div className="rastro">
+      {trechos.length > 0 && (
+        <ul className="trechos">
+          {trechos.map((a) => {
+            const sessao_id = sessaoDoAtomo(a.id);
+            const inicio_s = a.inicio_s;
+            const estado = tocador.estadoDe(a.id);
+            return (
+              <li key={a.id}>
+                <span className="topo">
+                  <span className="meta">
+                    {rotuloDoTipo(a.tipo)}
+                    {dataCurta(a.valido_em) === "" ? "" : ` · ${dataCurta(a.valido_em)}`}
+                  </span>
+                  {/* Sem o segundo — átomo sem âncora, ou mensagem gravada antes
+                      de o rastro guardá-lo — o trecho fica sem ▶, e não com um
+                      "sem áudio" que diria que o áudio sumiu. */}
+                  {sessao_id !== null && typeof inicio_s === "number" && (
+                    <button
+                      className={`botao ouvir${estado ? ` ${estado}` : ""}`}
+                      aria-label={nomeDoOuvir(estado, inicio_s)}
+                      onClick={() =>
+                        void tocador.tocar(a.id, { sessao_id, inicio_s, fim_s: a.fim_s ?? null })
+                      }
+                    >
+                      {textoDoOuvir(estado, inicio_s, a.fim_s ?? null)}
+                    </button>
+                  )}
+                </span>
+                <span>{a.texto}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {trechos.length > 0 && (
+        <button
+          className="botao discreto como"
+          aria-expanded={comoAberto}
+          onClick={() => setComoAberto((v) => !v)}
+        >
+          como procurei {comoAberto ? "▾" : "▸"}
+        </button>
+      )}
+      {tecnicoAberto && <ComoProcurei passos={passos} />}
+    </div>
+  );
+}
+
+/**
+ * O rastro técnico do (i): cada chamada, o que foi pedido, e o que voltou.
  *
  * **Completo, e não uma lista plana dos átomos citados.** Com até oito chamadas
  * encadeadas, saber *por que* um átomo apareceu é o que separa uma resposta que
  * eu posso conferir de uma que eu tenho de acreditar.
  */
-function Rastro({ passos }: { passos: readonly PassoDeFerramenta[] }) {
+function ComoProcurei({ passos }: { passos: readonly PassoDeFerramenta[] }) {
   return (
-    <div className="rastro">
+    <div className="como-procurei">
       {passos.map((p, i) => (
         <div key={i} className="passo">
           <p className="cabecalho">

@@ -279,7 +279,16 @@ interface LinhaDeAtomo {
   sobre: string[];
   cita: string[];
   similaridade?: number;
+  /** `inicios_s[0]` e `fins_s[0]`: nulos quando o átomo não tem âncora. */
+  inicio_s?: number | null;
+  fim_s?: number | null;
 }
+
+/**
+ * A primeira âncora do átomo, para o ▶ do (i) — o modelo não a lê. Vai em toda
+ * consulta que devolve `LinhaDeAtomo`.
+ */
+const ANCORA_DE = (no: string) => `${no}.inicios_s[0] AS inicio_s, ${no}.fins_s[0] AS fim_s`;
 
 const daLinha = (l: LinhaDeAtomo): AtomoAchado => ({
   id: l.id,
@@ -289,6 +298,16 @@ const daLinha = (l: LinhaDeAtomo): AtomoAchado => ({
   sobre: l.sobre ?? [],
   cita: l.cita ?? [],
   ...(typeof l.similaridade === "number" ? { similaridade: l.similaridade } : {}),
+  ...ancoraDe(l),
+});
+
+/** Os dois segundos, só quando são número — o rastro não guarda `null`. */
+export const ancoraDe = (l: {
+  inicio_s?: unknown;
+  fim_s?: unknown;
+}): Pick<AtomoAchado, "inicio_s" | "fim_s"> => ({
+  ...(typeof l.inicio_s === "number" ? { inicio_s: l.inicio_s } : {}),
+  ...(typeof l.inicio_s === "number" && typeof l.fim_s === "number" ? { fim_s: l.fim_s } : {}),
 });
 
 /** `2026-09-13T10:00:00.000Z` e `13/09/2026` viram ambos `2026-09-13`, ou "". */
@@ -472,7 +491,8 @@ export async function buscarAtomos(
      WITH size(todos) AS total, a${ENTIDADES_DE("a")}
      WITH total, a, collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
      RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
-            coalesce(a.valido_em, '') AS valido_em, sobre, cita, total
+            coalesce(a.valido_em, '') AS valido_em, sobre, cita, total,
+            ${ANCORA_DE("a")}
      ORDER BY valido_em DESC`,
           parametros,
         )
@@ -494,7 +514,7 @@ export async function buscarAtomos(
           collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
      RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
             coalesce(a.valido_em, '') AS valido_em, sobre, cita, similaridade,
-            total, janela, acima_do_piso, melhor_abaixo
+            total, janela, acima_do_piso, melhor_abaixo, ${ANCORA_DE("a")}
      ORDER BY similaridade DESC`,
           {
             ...parametros,
@@ -1020,6 +1040,7 @@ export async function lerRetratoDoEu(dimensao?: unknown): Promise<ResultadoDoRet
       valido_em: f.valido_em,
       sobre: [],
       cita: [],
+      ...ancoraDe(f),
     }),
   );
   // O átomo que saiu depois continua na lista, dito: ele sustentou a seção
@@ -1088,7 +1109,7 @@ export async function historicoDoAtomo(atomoId: string): Promise<ResultadoDeHist
      WITH DISTINCT a${ENTIDADES_DE("a")}
      WITH a, collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
      RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
-            coalesce(a.valido_em, '') AS valido_em, sobre, cita
+            coalesce(a.valido_em, '') AS valido_em, sobre, cita, ${ANCORA_DE("a")}
      ORDER BY valido_em ASC`,
     { id },
   );

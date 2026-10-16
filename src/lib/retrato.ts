@@ -614,6 +614,9 @@ export interface FonteDoRetrato {
    * escrita.
    */
   status: string;
+  /** A primeira âncora — o ▶ do trecho no (i) do chat. Ausente sem âncora. */
+  inicio_s?: number;
+  fim_s?: number;
 }
 
 /** Quantos ids uma leitura aceita: o (i) de uma seção são até `MAX_FONTES`. */
@@ -627,14 +630,24 @@ export async function lerFontes(ids: readonly string[]): Promise<FonteDoRetrato[
   );
   if (limpos.length === 0) return [];
 
-  const linhas = await query<FonteDoRetrato>(
+  const linhas = await query<FonteDoRetrato & { inicio_s?: number | null; fim_s?: number | null }>(
     `UNWIND $ids AS id
      MATCH (a:Atomo { id: id })
      RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
             coalesce(a.valido_em, '') AS valido_em,
-            coalesce(a.status, 'ativo') AS status`,
+            coalesce(a.status, 'ativo') AS status,
+            a.inicios_s[0] AS inicio_s, a.fins_s[0] AS fim_s`,
     { ids: limpos },
   );
-  const porId = new Map(linhas.map((l) => [l.id, l]));
+  const porId = new Map(
+    linhas.map(({ inicio_s, fim_s, ...l }): [string, FonteDoRetrato] => [
+      l.id,
+      {
+        ...l,
+        ...(typeof inicio_s === "number" ? { inicio_s } : {}),
+        ...(typeof inicio_s === "number" && typeof fim_s === "number" ? { fim_s } : {}),
+      },
+    ]),
+  );
   return limpos.flatMap((id) => (porId.has(id) ? [porId.get(id)!] : []));
 }
