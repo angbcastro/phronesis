@@ -680,6 +680,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .atomo .linha { display: flex; gap: 0.7rem; align-items: flex-start; }
 .atomo input[type="checkbox"] { margin-top: 0.3rem; width: 1.1rem; height: 1.1rem; accent-color: var(--acento); flex: none; }
+/* A área de toque do checkbox: o `<label>` em volta ganha ~44 px por fora, sem
+   mudar o desenho. Pela direita ela para antes do texto (o vão da `.linha` é
+   0,7 rem): tocar no texto é editar (decisão 5 da avaliação). */
+.atomo .marcar { position: relative; display: flex; flex: none; }
+.atomo .marcar::after { content: ""; position: absolute; inset: -9px -7px -10px -11px; }
 .atomo .corpo { flex: 1; min-width: 0; }
 
 /* O rótulo do tipo, em minúsculas ("opinião"): o espaçamento largo era do

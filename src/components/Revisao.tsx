@@ -1362,21 +1362,26 @@ export function Revisao({ id }: { id: string }) {
               className={`atomo${rejeitado ? " fora" : ""}${incerto ? " incerto" : ""}`}
             >
               <div className="linha">
-                <input
-                  type="checkbox"
-                  checked={!rejeitado}
-                  // O texto do átomo no nome: "manter este item" igual em toda
-                  // linha não dizia, a quem ouve, qual item.
-                  aria-label={`manter: ${texto}`}
-                  onChange={() =>
-                    setRejeitados((s) => {
-                      const n = new Set(s);
-                      if (n.has(a.indice)) n.delete(a.indice);
-                      else n.add(a.indice);
-                      return n;
-                    })
-                  }
-                />
+                {/* O desenho do checkbox fica como está (decisão 3); o `<label>`
+                    em volta é só a área de toque, ~44 px e invisível, que não
+                    avança sobre o texto — tocar no texto é editar. */}
+                <label className="marcar">
+                  <input
+                    type="checkbox"
+                    checked={!rejeitado}
+                    // O texto do átomo no nome: "manter este item" igual em toda
+                    // linha não dizia, a quem ouve, qual item.
+                    aria-label={`manter: ${texto}`}
+                    onChange={() =>
+                      setRejeitados((s) => {
+                        const n = new Set(s);
+                        if (n.has(a.indice)) n.delete(a.indice);
+                        else n.add(a.indice);
+                        return n;
+                      })
+                    }
+                  />
+                </label>
                 <div className="corpo">
                   <span className="tipo">{ROTULO_TIPO_ATOMO[v.tipo] ?? v.tipo}</span>
                   {editandoTexto.has(a.indice) ? (
