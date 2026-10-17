@@ -270,3 +270,6 @@ O mesmo tropeço da onda 3, menor: a borda da seção tirada no editor veio num
 commit próprio, achada na conferência da spec.
 
 O que não foi feito: olhar nada disto rodando. Está no `PROXIMOS-TESTES.md`.
+
+**As quatro ondas foram para o ar em 17/10/2026**, num push só com a slice 12,
+sem ter sido olhadas rodando.

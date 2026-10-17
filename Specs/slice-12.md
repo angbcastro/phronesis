@@ -1,6 +1,6 @@
 # Slice 12 — O chat que navega o grafo
 
-> **Estado: construída, não no ar — falta o julgamento no app (ver "Como ficou").** As decisões estão tomadas
+> **Estado: no ar, sem o julgamento no app (ver "Como ficou").** As decisões estão tomadas
 > (entrevista de 13/10), e o protótipo (ordem 0) rodou contra produção no mesmo
 > dia: as receitas da §5 são as que rodaram. O passo 1 pôs a trava à prova
 > contra a instância e mediu o piso com vetor de pergunta: não há número que
@@ -733,8 +733,10 @@ quê. `ler_retrato` fica — ele lê o R2, não o grafo.
 
 ## Como ficou
 
-Construída em 17/10/2026, com `pnpm test` verde. **Não está no ar**: vai no
-mesmo push da interface (ondas 1 a 4), depois de um code review. Os itens 1, 5 e
+Construída em 17/10/2026, com `pnpm test` verde. **Foi para o ar no mesmo
+dia**, no mesmo push da interface (ondas 1 a 4), sem code review — o diff das
+duas frentes passou do limite do ultrareview, e separar só o chat pedia
+reescrever a história —, e sem o julgamento no app. Os itens 1, 5 e
 6 do "pronto quando" se julgam no app, e estão no `PROXIMOS-TESTES.md`; o 2, o 3
 e o 4 estão feitos — os dois primeiros pelos testes, o quarto abaixo.
 

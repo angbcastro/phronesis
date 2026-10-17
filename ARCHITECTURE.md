@@ -42,7 +42,7 @@ construído e ainda não foi validado está em `PROXIMOS-TESTES.md`.
 | 9 | a resposta do chat vem antes do despejo | sim |
 | 10 | o retrato do "eu" | sim |
 | 11 | o que faltou, a pedido | sim |
-| 12 | o chat que navega o grafo | não |
+| 12 | o chat que navega o grafo | sim |
 
 "No ar" é estar em `master` no remoto: push é deploy, e a migration roda no
 build (`CLAUDE.md`). Se uma fatia no ar já foi validada é pergunta do
