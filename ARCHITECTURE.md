@@ -338,8 +338,10 @@ db/migrations/    definição canônica do schema
 scripts/          migrate.ts (aplica migrations), smoke.ts (confere externos),
                   raciocinio.ts (mede como pedir ao modelo para pensar menos),
                   comparar-confronto.ts (os mesmos átomos em vários modelos,
-                  lado a lado — o único que importa de `src/`, pelo
-                  gancho-src.mjs e o gancho-src-resolver.mjs; §4.15.3);
+                  lado a lado; §4.15.3) e comparar-chat.ts (as mesmas
+                  perguntas, de um arquivo meu, em vários modelos, com o
+                  rastro de cada resposta; §4.16.1) — os dois que importam de
+                  `src/`, pelo gancho-src.mjs e o gancho-src-resolver.mjs;
                   dev.ps1 sobe o `pnpm dev` e abre o navegador, e atalho.ps1
                   recria o atalho dele na área de trabalho
 tests/            vitest sobre a lógica pura — nenhuma credencial, nenhuma rede

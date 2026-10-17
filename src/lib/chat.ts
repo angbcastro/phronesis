@@ -1538,6 +1538,20 @@ export interface OpcoesResposta {
   /** O "parar" da tela. Aborta a chamada em curso e nada é gravado. */
   sinal?: AbortSignal;
   agora?: Date;
+  /**
+   * Um modelo dado direto, com o prompt **da base**, sem ler o painel. É a
+   * comparação de modelos (`scripts/comparar-chat.ts`): ela mede a base do git
+   * contra modelos que eu ainda não escolhi, e um override salvo no painel
+   * misturaria as duas coisas — o mesmo desenho do confronto.
+   */
+  modelo?: string;
+}
+
+/** O que as chamadas de uma resposta gastaram; `null` quando o provedor não disse. */
+export interface UsoDeTokens {
+  entrada: number | null;
+  saida: number | null;
+  raciocinio: number | null;
 }
 
 export interface Resposta {
@@ -1545,6 +1559,34 @@ export interface Resposta {
   rastro: PassoDeFerramenta[];
   modelo: string;
   prompt_version: string;
+  /**
+   * A soma do loop inteiro e da síntese, quando houve. Serve à comparação de
+   * modelos; a rota não o grava na mensagem.
+   */
+  uso: UsoDeTokens;
+}
+
+type ComUso = {
+  totalUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    outputTokenDetails?: { reasoningTokens?: number };
+  };
+};
+
+/** O uso somado de várias chamadas. Um número que nenhuma informou continua `null`. */
+export function somarUso(chamadas: readonly ComUso[]): UsoDeTokens {
+  const soma = (pegar: (u: NonNullable<ComUso["totalUsage"]>) => number | undefined) => {
+    const ns = chamadas
+      .map((c) => (c.totalUsage ? pegar(c.totalUsage) : undefined))
+      .filter((n): n is number => typeof n === "number");
+    return ns.length === 0 ? null : ns.reduce((a, b) => a + b, 0);
+  };
+  return {
+    entrada: soma((u) => u.inputTokens),
+    saida: soma((u) => u.outputTokens),
+    raciocinio: soma((u) => u.outputTokenDetails?.reasoningTokens),
+  };
 }
 
 /**
@@ -1794,7 +1836,10 @@ export async function responder(
   garantirGateway();
   const { aoPasso, sinal, agora = new Date() } = opcoes;
 
-  const meu = await efetivo("chat", { prompt: INSTRUCOES, modelo: modeloChat() });
+  const meu =
+    opcoes.modelo !== undefined
+      ? { prompt: INSTRUCOES, modelo: opcoes.modelo, hash: null }
+      : await efetivo("chat", { prompt: INSTRUCOES, modelo: modeloChat() });
   const system = montarSistema(meu.prompt, agora);
   const messages = historico.map(paraOModelo);
 
@@ -1851,6 +1896,7 @@ export async function responder(
 
   let texto = textoDaResposta(r).trim();
   let ultima: { response?: { modelId?: string } } = r;
+  const chamadas: ComUso[] = [r];
 
   if (texto === "") {
     console.warn(
@@ -1873,6 +1919,7 @@ export async function responder(
     );
     texto = textoDaResposta(sintese).trim();
     ultima = sintese;
+    chamadas.push(sintese);
     if (veioDoPensamento(sintese)) {
       console.warn(`[chat] texto vazio na síntese, lendo o pensamento.`, diagnostico(sintese));
     }
@@ -1892,5 +1939,6 @@ export async function responder(
     rastro,
     modelo: ultima.response?.modelId ?? meu.modelo,
     prompt_version: carimbo(PROMPT_VERSION_CHAT, meu.hash),
+    uso: somarUso(chamadas),
   };
 }

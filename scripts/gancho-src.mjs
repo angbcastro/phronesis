@@ -6,8 +6,8 @@
  * nenhum dos dois. Este gancho resolve só isso — e nada mais: o que ele não
  * reconhece segue para o resolvedor padrão.
  *
- * É o que deixa `comparar-confronto.ts` usar o prompt e o parser de produção
- * em vez de uma cópia que divergiria em silêncio. Os outros scripts continuam
+ * É o que deixa `comparar-confronto.ts` e `comparar-chat.ts` usarem o prompt e
+ * o código de produção em vez de uma cópia que divergiria em silêncio. Os outros scripts continuam
  * soltos (`smoke.ts`, `raciocinio.ts`), por decisão já registrada neles.
  *
  *   node --import ./scripts/gancho-src.mjs scripts/comparar-confronto.ts

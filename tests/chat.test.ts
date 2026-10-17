@@ -77,6 +77,7 @@ import {
   respostaDaBusca,
   respostaDoHistorico,
   responder,
+  somarUso,
   tiposValidos,
 } from "@/lib/chat";
 import {
@@ -1159,6 +1160,38 @@ describe("o loop do agente", () => {
     expect(sintese.toolChoice).toBe("none");
     expect((sintese.messages as unknown[]).length).toBe(2);
     expect(r.texto).toBe("com o que achei, dá para dizer que…");
+  });
+
+  it("o modelo dado direto vence o painel, com o prompt da base", async () => {
+    // A comparação de modelos mede a base do git: um override salvo no painel
+    // misturaria as duas coisas.
+    vi.mocked(getJson).mockResolvedValue({
+      overrides: { chat: { modelo: "outro/do-painel", prompt_hash: "a1b2c3d4" } },
+    } as never);
+    chamar.mockResolvedValue(respostaDoModelo("pronto"));
+    const r = await responder([{ papel: "eu", texto: "x", criado_em: "" }], {
+      modelo: "anthropic/claude-sonnet-5.5",
+    });
+    const pedido = chamar.mock.calls[0][0] as { model: string; system: string };
+    expect(pedido.model).toBe("anthropic/claude-sonnet-5.5");
+    expect(pedido.system.startsWith(INSTRUCOES)).toBe(true);
+    expect(r.prompt_version).toBe(PROMPT_VERSION_CHAT);
+  });
+
+  it("o uso soma o loop e a síntese, e o que ninguém disse fica nulo", async () => {
+    chamar
+      .mockResolvedValueOnce(
+        respostaDoModelo("", {
+          steps: [{ toolCalls: [1, 2, 3, 4, 5, 6, 7, 8] }],
+          totalUsage: { inputTokens: 1000, outputTokens: 200, outputTokenDetails: { reasoningTokens: 150 } },
+        }),
+      )
+      .mockResolvedValueOnce(
+        respostaDoModelo("síntese", { totalUsage: { inputTokens: 1500, outputTokens: 80 } }),
+      );
+    const r = await responder([{ papel: "eu", texto: "x", criado_em: "" }]);
+    expect(r.uso).toEqual({ entrada: 2500, saida: 280, raciocinio: 150 });
+    expect(somarUso([{}])).toEqual({ entrada: null, saida: null, raciocinio: null });
   });
 
   it("o teto é o número declarado, e ele para o loop", async () => {
