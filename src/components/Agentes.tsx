@@ -616,7 +616,7 @@ function Editor({
               </div>
               <div className="par-longo">
                 {d.antes !== null && (
-                  <div className="lado">
+                  <div className="lado antes">
                     <span className="rotulo">no git</span>
                     <p>{d.antes}</p>
                   </div>

@@ -1848,6 +1848,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 /* O que ela passa a dizer é o que vale: a borda é a única marca de direção. */
 .edicao .par-longo .lado:last-child p { border-left-color: var(--acento); }
+/* No editor de agente, a seção tirada só tem o lado do git — e ele é o último
+   sem ser o que vale. */
+.edicao .par-longo .lado.antes p { border-left-color: var(--linha); }
 
 /* Espaço para ela nas telas que ela cobre. `.leitura` já abre com 3.5rem, e
    `.agentes` declara o mesmo 3.75rem no próprio `padding` — ela vem depois
