@@ -255,6 +255,19 @@ nenhum, que só leu fichas ou linhas, abre o (i) direto nele. Os trechos citados
 sob a própria resposta foram recusados: pediriam contrato novo no prompt. Fechar
 o (i), trocar de conversa ou fechar o chat para o som.
 
+**O passo de `consultar_grafo` mostra a consulta** (`BlocoDaConsulta`): o
+cabeçalho diz as linhas, o corte e o tempo; embaixo, `sentido: "…"` quando houve
+`texto`, os avisos do banco, e a Cypher num bloco de código, quebrando a linha
+em vez de rolar. As linhas que o modelo leu vêm **recolhidas** — "ver as 15
+linhas ▸", ou "ver as 150 de 412 linhas ▸" quando a saída cortou —, e um toque
+abre a tabela, que rola por dentro da própria caixa, com o cabeçalho preso no
+topo: a página não ganha rolagem horizontal no celular. Só a Cypher e a
+contagem foram recusadas, porque auditar o que o modelo leu pediria rodar a
+consulta de novo; tudo aberto também, porque três consultas de cinquenta linhas
+viram uma rolagem longa. A célula lê lista de valores simples como texto
+corrido, e vazio como um traço (`celulaDoRastro`). A consulta recusada ou que
+falhou também aparece: a Cypher é o que explica o erro.
+
 #### O PWA, que é instalabilidade e tela cheia — e mais nada
 
 `CLAUDE.md` decide PWA como stack, e o que existe é o mínimo que faz o app

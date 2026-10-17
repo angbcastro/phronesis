@@ -2456,6 +2456,50 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .chat .rastro li { display: flex; flex-direction: column; gap: 0.1rem; font-size: var(--fs-2); line-height: 1.4; }
 .chat .rastro .meta { font-size: var(--fs-1); color: var(--texto-fraco); }
 .chat .rastro .elos { border-top: 1px dashed var(--linha); padding-top: 0.4rem; }
+/* A consulta (slice 12): a Cypher como o modelo a escreveu, e as linhas
+   recolhidas. A tabela rola dentro da própria caixa — no celular, a página não
+   ganha rolagem horizontal por causa dela. */
+.chat .rastro .consulta { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.chat .rastro .consulta .botao { align-self: flex-start; }
+.chat .rastro .cypher {
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  background: var(--fundo);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-controle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--fs-1);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat .rastro .cypher code { color: var(--texto); }
+.chat .rastro .tabela-consulta {
+  max-width: 100%;
+  max-height: 24rem;
+  overflow: auto;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-controle);
+}
+.chat .rastro .tabela-consulta:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+.chat .rastro .tabela-consulta table { border-collapse: collapse; font-size: var(--fs-1); line-height: 1.4; }
+.chat .rastro .tabela-consulta th,
+.chat .rastro .tabela-consulta td {
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--linha);
+}
+.chat .rastro .tabela-consulta th {
+  position: sticky;
+  top: 0;
+  background: var(--fundo-alto);
+  color: var(--texto-fraco);
+  font-weight: normal;
+  white-space: nowrap;
+}
+.chat .rastro .tabela-consulta td { min-width: 4rem; max-width: 22rem; overflow-wrap: anywhere; }
+.chat .rastro .tabela-consulta tr:last-child td { border-bottom: none; }
 
 /* "↓ resposta nova": chegou coisa enquanto eu relia mais acima. Gruda no pé da
    área que rola, e não no da caixa — é dela que ele fala. */

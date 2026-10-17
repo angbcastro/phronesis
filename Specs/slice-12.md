@@ -1,6 +1,6 @@
 # Slice 12 — O chat que navega o grafo
 
-> **Estado: em construção — passos 1 a 3 feitos.** As decisões estão tomadas
+> **Estado: em construção — passos 1 a 4 feitos.** As decisões estão tomadas
 > (entrevista de 13/10), e o protótipo (ordem 0) rodou contra produção no mesmo
 > dia: as receitas da §5 são as que rodaram. O passo 1 pôs a trava à prova
 > contra a instância e mediu o piso com vetor de pergunta: não há número que
@@ -700,7 +700,8 @@ quê. `ler_retrato` fica — ele lê o R2, não o grafo.
    as receitas da §5, conferidas de novo pelo MCP no mesmo dia; a do teste ordena
    por `dia, id`, e não só por `dia`, para a fila ser a mesma a cada turno. O
    `MAX_TOKENS_SAIDA` subiu para 100 mil junto, e a síntese perdeu o dobro.
-4. O (i).
+4. O (i). **Feito em 17/10**: a consulta dentro de "como procurei", com a
+   tabela recolhida; a célula lê lista simples como texto corrido.
 5. O script e a comparação. **Ponto de retorno: o HTML vai para mim**, e o modelo
    quem escolhe sou eu.
 6. `MODELO_CHAT_PADRAO`.

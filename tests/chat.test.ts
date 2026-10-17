@@ -95,10 +95,12 @@ import {
 import { dataCurta } from "@/lib/dia";
 import {
   TETO_ROTULO,
+  celulaDoRastro,
   frasePasso,
   fraseRecorte,
   partirLinhas,
   rotuloDaConversa,
+  rotuloDasLinhas,
   separarConversas,
   sessaoDoAtomo,
   trechosDoRastro,
@@ -1462,6 +1464,31 @@ describe("o progresso e a lista", () => {
     expect(frase.startsWith("consultou o grafo — erro de sintaxe")).toBe(true);
     expect(frase.length).toBeLessThan(160);
     expect(frase).not.toContain("EXPLAIN");
+  });
+
+  it("o (i) oferece as linhas que o modelo leu, e diz de quantas quando cortou", () => {
+    const c = (linhas: unknown[][], total: number, cortado = false) => ({
+      cypher: "MATCH …",
+      colunas: ["x"],
+      linhas,
+      total,
+      cortado,
+    });
+    expect(rotuloDasLinhas(c([[1], [2]], 2), false)).toBe("ver as 2 linhas ▸");
+    expect(rotuloDasLinhas(c([[1]], 1), true)).toBe("ver a linha ▾");
+    expect(rotuloDasLinhas(c([[1], [2]], 412, true), false)).toBe("ver as 2 de 412 linhas ▸");
+  });
+
+  it("a célula do (i) lê lista como texto, e vazio como traço", () => {
+    expect(celulaDoRastro("Nicole")).toBe("Nicole");
+    expect(celulaDoRastro(0.51)).toBe("0.51");
+    expect(celulaDoRastro(["Nicole", "Isinha"])).toBe("Nicole, Isinha");
+    expect(celulaDoRastro([])).toBe("—");
+    expect(celulaDoRastro(null)).toBe("—");
+    expect(celulaDoRastro("")).toBe("—");
+    expect(celulaDoRastro({ _labels: ["Pessoa"], nome: "Nicole" })).toBe(
+      '{"_labels":["Pessoa"],"nome":"Nicole"}',
+    );
   });
 
   it("mensagem gravada antes da consulta existir continua desenhando o passo", () => {

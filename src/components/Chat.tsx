@@ -30,7 +30,8 @@
  * projeto historicamente corta, não adiciona.
  *
  * As funções puras deste arquivo (`frasePasso`, `rotuloDaConversa`,
- * `separarConversas`, `trechosDoRastro`, `sessaoDoAtomo`) são exportadas para
+ * `separarConversas`, `trechosDoRastro`, `sessaoDoAtomo`, `rotuloDasLinhas`,
+ * `celulaDoRastro`) são exportadas para
  * `tests/chat.test.ts`: elas são a lógica que erra calada — uma conversa sem
  * título, um passo sem parâmetro, um trecho repetido no (i).
  * `partirLinhas` era a quarta, e mudou de casa na slice 8.2: o fluxo NDJSON
@@ -48,6 +49,7 @@ import {
   rotuloDoTipo,
   type AtomoAchado,
   type BlocoAbsoluto,
+  type ConsultaNoRastro,
   type Conversa,
   type Mensagem,
   type PassoDeFerramenta,
@@ -144,6 +146,35 @@ function fraseConsulta(p: PassoDeFerramenta): string {
   if (!c || c.total === 0) return "consultou o grafo — nada";
   if (c.cortado) return `consultou o grafo — cortado em ${c.linhas.length} de ${c.total}`;
   return `consultou o grafo — ${c.total} linha${c.total === 1 ? "" : "s"}`;
+}
+
+/**
+ * O botão que abre as linhas de uma consulta no (i): quantas o modelo leu, e de
+ * quantas quando a saída cortou. A seta é a do "como procurei".
+ */
+export function rotuloDasLinhas(c: ConsultaNoRastro, aberto: boolean): string {
+  const n = c.linhas.length;
+  const quantas = c.cortado
+    ? `as ${n} de ${c.total} linhas`
+    : n === 1
+      ? "a linha"
+      : `as ${n} linhas`;
+  return `ver ${quantas} ${aberto ? "▾" : "▸"}`;
+}
+
+/**
+ * Uma célula da tabela do (i). A lista de valores simples vira texto corrido —
+ * `["Nicole", "Isinha"]` se lê "Nicole, Isinha" —, e o resto, JSON. Vazio é um
+ * traço, e não uma célula em branco que pareceria falha de desenho.
+ */
+export function celulaDoRastro(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "string") return v === "" ? "—" : v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v) && v.every((x) => x === null || typeof x !== "object")) {
+    return v.length === 0 ? "—" : v.map((x) => (x === null ? "—" : String(x))).join(", ");
+  }
+  return JSON.stringify(v);
 }
 
 /** A frase do passo de `buscar_entidades` (slice 9): fichas, não trechos. */
@@ -1056,6 +1087,69 @@ function Origem({
 }
 
 /**
+ * A consulta de `consultar_grafo` no (i) (slice 12): o sentido que virou
+ * `$vetor`, os avisos do banco, a Cypher como o modelo a escreveu e as linhas que
+ * ele leu. Nasce também na recusa e na falha — a Cypher é o que explica o erro.
+ *
+ * **As linhas vêm recolhidas.** Só a Cypher e a contagem obrigariam a rodar a
+ * consulta de novo para auditar o que o modelo leu; tudo aberto, três consultas
+ * de cinquenta linhas viram uma rolagem longa. Um toque abre.
+ *
+ * A tabela rola dentro da própria caixa: a página não ganha rolagem horizontal
+ * no celular.
+ */
+function BlocoDaConsulta({ consulta: c }: { consulta: ConsultaNoRastro }) {
+  const [linhasAbertas, setLinhasAbertas] = useState(false);
+  return (
+    <div className="consulta">
+      {c.texto && <p className="meta">sentido: “{c.texto}”</p>}
+      {c.avisos?.map((a, i) => (
+        <p key={i} className="meta">
+          aviso do banco: {a}
+        </p>
+      ))}
+      <pre className="cypher">
+        <code>{c.cypher}</code>
+      </pre>
+      {c.linhas.length > 0 && (
+        <button
+          className="botao discreto"
+          aria-expanded={linhasAbertas}
+          onClick={() => setLinhasAbertas((v) => !v)}
+        >
+          {rotuloDasLinhas(c, linhasAbertas)}
+        </button>
+      )}
+      {linhasAbertas && c.linhas.length > 0 && (
+        // Rola por dentro; o `tabIndex` deixa rolar pelo teclado também.
+        <div className="tabela-consulta" role="region" aria-label="as linhas que o modelo leu" tabIndex={0}>
+          <table>
+            <thead>
+              <tr>
+                {c.colunas.map((col, j) => (
+                  <th key={j} scope="col">
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {c.linhas.map((l, i) => (
+                <tr key={i}>
+                  {l.map((v, j) => (
+                    <td key={j}>{celulaDoRastro(v)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * O rastro técnico do (i): cada chamada, o que foi pedido, e o que voltou.
  *
  * **Completo, e não uma lista plana dos átomos citados.** Com até oito chamadas
@@ -1072,6 +1166,7 @@ function ComoProcurei({ passos }: { passos: readonly PassoDeFerramenta[] }) {
           </p>
           {fraseRecorte(p) !== "" && <p className="meta">{fraseRecorte(p)}</p>}
           {p.erro && <p className="meta">{p.erro}</p>}
+          {p.consulta && <BlocoDaConsulta consulta={p.consulta} />}
           {p.retrato && p.retrato.texto !== "" && (
             <p className="meta">
               {p.retrato.nome}
