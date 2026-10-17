@@ -30,6 +30,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { AgenteNaTela, Fluxo, Passo, Secao, Tela } from "@/lib/agentes";
+import { diferencaPorSecao } from "@/lib/secoes";
+import { plural } from "@/lib/texto";
 import type { AgenteId, QuandoRoda } from "@/lib/tipos";
 
 interface Dados {
@@ -56,6 +58,9 @@ const editado = (a: AgenteNaTela) => a.promptEditado || a.modeloEditado || a.lim
 
 /** O tempo da transição da gaveta — o mesmo número do `globals.css`. */
 const DURACAO_GAVETA_MS = 220;
+
+/** Quanto um botão armado — descartar, voltar ao original — espera o segundo toque. */
+const DESARME_MS = 4000;
 
 // ───────────────────────────── a tela ─────────────────────────────
 
@@ -85,8 +90,31 @@ export function Agentes({ fluxo }: { fluxo: Fluxo }) {
    */
   const fechar = useCallback(() => {
     setGavetaAberta(false);
+    setSujo(false);
+    setFecharArmado(false);
     esvaziar.current = setTimeout(() => setAberto(null), DURACAO_GAVETA_MS);
   }, []);
+
+  /**
+   * O editor tem prompt, modelo ou limiar mexidos e não salvos — ele diz, e é
+   * daqui que o fechar pergunta (onda 4 da interface). Com edição pendente o
+   * ×, o `Esc` e o véu armam "descartar?", e só o segundo pedido fecha.
+   */
+  const [sujo, setSujo] = useState(false);
+  const [fecharArmado, setFecharArmado] = useState(false);
+  const pedirFechar = useCallback(() => {
+    if (sujo && !fecharArmado) {
+      setFecharArmado(true);
+      return;
+    }
+    fechar();
+  }, [sujo, fecharArmado, fechar]);
+
+  useEffect(() => {
+    if (!fecharArmado) return;
+    const t = setTimeout(() => setFecharArmado(false), DESARME_MS);
+    return () => clearTimeout(t);
+  }, [fecharArmado]);
 
   useEffect(() => () => {
     if (esvaziar.current) clearTimeout(esvaziar.current);
@@ -95,11 +123,11 @@ export function Agentes({ fluxo }: { fluxo: Fluxo }) {
   useEffect(() => {
     if (!gavetaAberta) return;
     const aoTeclar = (e: KeyboardEvent) => {
-      if (e.key === "Escape") fechar();
+      if (e.key === "Escape") pedirFechar();
     };
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [gavetaAberta, fechar]);
+  }, [gavetaAberta, pedirFechar]);
 
   /**
    * O foco entra na gaveta ao abrir e volta ao cartão ao fechar — a mesma forma
@@ -192,7 +220,7 @@ export function Agentes({ fluxo }: { fluxo: Fluxo }) {
         modelo deste sistema sai pelo Vercel AI Gateway.
       </p>
 
-      <div className={`veu${gavetaAberta ? " aberto" : ""}`} onClick={fechar} />
+      <div className={`veu${gavetaAberta ? " aberto" : ""}`} onClick={pedirFechar} />
       <aside
         ref={gaveta}
         className={`editor-agente gaveta-lateral direita${gavetaAberta ? " aberta" : ""}`}
@@ -204,7 +232,10 @@ export function Agentes({ fluxo }: { fluxo: Fluxo }) {
         {editando && (
           <Editor
             a={editando}
-            aoFechar={fechar}
+            aoFechar={pedirFechar}
+            fecharArmado={fecharArmado}
+            aoDesarmarFechar={() => setFecharArmado(false)}
+            aoMudarSujo={setSujo}
             aoSalvar={async (corpo) => {
               const r = await fetch(`/api/agentes/${editando.id}`, {
                 method: "POST",
@@ -369,10 +400,18 @@ function Cartao({
 function Editor({
   a,
   aoFechar,
+  fecharArmado,
+  aoDesarmarFechar,
+  aoMudarSujo,
   aoSalvar,
 }: {
   a: AgenteNaTela;
   aoFechar: () => void;
+  /** O primeiro pedido de fechar veio com edição pendente; o próximo descarta. */
+  fecharArmado: boolean;
+  aoDesarmarFechar: () => void;
+  /** Avisa o pai se há edição não salva — é ele quem segura o fechar. */
+  aoMudarSujo: (sujo: boolean) => void;
   aoSalvar: (corpo: {
     prompt?: string | null;
     modelo?: string | null;
@@ -385,6 +424,8 @@ function Editor({
   const [editandoPrompt, setEditandoPrompt] = useState(false);
   const [gravando, setGravando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  /** "voltar ao original" é de dois toques: joga fora a edição salva. */
+  const [originalArmado, setOriginalArmado] = useState(false);
 
   // Trocar de agente com a gaveta aberta tem de recarregar os campos; sem isto o
   // texto do agente anterior ficaria na tela sobre o nome do novo.
@@ -394,7 +435,14 @@ function Editor({
     setLimiar(a.limiar === null ? "" : String(a.limiar));
     setEditandoPrompt(false);
     setErro(null);
+    setOriginalArmado(false);
   }, [a]);
+
+  useEffect(() => {
+    if (!originalArmado) return;
+    const t = setTimeout(() => setOriginalArmado(false), DESARME_MS);
+    return () => clearTimeout(t);
+  }, [originalArmado]);
 
   const promptMudou = a.prompt !== null && prompt.trim() !== (a.prompt ?? "").trim();
   const modeloMudou = modelo.trim() !== a.modelo;
@@ -409,6 +457,23 @@ function Editor({
     limiarNovo <= 1 &&
     limiarNovo !== a.limiar;
   const podeSalvar = (promptMudou || modeloMudou || limiarMudou) && !gravando;
+  // O pai segura o fechar com o que está mexido e não salvo. O limiar conta
+  // também quando o campo tem texto que não é número: é texto meu na caixa.
+  const sujo =
+    promptMudou ||
+    modeloMudou ||
+    limiarMudou ||
+    (a.limiar !== null && limiar.trim() !== "" && limiar.trim() !== String(a.limiar));
+  useEffect(() => {
+    aoMudarSujo(sujo);
+  }, [sujo, aoMudarSujo]);
+
+  /**
+   * O que difere do git, seção por seção, contra o que está **na caixa** — e
+   * não contra o salvo: serve enquanto eu edito. Empilhado e sem cor, como a
+   * emenda da calibração (`secoes.ts`).
+   */
+  const diferencas = a.base !== null && a.prompt !== null ? diferencaPorSecao(a.base, prompt) : [];
 
   async function salvar(corpo: {
     prompt?: string | null;
@@ -435,8 +500,14 @@ function Editor({
           <h2>{a.rotulo}</h2>
           <p className="versao">{a.versao ?? "sem prompt — só modelo"}</p>
         </div>
-        <button type="button" className="botao icone fechar" onClick={aoFechar} aria-label="fechar">
-          ×
+        <button
+          type="button"
+          className={`botao fechar${fecharArmado ? " perigo" : " icone"}`}
+          onClick={aoFechar}
+          onBlur={() => fecharArmado && aoDesarmarFechar()}
+          aria-label={fecharArmado ? "descartar o que eu mudei e fechar" : "fechar"}
+        >
+          {fecharArmado ? "descartar?" : "×"}
         </button>
       </header>
 
@@ -530,6 +601,38 @@ function Editor({
         </section>
       )}
 
+      {/* ── o que difere do git ── */}
+      {diferencas.length > 0 && (
+        <section className="campo diferenca">
+          <p className="dica">
+            o que difere do git — {plural(diferencas.length, "seção", "seções")}
+          </p>
+          {diferencas.map((d) => (
+            <div key={d.secao} className="edicao">
+              <div className="cabecalho">
+                <span className="selo">{d.secao}</span>
+                {d.antes === null && <span>só agora</span>}
+                {d.depois === null && <span>tirada</span>}
+              </div>
+              <div className="par-longo">
+                {d.antes !== null && (
+                  <div className="lado">
+                    <span className="rotulo">no git</span>
+                    <p>{d.antes}</p>
+                  </div>
+                )}
+                {d.depois !== null && (
+                  <div className="lado">
+                    <span className="rotulo">agora</span>
+                    <p>{d.depois}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
       {erro && (
         <p className="aviso erro" role="alert">
           {erro}
@@ -552,19 +655,26 @@ function Editor({
           {gravando ? "salvando…" : "salvar"}
         </button>
         {(a.promptEditado || a.modeloEditado || a.limiarEditado) && (
+          // Dois toques: joga fora a edição salva, e ela não volta pela tela.
           <button
             type="button"
-            className="botao discreto"
+            className={`botao discreto${originalArmado ? " perigo" : ""}`}
             disabled={gravando}
-            onClick={() =>
-            salvar({
-              prompt: a.prompt === null ? undefined : null,
-              modelo: null,
-              ...(a.limiar === null ? {} : { limiar: null }),
-            })
-          }
+            onBlur={() => originalArmado && setOriginalArmado(false)}
+            onClick={() => {
+              if (!originalArmado) {
+                setOriginalArmado(true);
+                return;
+              }
+              setOriginalArmado(false);
+              void salvar({
+                prompt: a.prompt === null ? undefined : null,
+                modelo: null,
+                ...(a.limiar === null ? {} : { limiar: null }),
+              });
+            }}
           >
-            voltar ao original
+            {originalArmado ? "voltar ao original?" : "voltar ao original"}
           </button>
         )}
       </footer>

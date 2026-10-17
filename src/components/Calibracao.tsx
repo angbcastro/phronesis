@@ -35,6 +35,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { nomeDoOuvir, textoDoOuvir, useTocador } from "@/client/tocador";
 import { dataCurta } from "@/lib/dia";
+import { ehCabecalho } from "@/lib/secoes";
 import { plural } from "@/lib/texto";
 import { MAX_PADROES_POR_RODADA, rotuloDoTipo } from "@/lib/tipos";
 import type { BlocoAbsoluto, Correcao, Edicao, Padrao, TipoCorrecao } from "@/lib/tipos";
@@ -146,7 +147,7 @@ export function agruparDescartes(
  * O corpo de uma seção no prompt, para a tela poder mostrar o que ela dizia
  * antes ao lado do que vai passar a dizer.
  *
- * É a mesma leitura de `fatiar` em `redacao.ts`, e é de propósito que ela seja
+ * É a mesma leitura de `fatiar` em `secoes.ts`, e é de propósito que ela seja
  * **só de leitura** aqui: quem aplica a emenda é o servidor, das mesmas edições,
  * e uma segunda implementação de `aplicarEdicoes` na tela divergiria calada —
  * o mesmo argumento que pôs `referencias.ts` num módulo só.
@@ -156,9 +157,7 @@ export function corpoDaSecao(prompt: string, secao: string): string {
   const i = linhas.findIndex((l) => l.trim() === secao.trim());
   if (i === -1) return "";
 
-  const fim = linhas.findIndex(
-    (l, k) => k > i && /^[A-ZÁÂÃÀÉÊÍÓÔÕÚÇ][A-ZÁÂÃÀÉÊÍÓÔÕÚÇ 0-9]{3,}$/.test(l),
-  );
+  const fim = linhas.findIndex((l, k) => k > i && ehCabecalho(l));
   return linhas
     .slice(i + 1, fim === -1 ? undefined : fim)
     .join("\n")
@@ -185,6 +184,13 @@ export function Calibracao() {
   /** A pauta inteira: o que já vale mais o que o agente acabou de propor. */
   const [pauta, setPauta] = useState<PadraoNaTela[]>([]);
   const [emenda, setEmenda] = useState<Emenda | null>(null);
+  /** "descartar" a emenda é de dois toques: ela custou uma chamada do redator. */
+  const [descartarArmado, setDescartarArmado] = useState(false);
+  useEffect(() => {
+    if (!descartarArmado) return;
+    const t = setTimeout(() => setDescartarArmado(false), 4000);
+    return () => clearTimeout(t);
+  }, [descartarArmado]);
   const [rascunhando, setRascunhando] = useState(false);
   const [redigindo, setRedigindo] = useState(false);
   const [aprovando, setAprovando] = useState(false);
@@ -583,8 +589,21 @@ export function Calibracao() {
             <button className="botao primario" disabled={aprovando} onClick={() => void aprovar()}>
               {aprovando ? "salvando…" : "aprovar a emenda"}
             </button>
-            <button className="botao discreto apagar-regra" onClick={() => setEmenda(null)}>
-              descartar
+            {/* Dois toques: a emenda custou uma chamada do redator, e
+                descartada ela não volta. */}
+            <button
+              className={`botao discreto apagar-regra${descartarArmado ? " perigo" : ""}`}
+              onBlur={() => descartarArmado && setDescartarArmado(false)}
+              onClick={() => {
+                if (!descartarArmado) {
+                  setDescartarArmado(true);
+                  return;
+                }
+                setDescartarArmado(false);
+                setEmenda(null);
+              }}
+            >
+              {descartarArmado ? "descartar?" : "descartar"}
             </button>
           </div>
         </section>

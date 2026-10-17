@@ -468,8 +468,9 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
 - **O prompt de treze agentes tem duas fontes.** O git tem a base; o R2 tem o
   que eu editei em `/agentes` (§4.13). `git revert` sozinho não reverte o prompt
   inteiro, e ler o prompt efetivo exige os dois lugares. O `prompt_version` e os
-  snapshots imutáveis impedem a procedência de mentir, e `voltar ao original` é
-  um toque — mas quem olhar só o repositório vai ver a metade do texto.
+  snapshots imutáveis impedem a procedência de mentir, e o editor mostra, seção
+  por seção, o que difere do git — mas quem olhar só o repositório vai ver a
+  metade do texto.
 - **O painel não guarda histórico de edição.** `config/agentes.json` tem o que
   vale agora; os snapshots por hash guardam os textos, e não a ordem em que eu os
   escrevi. Não há linha do tempo nem desfazer de mais de um passo — o `anterior`

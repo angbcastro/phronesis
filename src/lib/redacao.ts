@@ -23,6 +23,7 @@ import { garantirGateway, modeloRedacao, textoDaResposta } from "./modelos";
 import { carimbo, efetivo } from "./overrides";
 import { MAX_SECOES_POR_EMENDA, OPERACOES_EDICAO } from "./tipos";
 import type { AgenteId, Edicao, OperacaoEdicao, Padrao } from "./tipos";
+import { ehCabecalho, fatiar, secoesDe, type Secao } from "./secoes";
 
 /** Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7). */
 export const PROMPT_VERSION_REDACAO = "redacao-1";
@@ -39,62 +40,15 @@ export class RedacaoError extends Error {
 
 // ──────────────────────────────── as seções ────────────────────────────────
 
-/**
- * Um cabeçalho de seção: linha inteira em caixa alta, quatro caracteres ou
- * mais.
- *
- * O padrão veio de `extracao.secoesDoPrompt`, que existia desde a 4.6 só para
- * dizer ao calibrador qual seção uma regra podia contradizer, e que **saiu de
- * lá nesta fatia**: aqui ele deixa de ser consulta e vira estrutura — é por ele
- * que o prompt se divide em pedaços endereçáveis. Uma regex só, num módulo só;
- * duas para a mesma regra divergem no primeiro ajuste, e a que ninguém lembrar
- * de acertar passa a discordar em silêncio.
+/*
+ * O recorte por seção mora em `secoes.ts`, puro, para o navegador poder usá-lo
+ * (o editor de agente mostra por ele o que difere do git). O padrão veio de
+ * `extracao.secoesDoPrompt`, que existia desde a 4.6 só para dizer ao
+ * calibrador qual seção uma regra podia contradizer: aqui ele deixa de ser
+ * consulta e vira estrutura — é por ele que o prompt se divide em pedaços
+ * endereçáveis. Reexportado daqui para quem já o importava daqui.
  */
-const CABECALHO = /^[A-ZÁÂÃÀÉÊÍÓÔÕÚÇ][A-ZÁÂÃÀÉÊÍÓÔÕÚÇ 0-9]{3,}$/;
-
-export const ehCabecalho = (linha: string): boolean => CABECALHO.test(linha);
-
-/** Os cabeçalhos de um prompt, na ordem em que aparecem. */
-export function secoesDe(texto: string): string[] {
-  return texto.split("\n").filter(ehCabecalho);
-}
-
-export interface Secao {
-  /** O cabeçalho, sem espaço em volta. */
-  nome: string;
-  /** O corpo, do fim do cabeçalho até o cabeçalho seguinte (ou o fim). */
-  corpo: string;
-  /** Índices no texto original: `[inicio do cabeçalho, fim do corpo)`. */
-  inicio: number;
-  fim: number;
-}
-
-/**
- * O prompt fatiado em seções, com as fronteiras em índice de caractere.
- *
- * Trabalha sobre offsets e não sobre uma lista de linhas remontada, porque
- * remontar com `join("\n")` normalizaria `\r\n` e espaço no fim de linha — e
- * então "seção que eu não toquei volta byte a byte" deixaria de ser verdade
- * justamente no caso em que ninguém olharia.
- */
-export function fatiar(texto: string): Secao[] {
-  const linhas = texto.split("\n");
-  const saida: Secao[] = [];
-
-  let offset = 0;
-  for (const linha of linhas) {
-    if (ehCabecalho(linha)) {
-      if (saida.length > 0) saida[saida.length - 1].fim = offset;
-      saida.push({ nome: linha, corpo: "", inicio: offset, fim: texto.length });
-    }
-    offset += linha.length + 1; // +1 do "\n" que o split comeu
-  }
-
-  for (const s of saida) {
-    s.corpo = texto.slice(s.inicio + s.nome.length, s.fim);
-  }
-  return saida;
-}
+export { ehCabecalho, fatiar, secoesDe, type Secao };
 
 // ─────────────────────────── aplicar, sem surpresa ───────────────────────────
 

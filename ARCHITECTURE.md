@@ -238,6 +238,9 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
   redacao.ts      o agente `redacao-1`: transforma um padrão confirmado em
                   edições de seção do prompt daquele agente. Devolve edições,
                   nunca o prompt inteiro, e não escreve nada
+  secoes.ts       o recorte de um prompt em seções — o cabeçalho e `fatiar` —
+                  e o que difere do git, seção por seção. A emenda, a tela da
+                  calibração e o editor de agente leem por ele           (client)
   regras.ts       a leitura das regras da 4.6, que nada mais escreve: átomo
                   antigo carimbado com elas ainda resolve para o texto que o
                   produziu — e o hashDeTexto que o override usa
@@ -311,7 +314,8 @@ src/components/   as telas, todas client
   RetratoDoEu.tsx o painel do "eu" no lugar da ficha: o Agora, as seções com o
                   (i), e as dimensões — editar e aceitar a proposta
   Calibracao.tsx  o que eu já corrigi, com o áudio à mão, e a pauta e a emenda
-  Agentes.tsx     o fluxo desenhado, e o prompt e o modelo de cada um
+  Agentes.tsx     o fluxo desenhado, e o prompt e o modelo de cada um — com o
+                  que difere do git, e o fechar que segura o que não salvei
   Confronto.tsx   a varredura de relações (rodar, desfazer, reprocessar), a
                   busca de átomo e o radial onde eu corrijo relação por relação
   Chat.tsx        a barra, o painel, a lista de conversas, o progresso por passo
