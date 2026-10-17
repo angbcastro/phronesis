@@ -232,16 +232,32 @@ section { border-top: 1px solid var(--linha); padding: 1rem 0; }
 pre { background: var(--fundo); border: 1px solid var(--linha); border-radius: .4rem; padding: .5rem; font-size: .75rem; white-space: pre-wrap; overflow-wrap: anywhere; margin: .3rem 0; }
 .tabela { overflow: auto; max-height: 20rem; }
 .erro { color: var(--acento); overflow-wrap: anywhere; }
+.resposta-md { margin: .6rem 0; overflow-wrap: anywhere; } .resposta-md table { display: block; overflow-x: auto; }
+body.md .resposta { display: none; } body:not(.md) .resposta-md { display: none; }
+label.alterna { position: sticky; top: 0; display: inline-block; background: var(--alto); padding: .3rem .6rem; border-radius: .4rem; font-size: .85rem; z-index: 1; }
 table { border-collapse: collapse; margin: .5rem 0 1rem; font-size: .8rem; } td, th { border-bottom: 1px solid var(--linha); padding: .25rem .6rem; text-align: left; vertical-align: top; }
 ul { margin: .3rem 0 0; padding-left: 1rem; } li { margin: 0 0 .3rem; }
 </style></head><body>
 <h1>Chat — ${esc(modelos.join(" × "))}</h1>
-<p class="meta">${perguntas.length} pergunta(s), prompt ${PROMPT_VERSION_CHAT}, gerado em ${new Date().toISOString()}. A resposta aparece como texto cru, que é como a tela do chat a mostra.</p>
+<p class="meta">${perguntas.length} pergunta(s), prompt ${PROMPT_VERSION_CHAT}, gerado em ${new Date().toISOString()}. A resposta aparece como texto cru, que é como a tela do chat a mostra hoje; a caixa abaixo a mostra com o markdown renderizado.</p>
+<label class="alterna"><input type="checkbox" id="md"> mostrar com markdown</label>
 <h2>O resumo</h2>
 ${resumo(todas)}
 <h2>As ferramentas chamadas</h2>
 ${usoDasFerramentas(todas)}
 ${blocos.join("\n")}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script>
+// Só para comparar as duas formas: a tela do chat não renderiza markdown.
+const caixa = document.getElementById("md");
+for (const r of document.querySelectorAll(".resposta")) {
+  const md = document.createElement("div");
+  md.className = "resposta-md";
+  md.innerHTML = window.marked ? marked.parse(r.textContent) : "(sem o marked, não dá para renderizar)";
+  r.after(md);
+}
+caixa.addEventListener("change", () => document.body.classList.toggle("md", caixa.checked));
+</script>
 </body></html>`;
 
   const saida = process.env.COMPARAR_SAIDA || join(tmpdir(), `comparacao-chat-${Date.now()}.html`);

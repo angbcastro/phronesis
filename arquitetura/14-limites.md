@@ -644,6 +644,10 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   um número plausível, e os avisos do banco só pegam nome que não existe, não
   valor que não existe (`tipo: 'MEDO'`). A defesa é o (i) mostrar a Cypher e as
   linhas, e eu ler.
+- **O `deepseek-v4.1-flash` não respeita `toolChoice: "none"` pelo Gateway**
+  (§4.16.1). Na síntese depois do teto ele pede mais uma ferramenta em vez de
+  escrever, e a pergunta volta como erro. Com ele, o chat bate no teto com
+  frequência: busca mais que os outros modelos para a mesma pergunta.
 - **A trava depende da classificação do banco** (§4.16.3). Uma procedure de
   leitura classificada errado passaria pelo `EXPLAIN`; o bloqueio de `CALL` de
   procedure e o `accessMode: Read` da execução são as duas camadas que cobrem

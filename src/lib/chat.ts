@@ -1800,6 +1800,18 @@ export function ferramentas(
   };
 }
 
+/**
+ * O texto que responde, ou "".
+ *
+ * **Quem parou pedindo ferramenta ainda não respondeu**: o que ele escreveu ou
+ * pensou ali é o plano da próxima busca, e não a resposta. Ler o pensamento
+ * nesse caso punha na tela "let me fetch the full texts…". Vale para o loop que
+ * bate no teto e para a síntese — o `deepseek-v4.1-flash` pede ferramenta
+ * mesmo com `toolChoice: "none"`.
+ */
+const respostaDe = (r: Parameters<typeof textoDaResposta>[0] & { finishReason?: string }) =>
+  r.finishReason === "tool-calls" ? "" : textoDaResposta(r).trim();
+
 /** Quantas chamadas de ferramenta já saíram. É o que o teto conta. */
 export const chamadasFeitas = (
   passos: readonly { toolCalls?: readonly unknown[] }[],
@@ -1894,7 +1906,7 @@ export async function responder(
     }),
   );
 
-  let texto = textoDaResposta(r).trim();
+  let texto = respostaDe(r);
   let ultima: { response?: { modelId?: string } } = r;
   const chamadas: ComUso[] = [r];
 
@@ -1917,11 +1929,17 @@ export async function responder(
         maxOutputTokens: MAX_TOKENS_SAIDA,
       }),
     );
-    texto = textoDaResposta(sintese).trim();
+    texto = respostaDe(sintese);
     ultima = sintese;
     chamadas.push(sintese);
-    if (veioDoPensamento(sintese)) {
+    if (texto !== "" && veioDoPensamento(sintese)) {
       console.warn(`[chat] texto vazio na síntese, lendo o pensamento.`, diagnostico(sintese));
+    }
+    if (texto === "" && sintese.finishReason === "tool-calls") {
+      throw new ChatError(
+        `o modelo chegou ao teto de ${TETO_FERRAMENTAS} buscas e, chamado a responder, pediu mais ` +
+          `uma em vez de escrever: ${diagnostico(sintese)}`,
+      );
     }
     if (faltouOrcamento(sintese) && texto === "") {
       throw new ChatError(

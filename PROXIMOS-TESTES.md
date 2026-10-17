@@ -139,6 +139,25 @@ olhado rodando, pela mesma razão das outras ondas. A volta é a tag
 - [ ] **O descartar da emenda.** Em `/calibracao`, com uma emenda escrita,
       "descartar" vira "descartar?" em vermelho; o segundo toque descarta.
 
+## Slice 12 — o chat que navega o grafo (`Specs/slice-12.md`)
+
+Construída e coberta pelo `pnpm test`; os modelos foram comparados pelo
+`pnpm comparar:chat`, que só lê. Nada foi olhado no app. No celular:
+
+- [ ] As nove perguntas (§1 da spec), julgadas por mim pelo (i): a informação
+      certa, a Cypher de cada passo e as linhas que o modelo leu.
+- [ ] "Me teste no que aprendi na última semana", em vários turnos: uma
+      pergunta por vez; a correção contra o texto do trecho, com a data; a
+      próxima sobre o trecho seguinte; e o fim quando o recorte acaba.
+- [ ] Uma pergunta local do tipo Isinha responde como antes: curta, em prosa,
+      um ou dois trechos.
+- [ ] O (i) a 390 px: a Cypher quebra a linha; "ver as N linhas" abre a
+      tabela, que rola por dentro, com o cabeçalho preso, sem a página ganhar
+      rolagem horizontal.
+- [ ] Nenhum prompt do chat editado em `/agentes` (spec §9): um override salvo
+      antes do `chat-8` sombreia o prompt novo, e o envelope agora cobra
+      `consultar_grafo`.
+
 ## Slice 11 — o que faltou, a pedido (`Specs/slice-11.md`)
 
 Construída e coberta pelo `pnpm test`; nada disto rodou contra modelo ainda. Em

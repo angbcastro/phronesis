@@ -1162,6 +1162,35 @@ describe("o loop do agente", () => {
     expect(r.texto).toBe("com o que achei, dá para dizer que…");
   });
 
+  it("parou no teto pedindo ferramenta: o pensamento não é resposta, a síntese é", async () => {
+    // O deepseek na comparação da slice 12: oito chamadas, `finishReason`
+    // tool-calls, texto em branco e o plano da próxima busca no pensamento.
+    chamar
+      .mockResolvedValueOnce(
+        respostaDoModelo("\n\n", {
+          finishReason: "tool-calls",
+          reasoningText: "Let me fetch the full texts of a few.",
+          steps: [{ toolCalls: [1, 2, 3, 4, 5, 6, 7, 8] }],
+        }),
+      )
+      .mockResolvedValueOnce(respostaDoModelo("os dois que mais aparecem são…"));
+    const r = await responder([{ papel: "eu", texto: "x", criado_em: "" }]);
+    expect(chamar).toHaveBeenCalledTimes(2);
+    expect(r.texto).toBe("os dois que mais aparecem são…");
+  });
+
+  it("a síntese que ainda pede ferramenta é erro dito, e não o pensamento na tela", async () => {
+    const pedindo = respostaDoModelo("", {
+      finishReason: "tool-calls",
+      reasoningText: "Let me run one more query.",
+      steps: [{ toolCalls: [1, 2, 3, 4, 5, 6, 7, 8] }],
+    });
+    chamar.mockResolvedValueOnce(pedindo).mockResolvedValueOnce(pedindo);
+    await expect(responder([{ papel: "eu", texto: "x", criado_em: "" }])).rejects.toThrow(
+      /pediu mais uma em vez de escrever/,
+    );
+  });
+
   it("o modelo dado direto vence o painel, com o prompt da base", async () => {
     // A comparação de modelos mede a base do git: um override salvo no painel
     // misturaria as duas coisas.
