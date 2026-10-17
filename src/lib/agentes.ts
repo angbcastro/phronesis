@@ -332,8 +332,9 @@ export const AGENTES: readonly Agente[] = [
     versao: PROMPT_VERSION_CHAT,
     rotulo: "chat",
     papel:
-      "lê a minha pergunta, escolhe sozinho quais buscas fazer no grafo, encadeia até " +
-      `${TETO_FERRAMENTAS} e escreve a resposta citando os átomos que usou`,
+      "lê a minha pergunta, escolhe sozinho quais buscas fazer no grafo — inclusive a Cypher " +
+      `que ele mesmo escreve, só de leitura —, encadeia até ${TETO_FERRAMENTAS} e escreve a ` +
+      "resposta citando os átomos que usou",
     quando: "sob_demanda",
     gatilho: "a cada mensagem que eu mando na barra de chat da tela inicial",
     base: BASE_CHAT,
@@ -341,10 +342,16 @@ export const AGENTES: readonly Agente[] = [
     variavel: "CHAT_MODEL",
     modulo: "src/lib/chat.ts",
     modeloEditavel: true,
-    // As quatro ferramentas, e não chaves de JSON: este é o único agente cujo
+    // As cinco ferramentas, e não chaves de JSON: este é o único agente cujo
     // parser é o loop de tool-calling. O que um prompt editado não pode perder
     // é justamente o nome do que ele pode chamar.
-    envelope: ["buscar_atomos", "historico_do_atomo", "buscar_entidades", "ler_retrato"],
+    envelope: [
+      "buscar_atomos",
+      "historico_do_atomo",
+      "buscar_entidades",
+      "ler_retrato",
+      "consultar_grafo",
+    ],
   },
   {
     id: "titulo-chat",
@@ -643,7 +650,7 @@ export const TELAS: readonly Tela[] = [
             entradas: [
               {
                 rotulo: "grafo",
-                nota: "as quatro buscas, só de leitura: buscar_atomos, historico_do_atomo, buscar_entidades e ler_retrato",
+                nota: "as cinco ferramentas, só de leitura: buscar_atomos, historico_do_atomo, buscar_entidades, ler_retrato e consultar_grafo — a Cypher que ele mesmo escreve",
               },
             ],
           },

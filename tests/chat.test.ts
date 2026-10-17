@@ -203,12 +203,25 @@ describe("os dois agentes novos existem como agente", () => {
     expect(() => chavePromptAgente("-chat", "a1b2c3d4")).toThrow();
   });
 
-  it("o prompt do chat continua nomeando as três ferramentas", () => {
+  it("o prompt do chat continua nomeando as cinco ferramentas", () => {
     // É o envelope deste agente: o parser dele é o loop de tool-calling, e um
     // prompt que não cita a ferramenta é um prompt que a desliga.
-    expect(INSTRUCOES).toContain("buscar_atomos");
-    expect(INSTRUCOES).toContain("historico_do_atomo");
-    expect(INSTRUCOES).toContain("buscar_entidades");
+    for (const f of FERRAMENTAS_CHAT) expect(INSTRUCOES).toContain(f);
+  });
+
+  it("o schema do prompt não ensina o que nunca existiu, nem a conversa", () => {
+    // Consulta que atravessa um rótulo que nunca ganhou migration não erra: volta
+    // vazia, e parece resposta (CLAUDE.md). E :Conversa a trava recusa.
+    expect(INSTRUCOES).not.toMatch(/Foco|:Pergunta|ENVOLVIDA_EM|CONTRIBUI_PARA|APONTA_PARA/);
+    expect(INSTRUCOES).not.toContain("Conversa");
+  });
+
+  it("o prompt ensina o dia de Brasília, e não o corte do ISO", () => {
+    expect(INSTRUCOES).toContain("timezone: 'America/Sao_Paulo'");
+    // `left(a.valido_em, 10)` só aparece como o erro que é.
+    for (const linha of INSTRUCOES.split("\n").filter((l) => l.includes("left(a.valido_em, 10)"))) {
+      expect(linha).toContain("erra o dia");
+    }
   });
 });
 

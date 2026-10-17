@@ -571,7 +571,7 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
 - **`CHAT_MODEL` precisa de tool-calling multi-passo bom pelo Gateway.** O
   padrão é constante própria (`MODELO_CHAT_PADRAO`), para trocar o modelo da
   extração não mudar a resposta do chat; o id é `deepseek/deepseek-v4.1-flash`,
-  escolhido para devolver JSON curto, que não é a mesma habilidade, e são quatro
+  escolhido para devolver JSON curto, que não é a mesma habilidade, e são cinco
   ferramentas disputando a atenção dele. Se ele encadear mal, uma ferramenta a
   mais piora a resposta em vez de melhorar, e o conserto é `CHAT_MODEL` ou o
   painel de `/agentes`, sem deploy — não remover a ferramenta.
@@ -606,7 +606,7 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   o nome que está no vetor da entidade. O conserto é a ficha ser escrita (§4.9),
   não mexer na ferramenta.
 - **Um prompt do chat editado em `/agentes` sombreia o do código.** O override
-  guardado no R2 vence o `chat-7`: um texto salvo antes de uma ferramenta nova
+  guardado no R2 vence o `chat-8`: um texto salvo antes de uma ferramenta nova
   continua oferecendo-a sem as instruções de quando usá-la — e um salvo antes do
   `ler_retrato` não manda começar por ele nas perguntas sobre mim. Salvá-lo de
   novo pede que ele cite as ferramentas (envelope).
@@ -644,6 +644,18 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   um número plausível, e os avisos do banco só pegam nome que não existe, não
   valor que não existe (`tipo: 'MEDO'`). A defesa é o (i) mostrar a Cypher e as
   linhas, e eu ler.
+- **A trava depende da classificação do banco** (§4.16.3). Uma procedure de
+  leitura classificada errado passaria pelo `EXPLAIN`; o bloqueio de `CALL` de
+  procedure e o `accessMode: Read` da execução são as duas camadas que cobrem
+  isso.
+- **A pergunta global custa o que o modelo decidir** (§4.16.1). Sem teto de
+  tamanho na resposta e com 100 mil tokens de saída, o limite que sobra é o
+  relógio da rota. O prompt também cresceu: o schema e as receitas vão em toda
+  chamada do loop.
+- **A fila do teste é a consulta de cada turno, e não uma memória** (§4.16.2).
+  O modelo roda o recorte de novo a cada resposta minha e acha o trecho da vez
+  pela pergunta que escreveu. Se o recorte mudar no meio — o dia vira e a
+  última semana anda, ou uma gravação nova entra nela —, a fila muda junto.
 - **O piso de 0,45 e o teto de 8 da busca não foram medidos contra gabarito**, e
   não podem ser: `CLAUDE.md` diz que quem julga aqui sou eu, na tela. O que
   existe é a distribuição de pergunta contra átomo, medida na slice 12 (a spec

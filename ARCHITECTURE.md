@@ -81,11 +81,15 @@ Agora e uma seção por dimensão, no R2 (§4.20).
 **Relações e perguntas.** O `confronto-3` liga cada átomo novo aos cem mais
 parecidos do grafo inteiro com `ATUALIZA`, `CONTRADIZ`, `CONFIRMA` ou
 `COMPLEMENTA`, em camada forte ou sutil, e eu corrijo relação por relação em
-`/confronto` (§4.15). O chat (`chat-7`) é um agente com cinco ferramentas
+`/confronto` (§4.15). O chat (`chat-8`) é um agente com cinco ferramentas
 só-leitura — `buscar_atomos`, `historico_do_atomo`, `buscar_entidades`,
 `ler_retrato` e `consultar_grafo`, a Cypher que ele mesmo escreve, atrás de três
-travas — que encadeia até oito chamadas antes de responder (§4.16). As datas
-que ele diz são as de Brasília.
+travas — que encadeia até oito chamadas antes de responder (§4.16). O prompt
+ensina o grafo a ele: o schema de leitura, as armadilhas e uma receita por
+família de pergunta. A pergunta local tem resposta curta; a global — contar,
+ordenar, comparar períodos, acompanhar uma mudança — tem forma livre. Quando eu
+peço, ele me testa no que registrei, uma pergunta por vez. As datas que ele diz
+são as de Brasília.
 
 **Calibração.** Toda correção que eu faço na revisão ou em `/confronto` é
 apurada e guardada no R2 (§4.11). Em `/calibracao` o
@@ -97,8 +101,8 @@ prompt e o modelo de cada um dos quinze agentes (§4.13).
 **Medida.** O sistema cronometra cada sessão — passos, chamadas de modelo e
 falhas — em objetos do R2, e fecha um resumo por mês (§4.17).
 
-**O que ainda não existe:** `:Foco`, as 2–4 perguntas do ritual, me testar sobre
-o que aprendi (a fatia C) e a deduplicação de **átomo** — dizer a mesma coisa em
+**O que ainda não existe:** `:Foco`, as 2–4 perguntas do ritual, guardar o
+resultado do teste e a deduplicação de **átomo** — dizer a mesma coisa em
 duas sessões cria dois átomos, possivelmente ligados por `:CONFIRMA` (§4.15).
 
 ---

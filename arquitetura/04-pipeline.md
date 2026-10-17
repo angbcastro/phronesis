@@ -91,7 +91,7 @@ agentes com caixa no painel de `/agentes` (§4.13):
 | `modeloDuplicatas()` | `duplicatas-2` | `deepseek/deepseek-v4.1-flash` |
 | `modeloEmbedding()` | embedding | `openai/text-embedding-3-small` |
 | `modeloConfronto()` | `confronto-3` | `deepseek/deepseek-v4.1-flash` — próprio (§4.15.3) |
-| `modeloChat()` | `chat-7` | `deepseek/deepseek-v4.1-flash` — próprio, para a troca do modelo da extração não arrastar o chat |
+| `modeloChat()` | `chat-8` | `deepseek/deepseek-v4.1-flash` — próprio, para a troca do modelo da extração não arrastar o chat |
 | `modeloTituloChat()` | `titulo-chat-1` | o do chat |
 
 A deduplicação de **entidade** é o `duplicatas-2` (§8.2). A de **átomo** não

@@ -1,6 +1,6 @@
 # Slice 12 — O chat que navega o grafo
 
-> **Estado: em construção — passos 1 e 2 feitos.** As decisões estão tomadas
+> **Estado: em construção — passos 1 a 3 feitos.** As decisões estão tomadas
 > (entrevista de 13/10), e o protótipo (ordem 0) rodou contra produção no mesmo
 > dia: as receitas da §5 são as que rodaram. O passo 1 pôs a trava à prova
 > contra a instância e mediu o piso com vetor de pergunta: não há número que
@@ -696,7 +696,10 @@ quê. `ler_retrato` fica — ele lê o R2, não o grafo.
    bloco da Cypher e da tabela no (i) fica para o passo 4. A ferramenta está no
    conjunto, e o `chat-7` ainda não a cita — o modelo a vê só pela descrição até
    o passo 3.
-3. O `chat-8` e o envelope.
+3. O `chat-8` e o envelope. **Feito em 17/10**: o prompt tem as seções da §4 e
+   as receitas da §5, conferidas de novo pelo MCP no mesmo dia; a do teste ordena
+   por `dia, id`, e não só por `dia`, para a fila ser a mesma a cada turno. O
+   `MAX_TOKENS_SAIDA` subiu para 100 mil junto, e a síntese perdeu o dobro.
 4. O (i).
 5. O script e a comparação. **Ponto de retorno: o HTML vai para mim**, e o modelo
    quem escolhe sou eu.
