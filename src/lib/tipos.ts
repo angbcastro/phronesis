@@ -1384,10 +1384,13 @@ export type FerramentaDoRastro = (typeof FERRAMENTAS_DO_RASTRO)[number];
  * A quinta (slice 12) é a Cypher que o próprio modelo escreve: a que conta,
  * ordena, compara períodos e anda pelo grafo — a pergunta global, que nenhuma
  * das quatro alcança.
+ *
+ * `historico_do_atomo` saiu no `chat-9` (slice 12): o modelo escolhido não a
+ * chamou na comparação, e a cadeia de um trecho é uma receita da quinta. Ela
+ * continua em `FERRAMENTAS_DO_RASTRO`.
  */
 export const FERRAMENTAS_CHAT = [
   "buscar_atomos",
-  "historico_do_atomo",
   "buscar_entidades",
   "ler_retrato",
   "consultar_grafo",
@@ -1507,7 +1510,10 @@ export interface EntidadeAchada {
   similaridade?: number;
 }
 
-/** Um elo da cadeia que `historico_do_atomo` percorre (as relações da 011). */
+/**
+ * Um elo da cadeia que `historico_do_atomo` percorria (as relações da 011). A
+ * ferramenta saiu no `chat-9`; o tipo fica para o (i) da mensagem que a chamou.
+ */
 export interface EloDoHistorico {
   de: string;
   para: string;

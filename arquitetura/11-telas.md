@@ -255,6 +255,15 @@ nenhum, que só leu fichas ou linhas, abre o (i) direto nele. Os trechos citados
 sob a própria resposta foram recusados: pediriam contrato novo no prompt. Fechar
 o (i), trocar de conversa ou fechar o chat para o som.
 
+**A resposta do agente desenha um markdown mínimo** (`TextoDoAgente`):
+parágrafo, título, lista com traço e numerada, negrito, itálico e código —
+o que a resposta global usa (§4.16.2). O parser é deste arquivo
+(`blocosDoTexto`, `pedacosDaLinha`) e devolve elementos do React, nunca HTML
+montado: o texto é do modelo. Tabela não é desenhada — o prompt a proíbe —, e a
+que vier fica como parágrafo. Uma dependência de markdown foi recusada pelo
+motivo de sempre: o que se desenha cabe em sessenta linhas. A pergunta que eu
+escrevo continua texto cru.
+
 **O passo de `consultar_grafo` mostra a consulta** (`BlocoDaConsulta`): o
 cabeçalho diz as linhas, o corte e o tempo; embaixo, `sentido: "…"` quando houve
 `texto`, os avisos do banco, e a Cypher num bloco de código, quebrando a linha

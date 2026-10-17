@@ -52,7 +52,6 @@ import {
   INSTRUCOES,
   K_BUSCA,
   PISO_BUSCA,
-  PROFUNDIDADE_HISTORICO,
   PROMPT_VERSION_CHAT,
   TETO_ATOMOS,
   TETO_FERRAMENTAS,
@@ -69,13 +68,11 @@ import {
   dataSimples,
   diaEmCypher,
   ferramentas,
-  historicoDoAtomo,
   linhaDeAtomo,
   montarSistema,
   paraOModelo,
   parametrosLimpos,
   respostaDaBusca,
-  respostaDoHistorico,
   responder,
   somarUso,
   tiposValidos,
@@ -96,10 +93,12 @@ import {
 import { dataCurta } from "@/lib/dia";
 import {
   TETO_ROTULO,
+  blocosDoTexto,
   celulaDoRastro,
   frasePasso,
   fraseRecorte,
   partirLinhas,
+  pedacosDaLinha,
   rotuloDaConversa,
   rotuloDasLinhas,
   separarConversas,
@@ -107,7 +106,7 @@ import {
   trechosDoRastro,
 } from "@/components/Chat";
 import { chaveMensagens, chavePromptAgente } from "@/lib/chaves";
-import { AGENTE_IDS, FERRAMENTAS_CHAT, ehAgenteId } from "@/lib/tipos";
+import { AGENTE_IDS, FERRAMENTAS_CHAT, FERRAMENTAS_DO_RASTRO, ehAgenteId } from "@/lib/tipos";
 import { acharPorChave, listarEntidades } from "@/lib/entidades";
 import { embutir } from "@/lib/embedding";
 import { ConflitoR2Error, getJson, putJson, remover } from "@/lib/r2";
@@ -210,6 +209,10 @@ describe("os dois agentes novos existem como agente", () => {
     // É o envelope deste agente: o parser dele é o loop de tool-calling, e um
     // prompt que não cita a ferramenta é um prompt que a desliga.
     for (const f of FERRAMENTAS_CHAT) expect(INSTRUCOES).toContain(f);
+    // E não manda chamar a que saiu: o modelo pediria uma ferramenta que não tem.
+    for (const f of FERRAMENTAS_DO_RASTRO.filter((x) => !(FERRAMENTAS_CHAT as readonly string[]).includes(x))) {
+      expect(INSTRUCOES).not.toContain(f);
+    }
   });
 
   it("o schema do prompt não ensina o que nunca existiu, nem a conversa", () => {
@@ -341,11 +344,10 @@ describe("buscar_atomos", () => {
    * O ▶ do (i) precisa do segundo do áudio (onda 3 da interface). Ele vem da
    * primeira âncora, e só a tela o lê: o texto que vai ao modelo não muda.
    */
-  it("a primeira âncora vem nos dois caminhos e no histórico, e o modelo não a lê", async () => {
+  it("a primeira âncora vem nos dois caminhos, e o modelo não a lê", async () => {
     await buscarAtomos({});
     await buscarAtomos({ texto: "x" });
-    await historicoDoAtomo("a1");
-    for (const [cypher] of consulta.mock.calls.slice(0, 3)) {
+    for (const [cypher] of consulta.mock.calls.slice(0, 2)) {
       expect(String(cypher)).toContain("a.inicios_s[0] AS inicio_s, a.fins_s[0] AS fim_s");
     }
 
@@ -520,97 +522,6 @@ describe("os parâmetros que o modelo manda", () => {
     expect(parametrosLimpos({ desde: "2026-08-01", ate: "lixo" })).toEqual({
       desde: "2026-08-01",
     });
-  });
-});
-
-// ─────────────────────────── ferramenta 2 ───────────────────────────
-
-describe("historico_do_atomo", () => {
-  it("anda nas duas direções, até a profundidade declarada", async () => {
-    await historicoDoAtomo("a1");
-    const cypher = String(consulta.mock.calls[0][0]);
-    expect(cypher).toContain(
-      `[:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA*1..${PROFUNDIDADE_HISTORICO}]-(o:Atomo)`,
-    );
-    // Sem seta: a relação nasce do mais novo para o mais antigo, e a pergunta
-    // "como mudou" quer os dois lados do ponto onde eu parei.
-    expect(cypher).not.toContain("]->(o:Atomo)");
-    expect(cypher).toContain("ORDER BY valido_em ASC");
-  });
-
-  /**
-   * Slice 5.2: a camada sutil é ligação provável, e uma cadeia de prováveis
-   * não é história. O caminho longo só atravessa aresta forte; a sutil entra
-   * um salto, a partir do átomo dado.
-   */
-  it("o caminho longo só atravessa aresta forte, e a sutil anda um salto", async () => {
-    await historicoDoAtomo("a1");
-    const cypher = String(consulta.mock.calls[0][0]);
-    expect(cypher).toContain(
-      "all(r IN relationships(p) WHERE coalesce(r.camada, 'forte') = 'forte')",
-    );
-    expect(cypher).toContain(
-      "OPTIONAL MATCH (raiz)-[s1:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA]-(v:Atomo)",
-    );
-    expect(cypher).toContain("s1.camada = 'sutil'");
-  });
-
-  it("átomo que não existe volta com aviso, e não busca aresta nenhuma", async () => {
-    const r = await historicoDoAtomo("sumido");
-    expect(r.achados).toEqual([]);
-    expect(r.aviso).toContain("sumido");
-    expect(consulta).toHaveBeenCalledTimes(1);
-  });
-
-  it("id vazio nem chega ao banco", async () => {
-    const r = await historicoDoAtomo("  ");
-    expect(r.aviso).toBe("id de átomo vazio");
-    expect(consulta).not.toHaveBeenCalled();
-  });
-
-  /**
-   * Um item só não é "não mudou": é "a varredura do confronto ainda não passou
-   * por aqui". Devolver a lista sem dizer isso faria o modelo afirmar o
-   * contrário do que os dados sustentam.
-   */
-  it("átomo sem vizinho diz que ainda não tem relação registrada", async () => {
-    consulta.mockResolvedValueOnce([
-      { id: "a1", texto: "t", tipo: "OPINIAO", valido_em: "2026-01-01", sobre: [], cita: [] },
-    ] as never);
-    const r = await historicoDoAtomo("a1");
-    expect(r.achados).toHaveLength(1);
-    expect(r.elos).toEqual([]);
-    expect(r.aviso).toContain("ainda não tem nenhuma relação");
-    expect(consulta).toHaveBeenCalledTimes(1);
-  });
-
-  it("com vizinhos, a segunda consulta traz as arestas só entre os achados", async () => {
-    porCypher([
-      [
-        /UNWIND \$ids AS x/,
-        [
-          { de: "a2", para: "a1", tipo: "ATUALIZA", camada: "forte", motivo: "mudou de ideia", confianca: 0.8 },
-          { de: "a2", para: "a1", tipo: "INVENTADA", camada: "forte", motivo: "", confianca: 0.9 },
-        ],
-      ],
-      [
-        /OPTIONAL MATCH \(raiz\)/,
-        [
-          { id: "a1", texto: "antes", tipo: "OPINIAO", valido_em: "2026-01-01", sobre: [], cita: [] },
-          { id: "a2", texto: "depois", tipo: "OPINIAO", valido_em: "2026-06-01", sobre: [], cita: [] },
-        ],
-      ],
-    ]);
-
-    const r = await historicoDoAtomo("a1");
-    expect(r.achados.map((a) => a.id)).toEqual(["a1", "a2"]);
-    expect(String(consulta.mock.calls[1][0])).toContain("WHERE b.id IN $ids");
-    expect(consulta.mock.calls[1][1]).toEqual({ ids: ["a1", "a2"] });
-    // Tipo que não é um dos quatro é descartado em silêncio, como no confronto.
-    expect(r.elos).toEqual([
-      { de: "a2", para: "a1", tipo: "ATUALIZA", camada: "forte", motivo: "mudou de ideia", confianca: 0.8 },
-    ]);
-    expect(String(consulta.mock.calls[1][0])).toContain("coalesce(r.camada, 'forte') AS camada");
   });
 });
 
@@ -827,25 +738,6 @@ describe("o texto que a ferramenta devolve", () => {
     );
   });
 
-  it("o histórico separa os trechos das relações", () => {
-    const s = respostaDoHistorico({
-      achados: [atomo({ id: "a1" }), atomo({ id: "a2" })],
-      elos: [{ de: "a2", para: "a1", tipo: "ATUALIZA", camada: "forte", motivo: "mudou", confianca: 0.8 }],
-    });
-    expect(s).toContain("RELAÇÕES (o mais novo → o mais antigo;");
-    expect(s).toContain("a2 ATUALIZA a1 — mudou");
-  });
-
-  it("a relação sutil vem marcada, para o modelo a dizer como provável", () => {
-    const s = respostaDoHistorico({
-      achados: [atomo({ id: "a1" }), atomo({ id: "a2" })],
-      elos: [
-        { de: "a2", para: "a1", tipo: "COMPLEMENTA", camada: "sutil", motivo: "aqui: x; ali: y", confianca: 0.6 },
-      ],
-    });
-    expect(s).toContain("a2 COMPLEMENTA (sutil) a1 — aqui: x; ali: y");
-    expect(s).toContain('"sutil" é ligação provável');
-  });
 });
 
 /**
@@ -867,23 +759,6 @@ describe("o mesmo átomo não volta inteiro duas vezes", () => {
 
     expect(primeira).toContain("terminei com a Isinha ontem");
     expect(segunda).toBe("[id a1] já mostrado acima");
-  });
-
-  it("a memória atravessa as duas ferramentas", () => {
-    const vistos = new Set<string>();
-    respostaDaBusca({ achados: [atomo({ id: "a1" })] }, vistos);
-    const historico = respostaDoHistorico(
-      {
-        achados: [atomo({ id: "a1" }), atomo({ id: "a2", texto: "voltei a falar com ela" })],
-        elos: [{ de: "a2", para: "a1", tipo: "ATUALIZA", camada: "forte", motivo: "mudou", confianca: 0.8 }],
-      },
-      vistos,
-    );
-
-    expect(historico).toContain("[id a1] já mostrado acima");
-    expect(historico).toContain("voltei a falar com ela");
-    // A cadeia continua legível: colapsar o texto não apaga a relação.
-    expect(historico).toContain("a2 ATUALIZA a1 — mudou");
   });
 
   it("sem conjunto nenhum, nada colapsa", () => {
@@ -1539,6 +1414,49 @@ describe("o progresso e a lista", () => {
     expect(rotuloDasLinhas(c([[1], [2]], 2), false)).toBe("ver as 2 linhas ▸");
     expect(rotuloDasLinhas(c([[1]], 1), true)).toBe("ver a linha ▾");
     expect(rotuloDasLinhas(c([[1], [2]], 412, true), false)).toBe("ver as 2 de 412 linhas ▸");
+  });
+
+  it("a resposta vira parágrafo, título e as duas listas — e a tabela fica texto", () => {
+    const texto = [
+      "Contei os trechos afetivos.",
+      "",
+      "### As mais próximas",
+      "1. **Nicole** — 15 trechos",
+      "   a última em 11/10",
+      "2. **Isinha** — 6",
+      "",
+      "- uma",
+      "* outra",
+      "---",
+      "| a | b |",
+      "|---|---|",
+    ].join("\n");
+    expect(blocosDoTexto(texto)).toEqual([
+      { tipo: "paragrafo", texto: "Contei os trechos afetivos." },
+      { tipo: "titulo", texto: "As mais próximas" },
+      { tipo: "numerada", inicio: 1, itens: ["**Nicole** — 15 trechos\na última em 11/10", "**Isinha** — 6"] },
+      { tipo: "lista", itens: ["uma", "outra"] },
+      { tipo: "paragrafo", texto: "| a | b |\n|---|---|" },
+    ]);
+    // Lista que recomeça no 3 continua do 3.
+    expect(blocosDoTexto("3. c\n4. d")).toEqual([{ tipo: "numerada", inicio: 3, itens: ["c", "d"] }]);
+  });
+
+  it("negrito, itálico e código; o asterisco de conta fica", () => {
+    expect(pedacosDaLinha("**Nicole:** lidera")).toEqual([
+      { tipo: "negrito", texto: "Nicole:" },
+      { tipo: "texto", texto: " lidera" },
+    ]);
+    expect(pedacosDaLinha("um *quase* e 2 * 3")).toEqual([
+      { tipo: "texto", texto: "um " },
+      { tipo: "italico", texto: "quase" },
+      { tipo: "texto", texto: " e 2 * 3" },
+    ]);
+    expect(pedacosDaLinha("o `status` e x*y*z")).toEqual([
+      { tipo: "texto", texto: "o " },
+      { tipo: "codigo", texto: "status" },
+      { tipo: "texto", texto: " e x*y*z" },
+    ]);
   });
 
   it("a célula do (i) lê lista como texto, e vazio como traço", () => {

@@ -2405,6 +2405,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 0.5rem 0.7rem;
 }
 .chat .fala.agente { align-self: flex-start; padding: 0.1rem 0 0.2rem; }
+/* O markdown mínimo da resposta (slice 12): a global vem em lista, com título e
+   o nome de cada item em negrito. Tabela não existe aqui — o prompt a proíbe. */
+.chat .fala .md { display: flex; flex-direction: column; gap: 0.6rem; }
+.chat .fala .md ul,
+.chat .fala .md ol { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.chat .fala .md li { line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat .fala .md .titulo { font-weight: 600; margin-top: 0.2rem; }
+.chat .fala .md strong { font-weight: 600; }
+.chat .fala .md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
 
 /* O (i). Discreto, do tamanho de um dedo, e sempre no mesmo lugar — é a porta
    da procedência, e ela não pode ser caça ao tesouro. */

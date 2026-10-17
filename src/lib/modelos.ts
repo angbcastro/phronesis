@@ -417,18 +417,18 @@ export function modeloConfronto(): string {
  * Modelo do agente `chat` — o que lê a minha pergunta, escolhe as buscas e
  * escreve a resposta (slice 6).
  *
- * **Constante própria desde a slice 9, e o motivo é acoplamento, não
- * qualidade.** Até ali o padrão era o da extração, e a troca de modelo da
- * extração em 20/09 mudou a resposta do chat num commit que não falava do chat.
- * O valor é o mesmo id — escolha minha, sem medição —, mas agora trocar um não
- * troca o outro.
+ * **Constante própria desde a slice 9**, para a troca de modelo da extração não
+ * mudar a resposta do chat num commit que não fala do chat.
  *
- * Este é o único agente que usa *tool-calling* multi-passo pelo Gateway: ele
- * decide quais ferramentas chamar, lê o que voltou e decide de novo. Um modelo
- * bom em devolver JSON curto não é necessariamente bom nisso, e isso continua
- * não medido (§14). `CHAT_MODEL` ou o painel de `/agentes` trocam sem deploy.
+ * **O Sonnet, escolhido pela comparação da slice 12** (`pnpm comparar:chat`,
+ * §4.16.1): este é o único agente que usa *tool-calling* multi-passo pelo
+ * Gateway e que escreve Cypher, e das três rodadas lado a lado ele foi o mais
+ * cuidadoso com o que está registrado, nunca bateu no teto e não errou consulta.
+ * O `deepseek-v4.1-flash` de antes buscava demais e, no teto, ignorava o
+ * pedido de responder. O preço é o token mais caro dos três (§14).
+ * `CHAT_MODEL` ou o painel de `/agentes` trocam sem deploy.
  */
-export const MODELO_CHAT_PADRAO = "deepseek/deepseek-v4.1-flash";
+export const MODELO_CHAT_PADRAO = "anthropic/claude-sonnet-5.5";
 
 export function modeloChat(): string {
   return validarIdDeModelo(process.env.CHAT_MODEL || MODELO_CHAT_PADRAO);

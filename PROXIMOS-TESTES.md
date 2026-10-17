@@ -141,11 +141,17 @@ olhado rodando, pela mesma razão das outras ondas. A volta é a tag
 
 ## Slice 12 — o chat que navega o grafo (`Specs/slice-12.md`)
 
-Construída e coberta pelo `pnpm test`; os modelos foram comparados pelo
-`pnpm comparar:chat`, que só lê. Nada foi olhado no app. No celular:
+Construída e coberta pelo `pnpm test`; os três modelos foram comparados pelo
+`pnpm comparar:chat`, que só lê, e o Sonnet ficou. Nada foi olhado no app. No
+celular, com o `chat-9` no Sonnet:
 
 - [ ] As nove perguntas (§1 da spec), julgadas por mim pelo (i): a informação
       certa, a Cypher de cada passo e as linhas que o modelo leu.
+- [ ] A resposta global a 390 px: lista, título e negrito desenhados, sem `**`
+      nem `#` à vista, e nenhuma tabela. Se aparecer `|`, o prompt deixou
+      passar uma tabela.
+- [ ] O tempo no aparelho: na comparação o Sonnet levou de 5 a 29 s, 17 s em
+      média. Se a espera pesar, o `CHAT_MODEL` troca pelo painel.
 - [ ] "Me teste no que aprendi na última semana", em vários turnos: uma
       pergunta por vez; a correção contra o texto do trecho, com a data; a
       próxima sobre o trecho seguinte; e o fim quando o recorte acaba.
@@ -155,8 +161,11 @@ Construída e coberta pelo `pnpm test`; os modelos foram comparados pelo
       tabela, que rola por dentro, com o cabeçalho preso, sem a página ganhar
       rolagem horizontal.
 - [ ] Nenhum prompt do chat editado em `/agentes` (spec §9): um override salvo
-      antes do `chat-8` sombreia o prompt novo, e o envelope agora cobra
-      `consultar_grafo`.
+      antes do `chat-9` sombreia o prompt novo, e o envelope agora cobra
+      `consultar_grafo`. E nenhum modelo do chat salvo no painel, que venceria o
+      Sonnet.
+- [ ] Uma mensagem antiga com `historico_do_atomo` no rastro abre o (i) como
+      antes.
 
 ## Slice 11 — o que faltou, a pedido (`Specs/slice-11.md`)
 
@@ -261,8 +270,6 @@ painel de produção não tem override do `confronto`. Na ordem:
 
 - [ ] Nada da slice 9 foi julgado numa pergunta real: `chat-3`, `chat-4`,
       `chat-5` e, agora, `chat-6`.
-- [ ] O `CHAT_MODEL` (`deepseek/deepseek-v4.1-flash`) nunca foi medido em
-      tool-calling multi-passo, e agora são quatro ferramentas (§14).
 - [ ] O piso de 0,45 (`PISO_BUSCA`) e o teto de 8: julgar pelo (i), que mostra
       quantos passaram do piso e o melhor cortado.
 

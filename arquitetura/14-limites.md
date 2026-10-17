@@ -546,13 +546,12 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
 
 ### §4.16 — o chat
 
-- **O chat depende da qualidade do confronto.** `historico_do_atomo` lê as
-  relações das migrations 011 e 013, e se a varredura não tiver passado — ou
-  tiver descartado o par certo — ele volta com "este átomo ainda não tem nenhuma
-  relação de confronto registrada", e perguntas de "como mudei de opinião" ficam
-  sem resposta real. O conserto é o prompt do confronto, ou ligar o átomo órfão à
+- **O chat depende da qualidade do confronto.** A cadeia de um trecho (a
+  receita de `consultar_grafo`) lê as relações das migrations 011 e 013, e se a
+  varredura não tiver passado — ou tiver descartado o par certo — ela volta
+  vazia, e perguntas de "como mudei de opinião" ficam sem resposta real. O conserto é o prompt do confronto, ou ligar o átomo órfão à
   entidade certa (§4.15.2). O chat depende também de respeitar o rótulo
-  `(sutil)`, que só o prompt dele garante.
+  sutil, que só o prompt dele garante.
 - **O custo cresce com o teto de oito chamadas por pergunta** (slice 6). Uma
   pergunta composta paga até oito idas ao Gateway antes da síntese, mais a
   síntese em si — e, quando o loop para no teto, mais uma. Não há orçamento por
@@ -568,13 +567,12 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   qual escreve `já mostrado acima` varia entre execuções. É cosmético — o modelo vê
   o átomo uma vez de qualquer jeito, e o (i) guarda os dois achados inteiros —, mas
   é a razão de **não existir teste sobre isso**: ele ficaria intermitente.
-- **`CHAT_MODEL` precisa de tool-calling multi-passo bom pelo Gateway.** O
-  padrão é constante própria (`MODELO_CHAT_PADRAO`), para trocar o modelo da
-  extração não mudar a resposta do chat; o id é `deepseek/deepseek-v4.1-flash`,
-  escolhido para devolver JSON curto, que não é a mesma habilidade, e são cinco
-  ferramentas disputando a atenção dele. Se ele encadear mal, uma ferramenta a
-  mais piora a resposta em vez de melhorar, e o conserto é `CHAT_MODEL` ou o
-  painel de `/agentes`, sem deploy — não remover a ferramenta.
+- **O chat é o agente mais caro por pergunta.** O Sonnet, escolhido pela
+  comparação (§4.16.1), tem o token mais caro dos três modelos medidos, e o
+  prompt — com o schema e as receitas — vai em toda chamada do loop: na
+  comparação, a média foi de ~50 mil tokens de entrada por pergunta. Trocar é
+  `CHAT_MODEL` ou o painel de `/agentes`, sem deploy; a comparação diz o que se
+  perde.
 - **A conversa longa entra inteira no prompt, a cada mensagem** (slice 6). Não há
   resumo nem poda de histórico: uma conversa de trinta trocas manda as trinta a
   cada pergunta nova. Se virar problema de custo ou de teto de contexto, é fatia
@@ -606,7 +604,7 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   o nome que está no vetor da entidade. O conserto é a ficha ser escrita (§4.9),
   não mexer na ferramenta.
 - **Um prompt do chat editado em `/agentes` sombreia o do código.** O override
-  guardado no R2 vence o `chat-8`: um texto salvo antes de uma ferramenta nova
+  guardado no R2 vence o `chat-9`: um texto salvo antes de uma ferramenta nova
   continua oferecendo-a sem as instruções de quando usá-la — e um salvo antes do
   `ler_retrato` não manda começar por ele nas perguntas sobre mim. Salvá-lo de
   novo pede que ele cite as ferramentas (envelope).
@@ -656,6 +654,9 @@ o que falta medir mora no `PROXIMOS-TESTES.md`.
   tamanho na resposta e com 100 mil tokens de saída, o limite que sobra é o
   relógio da rota. O prompt também cresceu: o schema e as receitas vão em toda
   chamada do loop.
+- **O markdown da tela é mínimo** (§11): lista, título, negrito, itálico e
+  código. Lista dentro de lista vira item da mesma lista, e uma tabela que o
+  modelo escrever apesar do prompt aparece como texto cru, com os `|`.
 - **A fila do teste é a consulta de cada turno, e não uma memória** (§4.16.2).
   O modelo roda o recorte de novo a cada resposta minha e acha o trecho da vez
   pela pergunta que escreveu. Se o recorte mudar no meio — o dia vira e a

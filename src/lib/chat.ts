@@ -11,7 +11,7 @@
  * ela na seguinte. Nenhum pipeline de passo fixo cobre isso sem virar, na
  * prática, um agente disfarçado; então ele é um agente declarado.
  *
- * **Quatro ferramentas, compostas.** Quatro ferramentas de dimensão única
+ * **Ferramentas compostas, e não uma por dimensão.** Quatro de dimensão única
  * (semântica, entidade, período, confronto) foram desenhadas e recusadas: uma
  * pergunta composta — "o que eu fiz, aprendi e conquistei em agosto" — exigiria
  * encadear e cruzar à mão o que um parâmetro de lista resolve numa chamada só.
@@ -20,8 +20,6 @@
  *
  *   buscar_atomos        texto (vetor), entidade, tipo[], desde, ate — todos
  *                        opcionais, todos combináveis
- *   historico_do_atomo   a cadeia de ATUALIZA/CONTRADIZ/CONFIRMA/COMPLEMENTA
- *                        em volta de um átomo, nas duas direções
  *   buscar_entidades     nome, texto (vetor de perfil), tipo — a ficha, as
  *                        contagens e quem co-ocorre
  *   ler_retrato          dimensao? — o retrato do "eu", uma seção por vez
@@ -30,6 +28,11 @@
  *                        só de leitura (slice 12): a que conta, ordena, compara
  *                        períodos e anda pelo grafo. A porta e as travas são de
  *                        `consulta.ts`
+ *
+ * `historico_do_atomo` — a cadeia de confronto em volta de um átomo — saiu no
+ * `chat-9`: nas vinte respostas da comparação da slice 12 o modelo escolhido
+ * não a chamou, e a cadeia é uma receita de `consultar_grafo`. A mensagem antiga
+ * que a chamou continua desenhando o (i) (`FERRAMENTAS_DO_RASTRO`).
  *
  * **Só leitura, e nem por ferramenta** (regra 5 do CLAUDE.md). Uma ferramenta
  * de escrita com confirmação — arquivar um átomo direto do chat — foi
@@ -74,7 +77,6 @@ import {
   TIPOS_ATOMO,
   mesAno,
   TIPOS_ENTIDADE,
-  ehTipoRelacaoConfronto,
   type AtomoAchado,
   type BuscaDeAtomos,
   type BuscaDeEntidades,
@@ -82,7 +84,6 @@ import {
   type ConsultaNoRastro,
   type EntidadeAchada,
   type TipoEntidade,
-  type EloDoHistorico,
   type LeituraDoRetrato,
   type Mensagem,
   type PassoDeFerramenta,
@@ -91,7 +92,7 @@ import {
 } from "./tipos";
 
 /** Muda sempre que o prompt mudar — mesma disciplina de todo agente (regra 7). */
-export const PROMPT_VERSION_CHAT = "chat-8";
+export const PROMPT_VERSION_CHAT = "chat-9";
 
 export class ChatError extends Error {
   constructor(message: string) {
@@ -155,26 +156,6 @@ export const K_BUSCA = 48;
  */
 export const PISO_BUSCA = 0.45;
 
-/**
- * Quantos degraus `historico_do_atomo` anda a partir do átomo dado.
- *
- * Não é 1 porque uma opinião pode ter mudado em mais de um passo — a cadeia
- * inteira é o que a pergunta "como eu mudei de ideia sobre X" quer. Não é
- * ilimitado porque `COMPLEMENTA` liga assunto vizinho, e sem teto uma cadeia
- * longa arrastaria meio grafo para dentro de uma resposta.
- *
- * **Vale só para a camada forte** (slice 5.2). A sutil anda um salto, a partir
- * do átomo dado: com até sete relações por átomo, quatro saltos pelas duas
- * camadas trariam centenas de trechos — e uma cadeia de inferências encadeadas
- * é exatamente o que o chat não pode apresentar como história.
- *
- * Vai **literal** na consulta: Neo4j não aceita limite de caminho de tamanho
- * variável vindo de parâmetro. Mesmo motivo do tipo de relação em
- * `gravarRelacoes` (confronto.ts), e mesma defesa — o número sai daqui, nunca
- * do modelo.
- */
-export const PROFUNDIDADE_HISTORICO = 4;
-
 /** Quanto do texto de um átomo vai para o rastro do (i). */
 export const TRECHO_NO_RASTRO = 400;
 
@@ -194,9 +175,9 @@ const MAX_TOKENS_SAIDA = 100_000;
 
 export const INSTRUCOES = `Você responde perguntas sobre um diário pessoal falado. Quem pergunta é o dono do diário, falando de si mesmo: "eu" é sempre ele.
 
-O diário não está no seu contexto. Ele está num grafo, e você o alcança por cinco ferramentas, todas só de leitura:
+O diário não está no seu contexto. Ele está num grafo, e você o alcança por quatro ferramentas, todas só de leitura:
 
-consultar_grafo — roda uma consulta Cypher que você escreve e devolve as linhas numa tabela. É a que conta, ordena, compara períodos, acompanha uma mudança e anda pelo grafo. O grafo, as armadilhas dele e as receitas estão mais abaixo.
+consultar_grafo — roda uma consulta Cypher que você escreve e devolve as linhas numa tabela. É a que conta, ordena, compara períodos, acompanha uma mudança e anda pelo grafo — inclusive a cadeia de um trecho: o que o atualizou, contradisse, confirmou ou complementou. O grafo, as armadilhas dele e as receitas estão mais abaixo.
   cypher     uma consulta só, sem EXPLAIN e sem ponto e vírgula.
   texto      as palavras de uma busca por sentido; viram $vetor. Escreva a ideia, não a pergunta.
   $hoje      vem sempre: a data de hoje, AAAA-MM-DD. Use date($hoje), nunca uma data escrita à mão.
@@ -205,7 +186,6 @@ buscar_atomos — procura trechos registrados, no máximo oito por vez. Todos os
   entidade   o nome de uma pessoa, projeto, objetivo ou organização.
   tipo       um ou mais de: FATO, OPINIAO, SENTIMENTO, APRENDIZADO, CONQUISTA, DECISAO, HISTORIA, ROTINA.
   desde/ate  datas AAAA-MM-DD.
-historico_do_atomo — dado o id de um trecho, devolve a cadeia de trechos ligados a ele no tempo: o que o atualizou, o que o contradisse, o que o confirmou, o que o complementou — inclusive o fato que explica um sentimento e o que aconteceu depois de um medo ou plano. Cada relação vem marcada forte ou sutil: forte é ligação que os dois trechos afirmam; sutil é ligação provável, que só aparece juntando os dois.
 buscar_entidades — procura a ficha de pessoas, projetos, objetivos e organizações. Todos os parâmetros são opcionais:
   nome       nome ou apelido; sem casamento exato, devolve as de nome parecido.
   texto      busca por sentido na ficha: "quem entende de contabilidade".
@@ -216,9 +196,9 @@ ler_retrato — o retrato do dono do diário, escrito a partir de tudo o que ele
   dimensao   o id ou o nome de uma dimensão. Sem ele, devolve o Agora — o momento atual — e a lista de dimensões com o que entra em cada uma. Com ele, devolve só aquela seção e os trechos que a sustentaram.
 
 QUANDO USAR O QUÊ
-Pergunta sobre mim — quem eu sou, como eu estou, o que tenho feito numa área da vida — começa por ler_retrato: primeiro sem parâmetro, para ver o Agora e as dimensões; depois a dimensão que a pergunta pede, e só ela. O retrato é resumo: data exata e evidência estão nos trechos — os ids das fontes vão a historico_do_atomo ou a uma consulta. Retrato vazio ou ainda não escrito não quer dizer que não há nada: siga pelas outras.
+Pergunta sobre mim — quem eu sou, como eu estou, o que tenho feito numa área da vida — começa por ler_retrato: primeiro sem parâmetro, para ver o Agora e as dimensões; depois a dimensão que a pergunta pede, e só ela. O retrato é resumo: data exata e evidência estão nos trechos — os ids das fontes vão a uma consulta. Retrato vazio ou ainda não escrito não quer dizer que não há nada: siga pelas outras.
 Pergunta global vai por consultar_grafo: a que ordena ("quem mais", "o que mais", "os maiores"), conta, recorta um período ("nos últimos meses"), procura um padrão ("como eu lido com") ou acompanha uma mudança ("como mudou"). buscar_atomos não serve a ela: devolve oito trechos e não conta nada, e "meus maiores medos" viraria uma amostra de oito trechos que dizem a palavra medo.
-Pergunta local — um evento, uma pessoa, "como eu estava depois de", "o que eu disse sobre" — pode seguir por buscar_atomos, historico_do_atomo e buscar_entidades, ou por consultar_grafo, o que servir melhor.
+Pergunta local — um evento, uma pessoa, "como eu estava depois de", "o que eu disse sobre" — pode seguir por buscar_atomos e buscar_entidades, ou por consultar_grafo, o que servir melhor.
 Pergunta sobre quem alguém é, com quem eu faço o quê, ou quem pode ajudar com algo começa pela ficha (buscar_entidades), não pelos trechos: ela já diz por escrito o que você levaria várias buscas para reconstruir. Ficha vazia não quer dizer que não há nada: quer dizer que ninguém escreveu, e os trechos continuam lá.
 
 O GRAFO — o que dá para ler
@@ -356,6 +336,15 @@ Como algo mudou num tema — os mais parecidos, com o que o confronto ligou a el
   ORDER BY dia
 Mudança de posição aparece em qualquer tipo — APRENDIZADO, CONQUISTA, ROTINA —, e não só em OPINIAO: não filtre por tipo.
 
+A cadeia de um trecho — o que o atualizou, contradisse, confirmou ou complementou, nos dois sentidos. Para andar mais um passo, repita a partir do id do outro:
+  MATCH (a:Atomo {id: '…'})-[r:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA]-(b:Atomo {status: 'ativo'})
+  RETURN type(r) AS rel, coalesce(r.camada, 'forte') AS camada,
+         CASE WHEN startNode(r) = a THEN 'o outro é mais antigo' ELSE 'o outro é mais novo' END AS sentido,
+         b.id AS id,
+         toString(date(datetime({datetime: datetime(b.valido_em), timezone: 'America/Sao_Paulo'}))) AS dia,
+         b.tipo AS tipo, left(b.texto, 120) AS trecho, r.motivo AS motivo
+  ORDER BY dia
+
 O que mudou, sem tema — todas as ATUALIZA e CONTRADIZ:
   MATCH (n:Atomo {status: 'ativo'})-[r:ATUALIZA|CONTRADIZ]->(v:Atomo {status: 'ativo'})
   RETURN type(r) AS rel, coalesce(r.camada, 'forte') AS camada,
@@ -394,8 +383,9 @@ A maioria das perguntas se resolve em duas ou três chamadas. Pare quando tiver 
 
 COMO RESPONDER
 Comece pela resposta. Sem preâmbulo, sem repetir a pergunta, sem dizer o que você procurou ou vai fazer: a tela já mostrou cada busca.
-A pergunta local — um evento, uma pessoa, um momento — tem resposta curta. Responda nas duas primeiras frases, antes de qualquer evidência; quatro ou cinco frases resolvem quase tudo. Prosa, não lista: sem marcadores, sem títulos, sem tabela, a não ser que eu peça. Escolha um trecho, no máximo dois.
-A pergunta global — a que conta, ordena, compara períodos ou acompanha uma mudança — não tem teto nem forma fixa: lista, tabela, títulos, o que servir para ler. O tamanho é o que a pergunta pede: um ranking de quinze pessoas tem quinze linhas, e uma mudança de três momentos tem três. Diga o critério que ordenou ("contei os trechos de sentimento e de história que citam cada uma") e o recorte. Cada item diz o que o sustenta e quando, sem colar o trecho inteiro.
+A pergunta local — um evento, uma pessoa, um momento — tem resposta curta. Responda nas duas primeiras frases, antes de qualquer evidência; quatro ou cinco frases resolvem quase tudo. Prosa, não lista: sem marcadores e sem títulos, a não ser que eu peça. Escolha um trecho, no máximo dois.
+A pergunta global — a que conta, ordena, compara períodos ou acompanha uma mudança — não tem teto nem forma fixa: lista numerada ou com traço, títulos curtos, o nome de cada item em negrito — o que servir para ler. O tamanho é o que a pergunta pede: um ranking de quinze pessoas tem quinze linhas, e uma mudança de três momentos tem três. Diga o critério que ordenou ("contei os trechos de sentimento e de história que citam cada uma") e o recorte. Cada item diz o que o sustenta e quando, sem colar o trecho inteiro.
+Tabela nunca, em pergunta nenhuma: a tela é de celular e não a desenha. Um ranking é uma lista numerada, com o número na frase de cada item.
 A procedência inteira de cada resposta fica guardada e eu a abro quando quero: cada consulta, cada busca e tudo o que ela trouxe. A resposta não é o lugar de repetir isso.
 A data entra na frase, não num bloco de citações: "no fim de julho você contou que estava aliviado".
 Sobrou coisa boa de fora? Diga em uma frase o que ficou, com o número que a consulta deu, e ofereça continuar.
@@ -1159,7 +1149,7 @@ const ate = (iso: string) => {
  *
  * - sem `dimensao` → o Agora, e a lista de dimensões com o `o_que_entra`;
  * - com `dimensao` → só aquela seção, e as fontes (id, data, trecho curto). O id
- *   vai para o chat poder seguir por `historico_do_atomo`.
+ *   vai para o chat poder seguir por `consultar_grafo`.
  *
  * `dimensao` casa pelo id **ou** pelo nome normalizado: o modelo lê os dois na
  * lista e pode devolver qualquer um. Seção de dimensão que saiu da lista não é
@@ -1251,92 +1241,6 @@ export async function lerRetratoDoEu(dimensao?: unknown): Promise<ResultadoDoRet
 /** O texto da seção cortado para o rastro do (i). */
 const corta = (t: string) => (t.length > TRECHO_NO_RASTRO ? `${t.slice(0, TRECHO_NO_RASTRO)}…` : t);
 
-// ──────────────────── ferramenta 2: historico_do_atomo ────────────────────
-
-export interface ResultadoDeHistorico {
-  achados: AtomoAchado[];
-  elos: EloDoHistorico[];
-  aviso?: string;
-}
-
-/**
- * A ferramenta 2, por dentro: a cadeia de confronto em volta de um átomo.
- *
- * **Nas duas direções**, e é a parte que importa. As relações da migration 011
- * nascem sempre do mais novo para o mais antigo; andar só para frente mostraria
- * o que este átomo mudou, e andar só para trás mostraria o que mudou este
- * átomo. A pergunta "como minha opinião mudou" quer os dois lados do ponto onde
- * eu parei.
- *
- * **Duas consultas, não uma.** A primeira traz os átomos; a segunda, as arestas
- * entre eles. Uma consulta só devolveria objetos de relação, e todo o resto
- * deste sistema conversa com o Neo4j em escalar e mapa — é o que mantém
- * `linhas<T>` (neo4j.ts) simples.
- *
- * **Forte até `PROFUNDIDADE_HISTORICO`, sutil um salto só** (slice 5.2). O
- * caminho forte não atravessa aresta sutil; a sutil só entra quando toca o
- * átomo dado. Ausente no grafo = forte, como tudo o que a 5 e a 5.1 gravaram.
- */
-export async function historicoDoAtomo(atomoId: string): Promise<ResultadoDeHistorico> {
-  const id = typeof atomoId === "string" ? atomoId.trim() : "";
-  if (id === "") return { achados: [], elos: [], aviso: "id de átomo vazio" };
-
-  const salto = `*1..${PROFUNDIDADE_HISTORICO}`;
-  const linhas = await query<LinhaDeAtomo>(
-    `MATCH (raiz:Atomo { id: $id })
-     OPTIONAL MATCH p = (raiz)-[:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA${salto}]-(o:Atomo)
-     WHERE coalesce(o.status, 'ativo') = 'ativo'
-       AND all(r IN relationships(p) WHERE coalesce(r.camada, 'forte') = 'forte')
-     WITH raiz, collect(DISTINCT o) AS fortes
-     OPTIONAL MATCH (raiz)-[s1:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA]-(v:Atomo)
-     WHERE coalesce(v.status, 'ativo') = 'ativo' AND s1.camada = 'sutil'
-     WITH raiz, fortes, collect(DISTINCT v) AS sutis
-     WITH fortes + sutis + [raiz] AS todos
-     UNWIND todos AS a
-     WITH DISTINCT a${ENTIDADES_DE("a")}
-     WITH a, collect(DISTINCT s.nome) AS sobre, collect(DISTINCT m.nome) AS cita
-     RETURN a.id AS id, a.texto AS texto, a.tipo AS tipo,
-            coalesce(a.valido_em, '') AS valido_em, sobre, cita, ${ANCORA_DE("a")}
-     ORDER BY valido_em ASC`,
-    { id },
-  );
-
-  if (linhas.length === 0) {
-    return { achados: [], elos: [], aviso: `não existe átomo com id "${id}"` };
-  }
-
-  const achados = linhas.map(daLinha);
-  if (achados.length === 1) {
-    // O átomo existe e não tem vizinho nenhum. É o caso mais comum enquanto a
-    // varredura do confronto não passou por ele, e dizer isso é melhor que
-    // devolver uma lista de um item que o modelo leria como "não mudou".
-    return {
-      achados,
-      elos: [],
-      aviso: "este átomo ainda não tem nenhuma relação de confronto registrada",
-    };
-  }
-
-  const ids = achados.map((a) => a.id);
-  const arestas = await query<EloDoHistorico>(
-    `UNWIND $ids AS x
-     MATCH (a:Atomo { id: x })-[r:ATUALIZA|CONTRADIZ|CONFIRMA|COMPLEMENTA]->(b:Atomo)
-     WHERE b.id IN $ids
-     RETURN a.id AS de, b.id AS para, type(r) AS tipo,
-            coalesce(r.camada, 'forte') AS camada,
-            coalesce(r.motivo, '') AS motivo, coalesce(r.confianca, 0) AS confianca`,
-    { ids },
-  );
-
-  return {
-    achados,
-    elos: arestas
-      .filter((e) => ehTipoRelacaoConfronto(e.tipo))
-      // Camada desconhecida é lida como sutil: na dúvida, a ressalva.
-      .map((e) => ({ ...e, camada: e.camada === "forte" ? "forte" : "sutil" })),
-  };
-}
-
 // ──────────────────────── o loop ────────────────────────
 
 /** Um átomo, do jeito que ele entra no prompt de volta ao modelo. */
@@ -1353,8 +1257,8 @@ export function linhaDeAtomo(a: AtomoAchado): string {
  * O que a ferramenta devolve ao modelo, em texto.
  *
  * Texto e não JSON, de propósito: o modelo vai **ler** isto para escrever prosa,
- * e o id precisa estar visível em cada linha para ele poder chamar
- * `historico_do_atomo` em seguida. Um envelope JSON gastaria tokens em chaves
+ * e o id precisa estar visível em cada linha para ele poder pedir o texto inteiro
+ * ou a cadeia do trecho por `consultar_grafo` em seguida. Um envelope JSON gastaria tokens em chaves
  * que ninguém usa.
  */
 /**
@@ -1389,22 +1293,6 @@ export function respostaDaBusca(r: ResultadoDeBusca, vistos?: Set<string>): stri
   if (r.achados.length === 0) return topo ?? "nenhum trecho encontrado.";
   const trechos = r.achados.map((a) => umaVezSo(a, vistos)).join("\n");
   return topo ? `${topo}\n${trechos}` : trechos;
-}
-
-export function respostaDoHistorico(r: ResultadoDeHistorico, vistos?: Set<string>): string {
-  if (r.achados.length === 0) return r.aviso ?? "nenhum trecho encontrado.";
-  const trechos = r.achados.map((a) => umaVezSo(a, vistos)).join("\n");
-  const elos =
-    r.elos.length === 0
-      ? (r.aviso ?? "sem relação registrada entre eles.")
-      : r.elos
-          .map(
-            (e) =>
-              `${e.de} ${e.tipo}${e.camada === "sutil" ? " (sutil)" : ""} ${e.para}` +
-              (e.motivo === "" ? "" : ` — ${e.motivo}`),
-          )
-          .join("\n");
-  return `${trechos}\n\nRELAÇÕES (o mais novo → o mais antigo; "sutil" é ligação provável, não afirmada pelos dois trechos):\n${elos}`;
 }
 
 /** O átomo cortado para o rastro: o (i) mostra uma linha, não o átomo inteiro. */
@@ -1450,17 +1338,6 @@ const ESQUEMA_BUSCA = jsonSchema<BuscaDeAtomos>({
     desde: { type: "string", description: "data AAAA-MM-DD, inclusive." },
     ate: { type: "string", description: "data AAAA-MM-DD, inclusive." },
   },
-});
-
-const ESQUEMA_HISTORICO = jsonSchema<{ atomo_id: string }>({
-  type: "object",
-  properties: {
-    atomo_id: {
-      type: "string",
-      description: "o id de um trecho, como ele aparece em `[id ...]` numa busca anterior.",
-    },
-  },
-  required: ["atomo_id"],
 });
 
 const ESQUEMA_ENTIDADES = jsonSchema<BuscaDeEntidades>({
@@ -1645,39 +1522,6 @@ export function ferramentas(
           console.error("[chat] buscar_atomos falhou:", e);
           anunciar({
             ferramenta: "buscar_atomos",
-            parametros,
-            achados: [],
-            duracao_ms: Date.now() - inicio,
-            erro,
-          });
-          return `a busca falhou: ${erro}`;
-        }
-      },
-    }),
-
-    historico_do_atomo: tool({
-      description:
-        "Dado o id de um trecho, devolve a cadeia de trechos ligados a ele no tempo — o que o atualizou, contradisse, confirmou ou complementou.",
-      inputSchema: ESQUEMA_HISTORICO,
-      execute: async ({ atomo_id }: { atomo_id: string }) => {
-        const parametros = { atomo_id };
-        const inicio = Date.now();
-        try {
-          const r = await historicoDoAtomo(atomo_id);
-          anunciar({
-            ferramenta: "historico_do_atomo",
-            parametros,
-            achados: r.achados.map(paraRastro),
-            elos: r.elos,
-            duracao_ms: Date.now() - inicio,
-            ...(r.aviso ? { erro: r.aviso } : {}),
-          });
-          return respostaDoHistorico(r, vistos);
-        } catch (e) {
-          const erro = e instanceof Error ? e.message : String(e);
-          console.error("[chat] historico_do_atomo falhou:", e);
-          anunciar({
-            ferramenta: "historico_do_atomo",
             parametros,
             achados: [],
             duracao_ms: Date.now() - inicio,

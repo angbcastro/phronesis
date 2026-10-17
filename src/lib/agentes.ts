@@ -342,12 +342,11 @@ export const AGENTES: readonly Agente[] = [
     variavel: "CHAT_MODEL",
     modulo: "src/lib/chat.ts",
     modeloEditavel: true,
-    // As cinco ferramentas, e não chaves de JSON: este é o único agente cujo
+    // As quatro ferramentas, e não chaves de JSON: este é o único agente cujo
     // parser é o loop de tool-calling. O que um prompt editado não pode perder
     // é justamente o nome do que ele pode chamar.
     envelope: [
       "buscar_atomos",
-      "historico_do_atomo",
       "buscar_entidades",
       "ler_retrato",
       "consultar_grafo",
@@ -650,7 +649,7 @@ export const TELAS: readonly Tela[] = [
             entradas: [
               {
                 rotulo: "grafo",
-                nota: "as cinco ferramentas, só de leitura: buscar_atomos, historico_do_atomo, buscar_entidades, ler_retrato e consultar_grafo — a Cypher que ele mesmo escreve",
+                nota: "as quatro ferramentas, só de leitura: buscar_atomos, buscar_entidades, ler_retrato e consultar_grafo — a Cypher que ele mesmo escreve",
               },
             ],
           },

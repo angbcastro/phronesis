@@ -81,13 +81,14 @@ Agora e uma seção por dimensão, no R2 (§4.20).
 **Relações e perguntas.** O `confronto-3` liga cada átomo novo aos cem mais
 parecidos do grafo inteiro com `ATUALIZA`, `CONTRADIZ`, `CONFIRMA` ou
 `COMPLEMENTA`, em camada forte ou sutil, e eu corrijo relação por relação em
-`/confronto` (§4.15). O chat (`chat-8`) é um agente com cinco ferramentas
-só-leitura — `buscar_atomos`, `historico_do_atomo`, `buscar_entidades`,
-`ler_retrato` e `consultar_grafo`, a Cypher que ele mesmo escreve, atrás de três
+`/confronto` (§4.15). O chat (`chat-9`, no Sonnet) é um agente com quatro ferramentas
+só-leitura — `buscar_atomos`, `buscar_entidades`, `ler_retrato` e
+`consultar_grafo`, a Cypher que ele mesmo escreve, atrás de três
 travas — que encadeia até oito chamadas antes de responder (§4.16). O prompt
 ensina o grafo a ele: o schema de leitura, as armadilhas e uma receita por
 família de pergunta. A pergunta local tem resposta curta; a global — contar,
-ordenar, comparar períodos, acompanhar uma mudança — tem forma livre. Quando eu
+ordenar, comparar períodos, acompanhar uma mudança — vem em lista, com título
+e negrito, que a tela desenha. Quando eu
 peço, ele me testa no que registrei, uma pergunta por vez. As datas que ele diz
 são as de Brasília.
 
@@ -214,9 +215,9 @@ src/lib/          servidor — exceto os módulos puros marcados (client), que n
                   sutil, e GRAVA — mesmo padrão do enriquecimento, nunca no
                   caminho da resposta. Também o radial de `/confronto` e a
                   minha edição, que congela a relação ou deixa a recusa
-  chat.ts         o agente `chat`: as cinco ferramentas só-leitura
-                  (`buscar_atomos`, `historico_do_atomo`, `buscar_entidades`,
-                  `ler_retrato`, `consultar_grafo` — esta pela porta de
+  chat.ts         o agente `chat`: as quatro ferramentas só-leitura
+                  (`buscar_atomos`, `buscar_entidades`, `ler_retrato`,
+                  `consultar_grafo` — esta pela porta de
                   `consulta.ts`), o loop com teto de 8 chamadas, e o rastro que
                   o botão (i) abre. Não sabe que conversa existe
   consulta.ts     a Cypher que o modelo escreve: os bloqueios no texto, o
@@ -322,8 +323,8 @@ src/components/   as telas, todas client
                   que difere do git, e o fechar que segura o que não salvei
   Confronto.tsx   a varredura de relações (rodar, desfazer, reprocessar), a
                   busca de átomo e o radial onde eu corrijo relação por relação
-  Chat.tsx        a barra, o painel, a lista de conversas, o progresso por passo
-                  e o (i): os trechos com ▶, e o rastro dobrado em "como
+  Chat.tsx        a barra, o painel, a lista de conversas, o progresso por passo,
+                  a resposta com o markdown mínimo (lista, título, negrito) e o (i): os trechos com ▶, e o rastro dobrado em "como
                   procurei" — nasce dentro da `Gravacao`
   ServiceWorker.tsx registra `sw.js`; não desenha nada
 src/app/api/      as rotas, por família — sessão, entidade, calibração, agentes,

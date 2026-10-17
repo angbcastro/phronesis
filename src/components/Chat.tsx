@@ -31,7 +31,7 @@
  *
  * As funções puras deste arquivo (`frasePasso`, `rotuloDaConversa`,
  * `separarConversas`, `trechosDoRastro`, `sessaoDoAtomo`, `rotuloDasLinhas`,
- * `celulaDoRastro`) são exportadas para
+ * `celulaDoRastro`, `blocosDoTexto`, `pedacosDaLinha`) são exportadas para
  * `tests/chat.test.ts`: elas são a lógica que erra calada — uma conversa sem
  * título, um passo sem parâmetro, um trecho repetido no (i).
  * `partirLinhas` era a quarta, e mudou de casa na slice 8.2: o fluxo NDJSON
@@ -175,6 +175,103 @@ export function celulaDoRastro(v: unknown): string {
     return v.length === 0 ? "—" : v.map((x) => (x === null ? "—" : String(x))).join(", ");
   }
   return JSON.stringify(v);
+}
+
+/**
+ * Um bloco da resposta do agente, no markdown mínimo que a tela desenha (slice
+ * 12): parágrafo, título, lista com traço e lista numerada. **Tabela não**: o
+ * prompt a proíbe — a tela é de celular —, e a que vier mesmo assim fica como
+ * parágrafo, legível como o texto cru que sempre foi.
+ */
+export type BlocoDoTexto =
+  | { tipo: "paragrafo"; texto: string }
+  | { tipo: "titulo"; texto: string }
+  | { tipo: "lista"; itens: string[] }
+  | { tipo: "numerada"; inicio: number; itens: string[] };
+
+const TITULO = /^#{1,6}\s+(.*)$/;
+const ITEM = /^[-*•]\s+(.*)$/;
+const NUMERADO = /^(\d{1,3})[.)]\s+(.*)$/;
+const SEPARADOR = /^\s*(-{3,}|\*{3,}|_{3,})\s*$/;
+
+/**
+ * O texto do agente em blocos. A linha recuada logo depois de um item continua
+ * aquele item; a linha em branco fecha o bloco. Uma lista dentro de outra vira
+ * itens da mesma lista — achatar é o preço de não ter dependência nova.
+ */
+export function blocosDoTexto(texto: string): BlocoDoTexto[] {
+  const blocos: BlocoDoTexto[] = [];
+  let atual: BlocoDoTexto | null = null;
+  const fecha = () => {
+    if (atual) blocos.push(atual);
+    atual = null;
+  };
+  for (const crua of texto.replace(/\r\n/g, "\n").split("\n")) {
+    const linha = crua.trim();
+    if (linha === "" || SEPARADOR.test(crua)) {
+      fecha();
+      continue;
+    }
+    const titulo = TITULO.exec(linha);
+    const item = ITEM.exec(linha);
+    const numerado = NUMERADO.exec(linha);
+    const b = atual as BlocoDoTexto | null;
+    if (titulo) {
+      fecha();
+      blocos.push({ tipo: "titulo", texto: titulo[1] });
+    } else if (item) {
+      if (b?.tipo === "lista") b.itens.push(item[1]);
+      else {
+        fecha();
+        atual = { tipo: "lista", itens: [item[1]] };
+      }
+    } else if (numerado) {
+      if (b?.tipo === "numerada") b.itens.push(numerado[2]);
+      else {
+        fecha();
+        atual = { tipo: "numerada", inicio: Number(numerado[1]), itens: [numerado[2]] };
+      }
+    } else if ((b?.tipo === "lista" || b?.tipo === "numerada") && /^\s/.test(crua)) {
+      b.itens[b.itens.length - 1] += `\n${linha}`;
+    } else if (b?.tipo === "paragrafo") {
+      b.texto += `\n${linha}`;
+    } else {
+      fecha();
+      atual = { tipo: "paragrafo", texto: linha };
+    }
+  }
+  fecha();
+  return blocos;
+}
+
+/** Um pedaço de uma linha: texto corrido, negrito, itálico ou código. */
+export interface PedacoDaLinha {
+  tipo: "texto" | "negrito" | "italico" | "codigo";
+  texto: string;
+}
+
+/**
+ * `**negrito**`, `*itálico*` e `` `código` ``; o asterisco solto, de conta ou de
+ * nota, fica. Sem *lookbehind*: o Safari antigo não o lê, e um regex que não
+ * compila derruba o chat inteiro na carga — o caractere de antes do itálico vem
+ * no grupo 3 e volta como texto.
+ */
+const MARCAS = /\*\*([^*\n]+?)\*\*|`([^`\n]+)`|(^|[^\w*])\*(?![\s*])([^*\n]*[^\s*])\*(?![\w*])/g;
+
+export function pedacosDaLinha(linha: string): PedacoDaLinha[] {
+  const pedacos: PedacoDaLinha[] = [];
+  let desde = 0;
+  for (const m of linha.matchAll(MARCAS)) {
+    const antes = m[3] ?? "";
+    const em = (m.index ?? 0) + antes.length;
+    if (em > desde) pedacos.push({ tipo: "texto", texto: linha.slice(desde, em) });
+    if (m[1] !== undefined) pedacos.push({ tipo: "negrito", texto: m[1] });
+    else if (m[2] !== undefined) pedacos.push({ tipo: "codigo", texto: m[2] });
+    else pedacos.push({ tipo: "italico", texto: m[4] });
+    desde = (m.index ?? 0) + m[0].length;
+  }
+  if (desde < linha.length) pedacos.push({ tipo: "texto", texto: linha.slice(desde) });
+  return pedacos;
 }
 
 /** A frase do passo de `buscar_entidades` (slice 9): fichas, não trechos. */
@@ -860,7 +957,7 @@ export function Chat({ aberto, aoAbrir, aoFechar }: Props) {
 
                 {mensagens.map((m, i) => (
                   <article key={`${m.criado_em}-${i}`} className={`fala ${m.papel}`}>
-                    <p>{m.texto}</p>
+                    {m.papel === "agente" ? <TextoDoAgente texto={m.texto} /> : <p>{m.texto}</p>}
                     {m.papel === "agente" && (m.rastro?.length ?? 0) > 0 && (
                       <>
                         <button
@@ -1082,6 +1179,52 @@ function Origem({
         </button>
       )}
       {tecnicoAberto && <ComoProcurei passos={passos} />}
+    </div>
+  );
+}
+
+/**
+ * A resposta do agente, com o markdown mínimo desenhado (slice 12): a resposta
+ * global vem em lista, com título e o nome de cada item em negrito, e o texto
+ * cru mostrava os `**` e os `#`. Elementos do React, e não HTML montado: o
+ * texto é do modelo, e nada dele vira marcação que eu não escrevi aqui.
+ */
+function TextoDoAgente({ texto }: { texto: string }) {
+  const linha = (t: string) =>
+    pedacosDaLinha(t).map((p, i) =>
+      p.tipo === "negrito" ? (
+        <strong key={i}>{p.texto}</strong>
+      ) : p.tipo === "italico" ? (
+        <em key={i}>{p.texto}</em>
+      ) : p.tipo === "codigo" ? (
+        <code key={i}>{p.texto}</code>
+      ) : (
+        p.texto
+      ),
+    );
+  return (
+    <div className="md">
+      {blocosDoTexto(texto).map((b, i) =>
+        b.tipo === "titulo" ? (
+          <p key={i} className="titulo">
+            {linha(b.texto)}
+          </p>
+        ) : b.tipo === "lista" ? (
+          <ul key={i}>
+            {b.itens.map((t, j) => (
+              <li key={j}>{linha(t)}</li>
+            ))}
+          </ul>
+        ) : b.tipo === "numerada" ? (
+          <ol key={i} start={b.inicio}>
+            {b.itens.map((t, j) => (
+              <li key={j}>{linha(t)}</li>
+            ))}
+          </ol>
+        ) : (
+          <p key={i}>{linha(b.texto)}</p>
+        ),
+      )}
     </div>
   );
 }

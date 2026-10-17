@@ -1,6 +1,6 @@
 # Slice 12 — O chat que navega o grafo
 
-> **Estado: em construção — passos 1 a 4 feitos.** As decisões estão tomadas
+> **Estado: construída, não no ar — falta o julgamento no app (ver "Como ficou").** As decisões estão tomadas
 > (entrevista de 13/10), e o protótipo (ordem 0) rodou contra produção no mesmo
 > dia: as receitas da §5 são as que rodaram. O passo 1 pôs a trava à prova
 > contra a instância e mediu o piso com vetor de pergunta: não há número que
@@ -703,9 +703,10 @@ quê. `ler_retrato` fica — ele lê o R2, não o grafo.
 4. O (i). **Feito em 17/10**: a consulta dentro de "como procurei", com a
    tabela recolhida; a célula lê lista simples como texto corrido.
 5. O script e a comparação. **Ponto de retorno: o HTML vai para mim**, e o modelo
-   quem escolhe sou eu.
-6. `MODELO_CHAT_PADRAO`.
-7. O `chat-9`.
+   quem escolhe sou eu. **Feito em 17/10**, em duas rodadas — ver "Como ficou".
+6. `MODELO_CHAT_PADRAO`. **Feito em 17/10**: o Sonnet.
+7. O `chat-9`. **Feito em 17/10**: sai o `historico_do_atomo`, e o formato da
+   resposta global ganha a regra da tabela.
 8. A documentação acompanhando cada passo, no mesmo commit.
 
 ## Limites que esta fatia cria (para o §14)
@@ -729,3 +730,100 @@ quê. `ler_retrato` fica — ele lê o R2, não o grafo.
 - **A trava depende da classificação do banco.** Uma procedure de leitura
   classificada errado passaria pelo `EXPLAIN`; o `accessMode: Read` da execução e o
   bloqueio de `CALL` de procedure são as duas camadas que cobrem isso.
+
+## Como ficou
+
+Construída em 17/10/2026, com `pnpm test` verde. **Não está no ar**: vai no
+mesmo push da interface (ondas 1 a 4), depois de um code review. Os itens 1, 5 e
+6 do "pronto quando" se julgam no app, e estão no `PROXIMOS-TESTES.md`; o 2, o 3
+e o 4 estão feitos — os dois primeiros pelos testes, o quarto abaixo.
+
+### A comparação
+
+`pnpm comparar:chat` contra o grafo de produção, só lendo, com as nove da §1 e o
+caso Isinha por último. Rodou duas vezes: a primeira achou o defeito do teto
+(abaixo), a segunda já com o primeiro conserto. Os números são da segunda —
+chamadas de ferramenta e tempo até a resposta, por pergunta:
+
+| pergunta | Sonnet 5.5 | deepseek v4.1 flash | GLM 5.3 flash |
+|---|---|---|---|
+| 1. pessoas mais próximas | 2 · 12,8 s | 8 · 9,0 s · teto | 1 · 4,9 s |
+| 2. sonhos e objetivos que mais falo | 6 · 28,8 s | 12 · 27,8 s · teto | 4 · 17,0 s |
+| 3. prioridades dos últimos meses | 3 · 13,3 s | 4 · 13,7 s | 1 · 7,8 s |
+| 4. maiores medos | 4 · 17,1 s | 4 · 15,4 s | 2 · 10,3 s |
+| 5. maiores sonhos | 6 · 24,9 s | 6 · 18,2 s | 3 · 11,8 s |
+| 6. o que mais me desafiou | 4 · 22,3 s | 8 · 26,4 s · teto | 2 · 15,6 s |
+| 7. como lido com stress | 3 · 20,4 s | 5 · 22,9 s | 3 · 15,7 s |
+| 8. posições políticas | 3 · 16,0 s | 8 · 15,0 s · teto | 5 · 15,6 s |
+| 9. me teste (1º turno) | 1 · 5,4 s | 1 · 3,0 s | 1 · 4,4 s |
+| 10. Isinha (local) | 3 · 12,3 s | 6 · 10,7 s | 4 · 12,5 s |
+
+Nenhuma consulta com erro, nos três. Tokens nas dez, em milhares — entrada,
+saída, raciocínio: Sonnet 516 · 19 · 1; deepseek 559 · 26 · 11; GLM 304 · 12 · 4.
+Leram o retrato nas perguntas sobre mim: Sonnet e deepseek cinco vezes cada, o
+GLM nenhuma. A 8 saiu certa nos três: não há posição política registrada, e o
+mais perto é a aula de economia.
+
+**O vencedor é o Sonnet**, escolhido por mim lendo a página: o mais cuidadoso
+com o que está registrado — separa intenção de resultado, diz o recorte —, sem
+teto batido. O GLM foi o mais rápido e o mais barato, e trocou 11/10 por 11/09
+numa data e interpretou além do texto numa frase. O deepseek buscou o dobro, e
+três das dez acabaram no teto sem resposta. `MODELO_CHAT_PADRAO` e a linha do
+`CHAT_MODEL` no `CLAUDE.md` mudaram juntos. O título da conversa herda o modelo
+do chat; `CHAT_TITULO_MODEL` fica como saída se o custo pesar.
+
+### O que a comparação achou no loop
+
+- **O pensamento virava resposta quando o modelo parava pedindo ferramenta.** No
+  teto, com `finishReason` `tool-calls`, o texto vinha em branco e
+  `textoDaResposta` lia o pensamento — o plano da próxima busca, em inglês ("let
+  me fetch the full texts…"). Cinco das dez do deepseek na primeira rodada.
+  Agora quem para pedindo ferramenta não respondeu, e responde a síntese
+  (`respostaDe`).
+- **O deepseek ignora o `toolChoice: "none"` da síntese** pelo Gateway: pede
+  mais uma busca em vez de escrever. A mesma regra vale ali, e a pergunta sobe
+  como erro dito, e não como o pensamento na tela. Ficou no §14.
+
+### O chat-9
+
+O (i) das nove, no Sonnet, na primeira e na segunda rodada: `consultar_grafo`
+22 e 26 vezes, `ler_retrato` 5 e 5, `buscar_entidades` 0 e 1, `buscar_atomos` e
+`historico_do_atomo` nenhuma. Na pergunta local, `buscar_entidades` e
+`buscar_atomos` nas duas rodadas (e `consultar_grafo` junto, na segunda).
+
+- **Sai `historico_do_atomo`.** Nenhuma chamada em vinte respostas; a cadeia de
+  um trecho virou receita de `consultar_grafo`, um salto por vez, nas duas
+  direções, conferida contra o grafo.
+- **Fica `buscar_atomos`**, por decisão minha contra a letra do §8: é o caminho
+  que o modelo escolhe para a pergunta local, e o item 6 pede que ela responda
+  como antes. Com ela fica o `PISO_BUSCA` de 0,45: a busca só foi chamada na
+  pergunta local, que é a pergunta para a qual o piso foi pensado; a global foi
+  toda por `consultar_grafo`, que não tem piso.
+- **Fica `buscar_entidades`**, chamada nas nove, e **fica `ler_retrato`**, que
+  lê o R2. O Sonnet notou numa resposta que o retrato do "eu" ainda não tem
+  nenhuma dimensão escrita — a ferramenta devolve pouco até ele ser escrito.
+
+### O formato da resposta global
+
+Os três modelos responderam a global em markdown — tabela, negrito, título —, e
+a tela do chat mostrava o texto cru. Perguntado, escolhi o meio: **a tela
+desenha lista, título e negrito, e o prompt proíbe tabela**, que a 390 px não
+cabe. O `chat-9` diz "tabela nunca, em pergunta nenhuma", e um ranking é uma
+lista numerada. O desenho é um parser de sessenta linhas em `Chat.tsx`, sem
+dependência nova, que devolve elementos do React. Markdown na tela inteira
+(tabela inclusive) e proibir todo markdown foram as outras duas opções.
+
+### O que saiu diferente do que está escrito acima
+
+- **A receita do teste ordena por `dia, id`**, e não só por `dia`: a fila tem
+  de ser a mesma a cada turno, porque o modelo a roda de novo e acha o trecho da
+  vez pela pergunta que escreveu.
+- **A síntese não ganha mais o dobro do teto**: com 100 mil, o dobro de um teto
+  que o modelo não alcança é a mesma chamada.
+- **`Resposta.uso`** soma o `totalUsage` do loop e o da síntese; a rota não o
+  grava.
+- **A célula do (i)** lê lista de valores simples como texto corrido
+  (`celulaDoRastro`), e a página da comparação tem uma chave entre o texto cru e
+  o markdown renderizado — foi por ela que o formato se decidiu.
+- **O script rodou também o caso Isinha**, como décima pergunta: a decisão sobre
+  `buscar_atomos` dependia de ver a pergunta local no (i).
