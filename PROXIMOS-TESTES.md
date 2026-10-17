@@ -105,6 +105,40 @@ olhado rodando, pela mesma razão das ondas 1 e 2. A volta é a tag
       é puxada ao fim, e aparece "↓ resposta nova"; tocar nele desce. Com o
       teclado aberto, a última fala continua à vista.
 
+## Interface — onda 4, a gestão (`Specs/interface-onda-4.md`)
+
+Construída e coberta por `pnpm typecheck`, `pnpm test` e `pnpm build`; nada
+olhado rodando, pela mesma razão das outras ondas. A volta é a tag
+`ui-antes-da-onda-4`. No celular, contra o banco de desenvolvimento:
+
+- [ ] **A linha da sessão.** Cada linha começa pela frase do primeiro item, em
+      até duas linhas; embaixo, data, duração, status e "8 itens" — ou "5 para
+      revisar" na em revisão. Sessão sem item mostra a data em cima.
+- [ ] **A 51ª sessão.** Num banco com mais de 50 sessões, rolar até o fim:
+      "carregando…" e as seguintes aparecem; o cabeçalho diz o total. Com a
+      rede cortada, "não deu para carregar as seguintes — tentar de novo", e o
+      toque carrega quando a rede volta.
+- [ ] **A ficha salva ao sair do campo.** Escrever no resumo e tocar fora:
+      "salvando…", depois "salvo" ao lado do rótulo. Trocar o nome e dar Enter
+      renomeia, e a ficha continua cheia.
+- [ ] **Segura no fechar.** Com a rede cortada, escrever e tentar fechar: o ←
+      vira "← descartar 1?" em vermelho, e só o segundo toque fecha e perde o
+      texto. Esperar 4 s desarma.
+- [ ] **Os rascunhos são da entidade.** Com um rascunho que não gravou numa
+      ficha, "desfazer" em outra não o apaga.
+- [ ] **O par de duplicatas.** "comparar" abre a ficha com as duas lado a lado,
+      "Isto não tem desfazer" e o "manter esta" de cada lado.
+- [ ] **O radial a 390 px.** A data se lê sem zoom; tocar perto de um nó ou de
+      uma sigla acerta, e não o vizinho. Um átomo com vizinho de outro ano à
+      direita: a data cabe (ou passa pouco da borda, limite do §14).
+- [ ] **O editor de agente.** Mexer numa seção do prompt: aparece "o que
+      difere do git — 1 seção", com "no git" e "agora". Apagar uma seção
+      inteira: ela aparece "tirada", no fim. Tentar fechar sem salvar: o × vira
+      "descartar?", e só o segundo pedido fecha. Num agente editado, "voltar ao
+      original" pede "voltar ao original?" antes.
+- [ ] **O descartar da emenda.** Em `/calibracao`, com uma emenda escrita,
+      "descartar" vira "descartar?" em vermelho; o segundo toque descarta.
+
 ## Slice 11 — o que faltou, a pedido (`Specs/slice-11.md`)
 
 Construída e coberta pelo `pnpm test`; nada disto rodou contra modelo ainda. Em

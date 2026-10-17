@@ -8,8 +8,8 @@ precise de pontaria.
 Isto não é uma fatia vertical: é uma avaliação da interface inteira, feita a
 pedido, e o plano de quatro ondas que saiu dela. A primeira não pedia decisão
 nenhuma; as outras três dependiam de cinco decisões, tomadas e registradas
-abaixo. **As ondas 1, 2 e 3 estão feitas** (ver "Como ficou"); a 4 ainda não
-tem spec.
+abaixo. **As quatro ondas estão feitas** (ver "Como ficou"), e nenhuma foi
+olhada rodando ainda.
 
 **Ponto de retorno:** a tag `ui-antes-da-avaliacao`.
 
@@ -131,9 +131,12 @@ topo da revisão, o desmarcado e a barra do chat ficam como estão, e o ▶ toca
 
 ### Onda 4 — a gestão
 
-A decisão 3 está feita (ver "Como ficou"), e o `<title>` por rota foi junto.
-Parte do resto muda contrato de rota. **Ainda não especificada**: como a 3, ela
-começa por uma entrevista.
+Feita — ver "Como ficou", aqui e na spec dela, `Specs/interface-onda-4.md`. A
+decisão 3 entrou com a onda 2, e o `<title>` por rota foi junto; o resto saiu
+de uma rodada de entrevista, e a spec mudou parte do que está abaixo: a linha
+da sessão fica sem as entidades, as seguintes carregam sozinhas ao rolar, em
+vez de um "carregar mais", e o radial se resolve por dentro — letra e alvo
+maiores, sem teto por quadrante nem lista primeiro.
 
 - **Sessões com conteúdo:** quantos átomos e as entidades mais citadas, que
   pede mudar `GET /api/sessoes`; "hoje/ontem" e ano; "carregar mais" depois das
@@ -244,5 +247,26 @@ resumo:
 
 Um tropeço de processo: a peça da revisão entrou sem o `<label>` do checkbox, e
 ele veio num commit próprio quando a spec foi conferida item a item, ao fechar.
+
+O que não foi feito: olhar nada disto rodando. Está no `PROXIMOS-TESTES.md`.
+
+**Onda 4, em 15/10/2026 e 17/10/2026** — depois da tag `ui-antes-da-onda-4`,
+sem push. O detalhe, peça a peça, está no "Como ficou" de
+`Specs/interface-onda-4.md`. Em resumo:
+
+- **As sessões começam pelo que eu disse**: a frase do primeiro item, e
+  embaixo a data, a duração, o status e quantos itens — ou quantos esperam
+  revisão. Passadas as 50, as seguintes chegam sozinhas ao rolar.
+- **A ficha salva sozinha** ao sair do campo, diz "salvo" ao lado do rótulo, e
+  segura o fechar com "descartar N?" quando sobrou texto que não gravou. Os
+  rascunhos são da entidade, e o tipo está na linha.
+- **O par de duplicatas** abre a comparação da fusão à mão, com o aviso.
+- **O radial** se lê a 390 px: letra de ~12 px e alvo de dedo em cada nó e
+  sigla.
+- **O editor de agente** mostra o que difere do git, seção por seção, e segura
+  o fechar; "voltar ao original" e o "descartar" da emenda são de dois toques.
+
+O mesmo tropeço da onda 3, menor: a borda da seção tirada no editor veio num
+commit próprio, achada na conferência da spec.
 
 O que não foi feito: olhar nada disto rodando. Está no `PROXIMOS-TESTES.md`.

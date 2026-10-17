@@ -246,3 +246,54 @@ Um commit por peça, cada um com o seu pedaço de documento:
   `blur` não chega a gravar.
 
 ## Como ficou
+
+**Em 15/10/2026 e 17/10/2026**, seis commits depois desta spec, sem push — a
+slice 12 continua na frente do remoto, e o push levaria as duas juntas. Um
+commit por peça, na ordem da spec, e um sexto para o que a peça do editor
+deixou para trás:
+
+1. `8df5b81` — sessões: a frase do primeiro item, a contagem, a página com
+   cursor e a rolagem que carrega sozinha. A releitura de durante um reextrair
+   funde a primeira página com o que já rolei, e o que saiu da faixa dela sai
+   da tela.
+2. `d6266f0` — a ficha: salvar ao sair do campo, o nome como campo, segurar no
+   fechar, os rascunhos por entidade, o tipo na linha, e "usar este texto"
+   gravando na hora.
+3. `eef6b9a` — o par de duplicatas abre a comparação.
+4. `636dd94` — o radial.
+5. `7a3f2be` — o editor de agente e a emenda da calibração. O código estava
+   pronto desde a sessão de 15/10 e entrou em 17/10, com o texto do §2, do
+   §4.12, do §4.13 e do §11 — sem ele, `tests/arquitetura.test.ts` barrava o
+   `secoes.ts`.
+6. `173859f` — **a borda da seção tirada.** No editor, a seção que saiu do
+   prompt só tem o lado "no git", e ele, sendo o último, herdava da `.edicao`
+   a borda de acento de "o que passa a valer". Apareceu na conferência da
+   spec, ao fechar a onda.
+
+O que as peças decidiram sem a spec dizer:
+
+- **O alvo da sigla é de raio 18, e não 24** (≈ 31 px, e não ~42). A sigla de
+  fora fica a 64 % do caminho, a ~42,5 do nó: com 24 nos dois, o alvo dela
+  invadiria o do nó. O nó ficou com os 24.
+- **A órbita encolheu de 128 para 118, e o leque abre 20° por vizinho.** Com a
+  data a 14, a de outro ano ao lado de um vizinho da direita não cabia no lado
+  do desenho. O que ainda passa — mais de cinco vizinhos no quadrante da
+  direita — foi para o §14.
+- **No editor, o limiar com texto que não é número conta como não salvo.** O
+  "salvar" o ignora, mas é texto meu na caixa, e fechar sem perguntar o
+  perderia.
+- **Armado, o × do editor vira palavra**, "descartar?", como o ← da ficha vira
+  "← descartar N?": um × vermelho não diz o que o segundo toque faz.
+- **A diferença no editor não pediu CSS novo**: é a `.edicao` da emenda da
+  calibração, a mesma caixa e a mesma borda de direção — com a exceção do
+  commit 6.
+
+Os três limites foram para o §14: os dois que a spec previa e o da data do
+radial.
+
+Os testes da §6 existem — a página de sessões (`tests/sessoes-pagina.test.ts`),
+a linha e a releitura (`tests/sessoes-lista.test.ts`), os rascunhos por
+entidade (`tests/entidades-tela.test.ts`), a diferença por seção
+(`tests/secoes.test.ts`) e o radial (`tests/radial.test.ts`) —, e
+`pnpm typecheck`, `pnpm test` e `pnpm build` passaram nos dois últimos commits.
+**O que não foi feito: olhar nada disto rodando.** Está no `PROXIMOS-TESTES.md`.
